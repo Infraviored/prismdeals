@@ -4,6 +4,10 @@ import time
 import pickle
 import logging
 import re
+import random
+import string
+import shutil
+import glob
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -248,6 +252,28 @@ def scrape_page(driver, url, output_file=None, max_listings=None, process_immedi
     logger.info(f"Scraped {len(scraped_listings)} new listings from {url}")
     return scraped_listings
 
+def cleanup_chrome_profiles(data_dir):
+    """Clean up old Chrome profiles to prevent conflicts"""
+    try:
+        # Find all chrome profile directories older than 1 hour
+        chrome_profiles = glob.glob(os.path.join(data_dir, "chrome_profile_*"))
+        current_time = time.time()
+        one_hour_ago = current_time - 3600  # 1 hour in seconds
+        
+        for profile_dir in chrome_profiles:
+            try:
+                # Get the directory's creation time
+                dir_time = os.path.getctime(profile_dir)
+                if dir_time < one_hour_ago:
+                    logger.info(f"Removing old Chrome profile: {profile_dir}")
+                    shutil.rmtree(profile_dir, ignore_errors=True)
+            except Exception as e:
+                logger.warning(f"Error checking/removing Chrome profile {profile_dir}: {str(e)}")
+        
+        logger.info("Chrome profiles cleanup completed")
+    except Exception as e:
+        logger.warning(f"Error during Chrome profiles cleanup: {str(e)}")
+
 def scrape_listings(urls, output_file, max_listings=None, process_immediately=False):
     """Main function to scrape listings from multiple URLs"""
     # Import here to avoid circular imports
@@ -258,30 +284,51 @@ def scrape_listings(urls, output_file, max_listings=None, process_immediately=Fa
     project_root = os.path.dirname(backend_dir)  # Go up one level to the project root
     data_dir = os.path.join(project_root, "data")  # Data is at the project root
     cookies_path = os.path.join(data_dir, "cookies.pkl")
-    user_data_dir = os.path.join(data_dir, "chrome_profile")
+    
+    # Clean up old Chrome profiles to prevent conflicts
+    cleanup_chrome_profiles(data_dir)
+    
+    # Generate a unique user data directory for this run
+    random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    timestamp = int(time.time())
+    user_data_dir = os.path.join(data_dir, f"chrome_profile_{timestamp}_{random_suffix}")
     
     # Create directories if they don't exist
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(user_data_dir, exist_ok=True)
     
-    # Initialize your Selenium driver with persistent profile
-    options = webdriver.ChromeOptions()
-    options.add_argument(f"user-data-dir={user_data_dir}")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-    
-    driver = webdriver.Chrome(options=options)
-    # Execute CDP commands to make the browser less detectable
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": """
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined
-        })
-        """
-    })
+    # Initialize driver variable
+    driver = None
     
     try:
+        # Initialize your Selenium driver with persistent profile
+        options = webdriver.ChromeOptions()
+        options.add_argument(f"user-data-dir={user_data_dir}")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option("useAutomationExtension", False)
+        
+        # Check if we should run in headless mode (default to headless for server environments)
+        headless_mode = os.environ.get('CHROME_HEADLESS', '1').lower() in ('1', 'true', 'yes')
+        if headless_mode:
+            logger.info("Running Chrome in headless mode")
+            options.add_argument("--headless=new")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+        
+        # Create the driver
+        logger.info(f"Initializing Chrome with user data directory: {user_data_dir}")
+        driver = webdriver.Chrome(options=options)
+        
+        # Execute CDP commands to make the browser less detectable
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            })
+            """
+        })
+        
         # Handle login with cookie persistence
         manual_login(driver, cookies_path)
         
@@ -330,5 +377,21 @@ def scrape_listings(urls, output_file, max_listings=None, process_immediately=Fa
         
     except Exception as e:
         logger.error(f"Error in scraping process: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
     finally:
-        driver.quit() 
+        # Clean up the driver
+        if driver is not None:
+            try:
+                driver.quit()
+                logger.info("Chrome driver closed successfully")
+            except Exception as e:
+                logger.error(f"Error closing Chrome driver: {str(e)}")
+        
+        # Clean up the user data directory
+        try:
+            if os.path.exists(user_data_dir):
+                shutil.rmtree(user_data_dir, ignore_errors=True)
+                logger.info(f"Removed Chrome user data directory: {user_data_dir}")
+        except Exception as e:
+            logger.warning(f"Error removing Chrome user data directory: {str(e)}") 

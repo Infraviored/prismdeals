@@ -6,6 +6,7 @@ import logging
 import threading
 import time
 import sys
+import traceback
 
 # Add the parent directory to the Python path to allow imports from the backend directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,6 +37,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # Global variables for scheduling
 scheduled_thread = None
 stop_scheduled_thread = False
+scraping_in_progress = False
 
 # API endpoint to get listings
 @app.route('/api/listings', methods=['GET'])
@@ -80,11 +82,27 @@ def update_search_urls():
 # API endpoint to trigger scraping manually
 @app.route('/api/scrape', methods=['POST'])
 def trigger_scrape():
+    global scraping_in_progress
+    
     try:
+        # Check if scraping is already in progress
+        if scraping_in_progress:
+            return jsonify({
+                "success": False,
+                "message": "Scraping is already in progress",
+            }), 409  # 409 Conflict
+        
         data = request.json
         mode = data.get('mode', 'both')
         urls = data.get('urls')
         max_listings = data.get('maxListings')
+        
+        # Set headless mode from request or default to environment variable
+        headless = data.get('headless', os.environ.get('CHROME_HEADLESS', '1').lower() in ('1', 'true', 'yes'))
+        if headless:
+            os.environ['CHROME_HEADLESS'] = '1'
+        else:
+            os.environ['CHROME_HEADLESS'] = '0'
         
         # Start scraping in a separate thread to not block the API response
         thread = threading.Thread(
@@ -97,11 +115,13 @@ def trigger_scrape():
         return jsonify({
             "success": True,
             "message": "Scraping process started",
-            "thread_id": thread.ident
+            "thread_id": thread.ident,
+            "headless_mode": headless
         })
     except Exception as e:
         logger.error(f"Error starting scraper: {str(e)}")
-        return jsonify({"error": "Failed to start scraper"}), 500
+        logger.error(traceback.format_exc())
+        return jsonify({"error": "Failed to start scraper", "details": str(e)}), 500
 
 # API endpoint to get scraping schedule
 @app.route('/api/schedule', methods=['GET'])
@@ -139,6 +159,8 @@ def update_schedule():
 # API endpoint to get server status
 @app.route('/api/status', methods=['GET'])
 def get_status():
+    global scraping_in_progress
+    
     try:
         import psutil
         process = psutil.Process(os.getpid())
@@ -150,7 +172,9 @@ def get_status():
                 "rss": f"{process.memory_info().rss / (1024 * 1024):.1f} MB",
                 "vms": f"{process.memory_info().vms / (1024 * 1024):.1f} MB"
             },
-            "cpu_percent": process.cpu_percent()
+            "cpu_percent": process.cpu_percent(),
+            "scraping_in_progress": scraping_in_progress,
+            "headless_mode": os.environ.get('CHROME_HEADLESS', '1').lower() in ('1', 'true', 'yes')
         })
     except Exception as e:
         logger.error(f"Error getting server status: {str(e)}")
@@ -158,6 +182,11 @@ def get_status():
 
 # Function to run the scraper (called by API and scheduler)
 def run_scraper(mode='both', urls=None, max_listings=None):
+    global scraping_in_progress
+    
+    # Set scraping_in_progress flag
+    scraping_in_progress = True
+    
     try:
         logger.info(f"Starting scraper with mode={mode}")
         
@@ -192,8 +221,10 @@ def run_scraper(mode='both', urls=None, max_listings=None):
         logger.info("All operations completed")
     except Exception as e:
         logger.error(f"Error in run_scraper: {str(e)}")
-        import traceback
         logger.error(traceback.format_exc())
+    finally:
+        # Reset scraping_in_progress flag
+        scraping_in_progress = False
 
 # Function for scheduled scraping
 def scheduled_scraping_thread():
@@ -226,6 +257,7 @@ def scheduled_scraping_thread():
                 time.sleep(1)
         except Exception as e:
             logger.error(f"Error in scheduled scraping: {str(e)}")
+            logger.error(traceback.format_exc())
             # Sleep for 5 minutes before retrying after an error
             time.sleep(300)
 
@@ -249,6 +281,10 @@ def setup_scheduled_scraping():
 if __name__ == '__main__':
     # Ensure the data directory exists
     os.makedirs(DATA_DIR, exist_ok=True)
+    
+    # Set default headless mode for Chrome (1 = headless, 0 = visible)
+    if 'CHROME_HEADLESS' not in os.environ:
+        os.environ['CHROME_HEADLESS'] = '1'  # Default to headless mode for server environments
     
     # Start scheduled scraping
     setup_scheduled_scraping()
