@@ -8,6 +8,7 @@ let searchConfig = [];
 
 // Function to fetch listings
 async function fetchListings() {
+  showLoading('listings-container');
   try {
     const response = await fetch(`${API_BASE_URL}/listings`);
     if (!response.ok) {
@@ -30,6 +31,7 @@ async function fetchListings() {
 
 // Function to fetch search configuration
 async function fetchSearchConfig() {
+  showLoading('search-urls-container');
   try {
     const response = await fetch(`${API_BASE_URL}/search-config`);
     if (!response.ok) {
@@ -55,7 +57,7 @@ async function fetchSearchConfig() {
   }
 }
 
-// Function to display listings
+// Function to display listings with animation
 function displayListings(listings) {
   const container = document.getElementById('listings-container');
   
@@ -68,41 +70,53 @@ function displayListings(listings) {
     return;
   }
   
-  let html = '';
+  // Clear the container first
+  container.innerHTML = '';
   
-  listings.forEach(listing => {
+  // Create and append each listing card with staggered animation
+  listings.forEach((listing, index) => {
     const ramBadgeClass = getBadgeClass(listing.RAM_more);
     const screenSmallBadgeClass = getBadgeClass(listing.screen_small);
     const screenHighresBadgeClass = getBadgeClass(listing.screen_highres);
     const fullInfoBadgeClass = getBadgeClass(listing.full_info_obtained);
     
-    html += `
-      <div class="col-md-6 col-lg-4">
-        <div class="listing-card">
-          <div class="listing-title">${listing.title}</div>
-          <div class="listing-price">${listing.price}</div>
-          <div class="listing-date">${new Date(listing.date || Date.now()).toLocaleDateString()}</div>
-          <div class="listing-location">${listing.location || 'Unknown location'}</div>
-          
-          ${listing.search_name ? `<div class="listing-search-name badge bg-secondary mb-2">${listing.search_name}</div>` : ''}
-          
-          <div class="badges mb-2 mt-2">
-            <span class="badge ${ramBadgeClass}">RAM ≥ 32GB: ${formatBadgeValue(listing.RAM_more)}</span>
-            <span class="badge ${screenSmallBadgeClass}">Small Screen: ${formatBadgeValue(listing.screen_small)}</span>
-            <span class="badge ${screenHighresBadgeClass}">High Res: ${formatBadgeValue(listing.screen_highres)}</span>
-            <span class="badge ${fullInfoBadgeClass}">Full Info: ${formatBadgeValue(listing.full_info_obtained)}</span>
-          </div>
-          
-          <div class="listing-description">${listing.short_description || listing.description?.substring(0, 150) + '...' || 'No description'}</div>
-          <div class="listing-link">
-            <a href="${listing.url}" target="_blank" class="btn btn-sm btn-outline-primary">View Listing</a>
-          </div>
+    const card = document.createElement('div');
+    card.className = 'col-md-6 col-lg-4';
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(20px)';
+    card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+    
+    card.innerHTML = `
+      <div class="listing-card">
+        <div class="listing-title">${listing.title}</div>
+        <div class="listing-price">${listing.price}</div>
+        <div class="listing-date">${new Date(listing.date || Date.now()).toLocaleDateString()}</div>
+        <div class="listing-location">${listing.location || 'Unknown location'}</div>
+        
+        ${listing.search_name ? `<div class="listing-search-name badge bg-secondary mb-2">${listing.search_name}</div>` : ''}
+        
+        <div class="badges mb-2 mt-2">
+          <span class="badge ${ramBadgeClass}">RAM ≥ 32GB: ${formatBadgeValue(listing.RAM_more)}</span>
+          <span class="badge ${screenSmallBadgeClass}">Small Screen: ${formatBadgeValue(listing.screen_small)}</span>
+          <span class="badge ${screenHighresBadgeClass}">High Res: ${formatBadgeValue(listing.screen_highres)}</span>
+          <span class="badge ${fullInfoBadgeClass}">Full Info: ${formatBadgeValue(listing.full_info_obtained)}</span>
+        </div>
+        
+        <div class="listing-description">${listing.short_description || listing.description?.substring(0, 150) + '...' || 'No description'}</div>
+        <div class="listing-link">
+          <a href="${listing.url}" target="_blank" class="btn btn-sm btn-outline-primary">View Listing</a>
         </div>
       </div>
     `;
+    
+    container.appendChild(card);
+    
+    // Staggered animation for each card
+    setTimeout(() => {
+      card.style.opacity = '1';
+      card.style.transform = 'translateY(0)';
+    }, 50 * index);
   });
-  
-  container.innerHTML = html;
 }
 
 // Function to format badge values
@@ -453,17 +467,50 @@ async function startScraping() {
   }
 }
 
-// Function to show status messages
+// Function to show status messages with improved animation
 function showStatus(message, type) {
   const scraperStatus = document.getElementById('scraper-status');
-  scraperStatus.className = `alert alert-${type} mt-3`;
-  scraperStatus.textContent = message;
-  scraperStatus.classList.remove('d-none');
   
-  // Hide the status message after 5 seconds
+  // First fade out
+  scraperStatus.style.opacity = '0';
+  scraperStatus.style.transform = 'translateY(-10px)';
+  
   setTimeout(() => {
-    scraperStatus.classList.add('d-none');
-  }, 5000);
+    // Update content
+    scraperStatus.className = `alert alert-${type} mt-3`;
+    scraperStatus.textContent = message;
+    scraperStatus.classList.remove('d-none');
+    
+    // Then fade in
+    scraperStatus.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+    scraperStatus.style.opacity = '1';
+    scraperStatus.style.transform = 'translateY(0)';
+    
+    // Hide the status message after 5 seconds
+    setTimeout(() => {
+      scraperStatus.style.opacity = '0';
+      scraperStatus.style.transform = 'translateY(-10px)';
+      
+      setTimeout(() => {
+        scraperStatus.classList.add('d-none');
+      }, 300);
+    }, 5000);
+  }, 300);
+}
+
+// Add a function to show loading animations
+function showLoading(elementId) {
+  const element = document.getElementById(elementId);
+  if (element) {
+    element.innerHTML = `
+      <div class="text-center p-4">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Loading...</p>
+      </div>
+    `;
+  }
 }
 
 // Initialize the page
