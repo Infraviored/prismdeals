@@ -4,6 +4,7 @@ const API_BASE_URL = '/api';
 // Global variables
 let allListings = [];
 let filteredListings = [];
+let searchConfig = [];
 
 // Function to fetch listings
 async function fetchListings() {
@@ -24,6 +25,33 @@ async function fetchListings() {
         Failed to load listings. Please try again later.
       </div>
     `;
+  }
+}
+
+// Function to fetch search configuration
+async function fetchSearchConfig() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/search-config`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    searchConfig = await response.json();
+    
+    // Populate search filter dropdown
+    const searchFilter = document.getElementById('filter-search');
+    searchFilter.innerHTML = '<option value="">All Searches</option>';
+    
+    searchConfig.forEach(search => {
+      const option = document.createElement('option');
+      option.value = search.id;
+      option.textContent = search.name;
+      searchFilter.appendChild(option);
+    });
+    
+    // Also update the search URLs display
+    displaySearchConfig();
+  } catch (error) {
+    console.error('Error fetching search configuration:', error);
   }
 }
 
@@ -55,6 +83,8 @@ function displayListings(listings) {
           <div class="listing-price">${listing.price}</div>
           <div class="listing-date">${new Date(listing.date || Date.now()).toLocaleDateString()}</div>
           <div class="listing-location">${listing.location || 'Unknown location'}</div>
+          
+          ${listing.search_name ? `<div class="listing-search-name badge bg-secondary mb-2">${listing.search_name}</div>` : ''}
           
           <div class="badges mb-2 mt-2">
             <span class="badge ${ramBadgeClass}">RAM ≥ 32GB: ${formatBadgeValue(listing.RAM_more)}</span>
@@ -112,6 +142,7 @@ function applyFilters() {
   const filterScreenSmall = document.getElementById('filter-screen-small').checked;
   const filterScreenHighres = document.getElementById('filter-screen-highres').checked;
   const filterFullInfo = document.getElementById('filter-full-info').checked;
+  const filterSearch = document.getElementById('filter-search').value;
   
   filteredListings = allListings.filter(listing => {
     let include = true;
@@ -130,6 +161,10 @@ function applyFilters() {
     
     if (filterFullInfo) {
       include = include && listing.full_info_obtained === true;
+    }
+    
+    if (filterSearch) {
+      include = include && listing.search_id === filterSearch;
     }
     
     return include;
@@ -215,46 +250,38 @@ async function saveSchedule() {
   }
 }
 
-// Function to fetch search URLs
-async function fetchSearchUrls() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/search-urls`);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const urls = await response.json();
-    displaySearchUrls(urls);
-  } catch (error) {
-    console.error('Error fetching search URLs:', error);
-  }
-}
-
-// Function to display search URLs
-function displaySearchUrls(urls) {
+// Function to display search configuration
+function displaySearchConfig() {
   const container = document.getElementById('search-urls-container');
   
-  if (!urls || urls.length === 0) {
-    container.innerHTML = '<div class="alert alert-info">No search URLs configured.</div>';
+  if (!searchConfig || searchConfig.length === 0) {
+    container.innerHTML = '<div class="alert alert-info">No search configurations found.</div>';
     return;
   }
   
   let html = '';
   
-  urls.forEach((url, index) => {
+  searchConfig.forEach((search, index) => {
     html += `
-      <div class="search-url-item" data-index="${index}">
+      <div class="search-url-item" data-index="${index}" data-id="${search.id}">
         <div class="row">
-          <div class="col-md-8">
-            <input type="text" class="form-control url-input" value="${url.url}">
+          <div class="col-md-4">
+            <label class="form-label">Name</label>
+            <input type="text" class="form-control search-name" value="${search.name || ''}">
           </div>
-          <div class="col-md-2">
-            <div class="form-check">
-              <input class="form-check-input url-enabled" type="checkbox" ${url.enabled !== false ? 'checked' : ''}>
-              <label class="form-check-label">Enabled</label>
+          <div class="col-md-6">
+            <label class="form-label">URL</label>
+            <input type="text" class="form-control search-url" value="${search.url || ''}">
+          </div>
+          <div class="col-md-1">
+            <label class="form-label">Enabled</label>
+            <div class="form-check mt-2">
+              <input class="form-check-input search-enabled" type="checkbox" ${search.enabled !== false ? 'checked' : ''}>
             </div>
           </div>
-          <div class="col-md-2">
-            <button class="btn btn-sm btn-danger remove-url">Remove</button>
+          <div class="col-md-1">
+            <label class="form-label">&nbsp;</label>
+            <button class="btn btn-sm btn-danger remove-search d-block">Remove</button>
           </div>
         </div>
       </div>
@@ -264,7 +291,7 @@ function displaySearchUrls(urls) {
   container.innerHTML = html;
   
   // Add event listeners for remove buttons
-  document.querySelectorAll('.remove-url').forEach(button => {
+  document.querySelectorAll('.remove-search').forEach(button => {
     button.addEventListener('click', function() {
       const item = this.closest('.search-url-item');
       item.remove();
@@ -272,39 +299,8 @@ function displaySearchUrls(urls) {
   });
 }
 
-// Function to save search URLs
-async function saveSearchUrls() {
-  try {
-    const urlItems = document.querySelectorAll('.search-url-item');
-    const urls = Array.from(urlItems).map(item => {
-      return {
-        url: item.querySelector('.url-input').value,
-        enabled: item.querySelector('.url-enabled').checked
-      };
-    });
-    
-    const response = await fetch(`${API_BASE_URL}/search-urls`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(urls),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    showStatus('Search URLs saved successfully!', 'success');
-    fetchSearchUrls(); // Refresh the list
-  } catch (error) {
-    console.error('Error saving search URLs:', error);
-    showStatus('Failed to save search URLs. Please try again.', 'danger');
-  }
-}
-
-// Function to add a new URL
-function addSearchUrl() {
+// Function to add a new search
+function addSearch() {
   const newUrl = document.getElementById('new-url').value.trim();
   
   if (!newUrl) {
@@ -312,39 +308,102 @@ function addSearchUrl() {
     return;
   }
   
+  // Extract a name from the URL
+  let name = 'New Search';
+  if (newUrl.includes('rtx4060') || newUrl.includes('rtx-4060')) {
+    name = 'RTX 4060';
+  } else if (newUrl.includes('rtx4070') || newUrl.includes('rtx-4070')) {
+    name = 'RTX 4070';
+  }
+  
   const container = document.getElementById('search-urls-container');
   const index = document.querySelectorAll('.search-url-item').length;
   
-  const urlItem = document.createElement('div');
-  urlItem.className = 'search-url-item';
-  urlItem.dataset.index = index;
+  const searchItem = document.createElement('div');
+  searchItem.className = 'search-url-item';
+  searchItem.dataset.index = index;
+  searchItem.dataset.id = ''; // New items don't have an ID yet
   
-  urlItem.innerHTML = `
+  searchItem.innerHTML = `
     <div class="row">
-      <div class="col-md-8">
-        <input type="text" class="form-control url-input" value="${newUrl}">
+      <div class="col-md-4">
+        <label class="form-label">Name</label>
+        <input type="text" class="form-control search-name" value="${name}">
       </div>
-      <div class="col-md-2">
-        <div class="form-check">
-          <input class="form-check-input url-enabled" type="checkbox" checked>
-          <label class="form-check-label">Enabled</label>
+      <div class="col-md-6">
+        <label class="form-label">URL</label>
+        <input type="text" class="form-control search-url" value="${newUrl}">
+      </div>
+      <div class="col-md-1">
+        <label class="form-label">Enabled</label>
+        <div class="form-check mt-2">
+          <input class="form-check-input search-enabled" type="checkbox" checked>
         </div>
       </div>
-      <div class="col-md-2">
-        <button class="btn btn-sm btn-danger remove-url">Remove</button>
+      <div class="col-md-1">
+        <label class="form-label">&nbsp;</label>
+        <button class="btn btn-sm btn-danger remove-search d-block">Remove</button>
       </div>
     </div>
   `;
   
-  container.appendChild(urlItem);
+  container.appendChild(searchItem);
   
   // Add event listener for the remove button
-  urlItem.querySelector('.remove-url').addEventListener('click', function() {
-    urlItem.remove();
+  searchItem.querySelector('.remove-search').addEventListener('click', function() {
+    searchItem.remove();
   });
   
   // Clear the input
   document.getElementById('new-url').value = '';
+}
+
+// Function to save search configuration
+async function saveSearchConfig() {
+  try {
+    const searchItems = document.querySelectorAll('.search-url-item');
+    const config = Array.from(searchItems).map(item => {
+      return {
+        id: item.dataset.id || undefined, // If it's a new item, let the server generate an ID
+        name: item.querySelector('.search-name').value,
+        url: item.querySelector('.search-url').value,
+        enabled: item.querySelector('.search-enabled').checked
+      };
+    });
+    
+    const response = await fetch(`${API_BASE_URL}/search-config`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(config),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    showStatus('Search configuration saved successfully!', 'success');
+    
+    // Refresh the search configuration
+    searchConfig = result.config || [];
+    displaySearchConfig();
+    
+    // Also refresh the search filter dropdown
+    const searchFilter = document.getElementById('filter-search');
+    searchFilter.innerHTML = '<option value="">All Searches</option>';
+    
+    searchConfig.forEach(search => {
+      const option = document.createElement('option');
+      option.value = search.id;
+      option.textContent = search.name;
+      searchFilter.appendChild(option);
+    });
+  } catch (error) {
+    console.error('Error saving search configuration:', error);
+    showStatus('Failed to save search configuration. Please try again.', 'danger');
+  }
 }
 
 // Function to start scraping
@@ -353,19 +412,18 @@ async function startScraping() {
     const mode = document.getElementById('scrape-mode').value;
     const maxListings = parseInt(document.getElementById('max-listings').value) || 50;
     
-    // Get enabled URLs
-    const urlItems = document.querySelectorAll('.search-url-item');
-    const urls = Array.from(urlItems)
-      .filter(item => item.querySelector('.url-enabled').checked)
-      .map(item => item.querySelector('.url-input').value);
+    // Get enabled search IDs
+    const searchIds = searchConfig
+      .filter(search => search.enabled)
+      .map(search => search.id);
     
-    if (mode !== 'process' && (!urls || urls.length === 0)) {
-      showStatus('Please add at least one enabled search URL', 'warning');
+    if (mode !== 'process' && (!searchIds || searchIds.length === 0)) {
+      showStatus('Please add at least one enabled search', 'warning');
       return;
     }
     
     // Confirm with the user
-    if (!confirm(`Start scraping in ${mode} mode${urls.length > 0 ? ` with ${urls.length} URLs` : ''}?`)) {
+    if (!confirm(`Start scraping in ${mode} mode${searchIds.length > 0 ? ` with ${searchIds.length} searches` : ''}?`)) {
       return;
     }
     
@@ -378,7 +436,7 @@ async function startScraping() {
       },
       body: JSON.stringify({
         mode,
-        urls,
+        search_ids: searchIds,
         maxListings
       }),
     });
@@ -411,10 +469,10 @@ function showStatus(message, type) {
 // Initialize the page
 document.addEventListener('DOMContentLoaded', function() {
   // Fetch initial data
+  fetchSearchConfig();
   fetchListings();
   fetchServerStatus();
   fetchSchedule();
-  fetchSearchUrls();
   
   // Set up event listeners for sorting
   document.getElementById('sort-price-asc').addEventListener('click', function() {
@@ -442,13 +500,12 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('filter-screen-small').addEventListener('change', applyFilters);
   document.getElementById('filter-screen-highres').addEventListener('change', applyFilters);
   document.getElementById('filter-full-info').addEventListener('change', applyFilters);
-  
-// ... existing code ...
+  document.getElementById('filter-search').addEventListener('change', applyFilters);
   
   // Set up event listeners for configuration
   document.getElementById('save-schedule').addEventListener('click', saveSchedule);
-  document.getElementById('add-url').addEventListener('click', addSearchUrl);
-  document.getElementById('save-urls').addEventListener('click', saveSearchUrls);
+  document.getElementById('add-url').addEventListener('click', addSearch);
+  document.getElementById('save-urls').addEventListener('click', saveSearchConfig);
   document.getElementById('start-scraping').addEventListener('click', startScraping);
   
   // Set up periodic status check
