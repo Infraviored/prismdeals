@@ -460,4 +460,102 @@ input:checked + .slider:before {
 
 .dark-mode .theme-switch-wrapper .theme-label {
   color: #e0e0e0;
+}
+
+/* Vendor Contact Tab Styles */
+.vendor-contact-panel {
+  margin-bottom: 25px;
+}
+
+.vendor-contact-panel .card {
+  border-radius: 12px;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  transition: box-shadow 0.3s ease;
+  margin-bottom: 20px;
+  background-color: #ffffff;
+}
+
+.vendor-contact-panel .card:hover {
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+}
+
+.vendor-contact-panel .card-header {
+  background-color: rgba(25, 118, 210, 0.05);
+  border-bottom: 1px solid #e0e0e0;
+  padding: 15px 20px;
+  border-radius: 12px 12px 0 0 !important;
+}
+
+.vendor-contact-panel .card-body {
+  padding: 20px;
+}
+
+.vendor-contact-panel .form-label {
+  font-weight: 500;
+  color: #555;
+}
+
+.vendor-contact-panel textarea.form-control {
+  border-radius: 8px;
+  resize: vertical;
+  min-height: 100px;
+}
+
+.vendor-contact-panel pre.message-text {
+  background-color: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  white-space: pre-wrap;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 0.95em;
+  line-height: 1.5;
+  color: #333;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.vendor-contact-panel .edit-message-btn,
+.vendor-contact-panel .save-message-btn,
+.vendor-contact-panel .cancel-edit-btn {
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.vendor-contact-panel .edit-message-btn:hover,
+.vendor-contact-panel .save-message-btn:hover,
+.vendor-contact-panel .cancel-edit-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Dark mode styles for vendor contact tab */
+.dark-mode .vendor-contact-panel .card {
+  background-color: #2d2d2d;
+  border-color: #444;
+}
+
+.dark-mode .vendor-contact-panel .card-header {
+  background-color: rgba(144, 202, 249, 0.1);
+  border-bottom-color: #444;
+}
+
+.dark-mode .vendor-contact-panel .form-label {
+  color: #e0e0e0;
+}
+
+.dark-mode .vendor-contact-panel pre.message-text {
+  background-color: #333;
+  border-color: #444;
+  color: #e0e0e0;
+}
+
+.dark-mode .vendor-contact-panel .card h5 {
+  color: #e0e0e0;
+}
+
+.dark-mode .vendor-contact-panel .form-text {
+  color: #bdbdbd;
 } 

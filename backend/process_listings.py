@@ -5,6 +5,7 @@ import logging
 from openai import OpenAI
 from config import API_KEY, LLM_MODEL, PRINT_PROMPT
 from prompts import get_laptop_analysis_prompt
+from info_config import INFO_OF_INTEREST
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -40,85 +41,56 @@ def process_listing(title, description):
         if PRINT_PROMPT:
             print(f"\nModel response: {response_text}")  # Log the model's response for debugging
 
-        # Parse the response to extract the values
-        ram_more = None
-        screen_small = None
-        screen_highres = None
-        full_info_obtained = None
+        # Initialize result dictionary with default values
+        result = {
+            "llm_processed": True,
+            "llm_processed_time": datetime.datetime.now().isoformat(),
+            "full_info_obtained": False
+        }
         
-        # Look for the specific format lines in the response
+        # Initialize all info types to "unknown"
+        for info_type in INFO_OF_INTEREST.keys():
+            result[info_type] = "unknown"
+        
+        # Parse the response to extract the values
         for line in response_text.split('\n'):
             line = line.strip().lower()  # Convert to lowercase for easier matching
             
-            if line.startswith("ram_more ="):
-                if "true" in line:
-                    ram_more = True
-                elif "false" in line:
-                    ram_more = False
-                elif "unknown" in line:
-                    ram_more = "unknown"  # Explicitly set to "unknown" string
+            for info_type in INFO_OF_INTEREST.keys():
+                if line.startswith(f"{info_type.lower()} ="):
+                    if "true" in line:
+                        result[info_type] = True
+                    elif "false" in line:
+                        result[info_type] = False
+                    elif "unknown" in line:
+                        result[info_type] = "unknown"
                 
-            elif line.startswith("screen_small ="):
+            if line.startswith("full_info_obtained ="):
                 if "true" in line:
-                    screen_small = True
+                    result["full_info_obtained"] = True
                 elif "false" in line:
-                    screen_small = False
-                elif "unknown" in line:
-                    screen_small = "unknown"  # Explicitly set to "unknown" string
-                
-            elif line.startswith("screen_highres ="):
-                if "true" in line:
-                    screen_highres = True
-                elif "false" in line:
-                    screen_highres = False
-                elif "unknown" in line:
-                    screen_highres = "unknown"  # Explicitly set to "unknown" string
-                
-            elif line.startswith("full_info_obtained ="):
-                if "true" in line:
-                    full_info_obtained = True
-                elif "false" in line:
-                    full_info_obtained = False
-        
-        # If we couldn't parse the values properly, set defaults
-        if ram_more is None and screen_small is None and screen_highres is None and full_info_obtained is None:
-            logger.warning(f"Could not parse the model's response properly for: {title}")
-            return {
-                "llm_processed": True,
-                "llm_processed_time": datetime.datetime.now().isoformat(),
-                "full_info_obtained": False,
-                "RAM_more": "unknown",
-                "screen_small": "unknown",
-                "screen_highres": "unknown"
-            }
+                    result["full_info_obtained"] = False
         
         # If full_info_obtained wasn't explicitly set, calculate it
-        if full_info_obtained is None:
+        if "full_info_obtained" not in result or result["full_info_obtained"] is None:
             # If any value is "unknown", full_info_obtained should be False
-            full_info_obtained = (ram_more is not None and ram_more != "unknown" and 
-                                 screen_small is not None and screen_small != "unknown" and 
-                                 screen_highres is not None and screen_highres != "unknown")
+            result["full_info_obtained"] = all(result[key] != "unknown" for key in INFO_OF_INTEREST.keys())
 
-        # Add timestamp to the results
-        return {
-            "llm_processed": True,
-            "llm_processed_time": datetime.datetime.now().isoformat(),
-            "full_info_obtained": full_info_obtained if full_info_obtained is not None else False,
-            "RAM_more": ram_more if ram_more is not None else "unknown",
-            "screen_small": screen_small if screen_small is not None else "unknown",
-            "screen_highres": screen_highres if screen_highres is not None else "unknown"
-        }
+        return result
 
     except Exception as e:
         logger.error(f"Error processing listing with LLM: {str(e)}")
-        return {
+        result = {
             "llm_processed": False,
             "llm_processed_time": datetime.datetime.now().isoformat(),
-            "full_info_obtained": False,
-            "RAM_more": "unknown",
-            "screen_small": "unknown",
-            "screen_highres": "unknown"
+            "full_info_obtained": False
         }
+        
+        # Set all info types to "unknown" for failed processing
+        for info_type in INFO_OF_INTEREST.keys():
+            result[info_type] = "unknown"
+            
+        return result
 
 def update_listings_with_chatgpt(input_file):
     """Read listings from a JSON file, process them with ChatGPT, and update the file in place."""
@@ -187,7 +159,7 @@ if __name__ == "__main__":
     # Set up logging when run as a standalone script
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     
-    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
     input_file = os.path.join(data_dir, "listings.json")
     
     update_listings_with_chatgpt(input_file)

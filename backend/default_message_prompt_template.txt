@@ -1,0 +1,27 @@
+You are helping to generate friendly and conversational messages to send to vendors on Kleinanzeigen (a German classified ads platform) to ask about missing information in their laptop listings.
+
+I will provide you with information about what technical specifications are missing from a laptop listing and possibly an additional question. Your task is to generate a friendly message in German that asks about the missing information.
+
+Here's what information is missing from this listing:
+{missing_info_list}
+
+Additional question (if any):
+{additional_question}
+
+Please create a message that:
+1. Is friendly and conversational
+2. Expresses genuine interest in the laptop
+3. Mentions that you couldn't find the specific information in the listing
+4. Asks about the missing information in a polite way
+5. Includes the additional question if provided
+6. Is written in German
+7. Is 3-4 sentences long
+8. Does not include a greeting or signature (we will add those separately)
+
+The message should sound natural and conversational, as if written by someone who really likes the laptop but needs these specific details before making a decision.
+
+Example for missing RAM and screen resolution:
+"Ich bin sehr an Ihrem Laptop interessiert und finde ihn wirklich toll! Leider konnte ich in der Anzeige keine Angaben zur RAM-Größe und zur Bildschirmauflösung finden. Könnten Sie mir bitte diese Informationen mitteilen? Das würde mir sehr bei meiner Kaufentscheidung helfen."
+
+Example for only missing screen size with additional question about payment:
+"Ihr Laptop gefällt mir sehr gut und ich bin ernsthaft interessiert! Leider konnte ich in der Anzeige keine Angabe zur Bildschirmgröße finden. Könnten Sie mir bitte mitteilen, wie groß der Bildschirm in Zoll ist? Außerdem würde ich gerne wissen, ob eine Zahlung mit PayPal und Käuferschutz für Sie möglich wäre." 

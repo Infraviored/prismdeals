@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Laptop Listings Viewer</title>
+  <title>Kleinanzeigen Scraper</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="container">
-    <h1 class="mb-4">Laptop Listings Viewer</h1>
+    <h1 class="mb-4">Kleinanzeigen Scraper</h1>
     
     <!-- Dark Mode Toggle -->
     <div class="theme-switch-wrapper">
@@ -26,6 +26,9 @@
       </li>
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="configure-tab" data-bs-toggle="tab" data-bs-target="#configure-content" type="button" role="tab" aria-controls="configure-content" aria-selected="false">Configure</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="vendor-contact-tab" data-bs-toggle="tab" data-bs-target="#vendor-contact-content" type="button" role="tab" aria-controls="vendor-contact-content" aria-selected="false">Vendor Contact</button>
       </li>
     </ul>
     
@@ -155,11 +158,71 @@
           </div>
         </div>
       </div>
+      
+      <!-- Vendor Contact Tab -->
+      <div class="tab-pane fade" id="vendor-contact-content" role="tabpanel" aria-labelledby="vendor-contact-tab">
+        <div class="vendor-contact-panel">
+          <!-- Message Template Configuration Section -->
+          <div class="card mb-4">
+            <div class="card-header">
+              <h4>Message Template Configuration</h4>
+            </div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label for="prompt-template" class="form-label">Prompt Template</label>
+                <textarea class="form-control" id="prompt-template" rows="10"></textarea>
+                <div class="form-text">This template is used to generate vendor messages. The system will automatically include missing information and additional questions.</div>
+              </div>
+              <div class="mb-3">
+                <label for="additional-question" class="form-label">Additional Question</label>
+                <input type="text" class="form-control" id="additional-question" placeholder="e.g., Ist Zahlung mit PayPal möglich?">
+              </div>
+              <div class="mb-3">
+                <label for="max-tokens" class="form-label">Max Tokens</label>
+                <input type="number" class="form-control" id="max-tokens" min="100" max="1000" value="300">
+                <div class="form-text">Controls the maximum length of generated messages.</div>
+              </div>
+              <button class="btn btn-primary" id="save-prompt">Save Template</button>
+              <button class="btn btn-outline-secondary" id="reset-prompt">Reset to Default</button>
+              <button class="btn btn-success" id="regenerate-messages">Regenerate All Messages</button>
+            </div>
+          </div>
+          
+          <!-- Message Templates Section -->
+          <div class="card">
+            <div class="card-header">
+              <h4>Message Templates</h4>
+            </div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label for="filter-missing-info" class="form-label">Filter by Missing Information</label>
+                <select class="form-select" id="filter-missing-info">
+                  <option value="">All Templates</option>
+                  <option value="RAM_more">RAM Size</option>
+                  <option value="screen_small">Screen Size</option>
+                  <option value="screen_highres">Screen Resolution</option>
+                  <option value="multiple">Multiple Missing Info</option>
+                </select>
+              </div>
+              
+              <div id="message-templates-container">
+                <div class="text-center">
+                  <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                  </div>
+                  <p>Loading message templates...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
   
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
   <script src="main.js"></script>
   <script src="darkmode.js"></script>
+  <script src="vendor-contact.js"></script>
 </body>
 </html> 

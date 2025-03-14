@@ -16,6 +16,16 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Now import the modules
 from backend.scraper import scrape_listings
 from backend.process_listings import update_listings_with_chatgpt
+from backend.message_generator import (
+    load_messages, 
+    update_message_template, 
+    regenerate_messages, 
+    load_prompt_template,
+    save_prompt_template,
+    get_default_prompt_template,
+    reset_prompt_template,
+    VENDOR_CONTACT_FILE
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -355,6 +365,121 @@ def setup_scheduled_scraping():
     scheduled_thread.daemon = True
     scheduled_thread.start()
     logger.info("Scheduled scraping thread started")
+
+# Vendor Contact Endpoints
+
+@app.route('/api/messages', methods=['GET'])
+def get_messages():
+    """Get all vendor message templates."""
+    try:
+        messages = load_messages()
+        return jsonify(messages)
+    except Exception as e:
+        logger.error(f"Error getting messages: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/messages/<message_key>', methods=['PUT'])
+def update_message(message_key):
+    """Update a specific message template."""
+    try:
+        data = request.json
+        new_message = data.get('message')
+        
+        if not new_message:
+            return jsonify({'status': 'error', 'message': 'No message provided'}), 400
+        
+        success = update_message_template(message_key, new_message)
+        
+        if success:
+            return jsonify({'status': 'success', 'message': 'Message template updated'})
+        else:
+            return jsonify({'status': 'error', 'message': 'Failed to update message template'}), 500
+    except Exception as e:
+        logger.error(f"Error updating message: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/prompt', methods=['GET'])
+def get_prompt_template():
+    """Get the current prompt template."""
+    try:
+        template = load_prompt_template()
+        return jsonify({"prompt_template": template})
+    except Exception as e:
+        logger.error(f"Error getting prompt template: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/prompt', methods=['PUT'])
+def update_prompt_template():
+    """Update the prompt template."""
+    try:
+        data = request.json
+        template = data.get('prompt_template', '')
+        success = save_prompt_template(template)
+        if success:
+            return jsonify({"status": "success"})
+        else:
+            return jsonify({"error": "Failed to save prompt template"}), 500
+    except Exception as e:
+        logger.error(f"Error updating prompt template: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/default-prompt', methods=['GET'])
+def get_default_prompt_template():
+    """Get the default prompt template."""
+    try:
+        default_template = get_default_prompt_template()
+        return jsonify({"default_prompt_template": default_template})
+    except Exception as e:
+        logger.error(f"Error getting default prompt template: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/reset-prompt', methods=['POST'])
+def reset_prompt_template_endpoint():
+    """Reset the prompt template to default by removing the custom template."""
+    try:
+        success = reset_prompt_template()
+        if success:
+            return jsonify({"status": "success"})
+        else:
+            return jsonify({"error": "Failed to reset prompt template"}), 500
+    except Exception as e:
+        logger.error(f"Error resetting prompt template: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/regenerate', methods=['POST'])
+def regenerate_messages_endpoint():
+    """Regenerate all message templates with optional parameters."""
+    try:
+        data = request.json or {}
+        
+        # Get parameters from request
+        prompt_template = data.get('prompt_template')  # Optional custom prompt
+        additional_question = data.get('additional_question', '')  # Optional additional question
+        max_tokens = data.get('max_tokens', 300)  # Optional token limit
+        
+        # If no custom prompt provided, load the saved one
+        if not prompt_template:
+            prompt_template = load_prompt_template()
+        
+        # Regenerate messages
+        success = regenerate_messages(
+            prompt_template=prompt_template,
+            additional_question=additional_question,
+            max_tokens=max_tokens
+        )
+        
+        if success:
+            return jsonify({
+                'status': 'success', 
+                'message': 'Messages regenerated',
+                'additional_question': additional_question,
+                'max_tokens': max_tokens
+            })
+        else:
+            return jsonify({'status': 'error', 'message': 'Failed to regenerate messages'}), 500
+    except Exception as e:
+        logger.error(f"Error regenerating messages: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 # Start the Flask server when run directly
 if __name__ == '__main__':
