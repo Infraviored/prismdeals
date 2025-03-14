@@ -1,162 +1,134 @@
 # KleinanzeigenScraper
 
-A tool for scraping laptop listings from Kleinanzeigen.de and analyzing them with ChatGPT.
+A web application for scraping, analyzing, and contacting vendors on Kleinanzeigen (German classified ads platform).
 
 ## Features
 
-- Scrapes laptop listings from Kleinanzeigen.de
-- Analyzes listings using OpenAI's GPT models to extract key information
-- Web interface to view and manage listings
-- Systemd service for continuous operation
+- Scrape laptop listings from Kleinanzeigen
+- Analyze listings using AI to extract technical specifications
+- Filter and sort listings based on RAM size, screen size, and resolution
+- Generate personalized vendor contact messages for missing information
+- Customize message templates and prompts
+- Schedule automatic scraping
 
-## Prerequisites
+## Requirements
 
-- Python 3.6 or newer
-- Node.js and npm
-- Python venv module (on Debian/Ubuntu: `sudo apt install python3-venv`)
+- Python 3.8+
+- OpenAI API key
+- Nginx (optional, for web frontend)
 
 ## Installation
 
-### Automatic Installation
+### 1. Clone the repository
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/KleinanzeigenScraper.git
-   cd KleinanzeigenScraper
-   ```
+```bash
+git clone https://github.com/yourusername/KleinanzeigenScraper.git
+cd KleinanzeigenScraper
+```
 
-2. Make the installer executable:
-   ```bash
-   chmod +x install.sh
-   ```
+### 2. Run the initial setup script
 
-3. Run the installer:
-   ```bash
-   ./install.sh
-   ```
+This script will:
+- Create a Python virtual environment
+- Install dependencies
+- Set up basic configuration
+- Create a systemd service file
 
-4. Follow the on-screen instructions to complete the installation.
+```bash
+chmod +x install-python-backend.sh
+./install-python-backend.sh
+```
 
-5. Edit the `config.py` file to add your OpenAI API key and customize settings.
+During setup, you'll be prompted to provide:
+- API server port
+- Service configuration
+- OpenAI API key
 
-6. Install the systemd service (optional):
-   ```bash
-   sudo cp kleinanzeigen-scraper.service.tmp /etc/systemd/system/kleinanzeigen-scraper.service
-   sudo systemctl daemon-reload
-   sudo systemctl enable kleinanzeigen-scraper.service
-   sudo systemctl start kleinanzeigen-scraper.service
-   ```
+### 3. (Optional) Configure web server
 
-### Manual Installation
+If you want to serve the frontend through a web server, run:
 
-If you prefer to install manually:
+```bash
+chmod +x configure-web.sh
+./configure-web.sh
+```
 
-1. Create a Python virtual environment:
-   ```bash
-   python3 -m venv kleinanzeigenScraper
-   source kleinanzeigenScraper/bin/activate
-   ```
+This script will:
+- Ask for domain information
+- Ask for Nginx configuration
+- Create and install Nginx configuration files
+- Set up the webroot directory
 
-2. Install Python dependencies:
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
+### 4. Deploy the application
 
-3. Install Node.js dependencies:
-   ```bash
-   npm install
-   ```
+After the initial setup, deploy the application:
 
-4. Create a configuration file:
-   ```bash
-   cp config_template.py config.py
-   ```
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
 
-5. Edit `config.py` to add your OpenAI API key and customize settings.
+This will:
+- Deploy the backend files
+- Optionally deploy the frontend files
+- Restart the API server
+- Verify the deployment
+
+## Configuration
+
+The application uses a configuration file (`config.json`) to store settings. This file is created during the initial setup, but you can modify it manually if needed.
+
+Example configuration:
+
+```json
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 3030
+  },
+  "service": {
+    "name": "kleinanzeigen-scraper-api",
+    "user": "username",
+    "working_directory": "/path/to/KleinanzeigenScraper"
+  },
+  "openai": {
+    "api_key": "",
+    "model": "gpt-4o-mini"
+  }
+}
+```
 
 ## Usage
 
-### Running the Web Interface
+After deployment, access the API at `http://localhost:3030/api/` or through your configured domain.
 
-```bash
-source kleinanzeigenScraper/bin/activate
-node server.js
-```
-
-The web interface will be available at http://localhost:3030
-
-### Running the Scraper Directly
-
-```bash
-source kleinanzeigenScraper/bin/activate
-python main.py --mode both
-```
-
-Command line options:
-- `--mode`: Choose between `scrape`, `process`, or `both` (default: `both`)
-- `--urls`: Specify URLs to scrape (optional)
-- `--max-listings`: Maximum number of listings to scrape per URL (optional)
-
-## Architecture
-
-The system consists of two main components:
-
-1. **Node.js Server (server.js)**: Provides a web interface for viewing and managing scraped listings
-2. **Python Scraper (main.py)**: Handles the actual scraping and processing of listings
-
-The Node.js server can trigger the Python scraper through the `child_process.spawn()` method, allowing users to initiate scraping jobs through the web interface.
+The interface has several tabs:
+- **Listings**: View, filter, and sort scraped listings
+- **Configure**: Set up search configurations and scraping schedules
+- **Vendor Contact**: Customize and generate vendor contact messages
 
 ## Troubleshooting
 
-### Virtual Environment Creation Fails
+### API Server Issues
 
-If you see an error like:
-```
-The virtual environment was not created successfully because ensurepip is not available.
-```
+Check the API server status:
 
-Install the Python venv package:
 ```bash
-# For Debian/Ubuntu
-sudo apt install python3-venv
+sudo systemctl status kleinanzeigen-scraper-api.service
+```
 
-# For Fedora
-sudo dnf install python3-venv
+View API server logs:
 
-# For Arch Linux
-sudo pacman -S python-virtualenv
+```bash
+sudo journalctl -u kleinanzeigen-scraper-api.service -f
+```
+
+Restart the API server:
+
+```bash
+sudo systemctl restart kleinanzeigen-scraper-api.service
 ```
 
 ## License
 
 [MIT License](LICENSE)
-
-## Accessing the Application
-
-Once the service is running, open your web browser and navigate to:
-```
-http://localhost:3030
-```
-
-If accessing from another device on your network, replace "localhost" with your server's IP address:
-```
-http://YOUR_SERVER_IP:3030
-```
-
-## Managing the Service
-
-- View logs:
-  ```bash
-  sudo journalctl -u kleinanzeigen-scraper.service -f
-  ```
-
-- Restart the service:
-  ```bash
-  sudo systemctl restart kleinanzeigen-scraper.service
-  ```
-
-- Stop the service:
-  ```bash
-  sudo systemctl stop kleinanzeigen-scraper.service
-  ```

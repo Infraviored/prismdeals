@@ -249,7 +249,6 @@ def regenerate_messages(prompt_template=None, additional_question="", max_tokens
         additional_question=additional_question,
         max_tokens=max_tokens
     )
-    
     return save_messages(messages)
 
 if __name__ == "__main__":

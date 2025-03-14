@@ -1,0 +1,17 @@
+[Unit]
+Description=Kleinanzeigen Scraper API
+After=network.target
+
+[Service]
+User=flo
+Group=flo
+WorkingDirectory=/home/flo/repos/KleinanzeigenScraper
+Environment="PATH=/home/flo/repos/KleinanzeigenScraper/venv/bin:/home/flo/repos/KleinanzeigenScraper/venv/bin:/home/flo/.cursor-server/cli/servers/Stable-3395357a4ee2975d5d03595e7607ee84e3db0f20/server/bin/remote-cli:/home/flo/.nvm/versions/node/v22.13.1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/schneider/repos/grpc_image_client_example/build:/home/flo/tools:/home/schneider/repos/grpc_image_client_example/build:/home/flo/repos/KleinanzeigenScraper/tools"
+ExecStart=/home/flo/repos/KleinanzeigenScraper/venv/bin/python /home/flo/repos/KleinanzeigenScraper/backend/api_server.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
