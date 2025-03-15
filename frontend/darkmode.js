@@ -26,6 +26,15 @@ function toggleDarkMode(isDark) {
       themeLabel.style.opacity = '1';
     }, 300);
   }
+  
+  // Ensure admin-only elements have proper styling in dark mode
+  const adminOnlyElements = document.querySelectorAll('.admin-only');
+  adminOnlyElements.forEach(element => {
+    if (element.hasAttribute('disabled')) {
+      element.style.transition = 'opacity 0.3s ease';
+      element.style.opacity = isDark ? '0.5' : '0.6';
+    }
+  });
 }
 
 // Check for saved user preference, if any

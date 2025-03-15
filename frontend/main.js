@@ -1,24 +1,286 @@
-// API base URL - change this to your domain when deployed with Nginx
-const API_BASE_URL = '/api';
+// Use the shared API_BASE_URL from config.js
+// const API_BASE_URL = window.config.API_BASE_URL;  // Remove this line
 
 // Global variables
 let allListings = [];
 let filteredListings = [];
 let searchConfig = [];
 
+// Add filter state persistence
+let filterState = {
+  ramMore: false,
+  screenSmall: false,
+  screenHighres: false,
+  fullInfo: false,
+  search: ''
+};
+
+// Function to save filter state to localStorage
+function saveFilterState() {
+  localStorage.setItem('filterState', JSON.stringify(filterState));
+}
+
+// Function to load filter state from localStorage
+function loadFilterState() {
+  const savedState = localStorage.getItem('filterState');
+  if (savedState) {
+    filterState = JSON.parse(savedState);
+    
+    // Apply saved filters to UI
+    document.getElementById('filter-ram-more').checked = filterState.ramMore;
+    document.getElementById('filter-screen-small').checked = filterState.screenSmall;
+    document.getElementById('filter-screen-highres').checked = filterState.screenHighres;
+    document.getElementById('filter-full-info').checked = filterState.fullInfo;
+    
+    // Search filter will be set after search config is loaded
+  }
+}
+
+// Authentication UI setup
+function setupAuthUI() {
+  const authContainer = document.getElementById('auth-status-container');
+  
+  // Login button click handler
+  document.getElementById('login-button').addEventListener('click', async () => {
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    const errorElement = document.getElementById('login-error');
+    
+    errorElement.classList.add('d-none');
+    
+    if (!username || !password) {
+      errorElement.textContent = 'Username and password are required';
+      errorElement.classList.remove('d-none');
+      return;
+    }
+    
+    const result = await window.auth.login(username, password);
+    
+    if (result.success) {
+      // Close modal and reset form
+      const loginModal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
+      loginModal.hide();
+      document.getElementById('login-form').reset();
+    } else {
+      // Show error
+      errorElement.textContent = result.error || 'Login failed';
+      errorElement.classList.remove('d-none');
+    }
+  });
+  
+  // Admin settings save button
+  document.getElementById('save-settings-button').addEventListener('click', async () => {
+    const publicAccess = document.getElementById('public-access-toggle').checked;
+    const errorElement = document.getElementById('admin-settings-error');
+    const successElement = document.getElementById('admin-settings-success');
+    
+    errorElement.classList.add('d-none');
+    successElement.classList.add('d-none');
+    
+    const result = await window.auth.updatePublicAccess(publicAccess);
+    
+    if (result.success) {
+      successElement.textContent = 'Settings saved successfully';
+      successElement.classList.remove('d-none');
+      
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => {
+        successElement.classList.add('d-none');
+      }, 3000);
+    } else {
+      errorElement.textContent = result.error || 'Failed to save settings';
+      errorElement.classList.remove('d-none');
+    }
+  });
+  
+  // Listen for auth state changes
+  window.auth.addAuthStateListener((isAuthenticated, user, isPublicAccessEnabled) => {
+    // Update UI based on auth state
+    updateAuthUI(isAuthenticated, user, isPublicAccessEnabled);
+    
+    // Update protected features
+    updateProtectedFeatures(isAuthenticated, user, isPublicAccessEnabled);
+  });
+}
+
+// Update the auth UI based on authentication state
+function updateAuthUI(isAuthenticated, user, isPublicAccessEnabled) {
+  const authContainer = document.getElementById('auth-status-container');
+  
+  if (isAuthenticated && user) {
+    // User is logged in
+    const userInitial = user.username.charAt(0).toUpperCase();
+    const isAdmin = user.role === 'admin';
+    
+    authContainer.innerHTML = `
+      <div class="auth-status">
+        <div class="user-info">
+          <div class="user-avatar">${userInitial}</div>
+          <div>
+            <div>${user.username} ${isAdmin ? '<span class="admin-badge">Admin</span>' : ''}</div>
+          </div>
+        </div>
+        <div class="auth-buttons">
+          ${isAdmin ? '<button class="btn btn-sm btn-outline-secondary" id="admin-settings-btn">Settings</button>' : ''}
+          <button class="btn btn-sm btn-outline-danger" id="logout-btn">Logout</button>
+        </div>
+      </div>
+    `;
+    
+    // Add event listener for logout button
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await window.auth.logout();
+    });
+    
+    // Add event listener for admin settings button if present
+    const adminSettingsBtn = document.getElementById('admin-settings-btn');
+    if (adminSettingsBtn) {
+      adminSettingsBtn.addEventListener('click', () => {
+        // Set the current public access state in the toggle
+        document.getElementById('public-access-toggle').checked = isPublicAccessEnabled;
+        
+        // Show the admin settings modal
+        const adminSettingsModal = new bootstrap.Modal(document.getElementById('adminSettingsModal'));
+        adminSettingsModal.show();
+      });
+    }
+  } else {
+    // User is not logged in
+    authContainer.innerHTML = `
+      <div class="auth-status">
+        <div class="auth-buttons">
+          <button class="btn btn-sm btn-primary" id="login-btn">Login</button>
+        </div>
+      </div>
+    `;
+    
+    // Add event listener for login button
+    document.getElementById('login-btn').addEventListener('click', () => {
+      const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+      loginModal.show();
+    });
+  }
+  
+  // Always ensure listings are visible - remove any authentication warnings
+  const listingsContainer = document.getElementById('listings-container');
+  if (listingsContainer) {
+    if (listingsContainer.querySelector('.alert-warning')) {
+      // Remove the warning if it exists
+      listingsContainer.innerHTML = `
+        <div class="col-12 text-center">
+          <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p>Loading listings...</p>
+        </div>
+      `;
+      // Fetch listings again
+      fetchListings();
+    }
+  }
+}
+
+// Update protected features based on authentication state
+function updateProtectedFeatures(isAuthenticated, user, isPublicAccessEnabled) {
+  const isAdmin = user && user.role === 'admin';
+  const canAccess = isPublicAccessEnabled || isAuthenticated;
+  const canModify = isAdmin;
+  
+  // Configure tab
+  const configureTab = document.getElementById('configure-tab');
+  configureTab.classList.toggle('protected-tab', !canAccess);
+  
+  // Vendor Contact tab
+  const vendorContactTab = document.getElementById('vendor-contact-tab');
+  vendorContactTab.classList.toggle('protected-tab', !canAccess);
+  
+  // Add click handlers for tabs
+  configureTab.onclick = function(event) {
+    if (!canAccess) {
+      event.preventDefault();
+      showLoginPrompt();
+      return false;
+    }
+  };
+  
+  vendorContactTab.onclick = function(event) {
+    if (!canAccess) {
+      event.preventDefault();
+      showLoginPrompt();
+      return false;
+    }
+  };
+  
+  // Protect modification controls in Configure tab
+  const configureContent = document.getElementById('configure-content');
+  if (configureContent) {
+    const editButtons = configureContent.querySelectorAll('.btn-edit, .btn-delete, .btn-add, .btn-save, .btn-scrape');
+    editButtons.forEach(button => {
+      if (!canModify) {
+        button.setAttribute('disabled', 'disabled');
+        button.setAttribute('title', 'Admin privileges required');
+        button.classList.add('cursor-not-allowed');
+      } else {
+        button.removeAttribute('disabled');
+        button.removeAttribute('title');
+        button.classList.remove('cursor-not-allowed');
+      }
+    });
+  }
+  
+  // Protect modification controls in Vendor Contact tab
+  const vendorContactContent = document.getElementById('vendor-contact-content');
+  if (vendorContactContent) {
+    const editButtons = vendorContactContent.querySelectorAll('.btn-edit, .btn-save, .btn-regenerate');
+    editButtons.forEach(button => {
+      if (!canModify) {
+        button.setAttribute('disabled', 'disabled');
+        button.setAttribute('title', 'Admin privileges required');
+        button.classList.add('cursor-not-allowed');
+      } else {
+        button.removeAttribute('disabled');
+        button.removeAttribute('title');
+        button.classList.remove('cursor-not-allowed');
+      }
+    });
+    
+    // Disable text areas
+    const textAreas = vendorContactContent.querySelectorAll('textarea');
+    textAreas.forEach(textarea => {
+      if (!canModify) {
+        textarea.setAttribute('readonly', 'readonly');
+        textarea.classList.add('cursor-not-allowed');
+      } else {
+        textarea.removeAttribute('readonly');
+        textarea.classList.remove('cursor-not-allowed');
+      }
+    });
+  }
+}
+
+// Show login prompt
+function showLoginPrompt() {
+  const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+  loginModal.show();
+}
+
 // Function to fetch listings
 async function fetchListings() {
   showLoading('listings-container');
   try {
-    const response = await fetch(`${API_BASE_URL}/listings`);
+    // Remove credentials to ensure we always get listings without authentication
+    const response = await fetch(`${window.config.API_BASE_URL}/listings`);
+    
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
+    
     const listings = await response.json();
     allListings = listings;
     filteredListings = [...allListings];
-    updateListingsCount();
-    displayListings(filteredListings);
+    
+    // Apply saved filters
+    applyFilters();
   } catch (error) {
     console.error('Error fetching listings:', error);
     document.getElementById('listings-container').innerHTML = `
@@ -33,10 +295,13 @@ async function fetchListings() {
 async function fetchSearchConfig() {
   showLoading('search-urls-container');
   try {
-    const response = await fetch(`${API_BASE_URL}/search-config`);
+    // Remove credentials to ensure we always get search config without authentication
+    const response = await fetch(`${window.config.API_BASE_URL}/search-config`);
+    
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
+    
     searchConfig = await response.json();
     
     // Populate search filter dropdown
@@ -50,10 +315,19 @@ async function fetchSearchConfig() {
       searchFilter.appendChild(option);
     });
     
-    // Also update the search URLs display
+    // Set the saved search filter if it exists
+    if (filterState.search) {
+      searchFilter.value = filterState.search;
+    }
+    
     displaySearchConfig();
   } catch (error) {
     console.error('Error fetching search configuration:', error);
+    document.getElementById('search-urls-container').innerHTML = `
+      <div class="alert alert-danger">
+        Failed to load search configuration. Please try again later.
+      </div>
+    `;
   }
 }
 
@@ -158,6 +432,18 @@ function applyFilters() {
   const filterFullInfo = document.getElementById('filter-full-info').checked;
   const filterSearch = document.getElementById('filter-search').value;
   
+  // Update filter state
+  filterState = {
+    ramMore: filterRamMore,
+    screenSmall: filterScreenSmall,
+    screenHighres: filterScreenHighres,
+    fullInfo: filterFullInfo,
+    search: filterSearch
+  };
+  
+  // Save filter state to localStorage
+  saveFilterState();
+  
   filteredListings = allListings.filter(listing => {
     let include = true;
     
@@ -191,45 +477,60 @@ function applyFilters() {
 // Function to fetch server status
 async function fetchServerStatus() {
   try {
-    const response = await fetch(`${API_BASE_URL}/status`);
+    // Remove credentials to ensure we always get server status without authentication
+    const response = await fetch(`${window.config.API_BASE_URL}/status`);
+    
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
+    
     const status = await response.json();
-    
-    const statusLight = document.getElementById('status-light');
-    const statusText = document.getElementById('status-text');
-    const serverDetails = document.getElementById('server-details');
-    
+    updateStatusDisplay(status);
+    return status;
+  } catch (error) {
+    console.error('Error fetching server status:', error);
+    document.getElementById('server-status').innerHTML = `
+      <div class="alert alert-danger">
+        Failed to get server status. Server may be down.
+      </div>
+    `;
+    return null;
+  }
+}
+
+// Function to update status display
+function updateStatusDisplay(status) {
+  const statusLight = document.getElementById('status-light');
+  const statusText = document.getElementById('status-text');
+  const serverDetails = document.getElementById('server-details');
+  
+  if (statusLight && statusText) {
     statusLight.className = 'status-indicator status-online';
     statusText.textContent = 'Online';
     
-    serverDetails.innerHTML = `
-      <div class="small">
-        <div>Uptime: ${Math.floor(status.uptime / 60 / 60)} hours ${Math.floor(status.uptime / 60) % 60} minutes</div>
-        <div>Memory: ${status.memory.rss} / ${status.memory.vms}</div>
-        <div>Scraping in progress: ${status.scraping_in_progress ? 'Yes' : 'No'}</div>
-        <div>Headless mode: ${status.headless_mode ? 'Yes' : 'No'}</div>
-      </div>
-    `;
-  } catch (error) {
-    console.error('Error fetching server status:', error);
-    const statusLight = document.getElementById('status-light');
-    const statusText = document.getElementById('status-text');
-    
-    statusLight.className = 'status-indicator status-offline';
-    statusText.textContent = 'Offline';
-    document.getElementById('server-details').innerHTML = '';
+    if (serverDetails) {
+      serverDetails.innerHTML = `
+        <div class="small">
+          <div>Uptime: ${Math.floor(status.uptime / 60 / 60)} hours ${Math.floor(status.uptime / 60) % 60} minutes</div>
+          <div>Memory: ${status.memory.rss} / ${status.memory.vms}</div>
+          <div>Scraping in progress: ${status.scraping_in_progress ? 'Yes' : 'No'}</div>
+          <div>Headless mode: ${status.headless_mode ? 'Yes' : 'No'}</div>
+        </div>
+      `;
+    }
   }
 }
 
 // Function to fetch schedule
 async function fetchSchedule() {
   try {
-    const response = await fetch(`${API_BASE_URL}/schedule`);
+    // Remove credentials to ensure we always get schedule without authentication
+    const response = await fetch(`${window.config.API_BASE_URL}/schedule`);
+    
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
+    
     const schedule = await response.json();
     
     document.getElementById('schedule-interval').value = schedule.interval || 60;
@@ -245,12 +546,13 @@ async function saveSchedule() {
     const interval = parseInt(document.getElementById('schedule-interval').value) || 60;
     const enabled = document.getElementById('schedule-enabled').checked;
     
-    const response = await fetch(`${API_BASE_URL}/schedule`, {
+    const response = await fetch(`${window.config.API_BASE_URL}/schedule`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ interval, enabled }),
+      credentials: 'include'
     });
     
     if (!response.ok) {
@@ -385,12 +687,13 @@ async function saveSearchConfig() {
       };
     });
     
-    const response = await fetch(`${API_BASE_URL}/search-config`, {
+    const response = await fetch(`${window.config.API_BASE_URL}/search-config`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(config),
+      credentials: 'include'
     });
     
     if (!response.ok) {
@@ -443,7 +746,7 @@ async function startScraping() {
     
     showStatus('Starting scraping process...', 'info');
     
-    const response = await fetch(`${API_BASE_URL}/scrape`, {
+    const response = await fetch(`${window.config.API_BASE_URL}/scrape`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -453,6 +756,7 @@ async function startScraping() {
         search_ids: searchIds,
         maxListings
       }),
+      credentials: 'include'
     });
     
     if (!response.ok) {
@@ -513,14 +817,56 @@ function showLoading(elementId) {
   }
 }
 
-// Initialize the page
+// Function to show alert
+function showAlert(containerId, type, message) {
+  const container = document.getElementById(containerId);
+  if (container) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} mt-3`;
+    alertDiv.textContent = message;
+    
+    // Clear previous alerts
+    const previousAlerts = container.querySelectorAll('.alert');
+    previousAlerts.forEach(alert => alert.remove());
+    
+    container.prepend(alertDiv);
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+      alertDiv.style.opacity = '0';
+      alertDiv.style.transition = 'opacity 0.5s ease';
+      
+      setTimeout(() => {
+        alertDiv.remove();
+      }, 500);
+    }, 5000);
+  }
+}
+
+// Document ready function
 document.addEventListener('DOMContentLoaded', function() {
-  // Fetch initial data
-  fetchSearchConfig();
-  fetchListings();
-  fetchServerStatus();
-  fetchSchedule();
+  // Initialize authentication UI
+  setupAuthUI();
   
+  // Load saved filter state
+  loadFilterState();
+  
+  // Fetch initial data
+  fetchListings();
+  fetchSearchConfig();
+  
+  // Set up event listeners
+  setupEventListeners();
+  
+  // Check server status
+  checkServerStatus();
+  
+  // Fetch schedule
+  fetchSchedule();
+});
+
+// Set up event listeners
+function setupEventListeners() {
   // Set up event listeners for sorting
   document.getElementById('sort-price-asc').addEventListener('click', function() {
     filteredListings.sort((a, b) => parsePrice(a.price) - parsePrice(b.price));
@@ -557,4 +903,11 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Set up periodic status check
   setInterval(fetchServerStatus, 30000); // Check status every 30 seconds
-});
+}
+
+// Check server status
+function checkServerStatus() {
+  fetchServerStatus().then(() => {
+    // No need to handle the result, as the status is already displayed
+  });
+}

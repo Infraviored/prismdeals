@@ -98,6 +98,46 @@ Example configuration:
 }
 ```
 
+## Authentication System
+
+The Kleinanzeigen Scraper includes an authentication system to protect sensitive features. By default, the system requires authentication for all features, but administrators can enable public access mode.
+
+### User Roles
+
+- **Admin**: Can access and modify all features, including configuration, vendor contact templates, and user management.
+- **User**: Can view all features but cannot modify configuration or vendor contact templates.
+
+### Initial Setup
+
+An admin user must be created before using the authentication system. Use the provided script:
+
+```bash
+python3 create_admin_user.py
+```
+
+This will prompt you to enter a username and password for the admin user. Alternatively, you can provide these via command line:
+
+```bash
+python3 create_admin_user.py --username admin --password yourpassword
+```
+
+### Public Access Mode
+
+Administrators can enable "Public Access Mode" which allows anyone to view all features without logging in. This is useful for demonstration purposes or when authentication is not needed. Even in public access mode, only admin users can modify configuration and vendor contact templates.
+
+To enable public access mode:
+1. Log in as an admin user
+2. Click the "Settings" button in the top right
+3. Toggle "Allow public access to all features"
+4. Click "Save Settings"
+
+### Security Notes
+
+- User passwords are hashed with SHA-256 and a unique salt for each user
+- Session cookies are used for authentication
+- CORS is configured to support credentials
+- The API enforces authentication for protected endpoints
+
 ## Usage
 
 After deployment, access the API at `http://localhost:3030/api/` or through your configured domain.

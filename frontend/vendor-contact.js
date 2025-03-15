@@ -1,7 +1,7 @@
 // Vendor Contact functionality
 
-// API URL - should match the one in main.js
-const API_URL = '/api';
+// Use the shared API_BASE_URL from config.js
+// const API_BASE_URL = window.config.API_BASE_URL;  // Remove this line
 
 // DOM Elements
 const promptTemplateTextarea = document.getElementById('prompt-template');
@@ -22,12 +22,21 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchMessageTemplates();
   
   // Set up event listeners
-  savePromptBtn.addEventListener('click', savePromptTemplate);
+  if (savePromptBtn) {
+    savePromptBtn.addEventListener('click', savePromptTemplateHandler);
+  }
+  
   if (resetPromptBtn) {
     resetPromptBtn.addEventListener('click', resetPromptTemplate);
   }
-  regenerateMessagesBtn.addEventListener('click', regenerateMessages);
-  filterMissingInfoSelect.addEventListener('change', filterMessageTemplates);
+  
+  if (regenerateMessagesBtn) {
+    regenerateMessagesBtn.addEventListener('click', regenerateMessages);
+  }
+  
+  if (filterMissingInfoSelect) {
+    filterMissingInfoSelect.addEventListener('change', filterMessageTemplates);
+  }
   
   // Add event listener for tab activation to refresh data
   document.getElementById('vendor-contact-tab').addEventListener('shown.bs.tab', () => {
@@ -36,192 +45,275 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// Fetch the prompt template from the API
-async function fetchPromptTemplate() {
+// Add credentials to all fetch requests
+function fetchWithAuth(url, options = {}) {
+  return fetch(url, {
+    ...options,
+    credentials: 'include'
+  });
+}
+
+// Function to load messages
+async function loadMessages() {
   try {
-    // Show loading state
-    promptTemplateTextarea.value = 'Loading prompt template...';
-    promptTemplateTextarea.disabled = true;
+    const response = await fetchWithAuth(`${window.config.API_BASE_URL}/messages`);
     
-    const response = await fetch(`${API_URL}/prompt`);
-    if (response.ok) {
-      const data = await response.json();
-      promptTemplateTextarea.value = data.prompt_template || '';
+    if (response.status === 401) {
+      // Unauthorized - handle gracefully
+      document.getElementById('vendor-contact-content').innerHTML = `
+        <div class="alert alert-warning">
+          <p>Authentication required to view vendor contact templates.</p>
+          <button class="btn btn-primary" id="vendor-login-btn">Login</button>
+        </div>
+      `;
       
-      // If the template is empty, show an error message
-      if (!promptTemplateTextarea.value.trim()) {
-        showAlert('Warning: Prompt template is empty. Please add a template or reset to default.', 'warning');
-      }
-    } else {
-      console.error('Error fetching prompt template:', response.status);
-      showAlert(`Error loading prompt template (${response.status}). Please check if the API server is running.`, 'danger');
+      document.getElementById('vendor-login-btn').addEventListener('click', () => {
+        const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+        loginModal.show();
+      });
+      return;
     }
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const messages = await response.json();
+    displayMessages(messages);
   } catch (error) {
-    console.error('Error fetching prompt template:', error);
-    showAlert('Error loading prompt template: ' + error.message, 'danger');
-  } finally {
-    // Re-enable the textarea
-    promptTemplateTextarea.disabled = false;
+    console.error('Error loading messages:', error);
+    document.getElementById('vendor-contact-content').innerHTML = `
+      <div class="alert alert-danger">
+        Failed to load vendor contact templates. Please try again later.
+      </div>
+    `;
   }
 }
 
-// Save the prompt template
-async function savePromptTemplate() {
-  const promptTemplate = promptTemplateTextarea.value;
-  
-  if (!promptTemplate.trim()) {
-    if (!confirm('The prompt template is empty. Do you want to reset to the default template?')) {
-      showAlert('Prompt template cannot be empty', 'warning');
-      return;
-    } else {
-      resetPromptTemplate();
-      return;
-    }
-  }
-  
+// Function to save a message
+async function saveMessage(key, message) {
   try {
-    // Disable the textarea and button during save
-    promptTemplateTextarea.disabled = true;
-    savePromptBtn.disabled = true;
-    
-    const response = await fetch(`${API_URL}/prompt`, {
+    const response = await fetchWithAuth(`${window.config.API_BASE_URL}/messages/${key}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ prompt_template: promptTemplate })
+      body: JSON.stringify({ message })
     });
     
-    if (response.ok) {
-      showAlert('Prompt template saved successfully', 'success');
-    } else {
-      console.error('Error saving prompt template:', response.status);
-      showAlert(`Error saving prompt template (${response.status}). Please check if the API server is running.`, 'danger');
+    if (response.status === 401 || response.status === 403) {
+      // Unauthorized or forbidden
+      showAlert('message-alert', 'danger', 'You do not have permission to save this message.');
+      return false;
     }
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    return result.status === 'success';
   } catch (error) {
-    console.error('Error saving prompt template:', error);
-    showAlert('Error saving prompt template: ' + error.message, 'danger');
-  } finally {
-    // Re-enable the textarea and button
-    promptTemplateTextarea.disabled = false;
-    savePromptBtn.disabled = false;
+    console.error('Error saving message:', error);
+    return false;
   }
 }
 
-// Reset the prompt template to default
-async function resetPromptTemplate() {
-  if (!confirm('Are you sure you want to reset the prompt template to the default?')) {
-    return;
-  }
-  
+// Function to fetch the prompt template
+async function fetchPromptTemplate() {
   try {
-    // Disable the textarea and button during reset
-    promptTemplateTextarea.disabled = true;
-    resetPromptBtn.disabled = true;
+    const response = await fetchWithAuth(`${window.config.API_BASE_URL}/prompt`);
     
-    const response = await fetch(`${API_URL}/reset-prompt`, {
-      method: 'POST'
-    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
     
-    if (response.ok) {
-      showAlert('Prompt template reset to default', 'success');
-      fetchPromptTemplate(); // Reload the template
-    } else {
-      console.error('Error resetting prompt template:', response.status);
-      showAlert(`Error resetting prompt template (${response.status}). Please check if the API server is running.`, 'danger');
+    const data = await response.json();
+    
+    if (promptTemplateTextarea) {
+      promptTemplateTextarea.value = data.prompt_template || '';
+    }
+    
+    if (additionalQuestionInput) {
+      additionalQuestionInput.value = data.additional_question || '';
+    }
+    
+    if (maxTokensInput) {
+      maxTokensInput.value = data.max_tokens || 300;
     }
   } catch (error) {
-    console.error('Error resetting prompt template:', error);
-    showAlert('Error resetting prompt template: ' + error.message, 'danger');
-  } finally {
-    // Re-enable the button (textarea will be re-enabled in fetchPromptTemplate)
-    resetPromptBtn.disabled = false;
+    console.error('Error fetching prompt template:', error);
+    showAlert('Failed to load prompt template. Please try again later.', 'danger');
   }
 }
 
-// Regenerate all message templates
-async function regenerateMessages() {
+// Function to save prompt template handler
+async function savePromptTemplateHandler() {
+  const template = promptTemplateTextarea.value.trim();
   const additionalQuestion = additionalQuestionInput.value.trim();
-  const maxTokens = parseInt(maxTokensInput.value) || 300;
+  const maxTokens = parseInt(maxTokensInput.value, 10);
   
-  // Confirm with the user
-  if (!confirm('Are you sure you want to regenerate all message templates? This may take a while.')) {
+  if (!template) {
+    showAlert('Prompt template cannot be empty.', 'warning');
     return;
   }
   
-  // Disable the button during regeneration
-  regenerateMessagesBtn.disabled = true;
-  regenerateMessagesBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Regenerating...';
+  const success = await savePromptTemplate({
+    prompt_template: template,
+    additional_question: additionalQuestion,
+    max_tokens: maxTokens
+  });
   
+  if (success) {
+    showAlert('Prompt template saved successfully.', 'success');
+  } else {
+    showAlert('Failed to save prompt template.', 'danger');
+  }
+}
+
+// Function to save prompt template
+async function savePromptTemplate(templateData) {
   try {
-    const response = await fetch(`${API_URL}/regenerate`, {
-      method: 'POST',
+    const response = await fetchWithAuth(`${window.config.API_BASE_URL}/prompt`, {
+      method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        additional_question: additionalQuestion,
-        max_tokens: maxTokens
-      })
+      body: JSON.stringify(templateData)
     });
     
-    if (response.ok) {
-      showAlert('Messages regenerated successfully', 'success');
-      // Refresh the message templates
-      fetchMessageTemplates();
+    if (response.status === 401 || response.status === 403) {
+      // Unauthorized or forbidden
+      showAlert('You do not have permission to save the prompt template.', 'danger');
+      return false;
+    }
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    return result.status === 'success';
+  } catch (error) {
+    console.error('Error saving prompt template:', error);
+    return false;
+  }
+}
+
+// Function to reset prompt template
+async function resetPromptTemplate() {
+  try {
+    const response = await fetchWithAuth(`${window.config.API_BASE_URL}/prompt/reset`, {
+      method: 'POST'
+    });
+    
+    if (response.status === 401 || response.status === 403) {
+      // Unauthorized or forbidden
+      showAlert('You do not have permission to reset the prompt template.', 'danger');
+      return;
+    }
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.status === 'success') {
+      promptTemplateTextarea.value = data.prompt_template || '';
+      additionalQuestionInput.value = data.additional_question || '';
+      maxTokensInput.value = data.max_tokens || 300;
+      
+      showAlert('Prompt template reset to default.', 'success');
     } else {
-      console.error('Error regenerating messages:', response.status);
-      showAlert(`Error regenerating messages (${response.status}). Please check if the API server is running.`, 'danger');
+      showAlert('Failed to reset prompt template.', 'danger');
+    }
+  } catch (error) {
+    console.error('Error resetting prompt template:', error);
+    showAlert('Failed to reset prompt template.', 'danger');
+  }
+}
+
+// Function to regenerate all messages
+async function regenerateMessages() {
+  try {
+    const response = await fetchWithAuth(`${window.config.API_BASE_URL}/messages/regenerate`, {
+      method: 'POST'
+    });
+    
+    if (response.status === 401 || response.status === 403) {
+      // Unauthorized or forbidden
+      showAlert('You do not have permission to regenerate messages.', 'danger');
+      return;
+    }
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.status === 'success') {
+      showAlert('Messages are being regenerated. This may take a moment.', 'info');
+      
+      // Poll for completion
+      pollRegenerationStatus();
+    } else {
+      showAlert('Failed to start message regeneration.', 'danger');
     }
   } catch (error) {
     console.error('Error regenerating messages:', error);
-    showAlert('Error regenerating messages: ' + error.message, 'danger');
-  } finally {
-    // Re-enable the button
-    regenerateMessagesBtn.disabled = false;
-    regenerateMessagesBtn.textContent = 'Regenerate All Messages';
+    showAlert('Failed to regenerate messages.', 'danger');
+  }
+}
+
+// Function to poll regeneration status
+async function pollRegenerationStatus() {
+  try {
+    const response = await fetchWithAuth(`${window.config.API_BASE_URL}/messages/regenerate/status`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const status = await response.json();
+    
+    if (status.completed) {
+      showAlert('Messages have been regenerated successfully.', 'success');
+      fetchMessageTemplates(); // Refresh the templates
+    } else {
+      // Continue polling
+      setTimeout(pollRegenerationStatus, 2000);
+    }
+  } catch (error) {
+    console.error('Error checking regeneration status:', error);
+    showAlert('Failed to check regeneration status.', 'danger');
   }
 }
 
 // Fetch message templates from the API
 async function fetchMessageTemplates() {
   try {
-    messageTemplatesContainer.innerHTML = `
-      <div class="text-center">
-        <div class="spinner-border" role="status">
-          <span class="visually-hidden">Loading...</span>
-        </div>
-        <p>Loading message templates...</p>
-      </div>
-    `;
+    const filterValue = filterMissingInfoSelect ? filterMissingInfoSelect.value : '';
     
-    const response = await fetch(`${API_URL}/messages`);
-    if (response.ok) {
-      const messages = await response.json();
-      
-      // Check if messages is empty
-      if (Object.keys(messages).length === 0) {
-        messageTemplatesContainer.innerHTML = `
-          <div class="alert alert-info">
-            No message templates found. Click "Regenerate All Messages" to create them.
-          </div>
-        `;
-      } else {
-        displayMessageTemplates(messages);
-      }
-    } else {
-      console.error('Error fetching message templates:', response.status);
-      messageTemplatesContainer.innerHTML = `
-        <div class="alert alert-danger">
-          Error loading message templates (${response.status}). Please check if the API server is running.
-        </div>
-      `;
+    const response = await fetchWithAuth(`${window.config.API_BASE_URL}/messages`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+    
+    const messages = await response.json();
+    
+    // Filter messages if needed
+    const filteredMessages = filterValue ? filterMessages(messages, filterValue) : messages;
+    
+    // Display the messages
+    displayMessageTemplates(filteredMessages);
   } catch (error) {
     console.error('Error fetching message templates:', error);
     messageTemplatesContainer.innerHTML = `
       <div class="alert alert-danger">
-        Error loading message templates: ${error.message}
+        Failed to load message templates. Please try again later.
       </div>
     `;
   }
@@ -324,7 +416,7 @@ function filterMessages(messages, filterValue) {
 // Update a message template
 async function updateMessageTemplate(key, newMessage) {
   try {
-    const response = await fetch(`${API_URL}/messages/${key}`, {
+    const response = await fetchWithAuth(`${window.config.API_BASE_URL}/messages/${key}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'

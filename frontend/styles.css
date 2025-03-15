@@ -301,6 +301,19 @@ body {
   border-radius: 8px;
 }
 
+/* Fix for the listings container alert width */
+#listings-container .alert {
+  width: 100%;
+  margin: 0 auto;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+#listings-container .col-12 {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
 /* Dark Mode Styles - Lighter than before */
 body.dark-mode {
   background-color: #1e1e1e;
@@ -558,4 +571,169 @@ input:checked + .slider:before {
 
 .dark-mode .vendor-contact-panel .form-text {
   color: #bdbdbd;
+}
+
+/* Authentication styles - improved for consistency */
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.auth-container {
+  display: flex;
+  align-items: center;
+}
+
+.auth-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 15px;
+  border-radius: 12px;
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.auth-status:hover {
+  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+}
+
+.auth-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: #1976d2;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  transition: all 0.2s ease;
+}
+
+.user-avatar:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.admin-badge {
+  background-color: #e53935;
+  color: white;
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.protected-feature {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.protected-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: 12px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.protected-feature:hover .protected-overlay {
+  opacity: 1;
+}
+
+.protected-message {
+  background-color: white;
+  padding: 12px 18px;
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  max-width: 80%;
+  text-align: center;
+  transform: translateY(10px);
+  transition: transform 0.3s ease;
+}
+
+.protected-feature:hover .protected-message {
+  transform: translateY(0);
+}
+
+.cursor-not-allowed {
+  cursor: not-allowed;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+/* Dark mode styles for auth components */
+.dark-mode .auth-status {
+  background-color: #2d2d2d;
+  border-color: #444;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+.dark-mode .auth-status:hover {
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+
+.dark-mode .user-avatar {
+  background-color: #90caf9;
+  color: #1e1e1e;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+.dark-mode .admin-badge {
+  background-color: #f44336;
+}
+
+.dark-mode .protected-message {
+  background-color: #2d2d2d;
+  color: #e0e0e0;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+.dark-mode .protected-tab {
+  color: #bdbdbd;
+  opacity: 0.7;
+}
+
+/* Admin-only elements */
+.admin-only {
+  position: relative;
+}
+
+.admin-only[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Dark mode styles for admin-only elements */
+.dark-mode .admin-only[disabled] {
+  opacity: 0.5;
 } 

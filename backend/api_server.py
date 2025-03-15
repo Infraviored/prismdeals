@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
 import os
 import json
@@ -8,6 +8,9 @@ import time
 import sys
 import traceback
 import uuid
+import hashlib
+import secrets
+from functools import wraps
 
 # Add the parent directory to the Python path to allow imports from the backend directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -32,7 +35,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
+CORS(app, supports_credentials=True)  # Enable CORS with credentials support
 
 # Path configurations
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -41,6 +45,7 @@ DATA_DIR = os.path.join(PROJECT_ROOT, "data")  # Data is at the project root
 LISTINGS_DIR = os.path.join(DATA_DIR, "listings")  # Directory for individual listing files
 SEARCH_CONFIG_FILE = os.path.join(DATA_DIR, "search_config.json")
 SCHEDULE_CONFIG_FILE = os.path.join(DATA_DIR, "schedule_config.json")
+USERS_FILE = os.path.join(DATA_DIR, "users.json")  # File to store user data
 
 # Create necessary directories if they don't exist
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -50,6 +55,241 @@ os.makedirs(LISTINGS_DIR, exist_ok=True)
 scheduled_thread = None
 stop_scheduled_thread = False
 scraping_in_progress = False
+
+# User roles
+ROLE_ADMIN = "admin"
+ROLE_USER = "user"
+
+# Initialize users file if it doesn't exist
+def init_users_file():
+    if not os.path.exists(USERS_FILE):
+        with open(USERS_FILE, 'w') as f:
+            json.dump({"users": []}, f)
+        logger.info(f"Created empty users file at {USERS_FILE}")
+
+init_users_file()
+
+# User management functions
+def get_users():
+    try:
+        with open(USERS_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # If file doesn't exist or is invalid, create a new one
+        init_users_file()
+        return {"users": []}
+
+def save_users(users_data):
+    with open(USERS_FILE, 'w') as f:
+        json.dump(users_data, f, indent=2)
+
+def hash_password(password, salt=None):
+    if salt is None:
+        salt = secrets.token_hex(8)
+    hash_obj = hashlib.sha256((password + salt).encode())
+    return hash_obj.hexdigest(), salt
+
+def verify_password(password, stored_hash, salt):
+    computed_hash, _ = hash_password(password, salt)
+    return secrets.compare_digest(computed_hash, stored_hash)
+
+def find_user(username):
+    users_data = get_users()
+    for user in users_data["users"]:
+        if user["username"] == username:
+            return user
+    return None
+
+# Authentication decorator
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        
+        users_data = get_users()
+        user = next((u for u in users_data["users"] if u["id"] == session['user_id']), None)
+        
+        if not user or user["role"] != ROLE_ADMIN:
+            return jsonify({"error": "Admin privileges required"}), 403
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Authentication routes
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+    
+    user = find_user(username)
+    if not user or not verify_password(password, user["password_hash"], user["salt"]):
+        return jsonify({"error": "Invalid username or password"}), 401
+    
+    # Set session
+    session['user_id'] = user["id"]
+    
+    # Return user info (excluding sensitive data)
+    return jsonify({
+        "id": user["id"],
+        "username": user["username"],
+        "role": user["role"]
+    })
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    session.pop('user_id', None)
+    return jsonify({"message": "Logged out successfully"})
+
+@app.route('/api/auth/status', methods=['GET'])
+def auth_status():
+    if 'user_id' in session:
+        users_data = get_users()
+        user = next((u for u in users_data["users"] if u["id"] == session['user_id']), None)
+        
+        if user:
+            return jsonify({
+                "authenticated": True,
+                "user": {
+                    "id": user["id"],
+                    "username": user["username"],
+                    "role": user["role"]
+                }
+            })
+    
+    return jsonify({"authenticated": False})
+
+@app.route('/api/auth/users', methods=['GET'])
+@admin_required
+def get_all_users():
+    users_data = get_users()
+    # Remove sensitive information
+    safe_users = []
+    for user in users_data["users"]:
+        safe_users.append({
+            "id": user["id"],
+            "username": user["username"],
+            "role": user["role"]
+        })
+    return jsonify(safe_users)
+
+@app.route('/api/auth/users', methods=['POST'])
+@admin_required
+def create_user():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    role = data.get('role', ROLE_USER)
+    
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+    
+    if role not in [ROLE_ADMIN, ROLE_USER]:
+        return jsonify({"error": "Invalid role"}), 400
+    
+    if find_user(username):
+        return jsonify({"error": "Username already exists"}), 409
+    
+    users_data = get_users()
+    password_hash, salt = hash_password(password)
+    
+    new_user = {
+        "id": str(uuid.uuid4()),
+        "username": username,
+        "password_hash": password_hash,
+        "salt": salt,
+        "role": role
+    }
+    
+    users_data["users"].append(new_user)
+    save_users(users_data)
+    
+    return jsonify({
+        "id": new_user["id"],
+        "username": new_user["username"],
+        "role": new_user["role"]
+    }), 201
+
+@app.route('/api/auth/users/<user_id>', methods=['DELETE'])
+@admin_required
+def delete_user(user_id):
+    users_data = get_users()
+    
+    # Prevent deleting the last admin
+    admin_count = sum(1 for user in users_data["users"] if user["role"] == ROLE_ADMIN)
+    user_to_delete = next((u for u in users_data["users"] if u["id"] == user_id), None)
+    
+    if not user_to_delete:
+        return jsonify({"error": "User not found"}), 404
+    
+    if user_to_delete["role"] == ROLE_ADMIN and admin_count <= 1:
+        return jsonify({"error": "Cannot delete the last admin user"}), 400
+    
+    users_data["users"] = [u for u in users_data["users"] if u["id"] != user_id]
+    save_users(users_data)
+    
+    return jsonify({"message": "User deleted successfully"})
+
+@app.route('/api/auth/settings', methods=['GET'])
+@admin_required
+def get_auth_settings():
+    # Get the current authentication settings
+    try:
+        with open(os.path.join(DATA_DIR, "auth_settings.json"), 'r') as f:
+            return jsonify(json.load(f))
+    except (FileNotFoundError, json.JSONDecodeError):
+        # Default settings if file doesn't exist
+        default_settings = {"public_access": False}
+        with open(os.path.join(DATA_DIR, "auth_settings.json"), 'w') as f:
+            json.dump(default_settings, f)
+        return jsonify(default_settings)
+
+@app.route('/api/auth/settings', methods=['PUT'])
+@admin_required
+def update_auth_settings():
+    data = request.json
+    settings = {
+        "public_access": data.get("public_access", False)
+    }
+    
+    with open(os.path.join(DATA_DIR, "auth_settings.json"), 'w') as f:
+        json.dump(settings, f)
+    
+    return jsonify(settings)
+
+# Helper function to check if public access is enabled
+def is_public_access_enabled():
+    try:
+        with open(os.path.join(DATA_DIR, "auth_settings.json"), 'r') as f:
+            settings = json.load(f)
+            return settings.get("public_access", False)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
+
+# Modified decorator that allows access if public access is enabled or user is authenticated
+def auth_or_public(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if is_public_access_enabled():
+            return f(*args, **kwargs)
+        
+        if 'user_id' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        
+        return f(*args, **kwargs)
+    return decorated_function
 
 # API endpoint to get all listings from all search files
 @app.route('/api/listings', methods=['GET'])
@@ -113,6 +353,7 @@ def get_search_config_api():
 
 # API endpoint to update search configuration
 @app.route('/api/search-config', methods=['POST'])
+@admin_required
 def update_search_config():
     try:
         search_config = request.json
@@ -132,6 +373,7 @@ def update_search_config():
 
 # API endpoint to add a new search
 @app.route('/api/search-config/add', methods=['POST'])
+@admin_required
 def add_search():
     try:
         new_search = request.json
@@ -161,6 +403,7 @@ def add_search():
 
 # API endpoint to trigger scraping manually
 @app.route('/api/scrape', methods=['POST'])
+@admin_required
 def trigger_scrape():
     global scraping_in_progress
     
@@ -222,6 +465,7 @@ def get_schedule():
 
 # API endpoint to update scraping schedule
 @app.route('/api/schedule', methods=['POST'])
+@admin_required
 def update_schedule():
     try:
         config = request.json
@@ -369,6 +613,7 @@ def setup_scheduled_scraping():
 # Vendor Contact Endpoints
 
 @app.route('/api/messages', methods=['GET'])
+@auth_or_public
 def get_messages():
     """Get all vendor message templates."""
     try:
@@ -379,6 +624,7 @@ def get_messages():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/messages/<message_key>', methods=['PUT'])
+@admin_required
 def update_message(message_key):
     """Update a specific message template."""
     try:
@@ -399,6 +645,7 @@ def update_message(message_key):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/prompt', methods=['GET'])
+@auth_or_public
 def get_prompt_template():
     """Get the current prompt template."""
     try:
@@ -409,6 +656,7 @@ def get_prompt_template():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/prompt', methods=['PUT'])
+@admin_required
 def update_prompt_template():
     """Update the prompt template."""
     try:
@@ -424,6 +672,7 @@ def update_prompt_template():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/default-prompt', methods=['GET'])
+@auth_or_public
 def get_default_prompt_template():
     """Get the default prompt template."""
     try:
@@ -434,6 +683,7 @@ def get_default_prompt_template():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/reset-prompt', methods=['POST'])
+@admin_required
 def reset_prompt_template_endpoint():
     """Reset the prompt template to default by removing the custom template."""
     try:
@@ -447,6 +697,7 @@ def reset_prompt_template_endpoint():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/regenerate', methods=['POST'])
+@admin_required
 def regenerate_messages_endpoint():
     """Regenerate all message templates with optional parameters."""
     try:
