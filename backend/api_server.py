@@ -11,14 +11,22 @@ import uuid
 import hashlib
 import secrets
 from functools import wraps
+from bs4 import BeautifulSoup
 
 # Add the parent directory to the Python path to allow imports from the backend directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Now import the modules
-from backend.scraper import scrape_listings
-from backend.process_listings import update_listings_with_chatgpt
+from backend.housekeeping import (
+    check_listing_availability,
+    run_housekeeping,
+    get_housekeeping_settings,
+    save_housekeeping_settings,
+    start_housekeeping_thread,
+    is_housekeeping_in_progress,
+    setup_scheduled_housekeeping
+)
 from backend.message_generator import (
     load_messages, 
     update_message_template, 
@@ -293,10 +301,25 @@ def auth_or_public(f):
 
 # API endpoint to get all listings from all search files
 @app.route('/api/listings', methods=['GET'])
+@auth_or_public
 def get_all_listings():
     try:
         all_listings = []
         search_config = get_search_config()
+        
+        # Get housekeeping settings to check if we should show deleted listings
+        show_deleted = True
+        try:
+            housekeeping_settings = get_housekeeping_settings(DATA_DIR)
+            show_deleted = housekeeping_settings.get('show_deleted', True)
+        except Exception:
+            # Default to showing deleted listings if there's an error
+            show_deleted = True
+        
+        # Get the show_deleted parameter from the query string if provided
+        show_deleted_param = request.args.get('show_deleted', None)
+        if show_deleted_param is not None:
+            show_deleted = show_deleted_param.lower() in ('true', '1', 'yes', 'y')
         
         # Iterate through all search configurations
         for search in search_config:
@@ -308,10 +331,20 @@ def get_all_listings():
                 if os.path.exists(listings_file):
                     with open(listings_file, 'r') as f:
                         listings = json.load(f)
+                        
                         # Add search name to each listing
                         for listing in listings:
                             listing['search_name'] = search_name
                             listing['search_id'] = search_id
+                            
+                            # Default is_deleted to False if not present
+                            if 'is_deleted' not in listing:
+                                listing['is_deleted'] = False
+                        
+                        # Filter out deleted listings if not showing them
+                        if not show_deleted:
+                            listings = [l for l in listings if not l.get('is_deleted', False)]
+                            
                         all_listings.extend(listings)
         
         return jsonify(all_listings)
@@ -732,6 +765,124 @@ def regenerate_messages_endpoint():
         logger.error(f"Error regenerating messages: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/check-listing', methods=['POST'])
+@auth_or_public
+def check_listing_endpoint():
+    """API endpoint to check if a single listing is still available."""
+    try:
+        data = request.json
+        url = data.get('url')
+        
+        if not url:
+            return jsonify({"error": "URL is required"}), 400
+        
+        # Directly use the check_listing_availability function
+        is_deleted = check_listing_availability(url)
+        
+        if is_deleted is None:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to check listing availability"
+            }), 500
+            
+        return jsonify({
+            "status": "success",
+            "url": url,
+            "is_deleted": is_deleted
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in check_listing endpoint: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/api/housekeeping', methods=['POST'])
+@admin_required
+def run_housekeeping_endpoint():
+    """Run housekeeping to check the status of all listings."""
+    try:
+        # Check if housekeeping is already running
+        if is_housekeeping_in_progress():
+            return jsonify({
+                "status": "error", 
+                "message": "Housekeeping is already in progress"
+            }), 409
+        
+        # Get housekeeping settings
+        settings = get_housekeeping_settings(DATA_DIR)
+        
+        # Start housekeeping in a background thread
+        thread_id = start_housekeeping_thread(
+            DATA_DIR,
+            check_deleted=settings.get('check_deleted', True)
+        )
+        
+        # Update last run time in settings
+        settings['last_run'] = time.time()
+        save_housekeeping_settings(DATA_DIR, settings)
+        
+        return jsonify({
+            "status": "success",
+            "message": "Housekeeping started",
+            "thread_id": thread_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting housekeeping: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/api/housekeeping/settings', methods=['GET'])
+@auth_or_public
+def get_housekeeping_settings_endpoint():
+    """Get housekeeping settings."""
+    try:
+        settings = get_housekeeping_settings(DATA_DIR)
+        return jsonify(settings)
+    except Exception as e:
+        logger.error(f"Error getting housekeeping settings: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/api/housekeeping/settings', methods=['PUT'])
+@admin_required
+def update_housekeeping_settings_endpoint():
+    """Update housekeeping settings."""
+    try:
+        data = request.json
+        settings = get_housekeeping_settings(DATA_DIR)
+        
+        # Update settings with new values
+        if 'enabled' in data:
+            settings['enabled'] = bool(data['enabled'])
+        if 'hour' in data:
+            settings['hour'] = int(data['hour'])
+        if 'minute' in data:
+            settings['minute'] = int(data['minute'])
+        if 'check_deleted' in data:
+            settings['check_deleted'] = bool(data['check_deleted'])
+        if 'show_deleted' in data:
+            settings['show_deleted'] = bool(data['show_deleted'])
+        
+        save_housekeeping_settings(DATA_DIR, settings)
+        
+        # Restart scheduled housekeeping with new settings
+        setup_scheduled_housekeeping(DATA_DIR)
+        
+        return jsonify(settings)
+    except Exception as e:
+        logger.error(f"Error updating housekeeping settings: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 # Start the Flask server when run directly
 if __name__ == '__main__':
     # Ensure the data directory exists
@@ -801,6 +952,9 @@ if __name__ == '__main__':
     
     # Start scheduled scraping
     setup_scheduled_scraping()
+    
+    # Start scheduled housekeeping
+    setup_scheduled_housekeeping(DATA_DIR)
     
     # Start the Flask server
     app.run(host='0.0.0.0', port=3030, debug=False)

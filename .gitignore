@@ -41,6 +41,5 @@ Thumbs.db
 # Logs
 *.log
 
-data/
-data_copy/
+data*/
 KleinanzeigenScraper.code-workspace

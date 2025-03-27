@@ -96,55 +96,71 @@
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="vendor-contact-tab" data-bs-toggle="tab" data-bs-target="#vendor-contact-content" type="button" role="tab" aria-controls="vendor-contact-content" aria-selected="false">Vendor Contact</button>
       </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="housekeeping-tab" data-bs-toggle="tab" data-bs-target="#housekeeping-content" type="button" role="tab" aria-controls="housekeeping-content" aria-selected="false">Housekeeping</button>
+      </li>
     </ul>
     
     <div class="tab-content" id="mainTabsContent">
       <!-- Listings Tab -->
       <div class="tab-pane fade show active" id="listings-content" role="tabpanel" aria-labelledby="listings-tab">
-        <div class="filter-section">
-          <h4>Sort and Filter</h4>
-          <div class="mb-3">
-            <button id="sort-price-asc" class="btn btn-outline-primary sort-button">Price (Low to High)</button>
-            <button id="sort-price-desc" class="btn btn-outline-primary sort-button">Price (High to Low)</button>
-            <button id="sort-date-desc" class="btn btn-outline-primary sort-button">Newest First</button>
-            <button id="reset-sort" class="btn btn-outline-secondary sort-button">Reset Sort</button>
+        <div class="filter-section card mt-3 mb-3">
+          <div class="card-header">
+            <h4 class="mb-0">Sort and Filter</h4>
           </div>
-          
-          <div class="row">
-            <div class="col-md-3">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="filter-ram-more">
-                <label class="form-check-label" for="filter-ram-more">RAM ≥ 32GB</label>
+          <div class="card-body">
+            <!-- Sorting controls -->
+            <div class="mb-3">
+              <label class="form-label fw-bold">Sort Options</label>
+              <div class="btn-group w-100 mb-3">
+                <button id="sort-price-asc" class="btn btn-outline-primary sort-button">Price (Low to High)</button>
+                <button id="sort-price-desc" class="btn btn-outline-primary sort-button">Price (High to Low)</button>
+                <button id="sort-date-desc" class="btn btn-outline-primary sort-button">Newest First</button>
+                <button id="reset-sort" class="btn btn-outline-secondary sort-button">Reset Sort</button>
               </div>
             </div>
-            <div class="col-md-3">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="filter-screen-small">
-                <label class="form-check-label" for="filter-screen-small">Small Screen (≤ 14")</label>
+            
+            <!-- Filter controls -->
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label class="form-label fw-bold">Hardware Filters</label>
+                <div class="d-flex flex-wrap">
+                  <div class="form-check me-4 mb-2">
+                    <input class="form-check-input" type="checkbox" id="filter-ram-more">
+                    <label class="form-check-label" for="filter-ram-more">RAM ≥ 32GB</label>
+                  </div>
+                  <div class="form-check me-4 mb-2">
+                    <input class="form-check-input" type="checkbox" id="filter-screen-small">
+                    <label class="form-check-label" for="filter-screen-small">Small Screen (≤ 14")</label>
+                  </div>
+                  <div class="form-check me-4 mb-2">
+                    <input class="form-check-input" type="checkbox" id="filter-screen-highres">
+                    <label class="form-check-label" for="filter-screen-highres">High Resolution</label>
+                  </div>
+                  <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="filter-full-info">
+                    <label class="form-check-label" for="filter-full-info">Full Info Available</label>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="col-md-3">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="filter-screen-highres">
-                <label class="form-check-label" for="filter-screen-highres">High Resolution</label>
+              
+              <div class="col-md-6">
+                <label class="form-label fw-bold">Source Filters</label>
+                <div class="row g-2 align-items-center">
+                  <div class="col-md-8">
+                    <select class="form-select" id="filter-search">
+                      <option value="">All Searches</option>
+                      <!-- Search options will be populated dynamically -->
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="show-deleted-listings" checked>
+                      <label class="form-check-label" for="show-deleted-listings">Show Deleted</label>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="col-md-3">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="filter-full-info">
-                <label class="form-check-label" for="filter-full-info">Full Info Available</label>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Add search filter dropdown -->
-          <div class="row mt-3">
-            <div class="col-md-6">
-              <label for="filter-search" class="form-label">Filter by Search</label>
-              <select class="form-select" id="filter-search">
-                <option value="">All Searches</option>
-                <!-- Search options will be populated dynamically -->
-              </select>
             </div>
           </div>
         </div>
@@ -277,6 +293,100 @@
                     <span class="visually-hidden">Loading...</span>
                   </div>
                   <p>Loading message templates...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Housekeeping Tab -->
+      <div class="tab-pane fade" id="housekeeping-content" role="tabpanel" aria-labelledby="housekeeping-tab">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="card mb-4">
+              <div class="card-header">
+                <h5>Housekeeping Settings</h5>
+              </div>
+              <div class="card-body">
+                <div class="form-check form-switch mb-3">
+                  <input class="form-check-input" type="checkbox" id="housekeeping-enabled" checked>
+                  <label class="form-check-label" for="housekeeping-enabled">
+                    Enable scheduled housekeeping
+                  </label>
+                </div>
+                
+                <div class="row mb-3">
+                  <div class="col-md-6">
+                    <label for="housekeeping-hour" class="form-label">Hour (0-23)</label>
+                    <input type="number" class="form-control" id="housekeeping-hour" min="0" max="23" value="3">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="housekeeping-minute" class="form-label">Minute (0-59)</label>
+                    <input type="number" class="form-control" id="housekeeping-minute" min="0" max="59" value="0">
+                  </div>
+                </div>
+                
+                <div class="form-check form-switch mb-3">
+                  <input class="form-check-input" type="checkbox" id="housekeeping-check-deleted" checked>
+                  <label class="form-check-label" for="housekeeping-check-deleted">
+                    Check for deleted listings
+                  </label>
+                </div>
+                
+                <div class="form-check form-switch mb-3">
+                  <input class="form-check-input" type="checkbox" id="housekeeping-show-deleted" checked>
+                  <label class="form-check-label" for="housekeeping-show-deleted">
+                    Show deleted listings by default
+                  </label>
+                </div>
+                
+                <div id="housekeeping-last-run" class="text-muted mb-3">
+                  Last run: Never
+                </div>
+                
+                <button id="save-housekeeping-settings" class="btn btn-primary">Save Settings</button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-6">
+            <div class="card mb-4">
+              <div class="card-header">
+                <h5>Manual Housekeeping</h5>
+              </div>
+              <div class="card-body">
+                <p>Run housekeeping manually to check for deleted listings.</p>
+                
+                <button id="run-housekeeping" class="btn btn-primary">
+                  <i class="fas fa-broom"></i> Run Housekeeping
+                </button>
+                
+                <div id="housekeeping-status" class="alert alert-info mt-3 d-none">
+                  <!-- Status message will be displayed here -->
+                </div>
+              </div>
+            </div>
+            
+            <div class="card mb-4">
+              <div class="card-header">
+                <h5>Test Listing Availability</h5>
+              </div>
+              <div class="card-body">
+                <p>Check if a specific listing is available or has been deleted.</p>
+                
+                <div class="mb-3">
+                  <label for="test-listing-url" class="form-label">Listing URL</label>
+                  <input type="url" class="form-control" id="test-listing-url" 
+                         placeholder="https://www.kleinanzeigen.de/s-anzeige/...">
+                </div>
+                
+                <button id="check-listing" class="btn btn-primary">
+                  <i class="fas fa-search"></i> Check Listing
+                </button>
+                
+                <div id="listing-check-result" class="alert mt-3 d-none">
+                  <!-- Result will be displayed here -->
                 </div>
               </div>
             </div>

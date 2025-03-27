@@ -15,6 +15,12 @@ let filterState = {
   search: ''
 };
 
+// Store sort preference
+let sortPreference = {
+  type: null, // 'price-asc', 'price-desc', 'date-desc'
+  active: false
+};
+
 // Function to save filter state to localStorage
 function saveFilterState() {
   localStorage.setItem('filterState', JSON.stringify(filterState));
@@ -33,6 +39,23 @@ function loadFilterState() {
     document.getElementById('filter-full-info').checked = filterState.fullInfo;
     
     // Search filter will be set after search config is loaded
+  }
+}
+
+// Function to save sort preference to local storage
+function saveSortPreference() {
+  localStorage.setItem('sortPreference', JSON.stringify(sortPreference));
+}
+
+// Function to load sort preference from local storage
+function loadSortPreference() {
+  const savedPreference = localStorage.getItem('sortPreference');
+  if (savedPreference) {
+    sortPreference = JSON.parse(savedPreference);
+    // Apply the saved sort preference
+    if (sortPreference.active && sortPreference.type) {
+      applySortPreference();
+    }
   }
 }
 
@@ -268,8 +291,26 @@ function showLoginPrompt() {
 async function fetchListings() {
   showLoading('listings-container');
   try {
-    // Remove credentials to ensure we always get listings without authentication
-    const response = await fetch(`${window.config.API_BASE_URL}/listings`);
+    // Get the show deleted parameter from the checkbox
+    const showDeleted = document.getElementById('show-deleted-listings').checked;
+    
+    // Include the parameter in the URL
+    const response = await fetch(`${API_BASE_URL}/listings?show_deleted=${showDeleted}`, {
+      credentials: 'include' // Include credentials for authentication
+    });
+    
+    if (response.status === 401) {
+      // Unauthorized - show login prompt
+      document.getElementById('listings-container').innerHTML = `
+        <div class="col-12 alert alert-warning">
+          <p>Authentication required to view listings.</p>
+          <button class="btn btn-primary" id="listings-login-btn">Login</button>
+        </div>
+      `;
+      
+      document.getElementById('listings-login-btn').addEventListener('click', showLoginPrompt);
+      return;
+    }
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -278,9 +319,15 @@ async function fetchListings() {
     const listings = await response.json();
     allListings = listings;
     filteredListings = [...allListings];
+    updateListingsCount();
     
-    // Apply saved filters
-    applyFilters();
+    // Apply the saved sort preference
+    applySortPreference();
+    
+    // If no sort preference is active, display the listings as is
+    if (!sortPreference.active) {
+      displayListings(filteredListings);
+    }
   } catch (error) {
     console.error('Error fetching listings:', error);
     document.getElementById('listings-container').innerHTML = `
@@ -296,7 +343,7 @@ async function fetchSearchConfig() {
   showLoading('search-urls-container');
   try {
     // Remove credentials to ensure we always get search config without authentication
-    const response = await fetch(`${window.config.API_BASE_URL}/search-config`);
+    const response = await fetch(`${API_BASE_URL}/search-config`);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -360,14 +407,26 @@ function displayListings(listings) {
     card.style.transform = 'translateY(20px)';
     card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
     
+    // Apply deleted styling if the listing is deleted
+    const isDeleted = listing.is_deleted === true;
+    const deletedClass = isDeleted ? 'deleted-listing' : '';
+    
+    // Create deleted badge with deletion date if available
+    let deletedBadge = '';
+    if (isDeleted) {
+      const deletedAt = listing.deleted_at ? new Date(listing.deleted_at * 1000).toLocaleDateString() : 'Unknown date';
+      deletedBadge = `<span class="badge bg-danger deleted-badge">Deleted${listing.deleted_at ? ': ' + deletedAt : ''}</span>`;
+    }
+    
     card.innerHTML = `
-      <div class="listing-card">
+      <div class="listing-card ${deletedClass}">
         <div class="listing-title">${listing.title}</div>
         <div class="listing-price">${listing.price}</div>
         <div class="listing-date">${new Date(listing.date || Date.now()).toLocaleDateString()}</div>
         <div class="listing-location">${listing.location || 'Unknown location'}</div>
         
         ${listing.search_name ? `<div class="listing-search-name badge bg-secondary mb-2">${listing.search_name}</div>` : ''}
+        ${deletedBadge}
         
         <div class="badges mb-2 mt-2">
           <span class="badge ${ramBadgeClass}">RAM ≥ 32GB: ${formatBadgeValue(listing.RAM_more)}</span>
@@ -432,18 +491,6 @@ function applyFilters() {
   const filterFullInfo = document.getElementById('filter-full-info').checked;
   const filterSearch = document.getElementById('filter-search').value;
   
-  // Update filter state
-  filterState = {
-    ramMore: filterRamMore,
-    screenSmall: filterScreenSmall,
-    screenHighres: filterScreenHighres,
-    fullInfo: filterFullInfo,
-    search: filterSearch
-  };
-  
-  // Save filter state to localStorage
-  saveFilterState();
-  
   filteredListings = allListings.filter(listing => {
     let include = true;
     
@@ -471,14 +518,20 @@ function applyFilters() {
   });
   
   updateListingsCount();
-  displayListings(filteredListings);
+  
+  // Apply the current sort preference to the filtered listings
+  if (sortPreference.active && sortPreference.type) {
+    applySortPreference();
+  } else {
+    displayListings(filteredListings);
+  }
 }
 
 // Function to fetch server status
 async function fetchServerStatus() {
   try {
     // Remove credentials to ensure we always get server status without authentication
-    const response = await fetch(`${window.config.API_BASE_URL}/status`);
+    const response = await fetch(`${API_BASE_URL}/status`);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -525,7 +578,7 @@ function updateStatusDisplay(status) {
 async function fetchSchedule() {
   try {
     // Remove credentials to ensure we always get schedule without authentication
-    const response = await fetch(`${window.config.API_BASE_URL}/schedule`);
+    const response = await fetch(`${API_BASE_URL}/schedule`);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -546,7 +599,7 @@ async function saveSchedule() {
     const interval = parseInt(document.getElementById('schedule-interval').value) || 60;
     const enabled = document.getElementById('schedule-enabled').checked;
     
-    const response = await fetch(`${window.config.API_BASE_URL}/schedule`, {
+    const response = await fetch(`${API_BASE_URL}/schedule`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -687,7 +740,7 @@ async function saveSearchConfig() {
       };
     });
     
-    const response = await fetch(`${window.config.API_BASE_URL}/search-config`, {
+    const response = await fetch(`${API_BASE_URL}/search-config`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -746,7 +799,7 @@ async function startScraping() {
     
     showStatus('Starting scraping process...', 'info');
     
-    const response = await fetch(`${window.config.API_BASE_URL}/scrape`, {
+    const response = await fetch(`${API_BASE_URL}/scrape`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -843,13 +896,316 @@ function showAlert(containerId, type, message) {
   }
 }
 
+// Housekeeping functions
+
+// Function to load housekeeping settings
+async function loadHousekeepingSettings() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/housekeeping/settings`, {
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const settings = await response.json();
+    
+    // Update the form with the loaded settings
+    document.getElementById('housekeeping-enabled').checked = settings.enabled !== false;
+    document.getElementById('housekeeping-hour').value = settings.hour || 3;
+    document.getElementById('housekeeping-minute').value = settings.minute || 0;
+    document.getElementById('housekeeping-check-deleted').checked = settings.check_deleted !== false;
+    document.getElementById('housekeeping-show-deleted').checked = settings.show_deleted !== false;
+    
+    // Update the show deleted checkbox in the listings tab as well
+    document.getElementById('show-deleted-listings').checked = settings.show_deleted !== false;
+    
+    // Update last run message
+    const lastRunElem = document.getElementById('housekeeping-last-run');
+    if (settings.last_run) {
+      const lastRunDate = new Date(settings.last_run * 1000);
+      lastRunElem.textContent = `Last run: ${lastRunDate.toLocaleString()}`;
+    } else {
+      lastRunElem.textContent = 'Last run: Never';
+    }
+    
+    return settings;
+  } catch (error) {
+    console.error('Error loading housekeeping settings:', error);
+    showAlert('housekeeping-content', 'danger', 'Failed to load housekeeping settings');
+    return null;
+  }
+}
+
+// Function to save housekeeping settings
+async function saveHousekeepingSettings() {
+  try {
+    const settings = {
+      enabled: document.getElementById('housekeeping-enabled').checked,
+      hour: parseInt(document.getElementById('housekeeping-hour').value) || 3,
+      minute: parseInt(document.getElementById('housekeeping-minute').value) || 0,
+      check_deleted: document.getElementById('housekeeping-check-deleted').checked,
+      show_deleted: document.getElementById('housekeeping-show-deleted').checked
+    };
+    
+    const response = await fetch(`${API_BASE_URL}/housekeeping/settings`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(settings),
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    // Update the show deleted checkbox in the listings tab
+    document.getElementById('show-deleted-listings').checked = settings.show_deleted;
+    
+    showAlert('housekeeping-content', 'success', 'Housekeeping settings saved successfully');
+    
+    // Refresh listings if show_deleted setting changed
+    fetchListings();
+    
+    return result;
+  } catch (error) {
+    console.error('Error saving housekeeping settings:', error);
+    showAlert('housekeeping-content', 'danger', 'Failed to save housekeeping settings');
+    return null;
+  }
+}
+
+// Function to run housekeeping manually
+async function runHousekeeping() {
+  try {
+    // Disable the button
+    const button = document.getElementById('run-housekeeping');
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Running...';
+    
+    // Show status
+    const statusElem = document.getElementById('housekeeping-status');
+    statusElem.className = 'alert alert-info mt-3';
+    statusElem.textContent = 'Housekeeping is running. This may take a while...';
+    statusElem.classList.remove('d-none');
+    
+    const response = await fetch(`${API_BASE_URL}/housekeeping`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    // Show success
+    statusElem.className = 'alert alert-success mt-3';
+    statusElem.textContent = 'Housekeeping started successfully. It will run in the background.';
+    
+    // Re-enable the button
+    button.disabled = false;
+    button.innerHTML = '<i class="fas fa-broom"></i> Run Housekeeping';
+    
+    // Refresh housekeeping settings to update last run time
+    setTimeout(() => {
+      loadHousekeepingSettings();
+    }, 1000);
+    
+    // Set a timer to reload listings after a delay
+    setTimeout(() => {
+      fetchListings();
+    }, 5000);
+    
+    return result;
+  } catch (error) {
+    console.error('Error running housekeeping:', error);
+    
+    // Show error
+    const statusElem = document.getElementById('housekeeping-status');
+    statusElem.className = 'alert alert-danger mt-3';
+    statusElem.textContent = `Error running housekeeping: ${error.message}`;
+    statusElem.classList.remove('d-none');
+    
+    // Re-enable the button
+    const button = document.getElementById('run-housekeeping');
+    button.disabled = false;
+    button.innerHTML = '<i class="fas fa-broom"></i> Run Housekeeping';
+    
+    return null;
+  }
+}
+
+// Function to check a single listing
+async function checkListingAvailability(url) {
+  try {
+    // Show loading
+    const resultElem = document.getElementById('listing-check-result');
+    resultElem.className = 'alert alert-info mt-3';
+    resultElem.innerHTML = `
+      <div class="spinner-border spinner-border-sm" role="status"></div>
+      Checking listing: ${url}
+    `;
+    resultElem.classList.remove('d-none');
+    
+    const response = await fetch(`${API_BASE_URL}/check-listing`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ url }),
+      credentials: 'include'
+    });
+    
+    // First handle any HTTP errors
+    if (!response.ok) {
+      if (response.status === 401) {
+        resultElem.className = 'alert alert-warning mt-3';
+        resultElem.innerHTML = `
+          <strong>Authentication Required</strong>
+          <p>You need to log in to check listing availability.</p>
+          <button class="btn btn-sm btn-primary" id="check-login-btn">Login</button>
+        `;
+        document.getElementById('check-login-btn').addEventListener('click', showLoginPrompt);
+        return null;
+      }
+      
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    // Check for API errors
+    if (result.status === 'error') {
+      throw new Error(result.message || 'Unknown error from server');
+    }
+    
+    // Show result
+    if (result.is_deleted) {
+      resultElem.className = 'alert alert-danger mt-3';
+      resultElem.innerHTML = `
+        <strong>Listing status:</strong> Deleted
+        <p>The listing has been deleted from Kleinanzeigen.</p>
+        <p>You can still view the cached version in your listings tab.</p>
+      `;
+    } else {
+      resultElem.className = 'alert alert-success mt-3';
+      resultElem.innerHTML = `
+        <strong>Listing status:</strong> Available
+        <p>The listing is still available on Kleinanzeigen.</p>
+        <a href="${url}" target="_blank" class="btn btn-sm btn-outline-primary mt-2">View Listing</a>
+      `;
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error checking listing:', error);
+    
+    // Show a more user-friendly error message
+    const resultElem = document.getElementById('listing-check-result');
+    resultElem.className = 'alert alert-danger mt-3';
+    resultElem.innerHTML = `
+      <strong>Error checking listing</strong>
+      <p>${error.message}</p>
+      <div class="small text-muted mt-2">
+        <strong>Troubleshooting tips:</strong>
+        <ul>
+          <li>Make sure the URL is valid</li>
+          <li>Check if the website is accessible</li>
+          <li>Wait a few minutes and try again</li>
+        </ul>
+      </div>
+    `;
+    resultElem.classList.remove('d-none');
+    
+    return null;
+  }
+}
+
+// Function to set up housekeeping event listeners
+function setupHousekeepingUI() {
+  // Load initial housekeeping settings
+  loadHousekeepingSettings();
+  
+  // Save settings button
+  document.getElementById('save-housekeeping-settings').addEventListener('click', saveHousekeepingSettings);
+  
+  // Run housekeeping button
+  document.getElementById('run-housekeeping').addEventListener('click', runHousekeeping);
+  
+  // Check listing button
+  document.getElementById('check-listing').addEventListener('click', () => {
+    const url = document.getElementById('test-listing-url').value.trim();
+    if (url) {
+      checkListingAvailability(url);
+    } else {
+      // Show error
+      const resultElem = document.getElementById('listing-check-result');
+      resultElem.className = 'alert alert-danger mt-3';
+      resultElem.textContent = 'Please enter a valid listing URL';
+      resultElem.classList.remove('d-none');
+    }
+  });
+  
+  // Show deleted listings checkbox
+  document.getElementById('show-deleted-listings').addEventListener('change', () => {
+    fetchListings();
+  });
+  
+  // Mirror show deleted setting between tabs
+  document.getElementById('housekeeping-show-deleted').addEventListener('change', (e) => {
+    document.getElementById('show-deleted-listings').checked = e.target.checked;
+  });
+}
+
+// Add CSS styles for deleted listings
+function addDeletedListingStyles() {
+  const style = document.createElement('style');
+  style.textContent = `
+    .deleted-listing {
+      opacity: 0.7;
+      background-color: #f8f8f8;
+      border-color: #ddd;
+    }
+    
+    .dark-mode .deleted-listing {
+      background-color: #2a2a2a;
+      border-color: #444;
+    }
+    
+    .deleted-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+    }
+    
+    .sort-button.active {
+      background-color: #0d6efd;
+      color: white;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 // Document ready function
 document.addEventListener('DOMContentLoaded', function() {
   // Initialize authentication UI
   setupAuthUI();
   
-  // Load saved filter state
-  loadFilterState();
+  // Add styles for deleted listings
+  addDeletedListingStyles();
+  
+  // Load saved sort preference
+  loadSortPreference();
   
   // Fetch initial data
   fetchListings();
@@ -858,11 +1214,11 @@ document.addEventListener('DOMContentLoaded', function() {
   // Set up event listeners
   setupEventListeners();
   
+  // Set up housekeeping UI
+  setupHousekeepingUI();
+  
   // Check server status
   checkServerStatus();
-  
-  // Fetch schedule
-  fetchSchedule();
 });
 
 // Set up event listeners
@@ -871,21 +1227,60 @@ function setupEventListeners() {
   document.getElementById('sort-price-asc').addEventListener('click', function() {
     filteredListings.sort((a, b) => parsePrice(a.price) - parsePrice(b.price));
     displayListings(filteredListings);
+    
+    // Update sort preference
+    sortPreference = { type: 'price-asc', active: true };
+    saveSortPreference();
+    
+    // Add active class to this button and remove from others
+    document.querySelectorAll('.sort-button').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    this.classList.add('active');
   });
   
   document.getElementById('sort-price-desc').addEventListener('click', function() {
     filteredListings.sort((a, b) => parsePrice(b.price) - parsePrice(a.price));
     displayListings(filteredListings);
+    
+    // Update sort preference
+    sortPreference = { type: 'price-desc', active: true };
+    saveSortPreference();
+    
+    // Add active class to this button and remove from others
+    document.querySelectorAll('.sort-button').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    this.classList.add('active');
   });
   
   document.getElementById('sort-date-desc').addEventListener('click', function() {
     filteredListings.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
     displayListings(filteredListings);
+    
+    // Update sort preference
+    sortPreference = { type: 'date-desc', active: true };
+    saveSortPreference();
+    
+    // Add active class to this button and remove from others
+    document.querySelectorAll('.sort-button').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    this.classList.add('active');
   });
   
   document.getElementById('reset-sort').addEventListener('click', function() {
     filteredListings = [...allListings];
     applyFilters();
+    
+    // Reset sort preference
+    sortPreference = { type: null, active: false };
+    saveSortPreference();
+    
+    // Remove active class from all buttons
+    document.querySelectorAll('.sort-button').forEach(btn => {
+      btn.classList.remove('active');
+    });
   });
   
   // Set up event listeners for filtering
@@ -910,4 +1305,33 @@ function checkServerStatus() {
   fetchServerStatus().then(() => {
     // No need to handle the result, as the status is already displayed
   });
+}
+
+// Function to apply the current sort preference
+function applySortPreference() {
+  if (!sortPreference.active || !sortPreference.type) return;
+  
+  // Remove active class from all sort buttons
+  document.querySelectorAll('.sort-button').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  
+  // Apply the sort
+  switch (sortPreference.type) {
+    case 'price-asc':
+      filteredListings.sort((a, b) => parsePrice(a.price) - parsePrice(b.price));
+      document.getElementById('sort-price-asc').classList.add('active');
+      break;
+    case 'price-desc':
+      filteredListings.sort((a, b) => parsePrice(b.price) - parsePrice(a.price));
+      document.getElementById('sort-price-desc').classList.add('active');
+      break;
+    case 'date-desc':
+      filteredListings.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      document.getElementById('sort-date-desc').classList.add('active');
+      break;
+  }
+  
+  // Display the sorted listings
+  displayListings(filteredListings);
 }
