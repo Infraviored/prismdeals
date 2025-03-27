@@ -1,8 +1,5 @@
 // Authentication module for Kleinanzeigen Scraper
 
-// Use the shared API_BASE_URL from config.js
-// const API_BASE_URL = window.config.API_BASE_URL;  // Remove this line
-
 // Authentication state
 let currentUser = null;
 let isPublicAccessEnabled = false;
@@ -298,4 +295,78 @@ function updateProtectedFeatures(isAuthenticated, user, isPublicAccessEnabled) {
       }
     });
   }
-} 
+}
+
+// Function to show login prompt
+function showLoginPrompt() {
+  const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+  
+  // Set up form submission
+  const handleLogin = async function() {
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    
+    if (!username || !password) {
+      showLoginError('Please enter both username and password');
+      return;
+    }
+    
+    try {
+      // Use the auth module for login
+      const result = await auth.login(username, password);
+      
+      if (result.success) {
+        loginModal.hide();
+        window.location.reload();
+      } else {
+        showLoginError(result.error || 'Login failed');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      showLoginError('An error occurred during login');
+    }
+  };
+  
+  // Clear previous errors
+  document.getElementById('login-error').classList.add('d-none');
+  
+  // Reset form
+  document.getElementById('username').value = '';
+  document.getElementById('password').value = '';
+  
+  // Use the modal login button for submission
+  const modalLoginButton = document.getElementById('login-button');
+  if (modalLoginButton) {
+    // Remove existing listeners
+    modalLoginButton.replaceWith(modalLoginButton.cloneNode(true));
+    
+    // Add new listener
+    document.getElementById('login-button').addEventListener('click', handleLogin);
+  }
+  
+  // Handle form submission
+  const loginForm = document.getElementById('login-form');
+  if (loginForm) {
+    // Remove existing listeners
+    loginForm.replaceWith(loginForm.cloneNode(true));
+    
+    // Add new listener
+    document.getElementById('login-form').addEventListener('submit', function(event) {
+      event.preventDefault();
+      handleLogin();
+    });
+  }
+  
+  // Show the modal
+  loginModal.show();
+}
+
+// Function to show login error
+function showLoginError(message) {
+  const errorElement = document.getElementById('login-error');
+  errorElement.textContent = message;
+  errorElement.classList.remove('d-none');
+}
+
+// Make the function globally available
+window.showLoginPrompt = showLoginPrompt; 

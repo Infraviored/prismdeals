@@ -10,23 +10,31 @@
 <body>
   <div class="container">
     <div class="header-container">
-      <h1 class="mb-4">Kleinanzeigen Scraper</h1>
-      
-      <!-- Auth Container -->
+      <!-- Auth Container on the left -->
       <div class="auth-container">
         <div id="auth-status-container">
           <!-- Will be populated by JavaScript -->
         </div>
+        <div class="auth-buttons">
+          <button type="button" class="btn btn-primary btn-sm" id="login-button-nav">Login</button>
+          <button type="button" class="btn btn-danger btn-sm d-none ms-2" id="logout-button">Logout</button>
+        </div>
       </div>
-    </div>
-    
-    <!-- Dark Mode Toggle -->
-    <div class="theme-switch-wrapper">
-      <label class="theme-switch" for="checkbox">
-        <input type="checkbox" id="checkbox" />
-        <div class="slider"></div>
-      </label>
-      <span class="theme-label">Dark Mode</span>
+      
+      <!-- Title in the center -->
+      <div class="title-container d-flex justify-content-center">
+        <h1 class="mb-0">KleinanzeigenScraper</h1>
+      </div>
+      
+      <!-- Dark Mode Toggle on the right -->
+      <div class="theme-switch-wrapper d-flex align-items-center">
+        <span class="theme-icon theme-icon-light">☀️</span>
+        <label class="theme-switch mx-1" for="checkbox">
+          <input type="checkbox" id="checkbox" />
+          <div class="slider"></div>
+        </label>
+        <span class="theme-icon theme-icon-dark">🌙</span>
+      </div>
     </div>
     
     <!-- Login Modal -->
@@ -400,7 +408,7 @@
   <script src="config.js"></script>
   <script src="darkmode.js"></script>
   <script src="auth.js"></script>
-  <script src="main.js"></script>
+  <script src="main.js" type="module"></script>
   <script src="vendor-contact.js"></script>
 </body>
 </html> 

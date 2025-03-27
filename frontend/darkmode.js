@@ -15,16 +15,16 @@ function toggleDarkMode(isDark) {
   // Update the checkbox state
   document.getElementById('checkbox').checked = isDark;
   
-  // Update the theme label text with animation
-  const themeLabel = document.querySelector('.theme-label');
-  if (themeLabel) {
-    themeLabel.style.transition = 'opacity 0.3s ease';
-    themeLabel.style.opacity = '0';
+  // Update icon visibility with animation
+  const lightIcon = document.querySelector('.theme-icon-light');
+  const darkIcon = document.querySelector('.theme-icon-dark');
+  
+  if (lightIcon && darkIcon) {
+    lightIcon.style.transition = 'opacity 0.3s ease';
+    darkIcon.style.transition = 'opacity 0.3s ease';
     
-    setTimeout(() => {
-      themeLabel.textContent = isDark ? 'Light Mode' : 'Dark Mode';
-      themeLabel.style.opacity = '1';
-    }, 300);
+    lightIcon.style.opacity = isDark ? '0.7' : '1';
+    darkIcon.style.opacity = isDark ? '1' : '0.7';
   }
   
   // Ensure admin-only elements have proper styling in dark mode
@@ -59,41 +59,71 @@ function toggleDarkMode(isDark) {
   });
   
   // Apply dark mode to housekeeping-specific elements
-  applyDarkModeToHousekeeping(isDark);
+  applyDarkModeToHousekeeping();
 }
 
-// Function to apply dark mode to housekeeping elements
-function applyDarkModeToHousekeeping(isDark) {
-  // Enhance housekeeping status elements
-  const statusElements = document.querySelectorAll('#housekeeping-status, #listing-check-result');
-  statusElements.forEach(element => {
-    if (isDark) {
-      // If it's an alert-info, change background to be darker
-      if (element.classList.contains('alert-info')) {
-        element.style.backgroundColor = '#1a3c4d';
-        element.style.borderColor = '#164458';
-        element.style.color = '#8ebfd3';
+// Function to apply dark mode to housekeeping status elements
+function applyDarkModeToHousekeeping() {
+  // Determine if dark mode is active
+  const isDarkMode = document.body.classList.contains('dark-mode');
+
+  // Find all alert elements in the housekeeping section
+  document.querySelectorAll('[id^="listing-status-"]').forEach(statusElement => {
+    if (!statusElement) return;
+    
+    statusElement.querySelectorAll('.alert').forEach(alertEl => {
+      // For success alerts (available listings)
+      if (alertEl.classList.contains('alert-success')) {
+        if (isDarkMode) {
+          alertEl.style.backgroundColor = '#1e4620';
+          alertEl.style.color = '#ffffff';
+          alertEl.style.borderColor = '#2a623b';
+        } else {
+          alertEl.style.backgroundColor = '';
+          alertEl.style.color = '';
+          alertEl.style.borderColor = '';
+        }
       }
       
-      // If it's an alert-success, change background to be darker
-      if (element.classList.contains('alert-success')) {
-        element.style.backgroundColor = '#1e3a1e';
-        element.style.borderColor = '#194219';
-        element.style.color = '#8bdb8b';
+      // For danger alerts (deleted listings or errors)
+      if (alertEl.classList.contains('alert-danger')) {
+        if (isDarkMode) {
+          alertEl.style.backgroundColor = '#471c24';
+          alertEl.style.color = '#ffffff';
+          alertEl.style.borderColor = '#572a30';
+        } else {
+          alertEl.style.backgroundColor = '';
+          alertEl.style.color = '';
+          alertEl.style.borderColor = '';
+        }
       }
       
-      // If it's an alert-danger, change background to be darker
-      if (element.classList.contains('alert-danger')) {
-        element.style.backgroundColor = '#3e1f21';
-        element.style.borderColor = '#472427';
-        element.style.color = '#e6a5a7';
+      // For info alerts
+      if (alertEl.classList.contains('alert-info')) {
+        if (isDarkMode) {
+          alertEl.style.backgroundColor = '#0f3a4a';
+          alertEl.style.color = '#ffffff';
+          alertEl.style.borderColor = '#154352';
+        } else {
+          alertEl.style.backgroundColor = '';
+          alertEl.style.color = '';
+          alertEl.style.borderColor = '';
+        }
       }
-    } else {
-      // Reset styles
-      element.style.backgroundColor = '';
-      element.style.borderColor = '';
-      element.style.color = '';
-    }
+      
+      // For warning alerts
+      if (alertEl.classList.contains('alert-warning')) {
+        if (isDarkMode) {
+          alertEl.style.backgroundColor = '#4d3c19';
+          alertEl.style.color = '#ffffff';
+          alertEl.style.borderColor = '#554223';
+        } else {
+          alertEl.style.backgroundColor = '';
+          alertEl.style.color = '';
+          alertEl.style.borderColor = '';
+        }
+      }
+    });
   });
 }
 

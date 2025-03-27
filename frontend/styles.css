@@ -142,22 +142,26 @@ body {
 }
 
 .status-indicator {
+  display: inline-block;
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  display: inline-block;
   margin-right: 8px;
-  transition: all 0.3s ease;
 }
 
-.status-online {
-  background-color: #43a047;
-  box-shadow: 0 0 8px rgba(67, 160, 71, 0.5);
+.status-green {
+  background-color: #28a745;
+  box-shadow: 0 0 5px rgba(40, 167, 69, 0.5);
 }
 
-.status-offline {
-  background-color: #e53935;
-  box-shadow: 0 0 8px rgba(229, 57, 53, 0.5);
+.status-red {
+  background-color: #dc3545;
+  box-shadow: 0 0 5px rgba(220, 53, 69, 0.5);
+}
+
+.status-yellow {
+  background-color: #ffc107;
+  box-shadow: 0 0 5px rgba(255, 193, 7, 0.5);
 }
 
 .filter-section {
@@ -411,14 +415,50 @@ body.dark-mode {
   color: #1e1e1e;
 }
 
+/* Header and auth container styles */
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding: 1rem 0;
+  position: relative;
+}
+
+.title-container {
+  flex-grow: 1;
+}
+
+.auth-container {
+  min-width: 120px;
+}
+
 /* Dark mode toggle switch */
 .theme-switch-wrapper {
-  display: flex;
-  align-items: center;
-  position: absolute;
-  right: 20px;
-  top: 20px;
-  z-index: 100;
+  min-width: 120px;
+  justify-content: flex-end;
+}
+
+.theme-icon {
+  font-size: 1.1rem;
+}
+
+.theme-icon-light {
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.theme-icon-dark {
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+body:not(.dark-mode) .theme-icon-light {
+  opacity: 1;
+}
+
+body.dark-mode .theme-icon-dark {
+  opacity: 1;
 }
 
 .theme-switch {
@@ -574,19 +614,6 @@ input:checked + .slider:before {
 }
 
 /* Authentication styles - improved for consistency */
-.header-container {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-  transition: all 0.3s ease;
-}
-
-.auth-container {
-  display: flex;
-  align-items: center;
-}
-
 .auth-status {
   display: flex;
   align-items: center;
@@ -601,11 +628,6 @@ input:checked + .slider:before {
 
 .auth-status:hover {
   box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-}
-
-.auth-buttons {
-  display: flex;
-  gap: 10px;
 }
 
 .user-info {
@@ -736,4 +758,41 @@ input:checked + .slider:before {
 /* Dark mode styles for admin-only elements */
 .dark-mode .admin-only[disabled] {
   opacity: 0.5;
+}
+
+/* Server info container */
+.server-info {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+.dark-mode .server-info {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+@media (max-width: 768px) {
+  .header-container {
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+  
+  .auth-container {
+    width: 100%;
+    align-items: center;
+    text-align: center;
+    order: 3;
+  }
+  
+  .title-container {
+    order: 1;
+  }
+  
+  .theme-switch-wrapper {
+    order: 2;
+    width: 100%;
+    justify-content: center;
+  }
 } 
