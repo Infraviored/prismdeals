@@ -35,11 +35,25 @@ We've successfully modularized the JavaScript codebase with the following struct
    - Controls UI state (filter collapse, etc.)
    - Provides persistent settings across sessions
 
-7. **Entry Point (`main.js`)**: 
+7. **Vendor Contact Module (`vendor-contact.js`)**: 
+   - Manages vendor message templates
+   - Handles message generation and customization
+   - Provides UI for editing and filtering templates
+   - Supports message regeneration
+
+8. **Entry Point (`main.js`)**: 
    - Imports all modules through the index file
    - Provides minimal bootstrap logic
    - Documents the module structure
 
-8. **Module Index (`index.js`)**: 
+9. **Module Index (`index.js`)**: 
    - Re-exports all modules for easier imports
    - Simplifies the module dependency graph
+
+The modularization aligns with the main application tabs:
+- Listings tab: handled by `listings.js`
+- Configure tab: handled by `searches.js`
+- Vendor Contact tab: handled by `vendor-contact.js`
+- Housekeeping tab: handled by `housekeeping.js`
+
+This structure enables better code organization, easier maintenance, and cleaner separation of concerns. Each module is responsible for a specific part of the application and can be developed and tested independently.

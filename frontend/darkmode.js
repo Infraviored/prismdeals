@@ -1,154 +1,186 @@
 // Check for saved theme preference or use user's system preference
 const prefersDarkScheme = window.matchMedia("(prefers-color-scheme: dark)");
 
-// Function to toggle dark mode with animation
-function toggleDarkMode(isDark) {
-  // Add a smooth transition effect
-  document.documentElement.style.transition = 'background-color 0.5s ease';
-  
-  // Toggle the dark-mode class
-  document.body.classList.toggle('dark-mode', isDark);
-  
-  // Save the preference
-  localStorage.setItem('darkMode', isDark ? 'enabled' : 'disabled');
-  
-  // Update the checkbox state
-  document.getElementById('checkbox').checked = isDark;
-  
-  // Update icon visibility with animation
-  const lightIcon = document.querySelector('.theme-icon-light');
-  const darkIcon = document.querySelector('.theme-icon-dark');
-  
-  if (lightIcon && darkIcon) {
-    lightIcon.style.transition = 'opacity 0.3s ease';
-    darkIcon.style.transition = 'opacity 0.3s ease';
-    
-    lightIcon.style.opacity = isDark ? '0.7' : '1';
-    darkIcon.style.opacity = isDark ? '1' : '0.7';
-  }
-  
-  // Ensure admin-only elements have proper styling in dark mode
-  const adminOnlyElements = document.querySelectorAll('.admin-only');
-  adminOnlyElements.forEach(element => {
-    if (element.hasAttribute('disabled')) {
-      element.style.transition = 'opacity 0.3s ease';
-      element.style.opacity = isDark ? '0.5' : '0.6';
+// Toggle dark mode
+function toggleDarkMode(enabled) {
+    if (enabled === undefined) {
+        enabled = !document.body.classList.contains('dark-mode');
     }
-  });
-  
-  // Enhance cards in dark mode
-  const cards = document.querySelectorAll('.card');
-  cards.forEach(card => {
-    if (isDark) {
-      card.classList.add('dark-card');
+    
+    if (enabled) {
+        document.body.classList.add('dark-mode');
+        localStorage.setItem('darkMode', 'enabled');
+        document.getElementById('darkModeToggle').innerHTML = '<i class="bi bi-sun-fill"></i>';
     } else {
-      card.classList.remove('dark-card');
+        document.body.classList.remove('dark-mode');
+        localStorage.setItem('darkMode', 'disabled');
+        document.getElementById('darkModeToggle').innerHTML = '<i class="bi bi-moon-fill"></i>';
     }
-  });
-  
-  // Enhance buttons in dark mode
-  const buttons = document.querySelectorAll('.btn-outline-primary, .btn-outline-secondary, .btn-outline-danger, .btn-outline-warning, .btn-outline-info, .btn-outline-success');
-  buttons.forEach(button => {
-    button.classList.toggle('dark-button', isDark);
-  });
-  
-  // Enhance form controls in dark mode
-  const formControls = document.querySelectorAll('.form-control, .form-select');
-  formControls.forEach(control => {
-    control.classList.toggle('dark-form-control', isDark);
-  });
-  
-  // Apply dark mode to housekeeping-specific elements
-  applyDarkModeToHousekeeping();
-}
-
-// Function to apply dark mode to housekeeping status elements
-function applyDarkModeToHousekeeping() {
-  // Determine if dark mode is active
-  const isDarkMode = document.body.classList.contains('dark-mode');
-
-  // Find all alert elements in the housekeeping section
-  document.querySelectorAll('[id^="listing-status-"]').forEach(statusElement => {
-    if (!statusElement) return;
     
-    statusElement.querySelectorAll('.alert').forEach(alertEl => {
-      // For success alerts (available listings)
-      if (alertEl.classList.contains('alert-success')) {
+    // Apply dark mode to all components
+    applyDarkModeToComponents();
+}
+
+// Apply dark mode to all components
+function applyDarkModeToComponents() {
+    applyDarkModeToHousekeeping();
+    applyDarkModeToModals();
+    applyDarkModeToPaginationControls();
+    applyDarkModeToToasts();
+}
+
+function applyDarkModeToHousekeeping() {
+    const isDarkMode = document.body.classList.contains('dark-mode');
+    
+    // Apply dark mode to alerts
+    document.querySelectorAll('.alert').forEach(alert => {
         if (isDarkMode) {
-          alertEl.style.backgroundColor = '#1e4620';
-          alertEl.style.color = '#ffffff';
-          alertEl.style.borderColor = '#2a623b';
+            if (alert.classList.contains('alert-success')) {
+                alert.style.backgroundColor = '#1b5e20';
+                alert.style.color = '#e0e0e0';
+                alert.style.borderColor = '#2e7d32';
+            } else if (alert.classList.contains('alert-danger')) {
+                alert.style.backgroundColor = '#b71c1c';
+                alert.style.color = '#e0e0e0';
+                alert.style.borderColor = '#c62828';
+            } else if (alert.classList.contains('alert-info')) {
+                alert.style.backgroundColor = '#01579b';
+                alert.style.color = '#e0e0e0';
+                alert.style.borderColor = '#0277bd';
+            } else if (alert.classList.contains('alert-warning')) {
+                alert.style.backgroundColor = '#f57f17';
+                alert.style.color = '#212121';
+                alert.style.borderColor = '#f9a825';
+            }
         } else {
-          alertEl.style.backgroundColor = '';
-          alertEl.style.color = '';
-          alertEl.style.borderColor = '';
+            alert.style.backgroundColor = '';
+            alert.style.color = '';
+            alert.style.borderColor = '';
         }
-      }
-      
-      // For danger alerts (deleted listings or errors)
-      if (alertEl.classList.contains('alert-danger')) {
-        if (isDarkMode) {
-          alertEl.style.backgroundColor = '#471c24';
-          alertEl.style.color = '#ffffff';
-          alertEl.style.borderColor = '#572a30';
-        } else {
-          alertEl.style.backgroundColor = '';
-          alertEl.style.color = '';
-          alertEl.style.borderColor = '';
-        }
-      }
-      
-      // For info alerts
-      if (alertEl.classList.contains('alert-info')) {
-        if (isDarkMode) {
-          alertEl.style.backgroundColor = '#0f3a4a';
-          alertEl.style.color = '#ffffff';
-          alertEl.style.borderColor = '#154352';
-        } else {
-          alertEl.style.backgroundColor = '';
-          alertEl.style.color = '';
-          alertEl.style.borderColor = '';
-        }
-      }
-      
-      // For warning alerts
-      if (alertEl.classList.contains('alert-warning')) {
-        if (isDarkMode) {
-          alertEl.style.backgroundColor = '#4d3c19';
-          alertEl.style.color = '#ffffff';
-          alertEl.style.borderColor = '#554223';
-        } else {
-          alertEl.style.backgroundColor = '';
-          alertEl.style.color = '';
-          alertEl.style.borderColor = '';
-        }
-      }
     });
-  });
+    
+    // Apply dark mode to progress bars
+    document.querySelectorAll('.progress-bar').forEach(progressBar => {
+        if (isDarkMode) {
+            progressBar.style.backgroundColor = '#90caf9';
+        } else {
+            progressBar.style.backgroundColor = '';
+        }
+    });
+    
+    // Apply dark mode to small text
+    document.querySelectorAll('.text-muted').forEach(element => {
+        if (isDarkMode) {
+            element.style.color = '#a0a0a0';
+        } else {
+            element.style.color = '';
+        }
+    });
 }
 
-// Check for saved user preference, if any
-const currentTheme = localStorage.getItem('darkMode');
-if (currentTheme === 'enabled') {
-  toggleDarkMode(true);
-} else if (currentTheme === 'disabled') {
-  toggleDarkMode(false);
-} else {
-  // If no saved preference, use system preference
-  toggleDarkMode(prefersDarkScheme.matches);
+function applyDarkModeToModals() {
+    const isDarkMode = document.body.classList.contains('dark-mode');
+    
+    document.querySelectorAll('.modal-content').forEach(modal => {
+        if (isDarkMode) {
+            modal.style.backgroundColor = '#2d2d2d';
+            modal.style.borderColor = '#444';
+        } else {
+            modal.style.backgroundColor = '';
+            modal.style.borderColor = '';
+        }
+    });
+    
+    document.querySelectorAll('.modal-header, .modal-footer').forEach(element => {
+        if (isDarkMode) {
+            element.style.borderColor = '#444';
+        } else {
+            element.style.borderColor = '';
+        }
+    });
 }
 
-// Listen for toggle changes
-document.getElementById('checkbox').addEventListener('change', function(e) {
-  toggleDarkMode(e.target.checked);
+function applyDarkModeToPaginationControls() {
+    const isDarkMode = document.body.classList.contains('dark-mode');
+    
+    document.querySelectorAll('.pagination .page-link').forEach(pageLink => {
+        if (isDarkMode) {
+            pageLink.style.backgroundColor = '#2d2d2d';
+            pageLink.style.borderColor = '#444';
+            pageLink.style.color = '#e0e0e0';
+        } else {
+            pageLink.style.backgroundColor = '';
+            pageLink.style.borderColor = '';
+            pageLink.style.color = '';
+        }
+    });
+    
+    document.querySelectorAll('.pagination .page-item.active .page-link').forEach(pageLink => {
+        if (isDarkMode) {
+            pageLink.style.backgroundColor = '#90caf9';
+            pageLink.style.borderColor = '#90caf9';
+            pageLink.style.color = '#212121';
+        } else {
+            pageLink.style.backgroundColor = '';
+            pageLink.style.borderColor = '';
+            pageLink.style.color = '';
+        }
+    });
+}
+
+function applyDarkModeToToasts() {
+    const isDarkMode = document.body.classList.contains('dark-mode');
+    
+    document.querySelectorAll('.toast').forEach(toast => {
+        if (isDarkMode) {
+            toast.style.backgroundColor = '#2d2d2d';
+            toast.style.borderColor = '#444';
+            toast.style.color = '#e0e0e0';
+        } else {
+            toast.style.backgroundColor = '';
+            toast.style.borderColor = '';
+            toast.style.color = '';
+        }
+    });
+    
+    document.querySelectorAll('.toast-header').forEach(header => {
+        if (isDarkMode) {
+            header.style.backgroundColor = '#333';
+            header.style.borderColor = '#444';
+            header.style.color = '#e0e0e0';
+        } else {
+            header.style.backgroundColor = '';
+            header.style.borderColor = '';
+            header.style.color = '';
+        }
+    });
+}
+
+// Check for dark mode preference
+window.addEventListener('DOMContentLoaded', () => {
+    const darkMode = localStorage.getItem('darkMode');
+    const prefersDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    
+    if (darkMode === 'enabled' || (darkMode === null && prefersDarkMode)) {
+        toggleDarkMode(true);
+    }
+    
+    // Set up toggle button
+    document.getElementById('darkModeToggle').addEventListener('click', () => {
+        toggleDarkMode();
+    });
+    
+    // Listen for system preference changes
+    if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+            if (localStorage.getItem('darkMode') === null) {
+                toggleDarkMode(e.matches);
+            }
+        });
+    }
 });
 
-// Listen for system preference changes
-prefersDarkScheme.addEventListener('change', function(e) {
-  if (!localStorage.getItem('darkMode')) {
-    toggleDarkMode(e.matches);
-  }
-});
-
-// Export the toggle function to be called from other scripts
-window.toggleDarkMode = toggleDarkMode; 
+// Make functions available globally
+window.toggleDarkMode = toggleDarkMode;
+window.applyDarkModeToHousekeeping = applyDarkModeToHousekeeping;
+window.applyDarkModeToComponents = applyDarkModeToComponents; 

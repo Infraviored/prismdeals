@@ -29,10 +29,75 @@ function loadSortPreference() {
 
 // Function to fetch listings
 async function fetchListings() {
-  showLoading('listings-container');
+  // Clear any previous error or loading message
+  const listingsContainer = document.getElementById('listings-container');
+  const listingsCount = document.getElementById('listings-count');
+  
+  // Show loading indication
+  if (listingsContainer) {
+    listingsContainer.innerHTML = `
+      <div class="col-12 text-center">
+        <div class="spinner-border" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p>Loading listings...</p>
+      </div>
+    `;
+  }
+  
+  if (listingsCount) {
+    listingsCount.className = 'alert alert-info';
+    listingsCount.textContent = 'Loading listings...';
+  }
+  
   try {
+    // First check if the user is authenticated
+    const isAuthenticated = window.auth && window.auth.isAuthenticated();
+    const isPublicAccess = window.auth && window.auth.isPublicAccessEnabled();
+    const canAccess = isAuthenticated || isPublicAccess;
+    
+    if (!canAccess) {
+      // Update the listings count to show login required
+      if (listingsCount) {
+        listingsCount.className = 'alert alert-warning';
+        listingsCount.innerHTML = `<i class="bi bi-shield-lock me-2"></i> Login required to view listings`;
+      }
+      
+      // Show login notice
+      if (listingsContainer) {
+        listingsContainer.innerHTML = `
+          <div class="col-12">
+            <div class="card shadow-sm mb-4">
+              <div class="card-body text-center py-5">
+                <div class="mb-4">
+                  <i class="bi bi-shield-lock" style="font-size: 3rem; color: var(--bs-primary);"></i>
+                </div>
+                <h4 class="mb-3">Authentication Required</h4>
+                <p class="mb-4">Please log in to view the listings content.</p>
+                <button class="btn btn-primary px-4" id="listings-login-btn">
+                  <i class="bi bi-box-arrow-in-right me-2"></i>Login
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+        
+        // Add event listener to login button
+        const loginBtn = document.getElementById('listings-login-btn');
+        if (loginBtn) {
+          loginBtn.addEventListener('click', () => {
+            if (typeof window.showLoginPrompt === 'function') {
+              window.showLoginPrompt();
+            }
+          });
+        }
+      }
+      return;
+    }
+    
     // Get the show deleted parameter from the checkbox
-    const showDeleted = document.getElementById('show-deleted-listings').checked;
+    const showDeletedCheckbox = document.getElementById('show-deleted-listings');
+    const showDeleted = showDeletedCheckbox ? showDeletedCheckbox.checked : true;
     
     // Include the parameter in the URL
     const response = await fetch(`${window.config.API_BASE_URL}/listings?show_deleted=${showDeleted}`, {
@@ -40,22 +105,50 @@ async function fetchListings() {
     });
     
     if (response.status === 401) {
-      // Unauthorized - show login prompt
-      document.getElementById('listings-container').innerHTML = `
-        <div class="col-12 alert alert-warning">
-          <h4 class="alert-heading">Authentication Required</h4>
-          <p>You need to be logged in to view listings.</p>
-          <button class="btn btn-primary" id="listings-login-btn">Login</button>
-        </div>
-      `;
-      
-      document.getElementById('listings-login-btn').addEventListener('click', () => {
-        if (typeof window.showLoginPrompt === 'function') {
-          window.showLoginPrompt();
-        } else if (typeof showLoginPrompt === 'function') {
-          showLoginPrompt();
+      // If we get a 401 despite our prior check, refresh auth status and try again
+      if (window.auth && typeof window.auth.checkAuthStatus === 'function') {
+        const isNowAuthenticated = await window.auth.checkAuthStatus();
+        
+        if (isNowAuthenticated || window.auth.isPublicAccessEnabled()) {
+          // If that succeeded, try to load listings again after a short delay
+          setTimeout(() => fetchListings(), 500);
+        } else {
+          // Still not authenticated, show login notice
+          if (listingsCount) {
+            listingsCount.className = 'alert alert-warning';
+            listingsCount.innerHTML = `<i class="bi bi-shield-lock me-2"></i> Login required to view listings`;
+          }
+          
+          if (listingsContainer) {
+            listingsContainer.innerHTML = `
+              <div class="col-12">
+                <div class="card shadow-sm mb-4">
+                  <div class="card-body text-center py-5">
+                    <div class="mb-4">
+                      <i class="bi bi-shield-lock" style="font-size: 3rem; color: var(--bs-primary);"></i>
+                    </div>
+                    <h4 class="mb-3">Authentication Required</h4>
+                    <p class="mb-4">Please log in to view the listings content.</p>
+                    <button class="btn btn-primary px-4" id="listings-login-btn">
+                      <i class="bi bi-box-arrow-in-right me-2"></i>Login
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `;
+            
+            // Add event listener to login button
+            const loginBtn = document.getElementById('listings-login-btn');
+            if (loginBtn) {
+              loginBtn.addEventListener('click', () => {
+                if (typeof window.showLoginPrompt === 'function') {
+                  window.showLoginPrompt();
+                }
+              });
+            }
+          }
         }
-      });
+      }
       return;
     }
     
@@ -63,7 +156,13 @@ async function fetchListings() {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const listings = await response.json();
+    let listings = await response.json();
+    
+    // If showDeleted is false, filter out deleted listings here as well (client-side backup)
+    if (!showDeleted) {
+      listings = listings.filter(listing => !listing.is_deleted);
+    }
+    
     allListings = listings;
     filteredListings = [...allListings];
     updateListingsCount();
@@ -77,13 +176,21 @@ async function fetchListings() {
     }
   } catch (error) {
     console.error('Error fetching listings:', error);
-    document.getElementById('listings-container').innerHTML = `
-      <div class="col-12 alert alert-danger">
-        <h4 class="alert-heading">Error Loading Listings</h4>
-        <p>Failed to load listings. Please try again later.</p>
-        <p><small>Error: ${error.message}</small></p>
-      </div>
-    `;
+    
+    // Update the listings count with the error
+    if (listingsCount) {
+      listingsCount.className = 'alert alert-danger';
+      listingsCount.textContent = 'Error loading listings';
+    }
+    
+    if (listingsContainer) {
+      listingsContainer.innerHTML = `
+        <div class="mb-3">
+          <p>Failed to load listings. Please try again later.</p>
+          <p><small>Error: ${error.message}</small></p>
+        </div>
+      `;
+    }
   }
 }
 
@@ -199,8 +306,15 @@ function applyFilters() {
   const filterScreenHighres = document.getElementById('filter-screen-highres').checked;
   const filterFullInfo = document.getElementById('filter-full-info').checked;
   const filterSearch = document.getElementById('filter-search').value;
+  const showDeleted = document.getElementById('show-deleted-listings').checked;
   
   filteredListings = allListings.filter(listing => {
+    // First filter by deleted status
+    if (!showDeleted && listing.is_deleted) {
+      return false;
+    }
+    
+    // Then apply other filters
     let include = true;
     
     if (filterRamMore) {
@@ -334,9 +448,16 @@ function setupListingsEventListeners() {
   document.getElementById('filter-full-info').addEventListener('change', applyFilters);
   document.getElementById('filter-search').addEventListener('change', applyFilters);
   
-  // Show deleted listings checkbox
-  document.getElementById('show-deleted-listings').addEventListener('change', () => {
-    fetchListings();
+  // Show deleted listings checkbox - use applyFilters instead of refetching
+  document.getElementById('show-deleted-listings').addEventListener('change', function() {
+    // If we need to completely refetch from the server, uncomment this:
+    // fetchListings();
+    
+    // Otherwise, just filter the existing listings (more efficient):
+    applyFilters();
+    
+    // Save the preference
+    localStorage.setItem('showDeletedListings', this.checked);
   });
 }
 
@@ -372,8 +493,20 @@ function loadFilterState() {
 
 // Initialize listings module
 function initListingsModule() {
+  // Load saved filter and sort preferences
   loadFilterState();
   loadSortPreference();
+  
+  // Load "Show Deleted" checkbox state from localStorage
+  const showDeletedCheckbox = document.getElementById('show-deleted-listings');
+  if (showDeletedCheckbox) {
+    const savedShowDeleted = localStorage.getItem('showDeletedListings');
+    if (savedShowDeleted !== null) {
+      showDeletedCheckbox.checked = savedShowDeleted === 'true';
+    }
+  }
+  
+  // Set up all event listeners
   setupListingsEventListeners();
 }
 
