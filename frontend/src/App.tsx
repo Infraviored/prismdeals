@@ -732,19 +732,6 @@ SCHEMA:
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {/* "+" Add Hunt Campaign Card */}
-              <div
-                onClick={() => setView('create-campaign')}
-                className="bg-slate-900/20 backdrop-blur-xl border border-dashed border-slate-800 hover:border-emerald-500/50 hover:bg-emerald-500/[0.02] p-6 rounded-2xl shadow-lg flex flex-col items-center justify-center space-y-4 hover:-translate-y-0.5 transition-all cursor-pointer group h-full min-h-[220px]"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xl group-hover:bg-emerald-500 group-hover:text-slate-950 transition-all shadow-inner">
-                  +
-                </div>
-                <div className="text-center">
-                  <h3 className="text-sm font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">Create Hunt Campaign</h3>
-                  <p className="text-[10px] text-slate-500 mt-1 max-w-[200px]">Launch a new automated agent search category</p>
-                </div>
-              </div>
-
               {campaigns.map(c => {
                 const campaignSearches = searches.filter(s => s.campaign_id === c.id)
                 const campaignListings = listings.filter(l => {
@@ -800,7 +787,7 @@ SCHEMA:
                             className="p-1.5 rounded-lg bg-slate-850 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 transition-all border border-slate-800"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             </svg>
                           </button>
@@ -831,6 +818,20 @@ SCHEMA:
                   </div>
                 )
               })}
+
+              {/* "+" Add Hunt Campaign Card */}
+              <div
+                onClick={() => setView('create-campaign')}
+                className="bg-slate-900/20 backdrop-blur-xl border border-dashed border-slate-800 hover:border-emerald-500/50 hover:bg-emerald-500/[0.02] p-6 rounded-2xl shadow-lg flex flex-col items-center justify-center space-y-4 hover:-translate-y-0.5 transition-all cursor-pointer group h-full min-h-[220px]"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xl group-hover:bg-emerald-500 group-hover:text-slate-950 transition-all shadow-inner">
+                  +
+                </div>
+                <div className="text-center">
+                  <h3 className="text-sm font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">Create Hunt Campaign</h3>
+                  <p className="text-[10px] text-slate-500 mt-1 max-w-[200px]">Launch a new automated agent search category</p>
+                </div>
+              </div>
             </div>
           </div>
         )}
