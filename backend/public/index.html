@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Antigravity Multi-Domain Expert Portal</title>
+  <title>Kleinanzeigen Agent</title>
   <!-- Google Fonts Outfit & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -314,6 +314,34 @@
       padding: 16px;
       margin-bottom: 12px;
     }
+    /* Complete Dark Mode Custom Overrides to Prevent Black Text on Dark BG */
+    .form-control, .form-select, .form-check-input {
+      background-color: rgba(255, 255, 255, 0.05) !important;
+      color: #F1F5F9 !important;
+      border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    }
+    .form-control:focus, .form-select:focus {
+      background-color: rgba(255, 255, 255, 0.08) !important;
+      color: #FFF !important;
+      border-color: #00D2FF !important;
+      box-shadow: 0 0 10px rgba(0, 210, 255, 0.25) !important;
+    }
+    .form-control::placeholder {
+      color: #64748B !important;
+    }
+    select option {
+      background-color: #090D1A !important;
+      color: #F1F5F9 !important;
+    }
+    .form-check-label, .form-label, .text-muted, p.text-muted {
+      color: #94A3B8 !important;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(0, 210, 255, 0.3) !important;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 210, 255, 0.5) !important;
+    }
   </style>
 </head>
 <body>
@@ -321,13 +349,13 @@
   <!-- Premium Header -->
   <header>
     <div class="container d-flex align-items-center justify-content-between">
-      <div class="logo-glow">ANTIGRAVITY EXPERT</div>
+      <div class="logo-glow">KLEINANZEIGEN AGENT</div>
       <ul class="nav nav-tabs" id="expertTabs" role="tablist">
         <li class="nav-item">
           <button class="nav-link active" id="feed-tab" data-bs-toggle="tab" data-bs-target="#feed-content" type="button" role="tab">Inbox & Feed</button>
         </li>
         <li class="nav-item">
-          <button class="nav-link" id="profiles-tab" data-bs-toggle="tab" data-bs-target="#profiles-content" type="button" role="tab">Expert Profiles</button>
+          <button class="nav-link" id="profiles-tab" data-bs-toggle="tab" data-bs-target="#profiles-content" type="button" role="tab">Agent Profiles</button>
         </li>
         <li class="nav-item">
           <button class="nav-link" id="searches-tab" data-bs-toggle="tab" data-bs-target="#searches-content" type="button" role="tab">Search Targets</button>
@@ -405,7 +433,7 @@
           <div class="col-lg-8 mb-4">
             <div class="glass-card">
               <h3 class="mb-4 text-info">Search Target URLs</h3>
-              <p class="text-muted">Register search URLs from Kleinanzeigen and pair them with an Expert Profile to automate listing classification.</p>
+              <p class="text-muted">Register search URLs from Kleinanzeigen and pair them with an Agent Profile to automate listing classification.</p>
               
               <div id="search-list-container">
                 <div class="text-center py-5 text-muted">Loading targets...</div>
