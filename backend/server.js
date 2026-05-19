@@ -568,11 +568,19 @@ app.post('/api/scrape', (req, res) => {
 // API: Trigger AI matching & scoring interpretation
 app.post('/api/process', (req, res) => {
   try {
+    const { listing_id } = req.body || {};
     const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
-    const python = spawn(pythonExecutable, [
+    
+    const args = [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'process'
-    ], {
+    ];
+    
+    if (listing_id) {
+      args.push('--listing-id', String(listing_id));
+    }
+    
+    const python = spawn(pythonExecutable, args, {
       env: { ...process.env }
     });
     

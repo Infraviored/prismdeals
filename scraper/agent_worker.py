@@ -49,23 +49,36 @@ def extract_json_block(text):
     return None
 
 
-def process_unprocessed_listings():
-    """Finds all unprocessed listings, extracts attributes using OpenAI, and scores them"""
+def process_unprocessed_listings(target_listing_id=None):
+    """Finds all unprocessed listings (or a specific single listing), extracts attributes using OpenAI, and scores them"""
     conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     # Query listings that have a profile assigned and haven't been LLM processed
-    cursor.execute(
+    if target_listing_id:
+        cursor.execute(
+            """
+            SELECT l.id, l.title, l.detailed_description, l.details, l.search_id, k.item_json, k.expert_knowledge 
+            FROM listings l
+            JOIN searches s ON l.search_id = s.id
+            JOIN campaigns c ON s.campaign_id = c.id
+            LEFT JOIN knowledge_sets k ON s.knowledge_set_id = k.id
+            WHERE l.id = ?
+        """,
+            (target_listing_id,),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT l.id, l.title, l.detailed_description, l.details, l.search_id, k.item_json, k.expert_knowledge 
+            FROM listings l
+            JOIN searches s ON l.search_id = s.id
+            JOIN campaigns c ON s.campaign_id = c.id
+            LEFT JOIN knowledge_sets k ON s.knowledge_set_id = k.id
+            WHERE l.llm_processed = 0
         """
-        SELECT l.id, l.title, l.detailed_description, l.details, l.search_id, k.item_json, k.expert_knowledge 
-        FROM listings l
-        JOIN searches s ON l.search_id = s.id
-        JOIN campaigns c ON s.campaign_id = c.id
-        LEFT JOIN knowledge_sets k ON s.knowledge_set_id = k.id
-        WHERE l.llm_processed = 0
-    """
-    )
+        )
     listings = cursor.fetchall()
 
     if not listings:
@@ -458,7 +471,10 @@ if __name__ == "__main__":
     command = sys.argv[1]
 
     if command == "process":
-        process_unprocessed_listings()
+        if len(sys.argv) >= 3:
+            process_unprocessed_listings(sys.argv[2])
+        else:
+            process_unprocessed_listings()
     elif command == "draft":
         if len(sys.argv) < 3:
             print("Usage: python3 agent_worker.py draft <listing_id>")

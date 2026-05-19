@@ -68,6 +68,12 @@ def main():
         default=None,
         help="Maximum number of listings to scrape per URL",
     )
+    parser.add_argument(
+        "--listing-id",
+        type=str,
+        default=None,
+        help="Specific listing ID to process",
+    )
 
     args = parser.parse_args()
 
@@ -198,7 +204,10 @@ def main():
             worker_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)), "agent_worker.py"
             )
-            subprocess.run(["python3", worker_path, "process"], check=True)
+            cmd = ["python3", worker_path, "process"]
+            if args.listing_id:
+                cmd.append(args.listing_id)
+            subprocess.run(cmd, check=True)
             logger.info("Successfully executed agent_worker processing.")
         except subprocess.CalledProcessError as e:
             logger.error(f"Error running agent_worker process: {str(e)}")

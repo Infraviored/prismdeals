@@ -163,7 +163,8 @@ export default function App() {
 
   // Filtering states for Deal Matcher
   const [selectedSearchId, setSelectedSearchId] = useState<string>('All')
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'Dealbreaker' | 'New' | 'Awaiting AI'>('All')
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'Dealbreaker' | 'New' | 'Evaluate with AI'>('All')
+  const [activeProcessingListingId, setActiveProcessingListingId] = useState<string | null>(null)
 
   // Inline forms
   const [newCampaignName, setNewCampaignName] = useState('')
@@ -504,6 +505,27 @@ export default function App() {
     }
   }
 
+  // Trigger AI agent processing on a single specific listing
+  const handleProcessSingleListing = async (listingId: string) => {
+    setActiveProcessingListingId(listingId)
+    try {
+      const res = await fetch('/api/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listing_id: listingId })
+      })
+      if (res.ok) {
+        refreshAll()
+      } else {
+        alert("Failed to run AI agent for this listing.")
+      }
+    } catch {
+      alert("Error contacting backend AI worker.")
+    } finally {
+      setActiveProcessingListingId(null)
+    }
+  }
+
   // Create new Knowledge Profile and link instantly
   const handleCreateNewSetAndBind = async (target: SearchTarget) => {
     const name = prompt("Enter a name for the new Guidelines Profile:", `${target.name} Guidelines`)
@@ -668,7 +690,7 @@ export default function App() {
     if (selectedStatusFilter === 'New') {
       return isMatched && l.status === 'New'
     }
-    if (selectedStatusFilter === 'Awaiting AI') {
+    if (selectedStatusFilter === 'Evaluate with AI') {
       return isMatched && !l.llm_processed
     }
     return isMatched
@@ -1415,7 +1437,7 @@ SCHEMA:
                     >
                       <option value="All">All Statuses</option>
                       <option value="High Niceness">High Niceness (70+)</option>
-                      <option value="Awaiting AI">Awaiting AI Matcher</option>
+                      <option value="Evaluate with AI">Evaluate with AI</option>
                       <option value="New">Unprocessed / New</option>
                       <option value="Dealbreaker">Dealbreakers</option>
                     </select>
@@ -1493,11 +1515,31 @@ SCHEMA:
                               <span className="text-[9px] text-emerald-500 font-semibold uppercase">{l.campaign_name}</span>
                             </div>
                             
-                            {!l.llm_processed ? (
-                              <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/25 flex items-center space-x-1.5 animate-pulse">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                <span>Awaiting AI</span>
-                              </div>
+                             {!l.llm_processed ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleProcessSingleListing(l.id);
+                                }}
+                                disabled={activeProcessingListingId !== null}
+                                className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center space-x-1.5 transition-all shadow-sm ${
+                                  activeProcessingListingId === l.id
+                                    ? 'bg-amber-500/25 text-amber-300 border-amber-400/50 animate-pulse'
+                                    : 'bg-amber-500/10 text-amber-400 border-amber-500/25 hover:bg-amber-500/20 hover:border-amber-400'
+                                }`}
+                              >
+                                {activeProcessingListingId === l.id ? (
+                                  <>
+                                    <div className="animate-spin w-3 h-3 border border-amber-400 border-t-transparent rounded-full" />
+                                    <span>Evaluating...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                                    <span>Evaluate with AI</span>
+                                  </>
+                                )}
+                              </button>
                             ) : l.niceness_score <= -999 ? (
                               <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
                                 DEALBREAKER
