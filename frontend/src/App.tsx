@@ -80,10 +80,6 @@ function App() {
   // Copy success indicator
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null)
 
-  useEffect(() => {
-    refreshAll()
-  }, [])
-
   const refreshAll = () => {
     Promise.all([
       fetch('/api/listings').then(res => res.json()),
@@ -105,6 +101,11 @@ function App() {
       console.error("Error refreshing dashboard state:", err)
     })
   }
+
+  useEffect(() => {
+    refreshAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Pre-compute draft for a specific listing if not loaded yet
   const ensureDraftLoaded = (listingId: string) => {
@@ -177,8 +178,9 @@ function App() {
           }
         })
         .catch(() => setProfileIngestError("Failed to connect to ingestion service."))
-    } catch (e: any) {
-      setProfileIngestError(`Invalid JSON format: ${e.message}`)
+    } catch (e: unknown) {
+      const err = e as Error
+      setProfileIngestError(`Invalid JSON format: ${err.message}`)
     }
   }
 
@@ -246,9 +248,10 @@ function App() {
   })
 
   // Grouped search list rendering helpers
-  const handleSearchRowChange = (index: number, key: keyof SearchTarget, val: any) => {
+  const handleSearchRowChange = (index: number, key: keyof SearchTarget, val: string | boolean | number | null) => {
     const updated = [...searches]
-    updated[index] = { ...updated[index], [key]: val }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    updated[index] = { ...updated[index], [key]: val as any }
     setSearches(updated)
   }
 
