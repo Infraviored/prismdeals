@@ -16,7 +16,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client
-client = OpenAI(api_key=API_KEY)
+openai_key = os.environ.get("OPENAI_API_KEY") or API_KEY
+client = OpenAI(api_key=openai_key)
 
 DB_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -57,9 +58,11 @@ def process_unprocessed_listings():
     # Query listings that have a profile assigned and haven't been LLM processed
     cursor.execute(
         """
-        SELECT l.id, l.title, l.detailed_description, l.profile_id, p.domain, p.extraction_criteria, p.scoring_model 
+        SELECT l.id, l.title, l.detailed_description, l.details, l.search_id, k.item_json, k.expert_knowledge 
         FROM listings l
-        JOIN profiles p ON l.profile_id = p.id
+        JOIN searches s ON l.search_id = s.id
+        JOIN campaigns c ON s.campaign_id = c.id
+        LEFT JOIN knowledge_sets k ON s.knowledge_set_id = k.id
         WHERE l.llm_processed = 0
     """
     )
@@ -75,20 +78,30 @@ def process_unprocessed_listings():
     for listing in listings:
         listing_id = listing["id"]
         title = listing["title"]
-        description = listing["detailed_description"]
+        description = listing["detailed_description"] or ""
+        try:
+            details_obj = json.loads(listing["details"] or "{}")
+            if details_obj:
+                details_text = "\n".join(
+                    [f"- {k}: {v}" for k, v in details_obj.items()]
+                )
+                description = f"Key attributes/details:\n{details_text}\n\nDescription:\n{description}"
+        except Exception as e:
+            logger.warning(f"Failed to parse listing details for LLM prompt: {str(e)}")
 
         logger.info(f"Analyzing: {title} (ID: {listing_id})")
 
         try:
-            criteria_list = json.loads(listing["extraction_criteria"])
-            scoring_model = json.loads(listing["scoring_model"])
+            item_config = json.loads(listing["item_json"] or "{}")
+            criteria_list = item_config.get("extraction_criteria", [])
+            scoring_model = item_config.get("scoring_model", {})
         except Exception as e:
-            logger.error(
-                f"Error parsing profile details for listing {listing_id}: {str(e)}"
-            )
+            logger.error(f"Error parsing item_json for listing {listing_id}: {str(e)}")
             continue
 
-        prompt = get_generalized_analysis_prompt(title, description, criteria_list)
+        prompt = get_generalized_analysis_prompt(
+            title, description, criteria_list, listing["expert_knowledge"]
+        )
 
         try:
             response = client.chat.completions.create(
@@ -194,9 +207,11 @@ def generate_outreach_draft(listing_id):
 
     cursor.execute(
         """
-        SELECT l.title, l.detailed_description, l.extracted_facts, p.outreach_strategy 
+        SELECT l.title, l.detailed_description, l.details, l.extracted_facts, k.item_json, k.expert_knowledge 
         FROM listings l
-        JOIN profiles p ON l.profile_id = p.id
+        JOIN searches s ON l.search_id = s.id
+        JOIN campaigns c ON s.campaign_id = c.id
+        LEFT JOIN knowledge_sets k ON s.knowledge_set_id = k.id
         WHERE l.id = ?
     """,
         (listing_id,),
@@ -209,11 +224,19 @@ def generate_outreach_draft(listing_id):
         sys.exit(1)
 
     title = row["title"]
-    description = row["detailed_description"]
+    description = row["detailed_description"] or ""
+    try:
+        details_obj = json.loads(row["details"] or "{}")
+        if details_obj:
+            details_text = "\n".join([f"- {k}: {v}" for k, v in details_obj.items()])
+            description = f"Key attributes/details:\n{details_text}\n\nDescription:\n{description}"
+    except Exception as e:
+        print(f"Failed to parse listing details for outreach draft: {str(e)}")
 
     try:
         facts = json.loads(row["extracted_facts"] or "{}")
-        strategy = json.loads(row["outreach_strategy"] or "{}")
+        item_config = json.loads(row["item_json"] or "{}")
+        strategy = item_config.get("outreach_strategy", {})
     except Exception as e:
         print(f"Error parsing listing metrics: {str(e)}")
         conn.close()
@@ -224,7 +247,7 @@ def generate_outreach_draft(listing_id):
 
     # Generate outreach prompt
     prompt = get_outreach_draft_prompt(
-        title, description, facts, strategy, missing_criteria
+        title, description, facts, strategy, missing_criteria, row["expert_knowledge"]
     )
 
     try:
@@ -258,9 +281,9 @@ def analyze_conversation(listing_id):
     # 1. Fetch listing, its facts, and matching profile extraction criteria
     cursor.execute(
         """
-        SELECT l.extracted_facts, l.profile_id, p.extraction_criteria, p.scoring_model
+        SELECT l.extracted_facts, l.search_id, s.item_json
         FROM listings l
-        JOIN profiles p ON l.profile_id = p.id
+        JOIN searches s ON l.search_id = s.id
         WHERE l.id = ?
     """,
         (listing_id,),
@@ -276,8 +299,9 @@ def analyze_conversation(listing_id):
 
     try:
         facts = json.loads(row["extracted_facts"] or "{}")
-        criteria_list = json.loads(row["extraction_criteria"])
-        scoring_model = json.loads(row["scoring_model"])
+        item_config = json.loads(row["item_json"] or "{}")
+        criteria_list = item_config.get("extraction_criteria", [])
+        scoring_model = item_config.get("scoring_model", {})
     except Exception as e:
         logger.error(f"Error parsing metadata for listing {listing_id}: {str(e)}")
         conn.close()

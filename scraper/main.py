@@ -3,12 +3,35 @@ import json
 import sqlite3
 import logging
 import argparse
-from scraper import scrape_listings
+from scraper import scrape_listings, preview_url_listings_count, harvest_descriptions
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+# Set up logging to both console and file
+log_file = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data",
+    "scraper.log",
 )
+os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+
+# Clear existing handlers to prevent duplicate logs
+for handler in list(root_logger.handlers):
+    root_logger.removeHandler(handler)
+
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+root_logger.addHandler(console_handler)
+
+# File handler
+file_handler = logging.FileHandler(log_file, encoding="utf-8")
+file_handler.setFormatter(formatter)
+root_logger.addHandler(file_handler)
+
 logger = logging.getLogger(__name__)
 
 DB_PATH = os.path.join(
@@ -29,9 +52,9 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["scrape", "process", "both"],
+        choices=["scrape", "process", "both", "preview"],
         default="both",
-        help="Operation mode: scrape, process, or both",
+        help="Operation mode: scrape, process, both, or preview",
     )
     parser.add_argument(
         "--urls",
@@ -47,6 +70,13 @@ def main():
     )
 
     args = parser.parse_args()
+
+    if args.mode == "preview":
+        if not args.urls or len(args.urls) == 0:
+            print("__PREVIEW_ERROR__:No target URL provided")
+            return
+        preview_url_listings_count(args.urls[0])
+        return
 
     # Define paths for data
     data_dir = os.path.join(
@@ -73,12 +103,10 @@ def main():
                 search_targets.append({"url": url, "profile_id": None})
         else:
             try:
-                cursor.execute("SELECT url, profile_id FROM searches WHERE enabled = 1")
+                cursor.execute("SELECT id, url FROM searches WHERE enabled = 1")
                 rows = cursor.fetchall()
                 for r in rows:
-                    search_targets.append(
-                        {"url": r["url"], "profile_id": r["profile_id"]}
-                    )
+                    search_targets.append({"url": r["url"], "search_id": r["id"]})
                 logger.info(
                     f"Loaded {len(search_targets)} active search URLs from SQLite"
                 )
@@ -95,7 +123,7 @@ def main():
 
         for target in search_targets:
             url = target["url"]
-            profile_id = target["profile_id"]
+            search_id = target.get("search_id")
 
             logger.info(f"Scraping search target: {url}")
 
@@ -112,7 +140,6 @@ def main():
                     [url],
                     temp_output_file,
                     max_listings=args.max_listings,
-                    process_immediately=False,
                 )
 
                 # Import scraped items into SQLite
@@ -133,7 +160,7 @@ def main():
                         cursor.execute(
                             """
                             INSERT OR IGNORE INTO listings (
-                                id, title, price, location, url, short_description, detailed_description, profile_id
+                                id, title, price, location, url, short_description, detailed_description, search_id
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                             (
@@ -144,12 +171,20 @@ def main():
                                 item.get("url", ""),
                                 item.get("short_description", ""),
                                 item.get("detailed_description", ""),
-                                profile_id,
+                                search_id,
                             ),
                         )
                     conn.commit()
             except Exception as e:
                 logger.error(f"Error scraping or importing URL {url}: {str(e)}")
+
+        # 1.5. Sequential detailed description harvesting phase
+        logger.info("Executing optimized sequential detailed description harvesting...")
+        try:
+            harvest_descriptions()
+            logger.info("Description harvesting completed successfully.")
+        except Exception as e:
+            logger.error(f"Error during detailed description harvesting: {str(e)}")
 
     # 2. Processing Mode
     if args.mode in ["process", "both"]:

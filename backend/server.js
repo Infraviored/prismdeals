@@ -37,8 +37,8 @@ const get = (sql, params = []) => {
   });
 };
 
-// Recalculates scores for all listings under a profile
-async function recalculateProfileScores(profileId, scoringModelStr) {
+// Recalculates scores for all listings under a search item
+async function recalculateItemScores(searchId, scoringModelStr) {
   let scoringModel;
   try {
     scoringModel = JSON.parse(scoringModelStr);
@@ -48,7 +48,7 @@ async function recalculateProfileScores(profileId, scoringModelStr) {
   }
   
   const baseScore = scoringModel.base_score !== undefined ? scoringModel.base_score : 50;
-  const listings = await query('SELECT id, extracted_facts FROM listings WHERE profile_id = ?', [profileId]);
+  const listings = await query('SELECT id, extracted_facts FROM listings WHERE search_id = ?', [searchId]);
   
   for (const listing of listings) {
     let facts = {};
@@ -86,7 +86,8 @@ async function recalculateProfileScores(profileId, scoringModelStr) {
 // Helper to execute Python AI Worker tasks (like drafting)
 function runPythonWorker(args) {
   return new Promise((resolve, reject) => {
-    const python = spawn('python3', [path.join(__dirname, '..', 'scraper', 'agent_worker.py'), ...args]);
+    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const python = spawn(pythonExecutable, [path.join(__dirname, '..', 'scraper', 'agent_worker.py'), ...args]);
     let stdout = '';
     let stderr = '';
     
@@ -112,23 +113,35 @@ if (fs.existsSync(distPath)) {
 app.use(express.json());
 
 // API: Get all listings
+// API: Get all listings
 app.get('/api/listings', async (req, res) => {
   try {
-    const { profile_id } = req.query;
+    const { campaign_id, search_id } = req.query;
     let rows;
-    if (profile_id) {
+    if (search_id) {
       rows = await query(`
-        SELECT l.*, p.domain as profile_domain 
+        SELECT l.*, s.name as item_name, c.name as campaign_name 
         FROM listings l 
-        LEFT JOIN profiles p ON l.profile_id = p.id 
-        WHERE l.profile_id = ? 
+        LEFT JOIN searches s ON l.search_id = s.id 
+        LEFT JOIN campaigns c ON s.campaign_id = c.id
+        WHERE l.search_id = ? 
         ORDER BY l.niceness_score DESC
-      `, [profile_id]);
+      `, [search_id]);
+    } else if (campaign_id) {
+      rows = await query(`
+        SELECT l.*, s.name as item_name, c.name as campaign_name 
+        FROM listings l 
+        LEFT JOIN searches s ON l.search_id = s.id 
+        LEFT JOIN campaigns c ON s.campaign_id = c.id
+        WHERE s.campaign_id = ? 
+        ORDER BY l.niceness_score DESC
+      `, [campaign_id]);
     } else {
       rows = await query(`
-        SELECT l.*, p.domain as profile_domain 
+        SELECT l.*, s.name as item_name, c.name as campaign_name 
         FROM listings l 
-        LEFT JOIN profiles p ON l.profile_id = p.id 
+        LEFT JOIN searches s ON l.search_id = s.id 
+        LEFT JOIN campaigns c ON s.campaign_id = c.id
         ORDER BY l.niceness_score DESC
       `);
     }
@@ -138,7 +151,9 @@ app.get('/api/listings', async (req, res) => {
       ...r,
       llm_processed: !!r.llm_processed,
       full_info_obtained: !!r.full_info_obtained,
-      extracted_facts: JSON.parse(r.extracted_facts || '{}')
+      extracted_facts: JSON.parse(r.extracted_facts || '{}'),
+      details: JSON.parse(r.details || '{}'),
+      images: JSON.parse(r.images || '[]')
     }));
     
     res.json(listings);
@@ -148,123 +163,195 @@ app.get('/api/listings', async (req, res) => {
   }
 });
 
-// API: Get search URLs
+// API: Get campaigns
+app.get('/api/campaigns', async (req, res) => {
+  try {
+    const rows = await query('SELECT * FROM campaigns');
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching campaigns:', error);
+    res.status(500).json({ error: 'Failed to fetch campaigns' });
+  }
+});
+
+// API: Create/Update campaign
+app.post('/api/campaigns', async (req, res) => {
+  try {
+    const { id, name } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Missing campaign name' });
+    }
+    let campaignId = id;
+    if (campaignId) {
+      await run('UPDATE campaigns SET name = ? WHERE id = ?', [name, campaignId]);
+    } else {
+      const result = await run('INSERT INTO campaigns (name) VALUES (?)', [name]);
+      campaignId = result.id;
+    }
+    res.json({ success: true, id: campaignId });
+  } catch (error) {
+    console.error('Error saving campaign:', error);
+    res.status(500).json({ error: 'Failed to save campaign' });
+  }
+});
+
+// API: Get search items
 app.get('/api/search-urls', async (req, res) => {
   try {
     const rows = await query(`
-      SELECT s.*, p.domain as profile_domain 
+      SELECT s.*, c.name as campaign_name, k.expert_knowledge, k.item_json 
       FROM searches s 
-      LEFT JOIN profiles p ON s.profile_id = p.id
+      LEFT JOIN campaigns c ON s.campaign_id = c.id
+      LEFT JOIN knowledge_sets k ON s.knowledge_set_id = k.id
     `);
-    res.json(rows.map(r => ({ ...r, enabled: !!r.enabled })));
+    res.json(rows.map(r => ({ 
+      ...r, 
+      enabled: !!r.enabled,
+      item_json: JSON.parse(r.item_json || '{}')
+    })));
   } catch (error) {
-    console.error('Error fetching search URLs:', error);
-    res.status(500).json({ error: 'Failed to load search URLs' });
+    console.error('Error fetching searches:', error);
+    res.status(500).json({ error: 'Failed to load searches' });
   }
 });
 
-// API: Update/save search URLs
-app.post('/api/search-urls', async (req, res) => {
+// API: Create / update single search item
+app.post('/api/searches', async (req, res) => {
   try {
-    const searchUrls = req.body; // Expects array of search url objects
-    
-    // Delete existing ones and re-insert to keep list in sync
-    await run('DELETE FROM searches');
-    
-    const stmt = db.prepare(`
-      INSERT INTO searches (url, name, enabled, profile_id)
-      VALUES (?, ?, ?, ?)
-    `);
-    
-    for (const item of searchUrls) {
-      stmt.run(item.url, item.name || 'Search URL', item.enabled ? 1 : 0, item.profile_id || null);
+    const { id, campaign_id, name, url, knowledge_set_id } = req.body;
+    if (!campaign_id || !name || !url) {
+      return res.status(400).json({ error: 'Missing campaign_id, name, or url' });
     }
-    stmt.finalize();
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error updating search URLs:', error);
-    res.status(500).json({ error: 'Failed to update search URLs' });
-  }
-});
-
-// API: Get all Expert Profiles
-app.get('/api/profiles', async (req, res) => {
-  try {
-    const rows = await query('SELECT * FROM profiles');
-    const profiles = rows.map(r => ({
-      ...r,
-      extraction_criteria: JSON.parse(r.extraction_criteria || '[]'),
-      scoring_model: JSON.parse(r.scoring_model || '{}'),
-      outreach_strategy: JSON.parse(r.outreach_strategy || '{}')
-    }));
-    res.json(profiles);
-  } catch (error) {
-    console.error('Error fetching profiles:', error);
-    res.status(500).json({ error: 'Failed to fetch profiles' });
-  }
-});
-
-// API: Ingest Researcher AI profile JSON
-app.post('/api/profiles/ingest', async (req, res) => {
-  try {
-    const profile = req.body;
-    if (!profile.product_domain || !profile.extraction_criteria || !profile.scoring_model) {
-      return res.status(400).json({ error: 'Invalid profile format. Missing key fields.' });
-    }
-    
-    const existing = await get('SELECT id FROM profiles WHERE domain = ?', [profile.product_domain]);
-    
-    let profileId;
-    if (existing) {
-      profileId = existing.id;
-      await run(`
-        UPDATE profiles 
-        SET extraction_criteria = ?, scoring_model = ?, outreach_strategy = ? 
-        WHERE id = ?
-      `, [
-        JSON.stringify(profile.extraction_criteria),
-        JSON.stringify(profile.scoring_model),
-        JSON.stringify(profile.outreach_strategy || {}),
-        profileId
+    let searchId = id;
+    const ksId = knowledge_set_id || null;
+    if (searchId) {
+      await run('UPDATE searches SET campaign_id = ?, name = ?, url = ?, knowledge_set_id = ? WHERE id = ?', [
+        campaign_id, name, url, ksId, searchId
       ]);
     } else {
-      const result = await run(`
-        INSERT INTO profiles (domain, extraction_criteria, scoring_model, outreach_strategy)
-        VALUES (?, ?, ?, ?)
-      `, [
-        profile.product_domain,
-        JSON.stringify(profile.extraction_criteria),
-        JSON.stringify(profile.scoring_model),
-        JSON.stringify(profile.outreach_strategy || {})
+      const result = await run('INSERT INTO searches (campaign_id, name, url, knowledge_set_id) VALUES (?, ?, ?, ?)', [
+        campaign_id, name, url, ksId
       ]);
-      profileId = result.id;
+      searchId = result.id;
     }
-    
-    // Recalculate listing scores for the updated profile
-    await recalculateProfileScores(profileId, JSON.stringify(profile.scoring_model));
-    
-    res.json({ success: true, profile_id: profileId });
+    res.json({ success: true, id: searchId });
   } catch (error) {
-    console.error('Error ingesting profile:', error);
-    res.status(500).json({ error: 'Failed to ingest profile' });
+    console.error('Error saving search item:', error);
+    res.status(500).json({ error: 'Failed to save search item' });
   }
 });
 
-// API: Save customized profile slider weights & recalculate
-app.post('/api/profiles/recalculate', async (req, res) => {
+// API: Delete search item
+app.delete('/api/searches/:id', async (req, res) => {
   try {
-    const { profile_id, scoring_model } = req.body;
-    
-    await run('UPDATE profiles SET scoring_model = ? WHERE id = ?', [
-      JSON.stringify(scoring_model),
-      profile_id
-    ]);
-    
-    await recalculateProfileScores(profile_id, JSON.stringify(scoring_model));
+    await run('DELETE FROM searches WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error recalculating weights:', error);
+    console.error('Error deleting search:', error);
+    res.status(500).json({ error: 'Failed to delete search' });
+  }
+});
+
+// API: Get all reusable knowledge sets
+app.get('/api/knowledge-sets', async (req, res) => {
+  try {
+    const rows = await query('SELECT * FROM knowledge_sets ORDER BY name ASC');
+    res.json(rows.map(r => ({
+      ...r,
+      item_json: JSON.parse(r.item_json || '{}')
+    })));
+  } catch (error) {
+    console.error('Error fetching knowledge sets:', error);
+    res.status(500).json({ error: 'Failed to load knowledge sets' });
+  }
+});
+
+// API: Create / update a knowledge set
+app.post('/api/knowledge-sets', async (req, res) => {
+  try {
+    const { id, name, expert_knowledge, item_json } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Missing knowledge set name' });
+    }
+    let ksId = id;
+    const jsonStr = JSON.stringify(item_json || {});
+    const expertStr = expert_knowledge || '';
+    if (ksId) {
+      await run('UPDATE knowledge_sets SET name = ?, expert_knowledge = ?, item_json = ? WHERE id = ?', [
+        name, expertStr, jsonStr, ksId
+      ]);
+    } else {
+      const result = await run('INSERT INTO knowledge_sets (name, expert_knowledge, item_json) VALUES (?, ?, ?)', [
+        name, expertStr, jsonStr
+      ]);
+      ksId = result.id;
+    }
+    res.json({ success: true, id: ksId });
+  } catch (error) {
+    console.error('Error saving knowledge set:', error);
+    res.status(500).json({ error: 'Failed to save knowledge set' });
+  }
+});
+
+// API: Delete a knowledge set
+app.delete('/api/knowledge-sets/:id', async (req, res) => {
+  try {
+    await run('DELETE FROM knowledge_sets WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting knowledge set:', error);
+    res.status(500).json({ error: 'Failed to delete knowledge set' });
+  }
+});
+
+// API: Live target URL preview count checking
+app.post('/api/searches/preview', (req, res) => {
+  const { url } = req.body;
+  if (!url) {
+    return res.status(400).json({ error: 'Missing target URL' });
+  }
+
+  const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+  const scriptPath = path.join(__dirname, '..', 'scraper', 'main.py');
+  
+  const python = spawn(pythonExecutable, [scriptPath, '--mode', 'preview', '--urls', url]);
+  
+  let stdout = '';
+  let stderr = '';
+  
+  python.stdout.on('data', (data) => stdout += data);
+  python.stderr.on('data', (data) => stderr += data);
+  
+  python.on('close', (code) => {
+    if (code === 0) {
+      const match = stdout.match(/__PREVIEW_COUNT__:(\d+)/);
+      if (match) {
+        return res.json({ count: parseInt(match[1], 10) });
+      }
+      const errMatch = stdout.match(/__PREVIEW_ERROR__:(.+)/);
+      return res.status(400).json({ error: errMatch ? errMatch[1] : 'Could not parse listing count from page.' });
+    } else {
+      console.error('Preview error:', stderr || stdout);
+      return res.status(500).json({ error: 'Headless browser check failed.' });
+    }
+  });
+});
+
+// API: Recalculate search scores based on updated item JSON scoring weights
+app.post('/api/searches/recalculate', async (req, res) => {
+  try {
+    const { search_id, item_json } = req.body;
+    
+    await run('UPDATE searches SET item_json = ? WHERE id = ?', [
+      JSON.stringify(item_json),
+      search_id
+    ]);
+    
+    const scoringModel = item_json.scoring_model || {};
+    await recalculateItemScores(search_id, JSON.stringify(scoringModel));
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error recalculating search item scores:', error);
     res.status(500).json({ error: 'Failed to update and recalculate scores' });
   }
 });
@@ -375,9 +462,68 @@ app.get('/api/schedule', (req, res) => {
   }
 });
 
-// API: Trigger scraper execution
+let activeScraperProcess = null;
+
+// API: Check scraper execution status and progress
+app.get('/api/scrape/status', (req, res) => {
+  const progressFile = path.join(__dirname, '..', 'data', 'scraper_progress.json');
+  let progress = { phase: 'idle', current: 0, total: 0, status: 'No active scraping session' };
+  
+  if (activeScraperProcess !== null) {
+    if (fs.existsSync(progressFile)) {
+      try {
+        progress = JSON.parse(fs.readFileSync(progressFile, 'utf8'));
+      } catch (e) {
+        progress = { phase: 'running', current: 0, total: 0, status: 'Active scraping session running...' };
+      }
+    } else {
+      progress = { phase: 'running', current: 0, total: 0, status: 'Active scraping session running...' };
+    }
+  } else {
+    if (fs.existsSync(progressFile)) {
+      try {
+        const fileData = JSON.parse(fs.readFileSync(progressFile, 'utf8'));
+        if (Date.now() / 1000 - fileData.timestamp > 600) {
+          progress = { phase: 'idle', current: 0, total: 0, status: 'Scraper is idle' };
+        } else {
+          progress = fileData;
+        }
+      } catch (e) {
+        // Ignore
+      }
+    }
+  }
+  
+  res.json({
+    active: activeScraperProcess !== null,
+    progress
+  });
+});
+
+// API: Get recent scraper logs for live display
+app.get('/api/logs', (req, res) => {
+  const logFile = path.join(__dirname, '..', 'data', 'scraper.log');
+  if (!fs.existsSync(logFile)) {
+    return res.json({ logs: 'No logs available yet.' });
+  }
+  
+  try {
+    const logsContent = fs.readFileSync(logFile, 'utf8');
+    const lines = logsContent.split('\n');
+    const lastLines = lines.slice(-80).join('\n');
+    res.json({ logs: lastLines });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to read logs' });
+  }
+});
+
+// API: Trigger scraper execution (asynchronous data fetching)
 app.post('/api/scrape', (req, res) => {
   try {
+    if (activeScraperProcess !== null) {
+      return res.status(400).json({ error: 'Scraper is already running' });
+    }
+
     const { interval } = req.body;
     
     if (interval) {
@@ -385,20 +531,105 @@ app.post('/api/scrape', (req, res) => {
       fs.writeFileSync(configPath, JSON.stringify({ interval }, null, 2));
     }
     
-    // Spawn scraper execution
-    const python = spawn('python3', [path.join(__dirname, '..', 'scraper', 'main.py')]);
+    // Clear old progress file
+    const progressFile = path.join(__dirname, '..', 'data', 'scraper_progress.json');
+    if (fs.existsSync(progressFile)) {
+      try { fs.unlinkSync(progressFile); } catch (e) {}
+    }
+    
+    // Spawn scraper execution in 'scrape' mode
+    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const python = spawn(pythonExecutable, [
+      path.join(__dirname, '..', 'scraper', 'main.py'),
+      '--mode', 'scrape'
+    ], {
+      env: { ...process.env }
+    });
+    
+    activeScraperProcess = python;
+    console.log('Background scraper spawned');
     
     python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
     python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
     
     python.on('close', (code) => {
       console.log(`Python scraper exited with code ${code}`);
-      res.json({ success: true, message: 'Scraping completed' });
+      activeScraperProcess = null;
     });
+    
+    res.json({ success: true, message: 'Scraping started' });
     
   } catch (error) {
     console.error('Error triggering scrape:', error);
     res.status(500).json({ error: 'Failed to trigger scraping' });
+  }
+});
+
+// API: Trigger AI matching & scoring interpretation
+app.post('/api/process', (req, res) => {
+  try {
+    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const python = spawn(pythonExecutable, [
+      path.join(__dirname, '..', 'scraper', 'main.py'),
+      '--mode', 'process'
+    ], {
+      env: { ...process.env }
+    });
+    
+    python.stdout.on('data', (data) => console.log(`AI worker stdout: ${data}`));
+    python.stderr.on('data', (data) => console.error(`AI worker stderr: ${data}`));
+    
+    python.on('close', (code) => {
+      console.log(`AI worker exited with code ${code}`);
+      res.json({ success: code === 0, message: 'AI processing completed' });
+    });
+    
+  } catch (error) {
+    console.error('Error triggering AI process:', error);
+    res.status(500).json({ error: 'Failed to trigger AI matching' });
+  }
+});
+
+// API: Get current login session status
+app.get('/api/session-status', (req, res) => {
+  try {
+    const statusPath = path.join(__dirname, '..', 'data', 'session_status.json');
+    if (fs.existsSync(statusPath)) {
+      const data = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
+      return res.json(data);
+    }
+    res.json({ email: null });
+  } catch (error) {
+    console.error('Error fetching session status:', error);
+    res.status(500).json({ error: 'Failed to read session status' });
+  }
+});
+
+// API: Trigger interactive manual login session
+app.post('/api/login-session', (req, res) => {
+  try {
+    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const python = spawn(pythonExecutable, [
+      path.join(__dirname, '..', 'scraper', 'main.py'),
+      '--mode', 'scrape',
+      '--urls', 'https://www.kleinanzeigen.de/m-meine-anzeigen.html?tab=PROJECTS'
+    ], {
+      env: {
+        ...process.env,
+        INTERACTIVE_LOGIN: "1"
+      }
+    });
+
+    python.stdout.on('data', (data) => console.log(`Login process: ${data}`));
+    python.stderr.on('data', (data) => console.error(`Login error: ${data}`));
+
+    python.on('close', (code) => {
+      console.log(`Interactive login process exited with code ${code}`);
+      res.json({ success: code === 0 });
+    });
+  } catch (error) {
+    console.error('Error launching login session:', error);
+    res.status(500).json({ error: 'Failed to trigger login process' });
   }
 });
 
@@ -436,7 +667,8 @@ function setupScheduledScraping() {
 
 function runScraper() {
   console.log('Running scheduled scrape...');
-  const python = spawn('python3', [path.join(__dirname, '..', 'scraper', 'main.py')]);
+  const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+  const python = spawn(pythonExecutable, [path.join(__dirname, '..', 'scraper', 'main.py')]);
   python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
   python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
 }

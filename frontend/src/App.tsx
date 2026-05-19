@@ -1,34 +1,26 @@
 import { useState, useEffect } from 'react'
 
-interface Criterion {
-  id: string
-  description: string
-  type: string
-}
-
-interface ScoringRule {
-  criterion_id: string
-  value: boolean
-  weight: number
-  is_dealbreaker: boolean
-  description: string
-}
-
-interface Profile {
+interface Campaign {
   id: number
-  domain: string
-  extraction_criteria: Criterion[]
-  scoring_model: {
-    rules: ScoringRule[]
-  }
-  outreach_strategy: {
-    tone: string
-    opening_hook: string
-    questions: Array<{
-      target_criterion: string
-      question_text: string
-    }>
-  }
+  name: string
+}
+
+interface KnowledgeSet {
+  id?: number
+  name: string
+  expert_knowledge: string
+  item_json: Record<string, unknown>
+}
+
+interface SearchTarget {
+  id?: number
+  campaign_id: number | null
+  name: string
+  url: string
+  enabled: boolean
+  knowledge_set_id: number | null
+  expert_knowledge?: string
+  item_json?: Record<string, unknown>
 }
 
 interface Listing {
@@ -39,919 +31,1535 @@ interface Listing {
   url: string
   short_description: string
   detailed_description: string
-  llm_processed: boolean
-  full_info_obtained: boolean
-  extracted_facts: Record<string, boolean | string>
+  extracted_facts: Record<string, unknown>
   niceness_score: number
   status: string
-  profile_id: number | null
-  profile_domain?: string
+  search_id: number
+  item_name?: string
+  campaign_name?: string
+  llm_processed: boolean
+  details?: Record<string, string>
+  images?: string[]
 }
 
-interface SearchTarget {
-  id?: number
-  url: string
-  name: string
-  enabled: boolean
-  profile_id: number | null
+interface ScraperProgressCardProps {
+  isScraping: boolean;
+  scrapingStatus: string;
+  scrapingProgress: {
+    phase: string;
+    current: number;
+    total: number;
+    status: string;
+  } | null;
+  liveLogs: string;
+  showLogConsole: boolean;
+  setShowLogConsole: (val: boolean) => void;
 }
 
-function App() {
-  const [listings, setListings] = useState<Listing[]>([])
-  const [profiles, setProfiles] = useState<Profile[]>([])
+function ScraperProgressCard({
+  isScraping,
+  scrapingStatus,
+  scrapingProgress,
+  liveLogs,
+  showLogConsole,
+  setShowLogConsole
+}: ScraperProgressCardProps) {
+  if (!isScraping) return null;
+
+  const current = scrapingProgress?.current ?? 0;
+  const total = scrapingProgress?.total ?? 100;
+  const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((current / total) * 100))) : 0;
+  const phase = scrapingProgress?.phase || 'starting';
+
+  let phaseLabel = "Initializing";
+  let phaseColor = "bg-amber-500/10 text-amber-400 border border-amber-500/25";
+  let barColor = "from-amber-500 to-amber-400 animate-pulse";
+  
+  if (phase === 'discovery') {
+    phaseLabel = "Discovery Phase (Index Page Crawl)";
+    phaseColor = "bg-sky-500/10 text-sky-400 border border-sky-500/25";
+    barColor = "from-sky-500 to-sky-400";
+  } else if (phase === 'harvesting') {
+    phaseLabel = "Enrichment Phase (Sequential Page Harvest)";
+    phaseColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25";
+    barColor = "from-emerald-500 to-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.3)]";
+  }
+
+  return (
+    <div className="bg-slate-900/90 backdrop-blur-2xl border border-slate-800/80 rounded-2xl p-6 shadow-2xl space-y-4 animate-fadeIn my-4">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2">
+            <div className="animate-spin w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full" />
+            <h3 className="text-sm font-bold text-slate-200">Active Scraping Session</h3>
+            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${phaseColor}`}>
+              {phaseLabel}
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed font-medium">
+            {scrapingStatus || "Connecting to background scraper worker..."}
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          <span className="text-lg font-black text-emerald-400 font-mono tracking-tight">{pct}%</span>
+          <span className="text-[10px] text-slate-500 block font-semibold">{current} / {total} Completed</span>
+        </div>
+      </div>
+
+      {/* Progress Bar Container */}
+      <div className="w-full bg-slate-950/80 h-3 rounded-full overflow-hidden p-0.5 border border-slate-850 shadow-inner">
+        <div 
+          className={`h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-500 relative`}
+          style={{ width: `${pct}%` }}
+        >
+          {/* Shine animation */}
+          <div className="absolute inset-0 bg-white/20 animate-pulse" />
+        </div>
+      </div>
+
+      {/* Retro Log Console */}
+      <div className="border border-slate-850 rounded-xl overflow-hidden bg-slate-950">
+        <button
+          onClick={() => setShowLogConsole(!showLogConsole)}
+          className="w-full px-4 py-2.5 bg-slate-900/60 hover:bg-slate-900 transition-colors flex items-center justify-between text-xs text-slate-400 hover:text-slate-250 font-bold focus:outline-none"
+        >
+          <div className="flex items-center space-x-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+            <span className="font-mono">view_live_scraper_logs.sh</span>
+          </div>
+          <span>{showLogConsole ? 'Collapse [-]' : 'Expand [+]'}</span>
+        </button>
+        
+        {showLogConsole && (
+          <div className="p-4 border-t border-slate-900 font-mono text-[11px] text-slate-350 leading-relaxed h-48 overflow-y-auto whitespace-pre-wrap select-text selection:bg-emerald-500/30 selection:text-white">
+            {liveLogs ? liveLogs : "Waiting for log stream lines..."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  // Navigation
+  const [activeTab, setActiveTab] = useState<'hunts' | 'deals' | 'prompts'>('hunts')
+
+  // Database lists
+  const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [searches, setSearches] = useState<SearchTarget[]>([])
-  const [activeTab, setActiveTab] = useState<'prompts' | 'matcher' | 'inbox' | 'profiles' | 'searches'>('matcher')
-  
-  // Selection States
-  const [activeListingId, setActiveListingId] = useState<string | null>(null)
-  const [activeProfileId, setActiveProfileId] = useState<number | null>(null)
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('All')
-  
-  // Custom States
-  const [isScraping, setIsScraping] = useState(false)
-  const [scrapeStatus, setScrapeStatus] = useState<string | null>(null)
-  const [profileJsonInput, setProfileJsonInput] = useState('')
-  const [profileIngestError, setProfileIngestError] = useState<string | null>(null)
-  
-  // Pre-computed drafts cache
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const [draftsLoading, setDraftsLoading] = useState<Record<string, boolean>>({})
+  const [listings, setListings] = useState<Listing[]>([])
+  const [knowledgeSets, setKnowledgeSets] = useState<KnowledgeSet[]>([])
 
-  // Copy success indicator
+  // Authentication session state
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null)
+
+  // Sidebar selections & details
+  const [currentCampaignId, setCurrentCampaignId] = useState<number | null>(null)
+  const [currentSearchId, setCurrentSearchId] = useState<number | null>(null)
+  const [currentKnowledgeSetId, setCurrentKnowledgeSetId] = useState<number | null>(null)
+
+  // Deal Matcher Hub selection
+  const [activeCampaignDealId, setActiveCampaignDealId] = useState<number | null>(null)
+
+  // Filtering states for Deal Matcher
+  const [selectedSearchId, setSelectedSearchId] = useState<string>('All')
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'Dealbreaker' | 'New' | 'Awaiting AI'>('All')
+
+  // Inline forms
+  const [newCampaignName, setNewCampaignName] = useState('')
+  const [newTargetName, setNewTargetName] = useState('')
+  const [newTargetUrl, setNewTargetUrl] = useState('')
+  const [newTargetKsId, setNewTargetKsId] = useState<string>('')
+  
+  // Collapsible accordion state for Guidelines Editor
+  const [isKnowledgeExpanded, setIsKnowledgeExpanded] = useState(true)
+
+  // Knowledge Set form editor
+  const [editKsName, setEditKsName] = useState('')
+  const [editKsKnowledge, setEditKsKnowledge] = useState('')
+  const [editKsJson, setEditKsJson] = useState('')
+  const [editKsError, setEditKsError] = useState('')
+
+  // Live URL validation preview
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewCount, setPreviewCount] = useState<number | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+
+  // General state
+  const [isScraping, setIsScraping] = useState(false)
+  const [scrapingStatus, setScrapingStatus] = useState('')
+  const [scrapingProgress, setScrapingProgress] = useState<{
+    phase: string;
+    current: number;
+    total: number;
+    status: string;
+  } | null>(null)
+  const [liveLogs, setLiveLogs] = useState<string>('')
+  const [showLogConsole, setShowLogConsole] = useState(false)
+
+  // Polling loop for active scraping task
+  useEffect(() => {
+    let intervalId: any = null;
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch('/api/scrape/status');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.active) {
+            setIsScraping(true);
+            setScrapingProgress(data.progress);
+            if (data.progress && data.progress.status) {
+              setScrapingStatus(data.progress.status);
+            }
+            
+            // Also fetch live logs
+            const logsRes = await fetch('/api/logs');
+            if (logsRes.ok) {
+              const logsData = await logsRes.json();
+              setLiveLogs(logsData.logs || '');
+            }
+          } else {
+            // Scraper is no longer active in backend
+            if (isScraping) {
+              setIsScraping(false);
+              setScrapingProgress(null);
+              setScrapingStatus("Scraping completed!");
+              refreshAll();
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Error polling scraper status:", e);
+      }
+    };
+
+    // Run immediately
+    checkStatus();
+
+    // Poll every 1.5 seconds
+    intervalId = setInterval(checkStatus, 1500);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isScraping]);
+  
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [processingStatus, setProcessingStatus] = useState('')
+  
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null)
+  
+  // Custom states for images and descriptions
+  const [expandedListingIds, setExpandedListingIds] = useState<Record<string, boolean>>({})
+  const [activeImageIndices, setActiveImageIndices] = useState<Record<string, number>>({})
+
+  const toggleExpandListing = (id: string) => {
+    setExpandedListingIds(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }))
+  }
+
+  const handlePrevImage = (id: string, maxImages: number) => {
+    setActiveImageIndices(prev => {
+      const cur = prev[id] || 0
+      return {
+        ...prev,
+        [id]: (cur - 1 + maxImages) % maxImages
+      }
+    })
+  }
+
+  const handleNextImage = (id: string, maxImages: number) => {
+    setActiveImageIndices(prev => {
+      const cur = prev[id] || 0
+      return {
+        ...prev,
+        [id]: (cur + 1) % maxImages
+      }
+    })
+  }
+
+  // Initial load
+  useEffect(() => {
+    refreshAll()
+    checkSessionStatus()
+    const interval = setInterval(checkSessionStatus, 8000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const checkSessionStatus = async () => {
+    try {
+      const res = await fetch('/api/session-status')
+      if (res.ok) {
+        const data = await res.json()
+        setSessionEmail(data.email || null)
+      }
+    } catch (err) {
+      console.error("Error checking session status:", err)
+    }
+  }
+
+  const handleTriggerLogin = async () => {
+    setIsScraping(true)
+    setScrapingStatus("Opening interactive browser window on your host... Please complete the login form inside the browser window. We will automatically detect when you have successfully logged in.")
+    try {
+      const res = await fetch('/api/login-session', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setScrapingStatus("Authentication completed successfully!")
+          checkSessionStatus()
+        } else {
+          setScrapingStatus("Session watcher finished or timed out.")
+        }
+      } else {
+        setScrapingStatus("Authentication process failed to trigger.")
+      }
+    } catch {
+      setScrapingStatus("Error connecting to backend server.")
+    } finally {
+      setIsScraping(false)
+    }
+  }
 
   const refreshAll = () => {
     Promise.all([
+      fetch('/api/campaigns').then(res => res.json()),
+      fetch('/api/search-urls').then(res => res.json()),
       fetch('/api/listings').then(res => res.json()),
-      fetch('/api/profiles').then(res => res.json()),
-      fetch('/api/search-urls').then(res => res.json())
-    ]).then(([listingsData, profilesData, searchesData]) => {
-      setListings(listingsData)
-      setProfiles(profilesData)
+      fetch('/api/knowledge-sets').then(res => res.json())
+    ]).then(([campaignsData, searchesData, listingsData, ksData]) => {
+      setCampaigns(campaignsData)
       setSearches(searchesData)
-      
-      // Auto-select first elements if null
-      if (listingsData.length > 0 && !activeListingId) {
-        setActiveListingId(listingsData[0].id)
-      }
-      if (profilesData.length > 0 && !activeProfileId) {
-        setActiveProfileId(profilesData[0].id)
+      setListings(listingsData)
+      setKnowledgeSets(ksData)
+
+      // Set default campaign selection if none set
+      if (campaignsData.length > 0 && currentCampaignId === null) {
+        setCurrentCampaignId(campaignsData[0].id)
       }
     }).catch(err => {
       console.error("Error refreshing dashboard state:", err)
     })
   }
 
+  const activeSearches = searches.filter(s => s.campaign_id === currentCampaignId)
+  const activeSearchTarget = searches.find(s => s.id === currentSearchId)
+
+  // Auto load active guidelines when active search target changes
   useEffect(() => {
-    refreshAll()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (activeSearchTarget && activeSearchTarget.knowledge_set_id) {
+      const boundSet = knowledgeSets.find(ks => ks.id === activeSearchTarget.knowledge_set_id)
+      if (boundSet) {
+        setCurrentKnowledgeSetId(boundSet.id || null)
+        setEditKsName(boundSet.name)
+        setEditKsKnowledge(boundSet.expert_knowledge)
+        setEditKsJson(JSON.stringify(boundSet.item_json, null, 2))
+        setEditKsError('')
+      }
+    } else {
+      setCurrentKnowledgeSetId(null)
+      setEditKsName('')
+      setEditKsKnowledge('')
+      setEditKsJson('')
+      setEditKsError('')
+    }
+  }, [currentSearchId, searches, knowledgeSets])
 
-  // Pre-compute draft for a specific listing if not loaded yet
-  const ensureDraftLoaded = (listingId: string) => {
-    if (drafts[listingId] || draftsLoading[listingId]) return
-
-    setDraftsLoading(prev => ({ ...prev, [listingId]: true }))
-    fetch('/api/listings/draft', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ listing_id: listingId })
-    })
-      .then(res => res.json())
-      .then(data => {
-        setDrafts(prev => ({ ...prev, [listingId]: data.draft || 'No outreach generated.' }))
-        setDraftsLoading(prev => ({ ...prev, [listingId]: false }))
-      })
-      .catch(err => {
-        console.error("Draft generation error:", err)
-        setDrafts(prev => ({ ...prev, [listingId]: 'Failed to generate outreach message.' }))
-        setDraftsLoading(prev => ({ ...prev, [listingId]: false }))
-      })
-  }
-
-  const triggerCrawl = () => {
-    setIsScraping(true)
-    setScrapeStatus("Launching search crawl and Worker AI classification pipeline...")
-    
-    fetch('/api/scrape', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          setScrapeStatus("Crawler finished! Recalculating and importing listings...")
-          setTimeout(() => {
-            setScrapeStatus(null)
-            setIsScraping(false)
-            refreshAll()
-          }, 3000)
-        } else {
-          setScrapeStatus("Crawler failed to execute.")
-          setIsScraping(false)
-        }
-      })
-      .catch(() => {
-        setScrapeStatus("Network error running crawling agent.")
-        setIsScraping(false)
-      })
-  }
-
-  const handleIngestProfile = () => {
-    setProfileIngestError(null)
+  // Create Campaign
+  const handleCreateCampaign = async () => {
+    if (!newCampaignName.trim()) return
     try {
-      const parsed = JSON.parse(profileJsonInput)
-      fetch('/api/profiles/ingest', {
+      const res = await fetch('/api/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(parsed)
+        body: JSON.stringify({ name: newCampaignName })
       })
-        .then(res => res.json())
-        .then(data => {
-          if (data.error) {
-            setProfileIngestError(data.error)
-          } else {
-            setProfileJsonInput('')
-            alert("Profile successfully ingested!")
-            refreshAll()
-          }
-        })
-        .catch(() => setProfileIngestError("Failed to connect to ingestion service."))
-    } catch (e: unknown) {
-      const err = e as Error
-      setProfileIngestError(`Invalid JSON format: ${err.message}`)
+      const data = await res.json()
+      if (res.ok) {
+        setNewCampaignName('')
+        setCurrentCampaignId(data.id)
+        refreshAll()
+      } else {
+        alert(data.error || "Failed to create campaign.")
+      }
+    } catch {
+      alert("Failed to connect to backend server.")
     }
   }
 
-  const handleSliderChange = (profileId: number, ruleIdx: number, val: number) => {
-    const updatedProfiles = [...profiles]
-    const p = updatedProfiles.find(p => p.id === profileId)
-    if (!p) return
+  // Register New Search Target
+  const handleRegisterTarget = async () => {
+    if (!currentCampaignId || !newTargetName.trim() || !newTargetUrl.trim()) {
+      alert("Please fill in target name and search URL.")
+      return
+    }
 
-    p.scoring_model.rules[ruleIdx].weight = val
-    setProfiles(updatedProfiles)
+    try {
+      const res = await fetch('/api/searches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaign_id: currentCampaignId,
+          name: newTargetName,
+          url: newTargetUrl,
+          knowledge_set_id: newTargetKsId ? parseInt(newTargetKsId, 10) : null
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setNewTargetName('')
+        setNewTargetUrl('')
+        setNewTargetKsId('')
+        setPreviewCount(null)
+        setPreviewError(null)
+        setCurrentSearchId(data.id)
+        refreshAll()
+      } else {
+        alert(data.error || "Failed to save search target.")
+      }
+    } catch {
+      alert("Error saving search target.")
+    }
   }
 
-  const saveSliderWeights = (profile: Profile) => {
-    fetch('/api/profiles/recalculate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        profile_id: profile.id,
-        scoring_model: profile.scoring_model
+  // Test url listing count
+  const handleTestUrl = async (url: string) => {
+    if (!url) return
+    setPreviewLoading(true)
+    setPreviewError(null)
+    setPreviewCount(null)
+    try {
+      const res = await fetch('/api/searches/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
       })
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          alert(`Weights updated! Listing scores recalculated.`)
+      const data = await res.json()
+      if (res.ok) {
+        setPreviewCount(data.count)
+      } else {
+        setPreviewError(data.error || "Failed loading count.")
+      }
+    } catch {
+      setPreviewError("Server connection failed.")
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  // Update target knowledge set binding directly
+  const handleBindKnowledgeSet = async (target: SearchTarget, ksId: number | null) => {
+    try {
+      const res = await fetch('/api/searches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: target.id,
+          campaign_id: target.campaign_id,
+          name: target.name,
+          url: target.url,
+          knowledge_set_id: ksId
+        })
+      })
+      if (res.ok) {
+        refreshAll()
+      }
+    } catch (err) {
+      console.error("Error linking knowledge set:", err)
+    }
+  }
+
+  // Create new Knowledge Profile and link instantly
+  const handleCreateNewSetAndBind = async (target: SearchTarget) => {
+    const name = prompt("Enter a name for the new Guidelines Profile:", `${target.name} Guidelines`)
+    if (!name) return
+    try {
+      const res = await fetch('/api/knowledge-sets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name,
+          expert_knowledge: '',
+          item_json: {}
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        await handleBindKnowledgeSet(target, data.id)
+      } else {
+        alert(data.error || "Failed to create knowledge profile.")
+      }
+    } catch {
+      alert("Error contacting server.")
+    }
+  }
+
+  // Update target enabled toggle directly
+  const handleToggleTarget = async (target: SearchTarget, enabled: boolean) => {
+    try {
+      await fetch('/api/searches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: target.id,
+          campaign_id: target.campaign_id,
+          name: target.name,
+          url: target.url,
+          knowledge_set_id: target.knowledge_set_id,
+          enabled: enabled ? 1 : 0
+        })
+      })
+      refreshAll()
+    } catch (err) {
+      console.error("Error toggling status:", err)
+    }
+  }
+
+  // Delete search target
+  const handleDeleteTarget = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this target?")) return
+    try {
+      const res = await fetch(`/api/searches/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setCurrentSearchId(null)
+        refreshAll()
+      }
+    } catch (err) {
+      console.error("Error deleting target:", err)
+    }
+  }
+
+  // Save Knowledge Set
+  const handleSaveKnowledgeSet = async () => {
+    if (!editKsName.trim()) {
+      alert("Please enter a name for the Knowledge Set.")
+      return
+    }
+
+    let parsedJson = {}
+    if (editKsJson.trim()) {
+      try {
+        parsedJson = JSON.parse(editKsJson)
+      } catch (e) {
+        setEditKsError(`Invalid JSON syntax: ${(e as Error).message}`)
+        return
+      }
+    }
+
+    try {
+      const res = await fetch('/api/knowledge-sets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: currentKnowledgeSetId || undefined,
+          name: editKsName,
+          expert_knowledge: editKsKnowledge,
+          item_json: parsedJson
+        })
+      })
+      if (res.ok) {
+        setEditKsError('')
+        alert("Guidelines profile saved successfully!")
+        refreshAll()
+      } else {
+        const data = await res.json()
+        setEditKsError(data.error || "Failed to save knowledge set.")
+      }
+    } catch {
+      setEditKsError("Connection to backend server failed.")
+    }
+  }
+
+  // Trigger crawler background process (Scrape only)
+  const handleStartScrape = async () => {
+    setIsScraping(true)
+    setScrapingStatus("Spawning scraper worker...")
+    setLiveLogs("Initializing browser context and logging session...")
+    setScrapingProgress({ phase: 'starting', current: 0, total: 100, status: 'Spawning scraper worker...' })
+    try {
+      const res = await fetch('/api/scrape', { method: 'POST' })
+      if (!res.ok) {
+        alert("Failed to start scraper.")
+        setIsScraping(false)
+      }
+    } catch {
+      alert("Error triggering scraper process.")
+      setIsScraping(false)
+    }
+  }
+
+  // Trigger AI Matching Process
+  const handleStartProcess = async () => {
+    setIsProcessing(true)
+    setProcessingStatus("Launching AI Matcher checklist evaluation and deal scoring...")
+    try {
+      const res = await fetch('/api/process', { method: 'POST' })
+      if (res.ok) {
+        setProcessingStatus("AI matching completed! Updating Deal Matcher results...")
+        setTimeout(() => {
           refreshAll()
-        }
-      })
+          setIsProcessing(false)
+        }, 4000)
+      } else {
+        alert("Failed to launch AI Matcher.")
+        setIsProcessing(false)
+      }
+    } catch {
+      alert("Error contacting AI Matching backend.")
+      setIsProcessing(false)
+    }
   }
 
-  const copyToClipboard = (text: string, id: string) => {
+  // Copy helper
+  const handleCopyPrompt = (text: string, id: string) => {
     navigator.clipboard.writeText(text)
     setCopiedPromptId(id)
-    setTimeout(() => setCopiedPromptId(null), 2500)
+    setTimeout(() => setCopiedPromptId(null), 2000)
   }
 
-  const handleSaveSearches = () => {
-    fetch('/api/search-urls', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(searches)
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          alert("Search targets saved successfully!")
-          refreshAll()
-        }
-      })
-  }
-
-  const activeProfile = profiles.find(p => p.id === activeProfileId)
-  const activeListing = listings.find(l => l.id === activeListingId)
-
-  // Ensure active listing draft is pre-computed when view shifts to Deal Matcher or details panel
-  if (activeListingId) {
-    ensureDraftLoaded(activeListingId)
-  }
-
-  // Filter listings
+  // Filter listings based on activeCampaignDealId
   const filteredListings = listings.filter(l => {
-    if (selectedStatusFilter === 'All') return true
-    if (selectedStatusFilter === 'Dealbreaker') return l.status === 'Dealbreaker' || l.niceness_score <= -999
-    return l.status === selectedStatusFilter
+    const targetSearch = searches.find(s => s.id === l.search_id)
+    const matchesCampaign = !activeCampaignDealId || (targetSearch && targetSearch.campaign_id === activeCampaignDealId)
+    const matchesSearch = selectedSearchId === 'All' || String(l.search_id) === selectedSearchId
+    const isMatched = matchesCampaign && matchesSearch
+    
+    if (selectedStatusFilter === 'High Niceness') {
+      return isMatched && l.llm_processed && l.niceness_score >= 70 && l.status !== 'Dealbreaker'
+    }
+    if (selectedStatusFilter === 'Dealbreaker') {
+      return isMatched && l.llm_processed && (l.status === 'Dealbreaker' || l.niceness_score <= -999)
+    }
+    if (selectedStatusFilter === 'New') {
+      return isMatched && l.status === 'New'
+    }
+    if (selectedStatusFilter === 'Awaiting AI') {
+      return isMatched && !l.llm_processed
+    }
+    return isMatched
   })
 
-  // Grouped search list rendering helpers
-  const handleSearchRowChange = (index: number, key: keyof SearchTarget, val: string | boolean | number | null) => {
-    const updated = [...searches]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    updated[index] = { ...updated[index], [key]: val as any }
-    setSearches(updated)
-  }
+  // Prompt Templates
+  const expertGuidelinesPrompt = `You are a world-class expert and seasoned buyer of [Target Campaign Category, e.g., Sports Motorbikes].
+Generate a highly comprehensive, detailed general expert knowledge cheat sheet for buying items in this category.
 
-  const addSearchRow = () => {
-    setSearches([...searches, { url: '', name: 'New Motorbike/Notebook Model', enabled: true, profile_id: null }])
-  }
+Provide a breakdown that includes:
+1. "Worauf du achten willst" (Technical/hardware details, model-specific vulnerabilities, wear-and-tear areas, typical failure points, and service/history checks).
+2. "Soft seller questions" (Friendly, non-interrogative questions designed to prompt honest answers about the items' state).
+3. "Sample Outreach Message Template" (A German sample template inviting private vendors to share details about their listing).
 
-  const removeSearchRow = (index: number) => {
-    setSearches(searches.filter((_, idx) => idx !== index))
-  }
+REFERENCE EXAMPLE (Motorbikes):
+### Worauf du achten willst
+- Ventilspiel-Historie, vor allem die 24.000-km-Kontrolle.
+- Getriebe unter Last, besonders 2. und 3. Gang; nichts darf rausspringen.
+- Lichtmaschine / Stator / Regler, vor allem bei frühen SC57.
+- Gabeldichtringe (Simmerringe), auf Ölverlust prüfen.
 
-  // PROMPTS PRESETS
-  const PROMPT_RESEARCHER = `You are an Elite Market Researcher and Domain Expert specialized in peer-to-peer secondary market dynamics. Your objective is to compile a highly actionable, specialized expert profile for buying a specific product category.
+### Soft seller questions
+- "Hallo, schönes Teil! Wurde die große Ventilspielkontrolle bei 24.000 km schon erledigt und gibt es Belege dazu?"
 
-The product category is: [INSERT CHOSEN PRODUCT HERE, e.g. Sports Motorbikes, or RTX Series GPUs]
+Generate a highly targeted German markdown cheat sheet for: [State your target category here]`;
 
-Your task is to analyze typical model-specific issues, modifications, typical usage risks, and premium upgrades that add value. Then, synthesize this knowledge into a single, highly structured JSON configuration matching the schema below.
+  const prompts = [
+    {
+      id: 'researcher',
+      title: 'Researcher AI Prompt',
+      description: 'Run this prompt in your LLM with your campaign parameters to generate the exact item JSON config.',
+      content: `You are an expert market analyst. Help me build a structured ingestion profile for my deal matching portal.
 
-### Output JSON Schema:
+We are searching for a specific product target with dynamic parameters. I will provide the product parameters.
+Your goal is to output a perfect, raw JSON configuration that matches the following schema exactly.
+
+SCHEMA:
 {
-  "product_domain": "A concise, clean name for this product category (e.g., 'Sports Motorbikes')",
+  "product_domain": "Target product category or name",
   "extraction_criteria": [
     {
-      "id": "valve_clearance_checked",
-      "description": "Output true if valve clearance check is documented/done, false if overdue/not done, or 'unknown'.",
-      "type": "boolean"
-    },
-    {
-      "id": "track_use",
-      "description": "Output true if motorcycle was raced or used on a track, false if street only, or 'unknown'.",
-      "type": "boolean"
+      "id": "camelCaseFieldId",
+      "description": "Specific attribute to extract from listing text",
+      "type": "boolean | number | string"
     }
   ],
   "scoring_model": {
+    "base_score": 50,
     "rules": [
       {
-        "criterion_id": "valve_clearance_checked",
-        "value": true,
-        "weight": 30,
-        "is_dealbreaker": false,
-        "description": "Valve clearance history verified"
-      },
-      {
-        "criterion_id": "track_use",
-        "value": true,
-        "weight": -9999,
-        "is_dealbreaker": true,
-        "description": "Hard dealbreaker: raced on track"
+        "criterion_id": "camelCaseFieldId",
+        "value": "Value that triggers the score adjustment",
+        "weight": 15,
+        "is_dealbreaker": false
       }
-    ]
-  },
-  "outreach_strategy": {
-    "tone": "casual, polite, informed",
-    "opening_hook": "Hi, I'm very interested in your listing! Looks like a great bike.",
-    "questions": [
-      {
-        "target_criterion": "valve_clearance_checked",
-        "question_text": "Weißt du, ob beim Ventilspiel schon mal was gemacht oder kontrolliert wurde?"
-      }
-    ]
+    ],
+    "outreach_strategy": {
+      "tone": "casual / professional",
+      "opening_hook": "Hi, I am interested in...",
+      "questions": [
+        {
+          "target_criterion": "camelCaseFieldId",
+          "question_text": "German outreach question template"
+        }
+      ]
+    }
   }
-}
-
-Provide only the valid, copyable JSON block. Do not include any conversational preamble.`
-
-  const PROMPT_CHEAT_SHEET = `You are an Elite P2P Negotiations Coach. I am looking to buy one of the following specific models:
-- Honda CBR1000RR SC57
-- Yamaha R1 RN12 / RN19
-- Kawasaki ZX-10R
-- Suzuki GSX-R1000 K5/K6
-
-For these models, generate a compact markdown cheat sheet detailing:
-1. "Worauf du achten willst" (Key items to check)
-2. "Die Fragen, weich formuliert" (Polite, conversational questions to ask the vendor)
-3. A highly tailored "Demo message" template that demonstrates deep model-specific expertise while remaining humble and friendly.
-
-Structure the output with one clean section per model, prioritizing invitations for the seller to talk openly rather than sounding like a cold interrogator.`
+}`
+    }
+  ]
 
   return (
-    <div className="min-h-screen bg-[#070913] bg-radial-[circle_at_top_right] from-[#131b3e] to-[#070913] text-slate-100 antialiased selection:bg-cyan-500 selection:text-slate-900 font-sans pb-12">
-      {/* Dynamic Header */}
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/70 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-              <svg className="h-6 w-6 text-slate-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-tight text-white font-heading bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
-                KLEINANZEIGEN AGENT
-              </h1>
-              <p className="text-[11px] text-cyan-400/80 font-mono tracking-widest uppercase">Multi-Domain Hunter</p>
-            </div>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      {/* Header */}
+      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center space-x-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-slate-950 text-lg shadow-lg shadow-emerald-500/20">K</div>
+            <span className="font-semibold text-lg tracking-wide bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent font-sans">Kleinanzeigen Agent</span>
           </div>
 
-          {/* Navigation Bar */}
-          <nav className="flex bg-slate-900/60 p-1.5 rounded-xl border border-white/10 backdrop-blur-sm">
-            {(['matcher', 'inbox', 'profiles', 'searches', 'prompts'] as const).map(tab => (
+          {/* Authentication session state widget */}
+          <div className="flex items-center space-x-3 bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-1.5 shadow-inner">
+            <div className="flex items-center space-x-1.5">
+              <span className={`w-2 h-2 rounded-full ${sessionEmail ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+              <span className="text-[10px] font-semibold text-slate-400">
+                {sessionEmail ? `Session: ${sessionEmail}` : 'Session: Unauthenticated'}
+              </span>
+            </div>
+            
+            {!sessionEmail ? (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 text-sm font-semibold rounded-lg font-heading transition-all duration-300 ${
-                  activeTab === tab
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/10'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                }`}
+                onClick={handleTriggerLogin}
+                disabled={isScraping || isProcessing}
+                className="text-[9px] bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold px-2 py-0.5 rounded transition-colors"
               >
-                {tab === 'matcher' && 'Deal Matcher'}
-                {tab === 'inbox' && 'Inbox & Feed'}
-                {tab === 'profiles' && 'Agent Profiles'}
-                {tab === 'searches' && 'Search Targets'}
-                {tab === 'prompts' && 'Prompts Hub'}
+                Log In
               </button>
-            ))}
-          </nav>
+            ) : (
+              <button
+                onClick={handleTriggerLogin}
+                disabled={isScraping || isProcessing}
+                className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-400 px-2 py-0.5 rounded transition-colors"
+              >
+                Re-auth
+              </button>
+            )}
+          </div>
         </div>
+
+        <nav className="flex space-x-2">
+          <button
+            onClick={() => setActiveTab('hunts')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'hunts' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Campaign Hub
+          </button>
+          <button
+            onClick={() => { setActiveTab('deals'); setActiveCampaignDealId(null); refreshAll(); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'deals' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Deal Matcher
+          </button>
+          <button
+            onClick={() => setActiveTab('prompts')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'prompts' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Instructions Help
+          </button>
+        </nav>
       </header>
 
-      {/* Crawling Progress Notification */}
-      {scrapeStatus && (
-        <div className="max-w-7xl mx-auto px-6 mt-4">
-          <div className="relative overflow-hidden rounded-xl bg-cyan-950/40 border border-cyan-500/30 p-4 flex items-center gap-3 backdrop-blur-sm animate-pulse">
-            <div className="h-2 w-2 rounded-full bg-cyan-400 animate-ping" />
-            <p className="text-sm font-mono text-cyan-300">{scrapeStatus}</p>
-          </div>
-        </div>
-      )}
-
       {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-6 mt-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col justify-start">
         
-        {/* ==================== 1. DEAL MATCHER TAB ==================== */}
-        {activeTab === 'matcher' && (
-          <div className="space-y-6">
-            <div className="relative overflow-hidden rounded-2xl bg-slate-900/40 border border-white/10 p-6 backdrop-blur-md">
-              <div className="absolute top-0 right-0 h-48 w-48 rounded-full bg-cyan-500/5 blur-3xl" />
-              <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-white font-heading">High-Relevance Deals</h2>
-                  <p className="text-slate-400 text-sm mt-1">Pre-computed target outreach templates for items crossing the Niceness Score threshold.</p>
-                </div>
-                <button
-                  onClick={triggerCrawl}
-                  disabled={isScraping}
-                  className="px-5 py-2.5 rounded-xl font-heading text-sm font-bold bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 hover:opacity-90 active:scale-95 disabled:opacity-50 transition-all shadow-lg shadow-cyan-500/10 flex items-center gap-2"
-                >
-                  <svg className={`h-4 w-4 ${isScraping ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18.5" />
-                  </svg>
-                  {isScraping ? 'Crawling...' : 'Run Scraper Crawler'}
-                </button>
-              </div>
-
-              {/* Feed Grid */}
-              <div className="grid grid-cols-1 gap-6 mt-8">
-                {listings.filter(l => l.status !== 'Dealbreaker' && l.niceness_score > 0).length === 0 ? (
-                  <div className="text-center py-12 border-2 border-dashed border-white/5 rounded-xl bg-slate-900/20">
-                    <p className="text-slate-400 font-medium">No high-relevance deals found yet.</p>
-                    <p className="text-slate-500 text-xs mt-1">Adjust sliders, map search profiles, or hit run to scrape targets.</p>
-                  </div>
-                ) : (
-                  listings
-                    .filter(l => l.status !== 'Dealbreaker' && l.niceness_score > 0)
-                    .map(listing => {
-                      // Fetch listing draft text
-                      ensureDraftLoaded(listing.id)
-                      const scoreLevel = listing.niceness_score >= 70 ? 'excellent' : 'neutral'
-
-                      return (
-                        <div key={listing.id} className="group relative overflow-hidden rounded-xl bg-slate-950/60 border border-white/10 hover:border-cyan-500/30 p-5 transition-all duration-300 hover:shadow-xl hover:shadow-cyan-500/5">
-                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            
-                            {/* Card Main Info */}
-                            <div className="flex items-start gap-4">
-                              <div className={`h-14 w-14 rounded-xl flex flex-col items-center justify-center border font-mono ${
-                                scoreLevel === 'excellent' 
-                                  ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-400 shadow-md shadow-emerald-500/5'
-                                  : 'bg-slate-900 border-white/10 text-cyan-400'
-                              }`}>
-                                <span className="text-[10px] text-slate-500 font-sans leading-none">Niceness</span>
-                                <span className="text-lg font-bold leading-none mt-1">{listing.niceness_score}</span>
-                              </div>
-                              <div>
-                                <h3 className="text-lg font-bold text-white font-heading group-hover:text-cyan-300 transition-colors">{listing.title}</h3>
-                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-400">
-                                  <span className="text-cyan-400 font-medium">{listing.profile_domain || 'Unassigned Category'}</span>
-                                  <span className="text-slate-600">•</span>
-                                  <span className="text-rose-400 font-bold font-mono">{listing.price}</span>
-                                  <span className="text-slate-600">•</span>
-                                  <span>{listing.location}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Actions bar */}
-                            <div className="flex items-center gap-3">
-                              <a
-                                href={listing.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-300 hover:text-white transition-all flex items-center gap-1.5"
-                              >
-                                Contact Seller
-                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                </svg>
-                              </a>
-                              <button
-                                onClick={() => {
-                                  setActiveListingId(listing.id)
-                                  setActiveTab('inbox')
-                                }}
-                                className="px-4 py-2 text-xs font-semibold rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 hover:border-cyan-500/40 transition-all"
-                              >
-                                View Context Detail
-                              </button>
-                            </div>
-
-                          </div>
-
-                          {/* Precomputed message display */}
-                          <div className="mt-4 rounded-lg bg-slate-950/70 border border-white/5 p-4 relative">
-                            <span className="absolute top-2 right-2 text-[10px] font-mono text-slate-600 uppercase tracking-widest">Target Message</span>
-                            {draftsLoading[listing.id] ? (
-                              <div className="flex items-center gap-2 py-4">
-                                <div className="h-4 w-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-                                <span className="text-xs text-slate-500 font-mono">Worker AI drafting custom outreach...</span>
-                              </div>
-                            ) : (
-                              <div className="space-y-3">
-                                <p className="text-slate-300 text-sm whitespace-pre-wrap font-sans bg-transparent border-0 p-0 m-0 w-full resize-none focus:ring-0 leading-relaxed">
-                                  {drafts[listing.id]}
-                                </p>
-                                <div className="flex justify-end pt-2 border-t border-white/5">
-                                  <button
-                                    onClick={() => copyToClipboard(drafts[listing.id] || '', `deal-${listing.id}`)}
-                                    className="px-3 py-1.5 text-xs font-semibold rounded bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-all flex items-center gap-1"
-                                  >
-                                    {copiedPromptId === `deal-${listing.id}` ? (
-                                      <>
-                                        <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                        </svg>
-                                        Copied!
-                                      </>
-                                    ) : (
-                                      <>
-                                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                                        </svg>
-                                        Copy Message
-                                      </>
-                                    )}
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                        </div>
-                      )
-                    })
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ==================== 2. INBOX & FEED TAB ==================== */}
-        {activeTab === 'inbox' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* TAB 1: HUNTS WORKSPACE SPLIT-PANE */}
+        {activeTab === 'hunts' && (
+          <div className="flex flex-col space-y-6 w-full">
+            <ScraperProgressCard
+              isScraping={isScraping}
+              scrapingStatus={scrapingStatus}
+              scrapingProgress={scrapingProgress}
+              liveLogs={liveLogs}
+              showLogConsole={showLogConsole}
+              setShowLogConsole={setShowLogConsole}
+            />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start h-full">
             
-            {/* Sidebar Feed */}
-            <div className="lg:col-span-4 space-y-4">
-              <div className="rounded-xl bg-slate-900/40 border border-white/10 p-4 backdrop-blur-md">
-                <div className="flex items-center justify-between gap-2 mb-4">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider font-heading">Inbox & Feed</h3>
+            {/* LEFT PANEL: CAMPAIGNS & TARGETS LIST */}
+            <div className="lg:col-span-1 bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-5 space-y-6 shadow-2xl flex flex-col">
+              
+              {/* Campaign Selector / Creation */}
+              <div className="space-y-3">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Active Hunt Campaigns</span>
+                <div className="flex gap-2">
                   <select
-                    value={selectedStatusFilter}
-                    onChange={(e) => setSelectedStatusFilter(e.target.value)}
-                    className="bg-slate-950 border border-white/10 rounded-lg text-xs py-1 px-2.5 text-slate-300 outline-none focus:border-cyan-500 transition-all"
+                    value={currentCampaignId || ''}
+                    onChange={e => {
+                      const id = e.target.value ? parseInt(e.target.value, 10) : null
+                      setCurrentCampaignId(id)
+                      setCurrentSearchId(null)
+                    }}
+                    className="flex-1 bg-slate-950 text-sm border border-slate-800 rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-500 text-slate-200"
                   >
-                    <option value="All">Filter: All</option>
-                    <option value="New">Status: New</option>
-                    <option value="Dealbreaker">Status: Dealbreakers</option>
-                    <option value="Contacted">Status: Contacted</option>
-                    <option value="Negotiating">Status: Negotiating</option>
-                  </select>
-                </div>
-
-                <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
-                  {filteredListings.length === 0 ? (
-                    <p className="text-center py-8 text-xs text-slate-500">No matching listings found.</p>
-                  ) : (
-                    filteredListings.map(l => {
-                      const isDealbreaker = l.status === 'Dealbreaker' || l.niceness_score <= -999
-                      const isActive = l.id === activeListingId
-                      
-                      let scoreClass = 'neutral'
-                      if (isDealbreaker) scoreClass = 'dealbreaker'
-                      else if (l.niceness_score >= 70) scoreClass = 'excellent'
-
-                      return (
-                        <div
-                          key={l.id}
-                          onClick={() => setActiveListingId(l.id)}
-                          className={`p-3 rounded-lg border text-left cursor-pointer transition-all duration-300 ${
-                            isActive
-                              ? 'bg-cyan-500/10 border-cyan-500/40 shadow-md shadow-cyan-500/5'
-                              : 'bg-slate-950/40 border-white/5 hover:bg-slate-950/80 hover:border-white/10'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                              scoreClass === 'excellent' ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' :
-                              scoreClass === 'dealbreaker' ? 'bg-rose-950/20 border-rose-500/30 text-rose-400' :
-                              'bg-slate-900 border-white/10 text-slate-400'
-                            }`}>
-                              Score: {isDealbreaker ? '❌' : l.niceness_score}
-                            </span>
-                            <span className="text-[9px] font-mono tracking-widest text-slate-500 uppercase">{l.status}</span>
-                          </div>
-                          <h4 className="text-xs font-bold text-slate-200 mt-2 truncate font-heading">{l.title}</h4>
-                          <div className="flex items-center justify-between gap-2 mt-1 text-[10px] text-slate-400">
-                            <span className="text-cyan-400 font-semibold">{l.price}</span>
-                            <span>{l.location}</span>
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Content Details Split Pane */}
-            <div className="lg:col-span-8">
-              {activeListing ? (
-                <div className="space-y-6">
-                  {/* Detailed Panel */}
-                  <div className="rounded-xl bg-slate-900/40 border border-white/10 p-6 backdrop-blur-md">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/10 pb-4">
-                      <div>
-                        <h2 className="text-xl font-bold text-white font-heading">{activeListing.title}</h2>
-                        <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs text-slate-400">
-                          <span className="text-cyan-400 font-semibold">{activeListing.price}</span>
-                          <span>•</span>
-                          <span>{activeListing.location}</span>
-                          <span>•</span>
-                          <span className="text-slate-500">ID: {activeListing.id}</span>
-                        </div>
-                      </div>
-                      <a
-                        href={activeListing.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-4 py-2 text-xs font-bold rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 hover:opacity-90 active:scale-95 shadow-md shadow-cyan-500/10 flex items-center gap-1.5"
-                      >
-                        Contact Vendor on Kleinanzeigen
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      </a>
-                    </div>
-
-                    {/* Extracted Facts Map */}
-                    <div className="mt-6">
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider font-heading mb-3">Extracted Profile Metadata</h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                        {Object.entries(activeListing.extracted_facts).map(([key, val]) => (
-                          <div key={key} className="p-3 rounded-lg bg-slate-950/60 border border-white/5 flex flex-col justify-between">
-                            <span className="text-[11px] font-mono text-slate-400 truncate">{key.replace(/_/g, ' ')}</span>
-                            <div className="flex items-center gap-2 mt-1.5">
-                              {val === true && (
-                                <>
-                                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                                  <span className="text-xs font-semibold text-emerald-400">TRUE</span>
-                                </>
-                              )}
-                              {val === false && (
-                                <>
-                                  <span className="h-2 w-2 rounded-full bg-rose-500" />
-                                  <span className="text-xs font-semibold text-rose-400">FALSE</span>
-                                </>
-                              )}
-                              {val !== true && val !== false && (
-                                <>
-                                  <span className="h-2 w-2 rounded-full bg-slate-600" />
-                                  <span className="text-xs font-semibold text-slate-400">{String(val).toUpperCase()}</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Dynamic AI Outreach Box */}
-                    <div className="mt-6 border-t border-white/10 pt-6">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-xs font-bold text-white uppercase tracking-wider font-heading">AI Outreach Copy Draft</h3>
-                        <button
-                          onClick={() => copyToClipboard(drafts[activeListing.id] || '', `details-${activeListing.id}`)}
-                          className="px-3 py-1.5 text-xs font-semibold rounded bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-all flex items-center gap-1"
-                        >
-                          {copiedPromptId === `details-${activeListing.id}` ? 'Copied!' : 'Copy to Clipboard'}
-                        </button>
-                      </div>
-                      <textarea
-                        readOnly
-                        value={drafts[activeListing.id] || 'Drafting...'}
-                        className="w-full h-40 bg-slate-950/80 border border-white/10 rounded-xl p-4 text-slate-300 font-sans text-sm outline-none resize-none focus:border-cyan-500 transition-all"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-16 border border-dashed border-white/10 rounded-xl bg-slate-900/20">
-                  <p className="text-slate-400 font-medium">Select a listing card to view details.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ==================== 3. AGENT PROFILES TAB ==================== */}
-        {activeTab === 'profiles' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
-            {/* Ingest side */}
-            <div className="lg:col-span-5 space-y-6">
-              <div className="rounded-xl bg-slate-900/40 border border-white/10 p-6 backdrop-blur-md">
-                <h2 className="text-xl font-bold text-white font-heading mb-2">Ingest Category Profile</h2>
-                <p className="text-slate-400 text-xs mb-4">Paste the JSON configuration derived from your external Researcher AI prompt.</p>
-                
-                <textarea
-                  value={profileJsonInput}
-                  onChange={(e) => setProfileJsonInput(e.target.value)}
-                  placeholder='{\n  "product_domain": "Sports Motorbikes",\n  "extraction_criteria": [...],\n  "scoring_model": [...]\n}'
-                  className="w-full h-80 bg-slate-950 border border-white/10 rounded-xl p-4 text-xs font-mono text-slate-300 outline-none focus:border-cyan-500 transition-all resize-none"
-                />
-
-                {profileIngestError && (
-                  <div className="mt-3 p-3 rounded-lg bg-rose-950/20 border border-rose-500/30 text-xs text-rose-400 font-mono">
-                    {profileIngestError}
-                  </div>
-                )}
-
-                <button
-                  onClick={handleIngestProfile}
-                  className="w-full mt-4 py-2.5 rounded-xl font-heading text-sm font-bold bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 hover:opacity-90 transition-all shadow-md shadow-cyan-500/10"
-                >
-                  Import Profile
-                </button>
-              </div>
-            </div>
-
-            {/* List & Weights Adjust side */}
-            <div className="lg:col-span-7 space-y-6">
-              <div className="rounded-xl bg-slate-900/40 border border-white/10 p-6 backdrop-blur-md">
-                <div className="flex items-center justify-between gap-4 mb-4">
-                  <h2 className="text-xl font-bold text-white font-heading">Interactive Scoring Sliders</h2>
-                  <select
-                    value={activeProfileId || ''}
-                    onChange={(e) => setActiveProfileId(Number(e.target.value))}
-                    className="bg-slate-950 border border-white/10 rounded-lg text-xs py-1.5 px-3 text-slate-300 outline-none focus:border-cyan-500 transition-all"
-                  >
-                    {profiles.map(p => (
-                      <option key={p.id} value={p.id}>{p.domain}</option>
+                    <option value="">Select a Campaign...</option>
+                    {campaigns.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
                 </div>
 
-                {activeProfile ? (
-                  <div className="space-y-6">
-                    <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
-                      {activeProfile.scoring_model.rules.map((rule, idx) => (
-                        <div key={idx} className="p-4 rounded-xl bg-slate-950/60 border border-white/5">
-                          <div className="flex justify-between items-center gap-2">
-                            <div>
-                              <span className="text-xs font-mono text-cyan-400">{rule.criterion_id}</span>
-                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ml-2 ${
-                                rule.value ? 'bg-emerald-950/20 border-emerald-500/20 text-emerald-400' : 'bg-rose-950/20 border-rose-500/20 text-rose-400'
-                              }`}>
-                                Value: {String(rule.value).toUpperCase()}
-                              </span>
-                            </div>
-                            <span className="text-xs font-mono font-bold text-slate-300">
-                              Weight: {rule.weight}
-                            </span>
-                          </div>
-                          
-                          <p className="text-slate-500 text-[11px] mt-1">{rule.description}</p>
-                          
-                          <div className="flex items-center gap-4 mt-3">
-                            <input
-                              type="range"
-                              min="-100"
-                              max="100"
-                              value={rule.weight}
-                              onChange={(e) => handleSliderChange(activeProfile.id, idx, Number(e.target.value))}
-                              className="flex-1 accent-cyan-400 cursor-pointer"
-                            />
-                            <div className="flex items-center gap-2 text-xs">
-                              <label className="flex items-center gap-1.5 text-slate-400">
-                                <input
-                                  type="checkbox"
-                                  checked={rule.is_dealbreaker}
-                                  onChange={(e) => {
-                                    const updated = [...profiles]
-                                    const p = updated.find(x => x.id === activeProfile.id)
-                                    if (p) {
-                                      p.scoring_model.rules[idx].is_dealbreaker = e.target.checked
-                                      if (e.target.checked) p.scoring_model.rules[idx].weight = -9999
-                                      setProfiles(updated)
-                                    }
-                                  }}
-                                  className="rounded border-white/10 bg-slate-950 text-cyan-500 focus:ring-0 focus:ring-offset-0"
-                                />
-                                Dealbreaker
-                              </label>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
+                <div className="bg-slate-950/40 border border-slate-850 p-3 rounded-xl space-y-2">
+                  <span className="text-[10px] text-slate-500 font-semibold block uppercase">Create New Campaign</span>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newCampaignName}
+                      onChange={e => setNewCampaignName(e.target.value)}
+                      placeholder="e.g. Sports Bikes"
+                      className="flex-1 bg-slate-950 border border-slate-800 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 placeholder-slate-700"
+                    />
                     <button
-                      onClick={() => saveSliderWeights(activeProfile)}
-                      className="w-full py-2.5 rounded-xl font-heading text-sm font-bold bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-all shadow-md shadow-cyan-500/10"
+                      onClick={handleCreateCampaign}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
                     >
-                      Save Sliders & Recalculate Scores
+                      Add
                     </button>
                   </div>
-                ) : (
-                  <p className="text-center py-8 text-slate-500">No profile configurations loaded.</p>
-                )}
-              </div>
-            </div>
-
-          </div>
-        )}
-
-        {/* ==================== 4. SEARCH TARGETS TAB ==================== */}
-        {activeTab === 'searches' && (
-          <div className="space-y-6">
-            <div className="rounded-xl bg-slate-900/40 border border-white/10 p-6 backdrop-blur-md">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div>
-                  <h2 className="text-xl font-bold text-white font-heading">Search Target Mappings</h2>
-                  <p className="text-slate-400 text-xs mt-1">Specify target Kleinanzeigen queries and connect them to active expert profiles for generalized analysis.</p>
                 </div>
-                <button
-                  onClick={addSearchRow}
-                  className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-900 border border-white/10 text-cyan-400 hover:text-white hover:border-cyan-500/30 transition-all flex items-center gap-1.5"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                  Add Search Row
-                </button>
               </div>
 
-              <div className="space-y-3">
-                {searches.length === 0 ? (
-                  <p className="text-center py-6 text-slate-500 text-xs">No search urls configured. Add rows below.</p>
-                ) : (
-                  searches.map((search, idx) => (
-                    <div key={idx} className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 p-4 rounded-xl bg-slate-950/60 border border-white/5">
-                      
-                      {/* Name input */}
-                      <input
-                        type="text"
-                        value={search.name}
-                        onChange={(e) => handleSearchRowChange(idx, 'name', e.target.value)}
-                        placeholder="Search Label (e.g. CBR1000RR SC57 rep)"
-                        className="bg-slate-950 border border-white/10 rounded-lg text-xs py-2 px-3 text-slate-200 outline-none focus:border-cyan-500 transition-all font-heading lg:w-64"
-                      />
-
-                      {/* URL input */}
-                      <input
-                        type="text"
-                        value={search.url}
-                        onChange={(e) => handleSearchRowChange(idx, 'url', e.target.value)}
-                        placeholder="Kleinanzeigen listing page URL..."
-                        className="flex-1 bg-slate-950 border border-white/10 rounded-lg text-xs py-2 px-3 text-slate-200 outline-none focus:border-cyan-500 transition-all font-mono"
-                      />
-
-                      {/* Profile assign dropdown */}
-                      <select
-                        value={search.profile_id || ''}
-                        onChange={(e) => handleSearchRowChange(idx, 'profile_id', e.target.value ? Number(e.target.value) : null)}
-                        className="bg-slate-950 border border-white/10 rounded-lg text-xs py-2 px-3 text-slate-300 outline-none focus:border-cyan-500 transition-all lg:w-48"
+              {/* Targets List */}
+              {currentCampaignId && (
+                <div className="space-y-4 pt-4 border-t border-slate-800">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Search Targets ({activeSearches.length})</span>
+                    
+                    <div className="flex space-x-1.5">
+                      <button
+                        onClick={handleStartScrape}
+                        disabled={isScraping || isProcessing}
+                        className="text-[10px] bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold px-2 py-1 rounded transition-colors"
                       >
-                        <option value="">Choose Profile Category</option>
-                        {profiles.map(p => (
-                          <option key={p.id} value={p.id}>{p.domain}</option>
-                        ))}
-                      </select>
+                        Scrape
+                      </button>
+                      <button
+                        onClick={handleStartProcess}
+                        disabled={isScraping || isProcessing}
+                        className="text-[10px] bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white font-bold px-2 py-1 rounded transition-colors"
+                      >
+                        Match AI
+                      </button>
+                    </div>
+                  </div>
 
-                      {/* Enabled Checkbox & remove */}
-                      <div className="flex items-center gap-4 justify-between lg:justify-start">
-                        <label className="flex items-center gap-1.5 text-xs text-slate-400 select-none">
-                          <input
-                            type="checkbox"
-                            checked={search.enabled}
-                            onChange={(e) => handleSearchRowChange(idx, 'enabled', e.target.checked)}
-                            className="rounded border-white/10 bg-slate-950 text-cyan-500 focus:ring-0 focus:ring-offset-0"
-                          />
-                          Active
-                        </label>
-                        <button
-                          onClick={() => removeSearchRow(idx)}
-                          className="p-2 rounded-lg bg-rose-950/20 hover:bg-rose-950/40 text-rose-400 transition-all"
+                  {isScraping && (
+                    <div className="bg-emerald-500/5 border border-emerald-500/20 p-2.5 rounded-xl flex flex-col space-y-2 text-[10px] text-emerald-400">
+                      <div className="flex items-center space-x-2">
+                        <div className="animate-spin w-3 h-3 border border-emerald-400 border-t-transparent rounded-full" />
+                        <span className="font-semibold truncate max-w-[200px]">Crawling: {scrapingStatus}</span>
+                      </div>
+                      <div className="w-full bg-slate-950 h-1 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-emerald-400 h-full transition-all duration-300"
+                          style={{ width: `${scrapingProgress?.total ? Math.round((scrapingProgress.current / scrapingProgress.total) * 100) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {isProcessing && (
+                    <div className="bg-indigo-500/5 border border-indigo-500/20 p-2.5 rounded-xl flex items-center space-x-2 text-[10px] text-indigo-400">
+                      <div className="animate-pulse w-2 h-2 rounded-full bg-indigo-400" />
+                      <span className="font-medium truncate max-w-[200px]">{processingStatus}</span>
+                    </div>
+                  )}
+
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                    {activeSearches.length === 0 ? (
+                      <div className="text-center py-6 border border-dashed border-slate-850 rounded-xl text-slate-600 text-xs font-semibold">
+                        No targets added to this campaign.
+                      </div>
+                    ) : (
+                      activeSearches.map(s => (
+                        <div
+                          key={s.id}
+                          onClick={() => setCurrentSearchId(s.id || null)}
+                          className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex justify-between items-center ${currentSearchId === s.id ? 'bg-slate-800/80 border-slate-600 shadow-md' : 'bg-slate-950/40 border-slate-850 hover:bg-slate-900/60'}`}
                         >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
+                          <div className="flex flex-col truncate pr-2">
+                            <span className="text-xs font-bold text-slate-200 truncate">{s.name}</span>
+                            <span className="text-[10px] text-slate-500 font-mono truncate">{s.url}</span>
+                          </div>
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.enabled ? 'bg-emerald-500' : 'bg-slate-700'}`} />
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Add target form */}
+                  <div className="bg-slate-950/60 border border-slate-850 rounded-xl p-4 space-y-3 pt-3">
+                    <span className="text-xs font-bold text-slate-300 block uppercase">Register New Search Target</span>
+                    
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={newTargetName}
+                        onChange={e => setNewTargetName(e.target.value)}
+                        placeholder="Target Item Name (e.g. CBR 1000)"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-emerald-500 text-slate-200"
+                      />
+                      <input
+                        type="text"
+                        value={newTargetUrl}
+                        onChange={e => setNewTargetUrl(e.target.value)}
+                        placeholder="Kleinanzeigen search URL..."
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-emerald-500 font-mono text-slate-200"
+                      />
+                      
+                      <div className="flex gap-2 items-center">
+                        <select
+                          value={newTargetKsId}
+                          onChange={e => setNewTargetKsId(e.target.value)}
+                          className="flex-1 bg-slate-950 text-xs border border-slate-800 rounded-lg px-2 py-2 focus:outline-none focus:border-emerald-500 text-slate-400"
+                        >
+                          <option value="">No Linked Guidelines Profile</option>
+                          {knowledgeSets.map(ks => (
+                            <option key={ks.id} value={ks.id}>{ks.name}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => handleTestUrl(newTargetUrl)}
+                          disabled={previewLoading}
+                          className="bg-slate-850 hover:bg-slate-700 text-[10px] font-bold px-2 py-2 rounded-lg text-slate-300 transition-colors"
+                        >
+                          Test Count
                         </button>
                       </div>
 
+                      {previewCount !== null && (
+                        <div className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded">Found {previewCount} live listings!</div>
+                      )}
+                      {previewError && (
+                        <div className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-1 rounded">{previewError}</div>
+                      )}
+
+                      <button
+                        onClick={handleRegisterTarget}
+                        className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold py-2 rounded-lg transition-colors mt-2"
+                      >
+                        + Add Target to Campaign
+                      </button>
                     </div>
-                  ))
+                  </div>
+
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT PANEL: TARGET INSPECTOR & UNIFIED GUIDELINES EDITOR */}
+            <div className="lg:col-span-2 space-y-6">
+              {activeSearchTarget ? (
+                <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
+                  
+                  {/* Target details */}
+                  <div className="flex justify-between items-start pb-4 border-b border-slate-800">
+                    <div className="space-y-1">
+                      <span className="text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded uppercase">Search Target</span>
+                      <div className="flex items-center space-x-2">
+                        <h2 className="text-xl font-bold text-slate-200">{activeSearchTarget.name}</h2>
+                        
+                        {/* Inline Test Count Action for registered target */}
+                        <button
+                          onClick={() => handleTestUrl(activeSearchTarget.url)}
+                          disabled={previewLoading}
+                          className="text-[9px] bg-slate-850 hover:bg-slate-700 text-slate-300 border border-slate-750 px-2 py-0.5 rounded font-bold transition-all inline-flex items-center"
+                        >
+                          {previewLoading ? 'Testing...' : '🔍 Test Count'}
+                        </button>
+
+                        {previewCount !== null && (
+                          <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded font-bold">Live: {previewCount}</span>
+                        )}
+                        {previewError && (
+                          <span className="text-[9px] bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded font-bold">Error: {previewError}</span>
+                        )}
+                      </div>
+                      
+                      <a href={activeSearchTarget.url} target="_blank" rel="noreferrer" className="text-xs text-slate-500 font-mono hover:text-emerald-400 truncate block max-w-[400px]">{activeSearchTarget.url}</a>
+                    </div>
+
+                    <div className="flex items-center space-x-3">
+                      <div className="flex flex-col items-end">
+                        <span className="text-[10px] text-slate-500 uppercase font-semibold">Crawl Status</span>
+                        <div className="flex items-center space-x-1.5 mt-0.5">
+                          <span className={`w-2.5 h-2.5 rounded-full ${activeSearchTarget.enabled ? 'bg-emerald-500' : 'bg-slate-700'}`} />
+                          <span className="text-xs font-bold text-slate-300">{activeSearchTarget.enabled ? 'Active' : 'Disabled'}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleToggleTarget(activeSearchTarget, !activeSearchTarget.enabled)}
+                        className="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-750 px-3 py-1.5 rounded-lg font-semibold transition-colors"
+                      >
+                        Toggle Status
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Linked Knowledge profile selector */}
+                  <div className="bg-slate-950/80 border border-slate-850 p-4 rounded-xl space-y-3">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="text-xs font-bold text-slate-350 uppercase tracking-wide">Linked Guidelines Profile</h3>
+                        <p className="text-[10px] text-slate-500">Assign a reusable expert checklist and extraction schema profile to this target model.</p>
+                      </div>
+                      <button
+                        onClick={() => handleCreateNewSetAndBind(activeSearchTarget)}
+                        className="text-[10px] text-emerald-400 hover:text-emerald-350 font-bold transition-colors"
+                      >
+                        + Create & Link New Profile
+                      </button>
+                    </div>
+
+                    <select
+                      value={activeSearchTarget.knowledge_set_id || ''}
+                      onChange={e => {
+                        const id = e.target.value ? parseInt(e.target.value, 10) : null
+                        handleBindKnowledgeSet(activeSearchTarget, id)
+                      }}
+                      className="w-full bg-slate-950 text-xs border border-slate-800 rounded-lg px-2.5 py-2.5 focus:outline-none focus:border-emerald-500 text-slate-200 font-semibold"
+                    >
+                      <option value="">No Guidelines Profile Bound (Crawl only)</option>
+                      {knowledgeSets.map(ks => (
+                        <option key={ks.id} value={ks.id}>{ks.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Collapsible Accordion: Guidelines Editor */}
+                  <div className="border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+                    <button
+                      onClick={() => setIsKnowledgeExpanded(!isKnowledgeExpanded)}
+                      className="w-full bg-slate-900/40 hover:bg-slate-900/60 px-4 py-3 flex justify-between items-center transition-colors"
+                    >
+                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wide">Expert Guidelines & LLM Checklist Configuration</span>
+                      <span className="text-xs text-slate-500 font-bold">{isKnowledgeExpanded ? 'Collapse [-]' : 'Expand [+]'}</span>
+                    </button>
+
+                    {isKnowledgeExpanded && (
+                      <div className="p-4 bg-slate-950/20 border-t border-slate-850 space-y-4">
+                        {activeSearchTarget.knowledge_set_id ? (
+                          <div className="space-y-4">
+                            <div>
+                              <label className="block text-[10px] font-semibold text-slate-500 mb-1 uppercase tracking-wider">Guidelines Profile Name</label>
+                              <input
+                                type="text"
+                                value={editKsName}
+                                onChange={e => setEditKsName(e.target.value)}
+                                placeholder="e.g. Honda CBR SC57 Checksheet"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-emerald-500 text-slate-200"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                              {/* Left Column: Guidelines Checklist */}
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center bg-slate-900/40 px-2.5 py-1.5 rounded-lg border border-slate-850">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">1. Expert guidelines checklist</span>
+                                  <button
+                                    onClick={() => handleCopyPrompt(expertGuidelinesPrompt, 'inline-guidelines')}
+                                    className={`text-[9px] px-2 py-0.5 rounded font-bold transition-all ${copiedPromptId === 'inline-guidelines' ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/25' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                                  >
+                                    {copiedPromptId === 'inline-guidelines' ? 'Copied prompt!' : 'Copy Template'}
+                                  </button>
+                                </div>
+                                <textarea
+                                  value={editKsKnowledge}
+                                  onChange={e => setEditKsKnowledge(e.target.value)}
+                                  placeholder="Paste model vulnerabilities, soft seller questions, big service milestones..."
+                                  rows={8}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500 font-sans whitespace-pre-wrap"
+                                />
+                              </div>
+
+                              {/* Right Column: Ingestion Schema JSON */}
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center bg-slate-900/40 px-2.5 py-1.5 rounded-lg border border-slate-850">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider font-mono">2. AI Researcher JSON schema</span>
+                                  <button
+                                    onClick={() => handleCopyPrompt(prompts[0].content, 'inline-json')}
+                                    className={`text-[9px] px-2 py-0.5 rounded font-bold transition-all ${copiedPromptId === 'inline-json' ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/25' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                                  >
+                                    {copiedPromptId === 'inline-json' ? 'Copied prompt!' : 'Copy Template'}
+                                  </button>
+                                </div>
+                                <textarea
+                                  value={editKsJson}
+                                  onChange={e => setEditKsJson(e.target.value)}
+                                  placeholder="Paste structured JSON criteria config containing 'extraction_criteria' and 'scoring_model'..."
+                                  rows={8}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono focus:outline-none focus:border-emerald-500"
+                                />
+                              </div>
+                            </div>
+
+                            {editKsError && (
+                              <div className="text-xs text-rose-400 font-semibold bg-rose-500/10 p-2 rounded">{editKsError}</div>
+                            )}
+
+                            <div className="flex justify-between items-center pt-2 border-t border-slate-900">
+                              <span className="text-[10px] text-slate-500">Saves globally to the linked guidelines profile.</span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleSaveKnowledgeSet}
+                                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs transition-colors shadow-lg shadow-emerald-500/10"
+                                >
+                                  Save Guidelines Profile
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center py-8 space-y-3">
+                            <p className="text-xs text-slate-500">No active knowledge profile linked to this search target.</p>
+                            <button
+                              onClick={() => handleCreateNewSetAndBind(activeSearchTarget)}
+                              className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/10"
+                            >
+                              Create & Link New Guidelines Profile
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Dangerous actions */}
+                  <div className="pt-4 border-t border-slate-800 flex justify-end">
+                    <button
+                      onClick={() => handleDeleteTarget(activeSearchTarget.id!)}
+                      className="text-xs text-rose-500 hover:text-rose-400 font-bold transition-colors"
+                    >
+                      Delete Search Target
+                    </button>
+                  </div>
+
+                </div>
+              ) : (
+                <div className="bg-slate-900/20 border border-dashed border-slate-850 rounded-2xl p-20 text-center shadow-inner h-full flex flex-col justify-center items-center">
+                  <span className="text-sm text-slate-500 font-semibold block mb-1">Select a Search Target</span>
+                  <span className="text-xs text-slate-600 block">Click a registered search model on the left panel to configure its linked knowledge specifications.</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        )}
+
+        {/* TAB 2: DEAL MATCHER FEED */}
+        {activeTab === 'deals' && (
+          <div className="flex flex-col space-y-6 animate-fadeIn">
+            
+            {/* VIEW A: CAMPAIGN HUNT HUBS GRID */}
+            {activeCampaignDealId === null ? (
+              <div className="space-y-6">
+                <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 shadow-lg">
+                  <h2 className="text-lg font-bold text-slate-200">Active Campaign Hunt Hubs</h2>
+                  <p className="text-xs text-slate-400 mt-1">Select a configured campaign below to explore matching deal opportunities, trigger background crawl executions, or jump to guidelines settings.</p>
+                </div>
+
+                <ScraperProgressCard
+                  isScraping={isScraping}
+                  scrapingStatus={scrapingStatus}
+                  scrapingProgress={scrapingProgress}
+                  liveLogs={liveLogs}
+                  showLogConsole={showLogConsole}
+                  setShowLogConsole={setShowLogConsole}
+                />
+
+                {isProcessing && (
+                  <div className="bg-indigo-500/5 border border-indigo-500/20 p-4 rounded-2xl flex items-center space-x-3 text-xs text-indigo-400">
+                    <div className="animate-pulse w-3 h-3 rounded-full bg-indigo-400" />
+                    <span className="font-semibold">{processingStatus}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {campaigns.map(c => {
+                    const campaignSearches = searches.filter(s => s.campaign_id === c.id)
+                    const campaignListings = listings.filter(l => {
+                      const s = searches.find(x => x.id === l.search_id)
+                      return s && s.campaign_id === c.id
+                    })
+                    const unprocessedCount = campaignListings.filter(l => !l.llm_processed).length
+
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => setActiveCampaignDealId(c.id)}
+                        className="bg-slate-900/50 backdrop-blur-xl border border-slate-850 hover:border-slate-700 p-6 rounded-2xl shadow-xl flex flex-col justify-between space-y-4 hover:-translate-y-0.5 transition-all cursor-pointer group"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start">
+                            <h3 className="text-base font-bold text-slate-200 group-hover:text-emerald-400 transition-colors">{c.name}</h3>
+                            
+                            {/* Settings icon redirecting back to campaign hub */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCurrentCampaignId(c.id);
+                                setCurrentSearchId(null);
+                                setActiveTab('hunts');
+                              }}
+                              title="Campaign Configuration Settings"
+                              className="p-1.5 rounded-lg bg-slate-850 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 transition-all border border-slate-800"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                            </button>
+                          </div>
+                          
+                          <div className="flex space-x-3 text-xs text-slate-500 font-medium items-center">
+                            <span>{campaignSearches.length} Targets</span>
+                            <span>•</span>
+                            <span className="text-emerald-400 font-semibold">{campaignListings.length} Total</span>
+                            {unprocessedCount > 0 && (
+                              <>
+                                <span>•</span>
+                                <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold animate-pulse">
+                                  {unprocessedCount} New Listings
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-2 pt-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveCampaignDealId(c.id);
+                            }}
+                            className="w-full bg-slate-800 hover:bg-slate-750 text-xs font-bold py-2.5 rounded-xl text-slate-200 transition-colors border border-slate-750 text-center"
+                          >
+                            Explore Deals Dashboard
+                          </button>
+                          
+                          <div className="flex gap-2">
+                            {/* Run Scraper action for specific campaign */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartScrape();
+                              }}
+                              disabled={isScraping || isProcessing}
+                              className="flex-1 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold py-2 rounded-xl text-[11px] transition-colors text-center"
+                            >
+                              Scrape
+                            </button>
+
+                            {/* Run AI Matcher action */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartProcess();
+                              }}
+                              disabled={isScraping || isProcessing}
+                              className="flex-1 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white font-bold py-2 rounded-xl text-[11px] transition-colors text-center"
+                            >
+                              Match AI
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {campaigns.length === 0 && (
+                    <div className="col-span-full text-center py-16 border border-dashed border-slate-850 rounded-2xl text-slate-600 text-xs font-bold">
+                      No active campaigns registered. Navigate back to Campaign Hub to create one.
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              // VIEW B: CAMPAIGN MATCHES DETAIL SHEET
+              <div className="space-y-6">
+                
+                {/* Campaign Breadcrumb Headers & Filters */}
+                <div className="flex flex-wrap gap-4 items-center justify-between bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-5 shadow-lg">
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={() => setActiveCampaignDealId(null)}
+                      className="text-xs text-slate-400 hover:text-slate-200 font-bold flex items-center space-x-1"
+                    >
+                      ← Back to Campaigns
+                    </button>
+                    <span className="text-slate-700">/</span>
+                    <h2 className="text-base font-bold text-slate-200">{campaigns.find(c => c.id === activeCampaignDealId)?.name}</h2>
+                    
+                    <button
+                      onClick={() => {
+                        setCurrentCampaignId(activeCampaignDealId);
+                        setCurrentSearchId(null);
+                        setActiveTab('hunts');
+                      }}
+                      title="Configure Campaign Settings"
+                      className="p-1.5 rounded-lg bg-slate-850 hover:bg-slate-700 text-slate-455 hover:text-emerald-400 transition-all border border-slate-750"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center space-x-3">
+                    {/* modular crawl execution buttons */}
+                    <div className="flex space-x-1.5 bg-slate-950/80 p-1 rounded-xl border border-slate-800 shadow-inner">
+                      <button
+                        onClick={handleStartScrape}
+                        disabled={isScraping || isProcessing}
+                        className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold px-3 py-2 rounded-lg text-xs transition-colors flex items-center space-x-1 shadow-lg shadow-emerald-500/10"
+                      >
+                        <span>🔍 Scrape Listings</span>
+                      </button>
+                      <button
+                        onClick={handleStartProcess}
+                        disabled={isScraping || isProcessing}
+                        className="bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white font-bold px-3 py-2 rounded-lg text-xs transition-colors flex items-center space-x-1 shadow-lg shadow-indigo-500/10"
+                      >
+                        <span>🤖 Run AI Matcher</span>
+                      </button>
+                    </div>
+                    
+                    {/* Sub target filter */}
+                    <select
+                      value={selectedSearchId}
+                      onChange={e => setSelectedSearchId(e.target.value)}
+                      className="bg-slate-950 text-xs font-semibold text-slate-300 border border-slate-800 rounded-lg px-2.5 py-2.5 focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="All">All Targets</option>
+                      {searches.filter(s => s.campaign_id === activeCampaignDealId).map(s => (
+                        <option key={s.id} value={String(s.id)}>{s.name}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={selectedStatusFilter}
+                      onChange={e => setSelectedStatusFilter(e.target.value as typeof selectedStatusFilter)}
+                      className="bg-slate-950 text-xs font-semibold text-slate-300 border border-slate-800 rounded-lg px-2.5 py-2.5 focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="All">All Statuses</option>
+                      <option value="High Niceness">High Niceness (70+)</option>
+                      <option value="Awaiting AI">Awaiting AI Matcher</option>
+                      <option value="New">Unprocessed / New</option>
+                      <option value="Dealbreaker">Dealbreakers</option>
+                    </select>
+                  </div>
+                </div>
+
+                <ScraperProgressCard
+                  isScraping={isScraping}
+                  scrapingStatus={scrapingStatus}
+                  scrapingProgress={scrapingProgress}
+                  liveLogs={liveLogs}
+                  showLogConsole={showLogConsole}
+                  setShowLogConsole={setShowLogConsole}
+                />
+
+                {isProcessing && (
+                  <div className="bg-indigo-500/5 border border-indigo-500/20 p-4 rounded-2xl flex items-center space-x-3 text-xs text-indigo-400">
+                    <div className="animate-pulse w-3 h-3 rounded-full bg-indigo-400" />
+                    <span className="font-semibold">{processingStatus}</span>
+                  </div>
+                )}
+
+                {/* Grid of Matched Listings */}
+                {filteredListings.length === 0 ? (
+                  <div className="bg-slate-900/20 border border-dashed border-slate-850 rounded-2xl p-16 text-center shadow-inner">
+                    <span className="text-sm text-slate-500 font-semibold block mb-1">No matching listings found</span>
+                    <span className="text-xs text-slate-600 block">Configure targets, link guidelines checklists, and trigger scraper runs to discover deals.</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredListings.map(l => (
+                      <div key={l.id} className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 hover:border-slate-755 rounded-2xl p-5 flex flex-col justify-between shadow-lg transition-all hover:-translate-y-0.5 group">
+                        <div className="space-y-3">
+                          
+                          {/* Image Slideshow */}
+                          {l.images && l.images.length > 0 && (
+                            <div className="relative group/gallery w-full aspect-video rounded-xl overflow-hidden bg-slate-950 border border-slate-800/80 mb-3 shadow-md">
+                              <img
+                                src={l.images[activeImageIndices[l.id] || 0]}
+                                alt={`Listing visual ${activeImageIndices[l.id] || 0}`}
+                                className="w-full h-full object-cover transition-all duration-300 transform group-hover/gallery:scale-102"
+                              />
+                              {l.images.length > 1 && (
+                                <>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handlePrevImage(l.id, l.images!.length); }}
+                                    className="absolute left-2 top-1/2 -translate-y-1/2 bg-slate-950/85 hover:bg-slate-900 border border-slate-800 text-slate-350 w-7 h-7 rounded-full flex items-center justify-center text-xs opacity-0 group-hover/gallery:opacity-100 transition-opacity focus:outline-none"
+                                  >
+                                    &larr;
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleNextImage(l.id, l.images!.length); }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-slate-950/85 hover:bg-slate-900 border border-slate-800 text-slate-350 w-7 h-7 rounded-full flex items-center justify-center text-xs opacity-0 group-hover/gallery:opacity-100 transition-opacity focus:outline-none"
+                                  >
+                                    &rarr;
+                                  </button>
+                                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-slate-950/70 backdrop-blur-sm px-2 py-0.5 rounded-full flex space-x-1">
+                                    {l.images.map((_, idx) => (
+                                      <span
+                                        key={idx}
+                                        className={`w-1.5 h-1.5 rounded-full transition-all ${
+                                          (activeImageIndices[l.id] || 0) === idx ? 'bg-emerald-400 scale-125' : 'bg-slate-600'
+                                        }`}
+                                      />
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex justify-between items-start">
+                            <div className="flex flex-col truncate pr-2">
+                              <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold truncate max-w-[150px]">{l.item_name}</span>
+                              <span className="text-[9px] text-emerald-500 font-semibold uppercase">{l.campaign_name}</span>
+                            </div>
+                            
+                            {!l.llm_processed ? (
+                              <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/25 flex items-center space-x-1.5 animate-pulse">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                <span>Awaiting AI</span>
+                              </div>
+                            ) : l.niceness_score <= -999 ? (
+                              <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                                DEALBREAKER
+                              </div>
+                            ) : (
+                              <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                Score: {l.niceness_score}
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-200 line-clamp-1 group-hover:text-emerald-400 transition-colors">{l.title}</h3>
+                            <div className="flex space-x-2 text-xs font-semibold text-slate-400 mt-1">
+                              <span className="text-emerald-400 font-bold">{l.price}</span>
+                              <span>•</span>
+                              <span className="truncate max-w-[120px]">{l.location}</span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <p className={`text-xs text-slate-400 whitespace-pre-wrap transition-all duration-300 ${expandedListingIds[l.id] ? '' : 'line-clamp-3'}`}>
+                              {l.detailed_description || l.short_description || 'No description available.'}
+                            </p>
+                            {((l.detailed_description && l.detailed_description.length > 150) || (l.short_description && l.short_description.length > 150)) && (
+                              <button
+                                onClick={() => toggleExpandListing(l.id)}
+                                className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold transition-colors pt-0.5 block"
+                              >
+                                {expandedListingIds[l.id] ? 'Show Less' : 'Show Full Description'}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Key Details Attributes */}
+                          {l.details && Object.keys(l.details).length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {Object.entries(l.details).map(([key, val]) => (
+                                <div key={key} className="text-[10px] bg-slate-900 border border-slate-800/80 px-2 py-1 rounded-md text-slate-400 flex items-center space-x-1">
+                                  <span className="text-slate-500 font-medium">{key}:</span>
+                                  <span className="font-bold text-slate-300">{val}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {l.llm_processed && l.extracted_facts && Object.keys(l.extracted_facts).length > 0 && (
+                            <div className="bg-slate-950/80 border border-slate-900 rounded-xl p-3 space-y-1">
+                              <span className="text-[10px] text-slate-500 font-semibold block uppercase tracking-wider mb-1.5">Extracted Metrics</span>
+                              <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                                {Object.entries(l.extracted_facts).filter(([k]) => !k.startsWith('_')).map(([k, v]) => (
+                                  <div key={k} className="flex justify-between items-center bg-slate-900/50 px-2 py-1 rounded">
+                                    <span className="text-slate-500 truncate max-w-[70px]">{k}</span>
+                                    <span className={`font-bold ${v === true ? 'text-emerald-400' : v === false ? 'text-rose-400' : 'text-slate-300'}`}>
+                                      {String(v)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-800">
+                          <a
+                            href={l.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs text-emerald-400 hover:text-emerald-300 font-bold flex items-center space-x-1"
+                          >
+                            <span>Open Listing Website</span>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-
-              <div className="mt-6 flex gap-4">
-                <button
-                  onClick={handleSaveSearches}
-                  className="flex-1 py-2.5 rounded-xl font-heading text-sm font-bold bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-all shadow-md shadow-cyan-500/10"
-                >
-                  Save Search URL Configurations
-                </button>
-              </div>
-            </div>
+            )}
           </div>
         )}
 
-        {/* ==================== 5. PROMPTS HUB TAB ==================== */}
+        {/* TAB 3: INSTRUCTIONS REFERENCE PANEL */}
         {activeTab === 'prompts' && (
-          <div className="space-y-6">
-            <div className="rounded-xl bg-slate-900/40 border border-white/10 p-6 backdrop-blur-md relative overflow-hidden">
-              <div className="absolute top-0 right-0 h-48 w-48 rounded-full bg-cyan-500/5 blur-3xl" />
-              <h2 className="text-2xl font-bold text-white font-heading">Prompts Hub</h2>
-              <p className="text-slate-400 text-sm mt-1">Copy these expert system prompts and paste them into your external LLM of choice to generate profiles or structured cheat sheets.</p>
+          <div className="w-full max-w-4xl mx-auto space-y-6">
+            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6">
+              <h2 className="text-lg font-bold text-slate-200 mb-2">Campaign Prompt Reference Hub</h2>
+              <p className="text-xs text-slate-400">These standard templates can be copied to generate custom knowledge guidelines. Placeholders are domain-agnostic; templates use examples purely for formatting structure.</p>
+            </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-                
-                {/* Profile Gen Prompt */}
-                <div className="rounded-xl bg-slate-950/60 border border-white/5 p-5 flex flex-col justify-between">
+            <div className="space-y-6">
+              <div className="bg-slate-900/50 border border-slate-850 rounded-2xl p-6 space-y-4">
+                <div className="flex justify-between items-center">
                   <div>
-                    <div className="flex justify-between items-center gap-2 mb-3">
-                      <h3 className="text-md font-bold text-white font-heading">1. Profile JSON Generator</h3>
-                      <button
-                        onClick={() => copyToClipboard(PROMPT_RESEARCHER, 'researcher')}
-                        className="px-2.5 py-1 text-xs font-semibold rounded bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-all"
-                      >
-                        {copiedPromptId === 'researcher' ? 'Copied!' : 'Copy Prompt'}
-                      </button>
-                    </div>
-                    <p className="text-slate-400 text-xs leading-relaxed mb-4">
-                      Feed this to Claude/ChatGPT to automatically generate the strict JSON configuration required by the <strong>Agent Profiles</strong> tab.
-                    </p>
+                    <h3 className="text-sm font-bold text-slate-200">1. Expert Checklist Prompt</h3>
+                    <p className="text-xs text-slate-550 mt-0.5">Run this first in your LLM to get a raw markdown domain expert cheat sheet.</p>
                   </div>
-                  <pre className="p-3 bg-slate-950 rounded-lg border border-white/5 text-[10px] font-mono text-slate-500 overflow-y-auto max-h-48 text-left">
-                    {PROMPT_RESEARCHER}
-                  </pre>
+                  <button
+                    onClick={() => handleCopyPrompt(expertGuidelinesPrompt, 'expert-ref')}
+                    className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-all ${copiedPromptId === 'expert-ref' ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-355'}`}
+                  >
+                    {copiedPromptId === 'expert-ref' ? 'Copied Prompt!' : 'Copy Template'}
+                  </button>
                 </div>
-
-                {/* Cheat Sheet Prompt */}
-                <div className="rounded-xl bg-slate-950/60 border border-white/5 p-5 flex flex-col justify-between">
-                  <div>
-                    <div className="flex justify-between items-center gap-2 mb-3">
-                      <h3 className="text-md font-bold text-white font-heading">2. Model-Specific Cheat Sheet</h3>
-                      <button
-                        onClick={() => copyToClipboard(PROMPT_CHEAT_SHEET, 'cheat')}
-                        className="px-2.5 py-1 text-xs font-semibold rounded bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-all"
-                      >
-                        {copiedPromptId === 'cheat' ? 'Copied!' : 'Copy Prompt'}
-                      </button>
-                    </div>
-                    <p className="text-slate-400 text-xs leading-relaxed mb-4">
-                      Instructs the LLM to write highly structured cheat sheets with conversational questions (like CBR vs GSX-R) to guide your manual vendor interactions.
-                    </p>
-                  </div>
-                  <pre className="p-3 bg-slate-950 rounded-lg border border-white/5 text-[10px] font-mono text-slate-500 overflow-y-auto max-h-48 text-left">
-                    {PROMPT_CHEAT_SHEET}
-                  </pre>
-                </div>
-
+                <pre className="bg-slate-950 text-xs font-mono p-4 rounded-xl overflow-x-auto text-slate-400 border border-slate-900 whitespace-pre-wrap">{expertGuidelinesPrompt}</pre>
               </div>
+
+              {prompts.map(p => (
+                <div key={p.id} className="bg-slate-900/50 border border-slate-850 rounded-2xl p-6 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-200">2. {p.title}</h3>
+                      <p className="text-xs text-slate-550 mt-0.5">{p.description}</p>
+                    </div>
+                    <button
+                      onClick={() => handleCopyPrompt(p.content, p.id)}
+                      className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-all ${copiedPromptId === p.id ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-350'}`}
+                    >
+                      {copiedPromptId === p.id ? 'Copied Prompt!' : 'Copy Template'}
+                    </button>
+                  </div>
+                  <pre className="bg-slate-950 text-xs font-mono p-4 rounded-xl overflow-x-auto text-slate-400 border border-slate-900 whitespace-pre-wrap">{p.content}</pre>
+                </div>
+              ))}
             </div>
           </div>
         )}
-
       </main>
     </div>
   )
 }
-
-export default App

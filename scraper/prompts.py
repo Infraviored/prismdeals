@@ -1,4 +1,6 @@
-def get_generalized_analysis_prompt(title, description, criteria_list):
+def get_generalized_analysis_prompt(
+    title, description, criteria_list, expert_knowledge=None
+):
     """Returns a highly optimized prompt for analyzing any listing against dynamic custom criteria"""
     criteria_instructions = ""
     json_keys = {}
@@ -20,8 +22,13 @@ def get_generalized_analysis_prompt(title, description, criteria_list):
     json_schema_lines.append('  "_full_info_obtained": true / false')
     schema_str = "{\n" + ",\n".join(json_schema_lines) + "\n}"
 
+    gk_block = ""
+    if expert_knowledge:
+        gk_block = f"General Domain & Expert Knowledge Rules:\n{expert_knowledge}\n\n"
+
     return (
         "You are an expert product analyst. Carefully analyze the following listing to extract specific attributes.\n\n"
+        f"{gk_block}"
         "Here are the extraction criteria you need to evaluate:\n"
         f"{criteria_instructions}"
         "First, think through your reasoning step-by-step for each criterion. "
@@ -41,7 +48,12 @@ def get_generalized_analysis_prompt(title, description, criteria_list):
 
 
 def get_outreach_draft_prompt(
-    title, description, extracted_facts, outreach_strategy, missing_criteria
+    title,
+    description,
+    extracted_facts,
+    outreach_strategy,
+    missing_criteria,
+    expert_knowledge=None,
 ):
     """Generates the prompt for the Worker AI to draft a tailored first-touch outreach message"""
     questions_block = ""
@@ -51,8 +63,13 @@ def get_outreach_draft_prompt(
                 f"- Ask about {q.get('target_criterion')}: {q.get('question_text')}\n"
             )
 
+    gk_block = ""
+    if expert_knowledge:
+        gk_block = f"General Domain & Expert Knowledge Rules:\n{expert_knowledge}\n\n"
+
     return (
         "You are a friendly, knowledgeable buyer interested in purchasing the product in the listing below.\n\n"
+        f"{gk_block}"
         f"Listing Title: {title}\n"
         f"Listing Description:\n{description}\n\n"
         "Outreach Strategy Guidelines:\n"
