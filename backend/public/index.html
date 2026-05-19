@@ -355,6 +355,9 @@
           <button class="nav-link active" id="feed-tab" data-bs-toggle="tab" data-bs-target="#feed-content" type="button" role="tab">Inbox & Feed</button>
         </li>
         <li class="nav-item">
+          <button class="nav-link" id="matcher-tab" data-bs-toggle="tab" data-bs-target="#matcher-content" type="button" role="tab">Deal Matcher</button>
+        </li>
+        <li class="nav-item">
           <button class="nav-link" id="profiles-tab" data-bs-toggle="tab" data-bs-target="#profiles-content" type="button" role="tab">Agent Profiles</button>
         </li>
         <li class="nav-item">
@@ -385,6 +388,34 @@
             </div>
           </div>
           
+        </div>
+      </div>
+
+      <!-- DEAL MATCHER TAB -->
+      <div class="tab-pane fade" id="matcher-content" role="tabpanel">
+        <div class="glass-card">
+          <h3 class="mb-3 text-info font-heading">High-Relevance Deal Matcher</h3>
+          <p class="text-muted mb-4">Review listings automatically ranked by Niceness Score, preview pre-computed outreach messages, and contact vendors directly.</p>
+          
+          <div class="table-responsive">
+            <table class="table table-dark table-hover align-middle border border-secondary" style="border-radius: 12px; overflow: hidden;">
+              <thead>
+                <tr>
+                  <th style="width: 100px;">Niceness</th>
+                  <th style="width: 250px;">Item Title / Category</th>
+                  <th style="width: 120px;">Price</th>
+                  <th style="width: 150px;">Location</th>
+                  <th>Pre-Computed Next Message</th>
+                  <th style="width: 180px;" class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="matcher-table-body">
+                <tr>
+                  <td colspan="6" class="text-center py-5 text-muted">Loading deals...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -514,6 +545,7 @@
           crawlInterval.value = scheduleData.interval || 60;
           
           renderFeed();
+          renderMatcherTable();
           populateProfileDropdowns();
           renderSearchList();
           
@@ -972,7 +1004,80 @@
         });
       });
 
-    });
+      function renderMatcherTable() {
+        const tableBody = document.getElementById('matcher-table-body');
+        tableBody.innerHTML = '';
+        
+        // Filter out dealbreakers and negative scores
+        const relevantListings = listings.filter(l => l.status !== 'Dealbreaker' && l.niceness_score > 0);
+        
+        if (relevantListings.length === 0) {
+          tableBody.innerHTML = '<tr><td colspan="6" class="text-center py-5 text-muted">No high-relevance deals found yet. Trigger an active crawl or update sliders!</td></tr>';
+          return;
+        }
+
+        relevantListings.forEach(l => {
+          const row = document.createElement('tr');
+          
+          let scoreClass = 'neutral';
+          if (l.niceness_score >= 70) {
+            scoreClass = 'excellent';
+          }
+          
+          row.innerHTML = `
+            <td>
+              <span class="score-badge ${scoreClass}">Score: ${l.niceness_score}</span>
+            </td>
+            <td>
+              <h6 class="mb-0 text-white font-heading">${l.title}</h6>
+              <small class="text-info">${l.profile_domain || 'General Category'}</small>
+            </td>
+            <td class="text-danger fw-bold">${l.price || 'N/A'}</td>
+            <td class="text-muted">${l.location || 'N/A'}</td>
+            <td>
+              <div class="d-flex flex-column gap-1">
+                <textarea class="form-control bg-dark border-secondary text-light font-monospace" style="font-size: 12.5px; height: 75px; resize: none; overflow-y: auto;" readonly id="matcher-draft-${l.id}">Generating AI outreach message...</textarea>
+                <div class="d-flex justify-content-end">
+                  <button class="btn btn-sm btn-outline-info py-0 px-2 mt-1" style="font-size: 11px;" onclick="copyMatcherDraft(${l.id})">Copy Text</button>
+                </div>
+              </div>
+            </td>
+            <td class="text-end">
+              <a href="${l.url}" target="_blank" class="btn btn-sm btn-info font-heading px-3">Contact Seller</a>
+            </td>
+          `;
+          
+          tableBody.appendChild(row);
+          
+          // Asynchronously fetch draft for this listing
+          fetch('/api/listings/draft', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ listing_id: l.id })
+          })
+          .then(res => res.json())
+          .then(data => {
+            const txt = document.getElementById(`matcher-draft-${l.id}`);
+            if (txt) {
+              txt.value = data.draft || "Failed to generate outreach message.";
+            }
+          })
+          .catch(err => {
+            const txt = document.getElementById(`matcher-draft-${l.id}`);
+            if (txt) txt.value = "Draft retrieval failed.";
+          });
+        });
+      }
+
+      window.copyMatcherDraft = (id) => {
+        const txt = document.getElementById(`matcher-draft-${id}`);
+        if (txt) {
+          navigator.clipboard.writeText(txt.value);
+          alert("Outreach message copied to clipboard!");
+        }
+      };
+
+      });
   </script>
 </body>
 </html>
