@@ -117,18 +117,24 @@ def process_unprocessed_listings(target_listing_id=None):
         )
 
         try:
-            response = client.chat.completions.create(
-                model=LLM_MODEL,
-                messages=[
+            kwargs = {
+                "model": LLM_MODEL,
+                "messages": [
                     {
                         "role": "system",
                         "content": "You are a precise, objective product analyst.",
                     },
                     {"role": "user", "content": prompt},
                 ],
-                max_completion_tokens=800,
-                temperature=0.0,
-            )
+                "max_completion_tokens": 800,
+            }
+            if not (
+                "gpt-5" in LLM_MODEL
+                or LLM_MODEL.startswith("o1")
+                or LLM_MODEL.startswith("o3")
+            ):
+                kwargs["temperature"] = 0.0
+            response = client.chat.completions.create(**kwargs)
             response_text = response.choices[0].message.content.strip()
 
             extracted_data = extract_json_block(response_text)
@@ -264,18 +270,24 @@ def generate_outreach_draft(listing_id):
     )
 
     try:
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[
+        kwargs = {
+            "model": LLM_MODEL,
+            "messages": [
                 {
                     "role": "system",
                     "content": "You write elegant, friendly outreach messages for prospective buyers.",
                 },
                 {"role": "user", "content": prompt},
             ],
-            max_completion_tokens=300,
-            temperature=0.7,
-        )
+            "max_completion_tokens": 300,
+        }
+        if not (
+            "gpt-5" in LLM_MODEL
+            or LLM_MODEL.startswith("o1")
+            or LLM_MODEL.startswith("o3")
+        ):
+            kwargs["temperature"] = 0.7
+        response = client.chat.completions.create(**kwargs)
         draft_message = response.choices[0].message.content.strip()
         print(draft_message)
     except Exception as e:
@@ -377,18 +389,24 @@ def analyze_conversation(listing_id):
     )
 
     try:
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[
+        kwargs = {
+            "model": LLM_MODEL,
+            "messages": [
                 {
                     "role": "system",
                     "content": "You are a precise, objective chat analyzer.",
                 },
                 {"role": "user", "content": prompt},
             ],
-            max_completion_tokens=400,
-            temperature=0.0,
-        )
+            "max_completion_tokens": 400,
+        }
+        if not (
+            "gpt-5" in LLM_MODEL
+            or LLM_MODEL.startswith("o1")
+            or LLM_MODEL.startswith("o3")
+        ):
+            kwargs["temperature"] = 0.0
+        response = client.chat.completions.create(**kwargs)
         response_text = response.choices[0].message.content.strip()
         updated_data = extract_json_block(response_text)
 
