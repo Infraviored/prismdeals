@@ -126,7 +126,7 @@ def process_unprocessed_listings(target_listing_id=None):
                     },
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=800,
+                max_completion_tokens=800,
                 temperature=0.0,
             )
             response_text = response.choices[0].message.content.strip()
@@ -273,7 +273,7 @@ def generate_outreach_draft(listing_id):
                 },
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=300,
+            max_completion_tokens=300,
             temperature=0.7,
         )
         draft_message = response.choices[0].message.content.strip()
@@ -386,7 +386,7 @@ def analyze_conversation(listing_id):
                 },
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=400,
+            max_completion_tokens=400,
             temperature=0.0,
         )
         response_text = response.choices[0].message.content.strip()
