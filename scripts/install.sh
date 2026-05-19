@@ -14,9 +14,12 @@ NC='\033[0m' # No Color
 
 echo -e "${GREEN}Starting KleinanzeigenScraper installation...${NC}"
 
-# Get the current directory
-INSTALL_DIR=$(pwd)
+# Get the project root directory (one level up from this scripts/ folder)
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+INSTALL_DIR=$(cd "${SCRIPT_DIR}/.." && pwd)
 echo -e "Installing in: ${INSTALL_DIR}"
+
+cd "${INSTALL_DIR}"
 
 # Check if Python 3 is installed
 if ! command -v python3 &> /dev/null; then
@@ -75,13 +78,13 @@ pip install -r requirements.txt
 
 # 3. Install Node.js dependencies
 echo -e "${YELLOW}Installing Node.js dependencies...${NC}"
-npm install
+cd backend && npm install && cd ..
 
 # 4. Create config.py if it doesn't exist
-if [ ! -f "config.py" ]; then
+if [ ! -f "scraper/config.py" ]; then
     echo -e "${YELLOW}Creating config.py from template...${NC}"
-    cp config_template.py config.py
-    echo -e "${YELLOW}Please edit config.py to add your API key and other settings.${NC}"
+    cp scraper/config_template.py scraper/config.py
+    echo -e "${YELLOW}Please edit scraper/config.py to add your API key and other settings.${NC}"
 fi
 
 # 5. Create data directory if it doesn't exist
@@ -97,25 +100,27 @@ echo -e "${YELLOW}Setting up systemd service...${NC}"
 CURRENT_USER=$(whoami)
 CURRENT_UID=$(id -u)
 
-# Remove existing start-service.sh if it exists
-if [ -f "start-service.sh" ]; then
-    rm -f start-service.sh
-fi
+mkdir -p scripts
+mkdir -p deployment
 
-# Create a startup script for the service
-echo -e "${YELLOW}Creating startup script...${NC}"
-cat > start-service.sh << EOL
+# Remove existing start-service.sh if it exists
+rm -f start-service.sh
+rm -f scripts/start-service.sh
+
+# Create a startup script for the service inside scripts/
+echo -e "${YELLOW}Creating startup script inside scripts/...${NC}"
+cat > scripts/start-service.sh << EOL
 #!/bin/bash
 source ${INSTALL_DIR}/kleinanzeigenScraper/bin/activate
 cd ${INSTALL_DIR}
-exec node ${INSTALL_DIR}/server.js
+exec node ${INSTALL_DIR}/backend/server.js
 EOL
 
 # Make the startup script executable
-chmod +x start-service.sh
+chmod +x scripts/start-service.sh
 
-# Create temporary service file with correct paths
-cat > kleinanzeigen-scraper.service.tmp << EOL
+# Create temporary service file in deployment/
+cat > deployment/kleinanzeigen-scraper.service.tmp << EOL
 [Unit]
 Description=KleinanzeigenScraper Service
 After=network.target
@@ -126,7 +131,7 @@ Type=simple
 User=${CURRENT_UID}
 Group=$(id -g)
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/start-service.sh
+ExecStart=${INSTALL_DIR}/scripts/start-service.sh
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -142,7 +147,7 @@ echo -e "${YELLOW}Testing the server...${NC}"
 echo -e "${BLUE}Starting the server in test mode...${NC}"
 
 # Run the server in the background
-(source kleinanzeigenScraper/bin/activate && node server.js > server_test.log 2>&1) &
+(source kleinanzeigenScraper/bin/activate && node backend/server.js > server_test.log 2>&1) &
 SERVER_PID=$!
 
 # Wait a few seconds for the server to start
@@ -171,7 +176,7 @@ kill $SERVER_PID 2>/dev/null || true
 rm server_test.log 2>/dev/null || true
 
 echo -e "${YELLOW}Service file created. To install as a system service, run:${NC}"
-echo -e "${GREEN}sudo cp kleinanzeigen-scraper.service.tmp /etc/systemd/system/kleinanzeigen-scraper.service${NC}"
+echo -e "${GREEN}sudo cp deployment/kleinanzeigen-scraper.service.tmp /etc/systemd/system/kleinanzeigen-scraper.service${NC}"
 echo -e "${GREEN}sudo systemctl daemon-reload${NC}"
 echo -e "${GREEN}sudo systemctl enable kleinanzeigen-scraper.service${NC}"
 echo -e "${GREEN}sudo systemctl start kleinanzeigen-scraper.service${NC}"
@@ -182,7 +187,7 @@ read -r install_service
 
 if [[ "$install_service" =~ ^[Yy]$ ]]; then
     echo -e "${YELLOW}Installing service...${NC}"
-    sudo cp kleinanzeigen-scraper.service.tmp /etc/systemd/system/kleinanzeigen-scraper.service
+    sudo cp deployment/kleinanzeigen-scraper.service.tmp /etc/systemd/system/kleinanzeigen-scraper.service
     sudo systemctl daemon-reload
     sudo systemctl enable kleinanzeigen-scraper.service
     sudo systemctl start kleinanzeigen-scraper.service
@@ -210,11 +215,11 @@ echo -e "${YELLOW}The server will be available at http://localhost:3030 once sta
 deactivate
 
 echo -e "${GREEN}You can now run the service manually with:${NC}"
-echo -e "${GREEN}source kleinanzeigenScraper/bin/activate && node server.js${NC}"
+echo -e "${GREEN}source kleinanzeigenScraper/bin/activate && node backend/server.js${NC}"
 
 # Provide troubleshooting information
 echo -e "\n${YELLOW}Troubleshooting:${NC}"
 echo -e "1. If the server doesn't start, check the logs with: ${GREEN}sudo journalctl -u kleinanzeigen-scraper.service -f${NC}"
 echo -e "2. Make sure port 3030 is not in use by another application"
 echo -e "3. Check if Node.js has permission to bind to port 3030"
-echo -e "4. Verify that the config.py file has the correct API key and settings" 
+echo -e "4. Verify that the scraper/config.py file has the correct API key and settings"

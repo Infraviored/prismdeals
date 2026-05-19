@@ -5,10 +5,10 @@ After=network.target
 [Service]
 Type=simple
 # Use direct UID instead of username to avoid user lookup issues
-User=1000
-Group=1000
-WorkingDirectory=/home/flo/repos/KleinanzeigenScraper
-ExecStart=/home/flo/repos/KleinanzeigenScraper/start-service.sh
+User=0
+Group=0
+WorkingDirectory=/home/schneider/repos_private/KleinanzeigenScraper
+ExecStart=/home/schneider/repos_private/KleinanzeigenScraper/scripts/start-service.sh
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

@@ -27,12 +27,12 @@ A tool for scraping laptop listings from Kleinanzeigen.de and analyzing them wit
 
 2. Make the installer executable:
    ```bash
-   chmod +x install.sh
+   chmod +x scripts/install.sh
    ```
 
 3. Run the installer:
    ```bash
-   ./install.sh
+   ./scripts/install.sh
    ```
 
 4. Follow the on-screen instructions to complete the installation.
@@ -41,7 +41,7 @@ A tool for scraping laptop listings from Kleinanzeigen.de and analyzing them wit
 
 6. Install the systemd service (optional):
    ```bash
-   sudo cp kleinanzeigen-scraper.service.tmp /etc/systemd/system/kleinanzeigen-scraper.service
+   sudo cp deployment/kleinanzeigen-scraper.service.tmp /etc/systemd/system/kleinanzeigen-scraper.service
    sudo systemctl daemon-reload
    sudo systemctl enable kleinanzeigen-scraper.service
    sudo systemctl start kleinanzeigen-scraper.service

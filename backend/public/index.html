@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Antigravity Multi-Domain Expert Portal</title>
+  <!-- Google Fonts Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Custom Sleek Dark Theme Styles -->
+  <style>
+    :root {
+      --bg-dark: #090D1A;
+      --bg-card: rgba(17, 24, 43, 0.75);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --accent-color: #00D2FF;
+      --accent-gradient: linear-gradient(135deg, #00D2FF 0%, #0066FF 100%);
+      --text-main: #F1F5F9;
+      --text-muted: #94A3B8;
+      
+      --color-good: #00E676;
+      --color-bad: #FF1744;
+      --color-neutral: #64748B;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      padding: 0;
+      margin: 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    h1, h2, h3, h4, h5, .font-heading {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 600;
+    }
+
+    /* Glassmorphism Header */
+    header {
+      background: rgba(9, 13, 26, 0.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 1030;
+      padding: 15px 0;
+    }
+
+    .logo-glow {
+      background: var(--accent-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      text-shadow: 0 0 30px rgba(0, 210, 255, 0.3);
+    }
+
+    /* Premium Navigation Tabs */
+    .nav-tabs {
+      border-bottom: none;
+      gap: 8px;
+    }
+    .nav-tabs .nav-link {
+      color: var(--text-muted);
+      border: 1px solid transparent;
+      border-radius: 20px;
+      padding: 8px 20px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .nav-tabs .nav-link:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border-color);
+    }
+    .nav-tabs .nav-link.active {
+      background: var(--accent-gradient);
+      color: #FFF;
+      border-color: transparent;
+      box-shadow: 0 4px 15px rgba(0, 102, 255, 0.35);
+    }
+
+    /* Unified Layout Grid */
+    .glass-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-card:hover {
+      border-color: rgba(0, 210, 255, 0.2);
+      box-shadow: 0 15px 35px rgba(0, 210, 255, 0.05);
+    }
+
+    /* Dynamic Scoring Badge */
+    .score-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 12px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 14px;
+      font-family: 'Outfit', sans-serif;
+    }
+    .score-badge.excellent {
+      background: rgba(0, 230, 118, 0.15);
+      color: var(--color-good);
+      border: 1px solid rgba(0, 230, 118, 0.3);
+      box-shadow: 0 0 15px rgba(0, 230, 118, 0.1);
+    }
+    .score-badge.neutral {
+      background: rgba(255, 215, 0, 0.15);
+      color: #FFD700;
+      border: 1px solid rgba(255, 215, 0, 0.3);
+    }
+    .score-badge.dealbreaker {
+      background: rgba(255, 23, 68, 0.15);
+      color: var(--color-bad);
+      border: 1px solid rgba(255, 23, 68, 0.3);
+      box-shadow: 0 0 15px rgba(255, 23, 68, 0.1);
+    }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-dark);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    /* Inbox Split Screen Layout */
+    .inbox-container {
+      height: calc(100vh - 120px);
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 20px;
+    }
+
+    .sidebar-feed {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-right: 4px;
+    }
+
+    .feed-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .feed-card:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+    .feed-card.active {
+      background: rgba(0, 210, 255, 0.06);
+      border-color: var(--accent-color);
+      box-shadow: 0 0 15px rgba(0, 210, 255, 0.15);
+    }
+
+    .chat-inbox-panel {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      height: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      background: var(--bg-card);
+    }
+
+    .listing-details-pane {
+      border-right: 1px solid var(--border-color);
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .conversation-pane {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.2);
+    }
+
+    .messages-scroller {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .msg-bubble {
+      max-width: 75%;
+      padding: 12px 18px;
+      border-radius: 16px;
+      line-height: 1.5;
+      font-size: 14.5px;
+    }
+    .msg-bubble.outbound {
+      background: var(--accent-gradient);
+      color: #FFF;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+      box-shadow: 0 4px 15px rgba(0, 102, 255, 0.25);
+    }
+    .msg-bubble.inbound {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+
+    /* Fact Status Badge colors */
+    .fact-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      gap: 6px;
+    }
+    .fact-badge::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .fact-badge.true {
+      background: rgba(0, 230, 118, 0.1);
+      color: var(--color-good);
+      border: 1px solid rgba(0, 230, 118, 0.2);
+    }
+    .fact-badge.true::before {
+      background: var(--color-good);
+    }
+    .fact-badge.false {
+      background: rgba(255, 23, 68, 0.1);
+      color: var(--color-bad);
+      border: 1px solid rgba(255, 23, 68, 0.2);
+    }
+    .fact-badge.false::before {
+      background: var(--color-bad);
+    }
+    .fact-badge.unknown {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .fact-badge.unknown::before {
+      background: var(--color-neutral);
+    }
+
+    /* Outreach Draft Box */
+    .draft-container {
+      background: rgba(255, 255, 255, 0.03);
+      border-top: 1px solid var(--border-color);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .draft-textarea {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      color: var(--text-main);
+      padding: 12px;
+      font-size: 14px;
+      resize: none;
+      height: 100px;
+      transition: border-color 0.2s ease;
+    }
+    .draft-textarea:focus {
+      border-color: var(--accent-color);
+      outline: none;
+    }
+
+    /* Slider styling */
+    .slider-row {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Premium Header -->
+  <header>
+    <div class="container d-flex align-items-center justify-content-between">
+      <div class="logo-glow">ANTIGRAVITY EXPERT</div>
+      <ul class="nav nav-tabs" id="expertTabs" role="tablist">
+        <li class="nav-item">
+          <button class="nav-link active" id="feed-tab" data-bs-toggle="tab" data-bs-target="#feed-content" type="button" role="tab">Inbox & Feed</button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" id="profiles-tab" data-bs-toggle="tab" data-bs-target="#profiles-content" type="button" role="tab">Expert Profiles</button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" id="searches-tab" data-bs-toggle="tab" data-bs-target="#searches-content" type="button" role="tab">Search Targets</button>
+        </li>
+      </ul>
+    </div>
+  </header>
+
+  <div class="container py-4">
+    
+    <div class="tab-content" id="expertTabsContent">
+      
+      <!-- INBOX & FEED TAB -->
+      <div class="tab-pane fade show active" id="feed-content" role="tabpanel">
+        <div class="inbox-container">
+          
+          <!-- Sidebar Feed of Scraped Listings -->
+          <div class="sidebar-feed" id="feed-scroller">
+            <div class="text-center py-5 text-muted">Loading feed...</div>
+          </div>
+          
+          <!-- Unified Chat & Details Panel -->
+          <div class="chat-inbox-panel" id="unified-panel">
+            <div class="text-center py-5 text-muted m-auto">
+              <h4>Select a listing to get started</h4>
+              <p>Review technical details, score weight breakdowns, and draft outreaches.</p>
+            </div>
+          </div>
+          
+        </div>
+      </div>
+
+      <!-- EXPERT PROFILES TAB -->
+      <div class="tab-pane fade" id="profiles-content" role="tabpanel">
+        <div class="row">
+          <!-- Ingestion Panel -->
+          <div class="col-lg-5 mb-4">
+            <div class="glass-card">
+              <h3 class="mb-3 text-info">Ingest Researcher Profile</h3>
+              <p class="text-muted mb-4">Paste the JSON object generated by your external Researcher AI here to build a new category profile.</p>
+              
+              <div class="mb-3">
+                <textarea class="form-control bg-dark border-secondary text-light font-monospace" id="profile-json-input" rows="18" placeholder='Paste Profile JSON here...'></textarea>
+              </div>
+              <button class="btn btn-info w-100 py-2 font-heading" id="btn-ingest-profile">Ingest & Map Sliders</button>
+            </div>
+          </div>
+          
+          <!-- Slider Weight Calibration Panel -->
+          <div class="col-lg-7">
+            <div class="glass-card">
+              <h3 class="mb-3 text-info">Calibrate Score Weights</h3>
+              <p class="text-muted mb-4">Select an active profile and adjust the slider values to customize listing score priority in real time.</p>
+              
+              <div class="mb-4">
+                <label for="profile-select" class="form-label font-heading">Choose Profile:</label>
+                <select class="form-select bg-dark border-secondary text-light" id="profile-select">
+                  <option value="">-- No Active Profiles --</option>
+                </select>
+              </div>
+              
+              <div id="sliders-container">
+                <div class="text-center py-5 text-muted">Select a profile to load sliders.</div>
+              </div>
+              
+              <button class="btn btn-success mt-4 w-100 py-2 d-none font-heading" id="btn-save-weights">Save Weights & Recalculate Scores</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SEARCH TARGETS TAB -->
+      <div class="tab-pane fade" id="searches-content" role="tabpanel">
+        <div class="row">
+          <div class="col-lg-8 mb-4">
+            <div class="glass-card">
+              <h3 class="mb-4 text-info">Search Target URLs</h3>
+              <p class="text-muted">Register search URLs from Kleinanzeigen and pair them with an Expert Profile to automate listing classification.</p>
+              
+              <div id="search-list-container">
+                <div class="text-center py-5 text-muted">Loading targets...</div>
+              </div>
+              
+              <div class="d-flex gap-3 mt-4">
+                <button class="btn btn-primary font-heading" id="btn-add-search-row">Add New Target</button>
+                <button class="btn btn-success font-heading" id="btn-save-searches">Save Search Config</button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-lg-4">
+            <div class="glass-card">
+              <h3 class="mb-3 text-info">Outreach System Config</h3>
+              <p class="text-muted mb-4">Orchestrate crawler routines and timing parameters.</p>
+              
+              <div class="mb-3">
+                <label for="crawl-interval" class="form-label">Auto Crawl Frequency (minutes):</label>
+                <input type="number" class="form-control bg-dark border-secondary text-light" id="crawl-interval" min="15" value="60">
+              </div>
+              
+              <div class="d-grid gap-2">
+                <button class="btn btn-info py-2 font-heading" id="btn-save-schedule">Update Run Frequency</button>
+                <button class="btn btn-primary py-2 font-heading" id="btn-run-scrape-now">Trigger Active Crawl Now</button>
+              </div>
+              
+              <div id="crawling-status" class="alert alert-info mt-3 d-none"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+    
+  </div>
+
+  <!-- Bootstrap Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- Interactive Frontend Script -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      let listings = [];
+      let profiles = [];
+      let searches = [];
+      let activeListingId = null;
+
+      // DOM Elements
+      const feedScroller = document.getElementById('feed-scroller');
+      const unifiedPanel = document.getElementById('unified-panel');
+      const profileSelect = document.getElementById('profile-select');
+      const slidersContainer = document.getElementById('sliders-container');
+      const btnSaveWeights = document.getElementById('btn-save-weights');
+      const btnIngestProfile = document.getElementById('btn-ingest-profile');
+      const profileJsonInput = document.getElementById('profile-json-input');
+      const searchListContainer = document.getElementById('search-list-container');
+      const btnAddSearchRow = document.getElementById('btn-add-search-row');
+      const btnSaveSearches = document.getElementById('btn-save-searches');
+      const crawlInterval = document.getElementById('crawl-interval');
+      const btnSaveSchedule = document.getElementById('btn-save-schedule');
+      const btnRunScrapeNow = document.getElementById('btn-run-scrape-now');
+      const crawlingStatus = document.getElementById('crawling-status');
+
+      // Initialize
+      refreshAll();
+
+      function refreshAll() {
+        Promise.all([
+          fetch('/api/listings').then(res => res.json()),
+          fetch('/api/profiles').then(res => res.json()),
+          fetch('/api/search-urls').then(res => res.json()),
+          fetch('/api/schedule').then(res => res.json())
+        ]).then(([listingsData, profilesData, searchesData, scheduleData]) => {
+          listings = listingsData;
+          profiles = profilesData;
+          searches = searchesData;
+          crawlInterval.value = scheduleData.interval || 60;
+          
+          renderFeed();
+          populateProfileDropdowns();
+          renderSearchList();
+          
+          if (activeListingId) {
+            loadListingDetails(activeListingId);
+          }
+        }).catch(err => {
+          console.error("Error refreshing dashboard state:", err);
+        });
+      }
+
+      // 1. INBOX & FEED
+      function renderFeed() {
+        feedScroller.innerHTML = '';
+        if (listings.length === 0) {
+          feedScroller.innerHTML = '<div class="text-center py-5 text-muted">No listings scraped yet.</div>';
+          return;
+        }
+
+        listings.forEach(l => {
+          // Hide deep dealbreakers if wanted, or styling differently.
+          const isDealbreaker = l.status === 'Dealbreaker' || l.niceness_score <= -999;
+          
+          const card = document.createElement('div');
+          card.className = `feed-card ${l.id === activeListingId ? 'active' : ''}`;
+          
+          let scoreClass = 'neutral';
+          if (isDealbreaker) {
+            scoreClass = 'dealbreaker';
+          } else if (l.niceness_score >= 70) {
+            scoreClass = 'excellent';
+          }
+
+          card.innerHTML = `
+            <div class="d-flex justify-content-between align-items-start">
+              <span class="score-badge ${scoreClass}">Niceness: ${isDealbreaker ? '❌' : l.niceness_score}</span>
+              <span class="badge bg-secondary text-uppercase">${l.status}</span>
+            </div>
+            <h6 class="mt-2 text-truncate font-heading" style="max-width: 250px;">${l.title}</h6>
+            <div class="d-flex justify-content-between align-items-center mt-2 text-muted" style="font-size:12px;">
+              <span>${l.price || 'N/A'}</span>
+              <span>${l.location || 'N/A'}</span>
+            </div>
+          `;
+
+          card.addEventListener('click', () => {
+            document.querySelectorAll('.feed-card').forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+            loadListingDetails(l.id);
+          });
+
+          feedScroller.appendChild(card);
+        });
+      }
+
+      function loadListingDetails(listingId) {
+        activeListingId = listingId;
+        const listing = listings.find(l => l.id === listingId);
+        if (!listing) return;
+
+        unifiedPanel.innerHTML = `
+          <!-- Left listing facts column -->
+          <div class="listing-details-pane">
+            <h4 class="text-info">${listing.title}</h4>
+            <div class="d-flex justify-content-between">
+              <span class="fs-5 text-danger fw-bold">${listing.price || 'N/A'}</span>
+              <span class="text-muted font-heading">${listing.location || 'N/A'}</span>
+            </div>
+            
+            <hr class="border-secondary my-1">
+            
+            <h5 class="text-white mt-2">Extracted Facts</h5>
+            <div class="d-flex flex-column gap-2" id="facts-container">
+              <!-- Render facts badges -->
+            </div>
+            
+            <hr class="border-secondary my-1">
+            
+            <a href="${listing.url}" target="_blank" class="btn btn-outline-info font-heading w-100 mt-2">View Original Page</a>
+            
+            <h6 class="text-muted mt-3 mb-1">Details</h6>
+            <div class="p-3 bg-dark rounded border border-secondary" style="font-size:12.5px; height: 180px; overflow-y: auto; white-space: pre-wrap;">
+              ${listing.detailed_description || listing.short_description || 'No description extracted.'}
+            </div>
+          </div>
+          
+          <!-- Right chat column -->
+          <div class="conversation-pane">
+            <div class="messages-scroller" id="messages-scroller">
+              <div class="text-center py-5 text-muted">No messages synced for this listing yet.</div>
+            </div>
+            
+            <div class="draft-container">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="text-info fw-bold font-heading">Worker AI Outreach Draft</span>
+                <div class="d-flex gap-2">
+                  <button class="btn btn-sm btn-outline-info" id="btn-re-draft">Regenerate Draft</button>
+                  <button class="btn btn-sm btn-info" id="btn-copy-draft">Copy to Clipboard</button>
+                </div>
+              </div>
+              <textarea class="draft-textarea" id="draft-box" placeholder="Generated draft outreach message will appear here..."></textarea>
+            </div>
+          </div>
+        `;
+
+        // Render Fact Badges
+        const factsContainer = document.getElementById('facts-container');
+        const facts = listing.extracted_facts || {};
+        
+        if (Object.keys(facts).length === 0) {
+          factsContainer.innerHTML = '<span class="text-muted">No facts extracted yet. Run scraper to process.</span>';
+        } else {
+          Object.entries(facts).forEach(([k, v]) => {
+            const badge = document.createElement('div');
+            badge.className = 'd-flex justify-content-between align-items-center bg-dark p-2 rounded border border-secondary';
+            
+            let statusClass = 'unknown';
+            if (v === true) statusClass = 'true';
+            if (v === false) statusClass = 'false';
+
+            badge.innerHTML = `
+              <span class="text-light" style="font-size:13.5px;">${k.replace(/_/g, ' ')}</span>
+              <span class="fact-badge ${statusClass}">${v}</span>
+            `;
+            factsContainer.appendChild(badge);
+          });
+        }
+
+        // Load Sync messages
+        loadMessages(listingId);
+
+        // Load Draft Message
+        fetchDraft(listingId);
+
+        // Attach event listeners for copy/regenerate draft
+        document.getElementById('btn-re-draft').addEventListener('click', () => {
+          document.getElementById('draft-box').value = "Regenerating draft outreach...";
+          fetchDraft(listingId, true);
+        });
+
+        document.getElementById('btn-copy-draft').addEventListener('click', () => {
+          const draftText = document.getElementById('draft-box').value;
+          navigator.clipboard.writeText(draftText);
+          alert("Draft message copied to clipboard!");
+        });
+      }
+
+      function loadMessages(listingId) {
+        const scroller = document.getElementById('messages-scroller');
+        fetch(`/api/chats/${listingId}`)
+          .then(res => res.json())
+          .then(messages => {
+            if (messages.length > 0) {
+              scroller.innerHTML = '';
+              messages.forEach(msg => {
+                const row = document.createElement('div');
+                row.className = `d-flex ${msg.is_outbound ? 'justify-content-end' : 'justify-content-start'}`;
+                
+                row.innerHTML = `
+                  <div class="msg-bubble ${msg.is_outbound ? 'outbound' : 'inbound'}">
+                    <strong>${msg.is_outbound ? 'You' : (msg.sender_name || 'Seller')}:</strong>
+                    <div class="mt-1">${msg.message_text}</div>
+                    <div class="text-end text-muted mt-1" style="font-size:10px;">${msg.message_date || ''}</div>
+                  </div>
+                `;
+                scroller.appendChild(row);
+              });
+              scroller.scrollTop = scroller.scrollHeight;
+            }
+          });
+      }
+
+      function fetchDraft(listingId, forceRegenerate = false) {
+        const draftBox = document.getElementById('draft-box');
+        
+        fetch('/api/listings/draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ listing_id: listingId })
+        })
+        .then(res => res.json())
+        .then(data => {
+          draftBox.value = data.draft || "Failed to generate outreach draft.";
+        })
+        .catch(err => {
+          draftBox.value = "Error generating draft outreach message from Worker AI.";
+        });
+      }
+
+
+      // 2. EXPERT PROFILES & SLIDERS
+      function populateProfileDropdowns() {
+        const currentVal = profileSelect.value;
+        profileSelect.innerHTML = '<option value="">-- Select Profile --</option>';
+        profiles.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = p.domain;
+          profileSelect.appendChild(opt);
+        });
+        if (currentVal) {
+          profileSelect.value = currentVal;
+        }
+      }
+
+      profileSelect.addEventListener('change', () => {
+        const pid = profileSelect.value;
+        if (!pid) {
+          slidersContainer.innerHTML = '<div class="text-center py-5 text-muted">Select a profile to load sliders.</div>';
+          btnSaveWeights.classList.add('d-none');
+          return;
+        }
+
+        const profile = profiles.find(p => p.id == pid);
+        if (!profile) return;
+
+        slidersContainer.innerHTML = '';
+        btnSaveWeights.classList.remove('d-none');
+
+        const scoring = profile.scoring_model || {};
+        const rules = scoring.rules || [];
+
+        // Group rules by criteria
+        rules.forEach((rule, idx) => {
+          const row = document.createElement('div');
+          row.className = 'slider-row';
+          
+          row.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="fw-bold">${rule.criterion_id.replace(/_/g, ' ')} (${rule.value === true ? 'TRUE' : (rule.value === false ? 'FALSE' : rule.value)})</span>
+              <span class="badge ${rule.is_dealbreaker ? 'bg-danger' : 'bg-info'}">${rule.is_dealbreaker ? 'DEALBREAKER' : 'WEIGHT'}</span>
+            </div>
+            
+            ${rule.is_dealbreaker ? `
+              <div class="text-danger" style="font-size:13.5px;">This triggers a hard dealbreaker rejection. Weight is set to minus infinity.</div>
+            ` : `
+              <div class="d-flex align-items-center gap-3">
+                <input type="range" class="form-range slider-weight" min="-200" max="200" value="${rule.weight}" data-index="${idx}">
+                <span class="fw-bold font-monospace badge bg-dark border border-secondary px-3 py-2 weight-label" style="min-width: 60px;">${rule.weight >= 0 ? '+' + rule.weight : rule.weight}</span>
+              </div>
+            `}
+          `;
+
+          // Track changes in weights dynamically in the view
+          const range = row.querySelector('.slider-weight');
+          if (range) {
+            range.addEventListener('input', (e) => {
+              const weightVal = parseInt(e.target.value);
+              const label = row.querySelector('.weight-label');
+              label.textContent = weightVal >= 0 ? '+' + weightVal : weightVal;
+              // Update rule weight in local model
+              rules[idx].weight = weightVal;
+            });
+          }
+
+          slidersContainer.appendChild(row);
+        });
+      });
+
+      btnSaveWeights.addEventListener('click', () => {
+        const pid = profileSelect.value;
+        const profile = profiles.find(p => p.id == pid);
+        if (!profile) return;
+
+        fetch('/api/profiles/recalculate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            profile_id: pid,
+            scoring_model: profile.scoring_model
+          })
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert("Score weights updated and listings recalculated!");
+            refreshAll();
+          } else {
+            alert("Failed to update score weights.");
+          }
+        });
+      });
+
+      btnIngestProfile.addEventListener('click', () => {
+        const rawJson = profileJsonInput.value.trim();
+        if (!rawJson) return;
+
+        let parsed = null;
+        try {
+          parsed = JSON.parse(rawJson);
+        } catch (e) {
+          alert("Invalid JSON format. Please double-check formatting.");
+          return;
+        }
+
+        fetch('/api/profiles/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed)
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert("Researcher AI Profile ingested successfully! Dynamic sliders mapped.");
+            profileJsonInput.value = '';
+            refreshAll();
+          } else {
+            alert("Failed to ingest Profile JSON.");
+          }
+        })
+        .catch(err => {
+          alert("Error sending request to Ingestion API.");
+        });
+      });
+
+
+      // 3. SEARCH TARGETS & TIMING
+      function renderSearchList() {
+        searchListContainer.innerHTML = '';
+        if (searches.length === 0) {
+          searchListContainer.innerHTML = '<div class="text-center py-5 text-muted">No search targets registered.</div>';
+          return;
+        }
+
+        searches.forEach((s, idx) => {
+          const row = document.createElement('div');
+          row.className = 'bg-dark p-3 rounded border border-secondary mb-3';
+          
+          row.innerHTML = `
+            <div class="row align-items-center g-3">
+              <div class="col-md-4">
+                <input type="text" class="form-control bg-dark text-white border-secondary search-name-input" value="${s.name || ''}" placeholder="Target Name" data-index="${idx}">
+              </div>
+              <div class="col-md-4">
+                <select class="form-select bg-dark text-white border-secondary search-profile-select" data-index="${idx}">
+                  <option value="">-- Assign Profile --</option>
+                  ${profiles.map(p => `<option value="${p.id}" ${p.id == s.profile_id ? 'selected' : ''}>${p.domain}</option>`).join('')}
+                </select>
+              </div>
+              <div class="col-md-2">
+                <div class="form-check">
+                  <input class="form-check-input search-enabled-checkbox" type="checkbox" ${s.enabled ? 'checked' : ''} id="search-enabled-${idx}" data-index="${idx}">
+                  <label class="form-check-label text-muted" for="search-enabled-${idx}">Enabled</label>
+                </div>
+              </div>
+              <div class="col-md-2 text-end">
+                <button class="btn btn-sm btn-danger remove-search-target" data-index="${idx}">Remove</button>
+              </div>
+              <div class="col-12">
+                <input type="text" class="form-control bg-dark text-white border-secondary search-url-input" value="${s.url || ''}" placeholder="Kleinanzeigen search URL" data-index="${idx}">
+              </div>
+            </div>
+          `;
+
+          // Hook listeners to modify searches array in-memory
+          row.querySelector('.search-name-input').addEventListener('change', (e) => {
+            searches[idx].name = e.target.value;
+          });
+          row.querySelector('.search-url-input').addEventListener('change', (e) => {
+            searches[idx].url = e.target.value;
+          });
+          row.querySelector('.search-enabled-checkbox').addEventListener('change', (e) => {
+            searches[idx].enabled = e.target.checked;
+          });
+          row.querySelector('.search-profile-select').addEventListener('change', (e) => {
+            searches[idx].profile_id = e.target.value ? parseInt(e.target.value) : null;
+          });
+          row.querySelector('.remove-search-target').addEventListener('click', () => {
+            searches.splice(idx, 1);
+            renderSearchList();
+          });
+
+          searchListContainer.appendChild(row);
+        });
+      }
+
+      btnAddSearchRow.addEventListener('click', () => {
+        searches.push({
+          name: 'New Search Category',
+          url: '',
+          enabled: true,
+          profile_id: null
+        });
+        renderSearchList();
+      });
+
+      btnSaveSearches.addEventListener('click', () => {
+        // Validate search URLs are not blank
+        const hasBlank = searches.some(s => !s.url.trim());
+        if (hasBlank) {
+          alert("All targets must have a valid Kleinanzeigen search URL.");
+          return;
+        }
+
+        fetch('/api/search-urls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(searches)
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert("Search target configurations saved successfully!");
+            refreshAll();
+          } else {
+            alert("Failed to save search target config.");
+          }
+        });
+      });
+
+      btnSaveSchedule.addEventListener('click', () => {
+        const interval = parseInt(crawlInterval.value);
+        if (isNaN(interval) || interval < 15) {
+          alert("Crawling frequency must be a valid number of at least 15 minutes.");
+          return;
+        }
+
+        fetch('/api/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ interval })
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert("Auto Crawl schedule updated!");
+          } else {
+            alert("Failed to update auto crawl schedule.");
+          }
+        });
+      });
+
+      btnRunScrapeNow.addEventListener('click', () => {
+        crawlingStatus.className = 'alert alert-info mt-3';
+        crawlingStatus.textContent = "Crawler successfully fired! Fetching listings, parsing, and scoring them...";
+        crawlingStatus.classList.remove('d-none');
+        
+        fetch('/api/scrape', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            crawlingStatus.className = 'alert alert-success mt-3';
+            crawlingStatus.textContent = "Crawling and AI classification finished! Refreshing view...";
+            setTimeout(() => {
+              crawlingStatus.classList.add('d-none');
+              refreshAll();
+            }, 3000);
+          } else {
+            crawlingStatus.className = 'alert alert-danger mt-3';
+            crawlingStatus.textContent = "Error running scraper crawler.";
+          }
+        });
+      });
+
+    });
+  </script>
+</body>
+</html>

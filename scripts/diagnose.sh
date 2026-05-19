@@ -13,9 +13,12 @@ NC='\033[0m' # No Color
 echo -e "${BLUE}KleinanzeigenScraper Diagnostic Tool${NC}"
 echo -e "${BLUE}====================================${NC}"
 
-# Get the current directory
-INSTALL_DIR=$(pwd)
-echo -e "Current directory: ${INSTALL_DIR}"
+# Get the project root directory (one level up from this scripts/ folder)
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+INSTALL_DIR=$(cd "${SCRIPT_DIR}/.." && pwd)
+echo -e "Project root directory: ${INSTALL_DIR}"
+
+cd "${INSTALL_DIR}"
 
 # Check system resources
 echo -e "\n${YELLOW}System Resources:${NC}"
@@ -28,7 +31,7 @@ df -h | grep -E "Filesystem|/$"
 
 # Check if required files exist
 echo -e "\n${YELLOW}Checking Required Files:${NC}"
-required_files=("server.js" "main.py" "scraper.py" "process_listings.py" "config.py" "requirements.txt" "package.json")
+required_files=("backend/server.js" "scraper/main.py" "scraper/scraper.py" "scraper/agent_worker.py" "scraper/config.py" "scraper/requirements.txt" "backend/package.json")
 for file in "${required_files[@]}"; do
     if [ -f "$file" ]; then
         echo -e "${GREEN}✓ $file exists${NC}"
@@ -75,9 +78,9 @@ else
 fi
 
 # Check if node_modules exists
-if [ -d "node_modules" ]; then
+if [ -d "backend/node_modules" ]; then
     echo -e "${GREEN}✓ node_modules directory exists${NC}"
-    NODE_MODULES_COUNT=$(find node_modules -type d | wc -l)
+    NODE_MODULES_COUNT=$(find backend/node_modules -type d | wc -l)
     echo -e "${GREEN}  Found approximately $NODE_MODULES_COUNT modules${NC}"
 else
     echo -e "${RED}✗ node_modules directory does not exist${NC}"
@@ -144,7 +147,7 @@ echo -e "\n${YELLOW}Testing Server Manually:${NC}"
 echo -e "Starting server in test mode..."
 
 # Source the virtual environment and start the server in the background
-(source kleinanzeigenScraper/bin/activate 2>/dev/null && node server.js > server_test.log 2>&1) &
+(source kleinanzeigenScraper/bin/activate 2>/dev/null; node backend/server.js > server_test.log 2>&1) &
 SERVER_PID=$!
 
 # Wait a few seconds for the server to start
@@ -180,4 +183,4 @@ rm server_test.log 2>/dev/null || true
 echo -e "\n${BLUE}Diagnostic Complete${NC}"
 echo -e "${YELLOW}If you're experiencing issues, please check the logs and error messages above.${NC}"
 echo -e "${YELLOW}You can also try running the server manually with:${NC}"
-echo -e "${GREEN}source kleinanzeigenScraper/bin/activate && node server.js${NC}" 
+echo -e "${GREEN}source kleinanzeigenScraper/bin/activate && node backend/server.js${NC}"
