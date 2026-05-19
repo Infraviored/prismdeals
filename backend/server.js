@@ -1,6 +1,17 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+
+// Load environment variables from .env file if it exists
+try {
+  const envPath = path.join(__dirname, '..', '.env');
+  if (fs.existsSync(envPath)) {
+    process.loadEnvFile(envPath);
+  }
+} catch (error) {
+  console.warn('Failed to load .env file:', error.message);
+}
+
 const app = express();
 const port = 3030;
 const { spawn } = require('child_process');
