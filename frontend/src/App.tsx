@@ -184,6 +184,8 @@ export default function App() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewCount, setPreviewCount] = useState<number | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [isEditingUrl, setIsEditingUrl] = useState(false)
+  const [editingUrlValue, setEditingUrlValue] = useState('')
 
   // General state
   const [isScraping, setIsScraping] = useState(false)
@@ -469,6 +471,36 @@ export default function App() {
       }
     } catch (err) {
       console.error("Error linking knowledge set:", err)
+    }
+  }
+
+  // Update target search URL directly
+  const handleUpdateTargetUrl = async (target: SearchTarget, newUrl: string) => {
+    if (!newUrl.trim()) {
+      alert("URL cannot be empty.")
+      return
+    }
+    try {
+      const res = await fetch('/api/searches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: target.id,
+          campaign_id: target.campaign_id,
+          name: target.name,
+          url: newUrl.trim(),
+          knowledge_set_id: target.knowledge_set_id
+        })
+      })
+      if (res.ok) {
+        setIsEditingUrl(false)
+        refreshAll()
+      } else {
+        const data = await res.json()
+        alert(data.error || "Failed to update search URL.")
+      }
+    } catch {
+      alert("Connection to backend server failed.")
     }
   }
 
@@ -985,7 +1017,42 @@ SCHEMA:
                         )}
                       </div>
                       
-                      <a href={activeSearchTarget.url} target="_blank" rel="noreferrer" className="text-xs text-slate-500 font-mono hover:text-emerald-400 truncate block max-w-[400px]">{activeSearchTarget.url}</a>
+                      {isEditingUrl ? (
+                        <div className="flex items-center space-x-2 mt-1">
+                          <input
+                            type="text"
+                            value={editingUrlValue}
+                            onChange={e => setEditingUrlValue(e.target.value)}
+                            className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-emerald-500 text-slate-200 font-mono w-[300px]"
+                            placeholder="https://www.kleinanzeigen.de/..."
+                          />
+                          <button
+                            onClick={() => handleUpdateTargetUrl(activeSearchTarget, editingUrlValue)}
+                            className="text-[10px] bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-2.5 py-1 rounded-lg transition-colors"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setIsEditingUrl(false)}
+                            className="text-[10px] bg-slate-850 hover:bg-slate-750 text-slate-400 font-bold px-2.5 py-1 rounded-lg transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center space-x-2 mt-1">
+                          <a href={activeSearchTarget.url} target="_blank" rel="noreferrer" className="text-xs text-slate-500 font-mono hover:text-emerald-400 truncate block max-w-[320px]">{activeSearchTarget.url}</a>
+                          <button
+                            onClick={() => {
+                              setIsEditingUrl(true)
+                              setEditingUrlValue(activeSearchTarget.url)
+                            }}
+                            className="text-[9px] bg-slate-850 hover:bg-slate-750 text-slate-400 font-bold px-1.5 py-0.5 rounded transition-all"
+                          >
+                            ✏️ Edit URL
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center space-x-3">
