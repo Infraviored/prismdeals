@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --font-heading: "Outfit", sans-serif;
+  --font-body: "Inter", sans-serif;
+}
+
+body {
+  background-color: #090D1A;
+  color: #F1F5F9;
+  font-family: var(--font-body);
+  margin: 0;
+  min-height: 100vh;
+}

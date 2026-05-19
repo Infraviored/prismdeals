@@ -103,7 +103,12 @@ function runPythonWorker(args) {
   });
 }
 
-app.use(express.static(path.join(__dirname, 'public')));
+const distPath = path.join(__dirname, '..', 'frontend', 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+} else {
+  app.use(express.static(path.join(__dirname, 'public')));
+}
 app.use(express.json());
 
 // API: Get all listings
@@ -399,7 +404,12 @@ app.post('/api/scrape', (req, res) => {
 
 // Serve UI pages
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const distIndex = path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
+  if (fs.existsSync(distIndex)) {
+    res.sendFile(distIndex);
+  } else {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
 });
 
 // Scheduled Scrape configuration helper
