@@ -1,155 +1,7 @@
 import { useState, useEffect } from 'react'
-
-interface Campaign {
-  id: number
-  name: string
-}
-
-interface KnowledgeSet {
-  id?: number
-  name: string
-  expert_knowledge: string
-  item_json: Record<string, unknown>
-}
-
-interface SearchTarget {
-  id?: number
-  campaign_id: number | null
-  name: string
-  url: string
-  enabled: boolean
-  knowledge_set_id: number | null
-  expert_knowledge?: string
-  item_json?: Record<string, unknown>
-}
-
-interface Listing {
-  id: string
-  title: string
-  price: string
-  location: string
-  url: string
-  short_description: string
-  detailed_description: string
-  extracted_facts: Record<string, unknown>
-  niceness_score: number
-  status: string
-  search_id: number
-  item_name?: string
-  campaign_name?: string
-  llm_processed: boolean
-  details?: Record<string, string>
-  images?: string[]
-  year?: string
-  mileage?: string
-  cubic_capacity?: string
-  date_string?: string
-  summary?: string
-  criteria_evaluations?: {
-    name: string
-    reasoning: string
-    status: 'satisfied' | 'dealbreaker' | 'neutral'
-  }[]
-  description?: string
-}
-
-interface ScraperProgressCardProps {
-  isScraping: boolean;
-  scrapingStatus: string;
-  scrapingProgress: {
-    phase: string;
-    current: number;
-    total: number;
-    status: string;
-  } | null;
-  liveLogs: string;
-  showLogConsole: boolean;
-  setShowLogConsole: (val: boolean) => void;
-}
-
-function ScraperProgressCard({
-  isScraping,
-  scrapingStatus,
-  scrapingProgress,
-  liveLogs,
-  showLogConsole,
-  setShowLogConsole
-}: ScraperProgressCardProps) {
-  if (!isScraping) return null;
-
-  const current = scrapingProgress?.current ?? 0;
-  const total = scrapingProgress?.total ?? 100;
-  const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((current / total) * 100))) : 0;
-  const phase = scrapingProgress?.phase || 'starting';
-
-  let phaseLabel = "Initializing";
-  let phaseColor = "bg-amber-500/10 text-amber-400 border border-amber-500/25";
-  let barColor = "from-amber-500 to-amber-400 animate-pulse";
-  
-  if (phase === 'discovery') {
-    phaseLabel = "Discovery Phase (Index Page Crawl)";
-    phaseColor = "bg-sky-500/10 text-sky-400 border border-sky-500/25";
-    barColor = "from-sky-500 to-sky-400";
-  } else if (phase === 'harvesting') {
-    phaseLabel = "Enrichment Phase (Sequential Page Harvest)";
-    phaseColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25";
-    barColor = "from-emerald-500 to-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.3)]";
-  }
-
-  return (
-    <div className="bg-slate-900/90 backdrop-blur-2xl border border-slate-800/80 rounded-2xl p-6 shadow-2xl space-y-4 animate-fadeIn my-4">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center space-x-2">
-            <div className="animate-spin w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full" />
-            <h3 className="text-sm font-bold text-slate-200">Active Scraping Session</h3>
-            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${phaseColor}`}>
-              {phaseLabel}
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 leading-relaxed font-medium">
-            {scrapingStatus || "Connecting to background scraper worker..."}
-          </p>
-        </div>
-        <div className="text-right shrink-0">
-          <span className="text-lg font-black text-emerald-400 font-mono tracking-tight">{pct}%</span>
-          <span className="text-[10px] text-slate-500 block font-semibold">{current} / {total} Completed</span>
-        </div>
-      </div>
-
-      {/* Progress Bar Container */}
-      <div className="w-full bg-slate-950/80 h-3 rounded-full overflow-hidden p-0.5 border border-slate-850 shadow-inner">
-        <div 
-          className={`h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-500 relative`}
-          style={{ width: `${pct}%` }}
-        >
-          {/* Shine animation */}
-          <div className="absolute inset-0 bg-white/20 animate-pulse" />
-        </div>
-      </div>
-
-      {/* Retro Log Console */}
-      <div className="border border-slate-850 rounded-xl overflow-hidden bg-slate-950">
-        <button
-          onClick={() => setShowLogConsole(!showLogConsole)}
-          className="w-full px-4 py-2.5 bg-slate-900/60 hover:bg-slate-900 transition-colors flex items-center justify-between text-xs text-slate-400 hover:text-slate-250 font-bold focus:outline-none"
-        >
-          <div className="flex items-center space-x-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-            <span className="font-mono">view_live_scraper_logs.sh</span>
-          </div>
-          <span>{showLogConsole ? 'Collapse [-]' : 'Expand [+]'}</span>
-        </button>
-        
-        {showLogConsole && (
-          <div className="p-4 border-t border-slate-900 font-mono text-[11px] text-slate-350 leading-relaxed h-48 overflow-y-auto whitespace-pre-wrap select-text selection:bg-emerald-500/30 selection:text-white">
-            {liveLogs ? liveLogs : "Waiting for log stream lines..."}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+import type { Campaign, KnowledgeSet, SearchTarget, Listing } from './types'
+import ScraperProgressCard from './components/ScraperProgressCard'
+import ListingDetailCard from './components/ListingDetailCard'
 
 export default function App() {
   // Navigation
@@ -211,7 +63,7 @@ export default function App() {
 
   // Polling loop for active scraping task
   useEffect(() => {
-    let intervalId: any = null;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
     const checkStatus = async () => {
       try {
@@ -255,6 +107,7 @@ export default function App() {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isScraping]);
   
   const [isProcessing, setIsProcessing] = useState(false)
@@ -264,27 +117,6 @@ export default function App() {
   
   // Custom states for images and descriptions
   const [selectedListingId, setSelectedListingId] = useState<string | null>(null)
-  const [activeImageIndices, setActiveImageIndices] = useState<Record<string, number>>({})
-
-  const handlePrevImage = (id: string, maxImages: number) => {
-    setActiveImageIndices(prev => {
-      const cur = prev[id] || 0
-      return {
-        ...prev,
-        [id]: (cur - 1 + maxImages) % maxImages
-      }
-    })
-  }
-
-  const handleNextImage = (id: string, maxImages: number) => {
-    setActiveImageIndices(prev => {
-      const cur = prev[id] || 0
-      return {
-        ...prev,
-        [id]: (cur + 1) % maxImages
-      }
-    })
-  }
 
   // Initial load
   useEffect(() => {
@@ -292,9 +124,10 @@ export default function App() {
     checkSessionStatus()
     const interval = setInterval(checkSessionStatus, 8000)
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const checkSessionStatus = async () => {
+  async function checkSessionStatus() {
     try {
       const res = await fetch('/api/session-status')
       if (res.ok) {
@@ -329,7 +162,7 @@ export default function App() {
     }
   }
 
-  const refreshAll = () => {
+  function refreshAll() {
     Promise.all([
       fetch('/api/campaigns').then(res => res.json()),
       fetch('/api/search-urls').then(res => res.json()),
@@ -341,7 +174,7 @@ export default function App() {
       setKnowledgeSets(ksData)
 
       // Map raw listings to include React UI helper properties
-      const mappedListings = listingsData.map((l: any) => {
+      const mappedListings = listingsData.map((l: Listing) => {
         const year = l.details?.['Erstzulassung'] || '';
         const mileage = l.details?.['Kilometerstand'] || '';
         const cubic_capacity = l.details?.['Hubraum'] || '';
@@ -350,28 +183,29 @@ export default function App() {
         const description = l.detailed_description || l.short_description || '';
 
         // Reconstruct criteria_evaluations from extracted_facts and search target schema
-        const targetSearch = searchesData.find((s: any) => s.id === l.search_id);
+        const targetSearch = searchesData.find((s: SearchTarget) => s.id === l.search_id);
         const boundSet = targetSearch && targetSearch.knowledge_set_id 
-          ? ksData.find((ks: any) => ks.id === targetSearch.knowledge_set_id)
+          ? ksData.find((ks: KnowledgeSet) => ks.id === targetSearch.knowledge_set_id)
           : null;
         
-        let criteria_evaluations: any[] = [];
+        let criteria_evaluations: NonNullable<Listing['criteria_evaluations']> = [];
         let summary = 'Awaiting AI matching checklist evaluation...';
 
         if (l.llm_processed && boundSet && boundSet.item_json) {
           try {
-            const itemConfig = typeof boundSet.item_json === 'string' 
-              ? JSON.parse(boundSet.item_json) 
-              : boundSet.item_json;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const itemConfig = (typeof boundSet.item_json === 'string' ? JSON.parse(boundSet.item_json) : boundSet.item_json) as any;
             const extractionCriteria = itemConfig.extraction_criteria || [];
             const scoringModel = itemConfig.scoring_model || {};
             const rules = scoringModel.rules || [];
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             criteria_evaluations = extractionCriteria.map((c: any) => {
               const factVal = l.extracted_facts?.[c.id];
               let status: 'satisfied' | 'dealbreaker' | 'neutral' = 'neutral';
               
               // Find matching scoring rules
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const rule = rules.find((r: any) => r.criterion_id === c.id && r.value === factVal);
               if (rule && rule.is_dealbreaker) {
                 status = 'dealbreaker';
@@ -436,6 +270,7 @@ export default function App() {
     if (activeSearchTarget && activeSearchTarget.knowledge_set_id) {
       const boundSet = knowledgeSets.find(ks => ks.id === activeSearchTarget.knowledge_set_id)
       if (boundSet) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCurrentKnowledgeSetId(boundSet.id || null)
         setEditKsName(boundSet.name)
         setEditKsKnowledge(boundSet.expert_knowledge)
@@ -1121,177 +956,14 @@ SCHEMA:
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredListings.map(l => (
-                  <div key={l.id} className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 hover:border-slate-755 rounded-2xl p-5 flex flex-col justify-between shadow-lg transition-all hover:-translate-y-0.5 group">
-                    <div className="space-y-3">
-                      
-                      {/* Image Slideshow */}
-                      {l.images && l.images.length > 0 && (
-                        <div className="relative group/gallery w-full aspect-video rounded-xl overflow-hidden bg-slate-950 border border-slate-800/80 mb-3 shadow-md">
-                          <img
-                            src={l.images[activeImageIndices[l.id] || 0]}
-                            alt={`Listing visual ${activeImageIndices[l.id] || 0}`}
-                            className="w-full h-full object-cover transition-all duration-300 transform group-hover/gallery:scale-102"
-                          />
-                          {l.images.length > 1 && (
-                            <>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handlePrevImage(l.id, l.images!.length); }}
-                                className="absolute left-2 top-1/2 -translate-y-1/2 bg-slate-950/85 hover:bg-slate-900 border border-slate-800 text-slate-350 w-7 h-7 rounded-full flex items-center justify-center text-xs opacity-0 group-hover/gallery:opacity-100 transition-opacity focus:outline-none"
-                              >
-                                &larr;
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleNextImage(l.id, l.images!.length); }}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 bg-slate-950/85 hover:bg-slate-900 border border-slate-800 text-slate-350 w-7 h-7 rounded-full flex items-center justify-center text-xs opacity-0 group-hover/gallery:opacity-100 transition-opacity focus:outline-none"
-                              >
-                                &rarr;
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="flex justify-between items-start">
-                        <div className="flex flex-col truncate pr-2">
-                          <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold truncate max-w-[150px]">{l.item_name}</span>
-                          <span className="text-[9px] text-emerald-500 font-semibold uppercase">{l.campaign_name}</span>
-                        </div>
-                        
-                         {!l.llm_processed ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleProcessSingleListing(l.id);
-                            }}
-                            disabled={activeProcessingListingId !== null}
-                            className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center space-x-1.5 transition-all shadow-sm ${
-                              activeProcessingListingId === l.id
-                                ? 'bg-amber-500/25 text-amber-300 border-amber-400/50 animate-pulse'
-                                : 'bg-amber-500/10 text-amber-400 border-amber-500/25 hover:bg-amber-500/20 hover:border-amber-400'
-                            }`}
-                          >
-                            {activeProcessingListingId === l.id ? (
-                              <>
-                                <div className="animate-spin w-3 h-3 border border-amber-400 border-t-transparent rounded-full" />
-                                <span>Evaluating...</span>
-                              </>
-                            ) : (
-                              <>
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                                <span>Evaluate with AI</span>
-                              </>
-                            )}
-                          </button>
-                        ) : l.niceness_score <= -999 ? (
-                          <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                            DEALBREAKER
-                          </div>
-                        ) : (
-                          <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            Score: {l.niceness_score}
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-200 line-clamp-1 group-hover:text-emerald-400 transition-colors">{l.title}</h3>
-                        <div className="flex space-x-2 text-xs font-semibold text-slate-400 mt-1">
-                          <span className="text-emerald-400 font-bold">{l.price}</span>
-                          <span>•</span>
-                          <span>{l.location}</span>
-                          <span>•</span>
-                          <span>{l.date_string}</span>
-                        </div>
-                      </div>
-
-                      {/* Display relevant metadata harvested from full article */}
-                      <div className="flex flex-wrap gap-1.5 pt-1.5">
-                        {l.year && (
-                          <span className="text-[9px] bg-slate-950/80 text-slate-400 border border-slate-800 px-2 py-0.5 rounded-md font-semibold">
-                            Year: {l.year}
-                          </span>
-                        )}
-                        {l.mileage && (
-                          <span className="text-[9px] bg-slate-950/80 text-slate-400 border border-slate-800 px-2 py-0.5 rounded-md font-semibold">
-                            {l.mileage}
-                          </span>
-                        )}
-                        {l.cubic_capacity && (
-                          <span className="text-[9px] bg-slate-950/80 text-slate-400 border border-slate-800 px-2 py-0.5 rounded-md font-semibold font-mono">
-                            {l.cubic_capacity}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 pt-4 border-t border-slate-850 flex justify-between items-center">
-                      <button
-                        onClick={() => setSelectedListingId(selectedListingId === l.id ? null : l.id)}
-                        className="text-xs text-slate-400 hover:text-slate-200 font-bold transition-colors"
-                      >
-                        {selectedListingId === l.id ? 'Hide Details' : 'Expand Details'}
-                      </button>
-                      <a
-                        href={l.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs text-emerald-400 hover:text-emerald-300 font-bold transition-colors"
-                      >
-                        View Original &rarr;
-                      </a>
-                    </div>
-
-                    {selectedListingId === l.id && (
-                      <div className="mt-4 pt-4 border-t border-slate-855 space-y-4 animate-fadeIn text-xs">
-                        
-                        {/* Expanded details attributes */}
-                        <div className="bg-slate-950/40 border border-slate-850 p-3 rounded-xl space-y-2 text-slate-450">
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Harvested Specifications</span>
-                          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 font-sans">
-                            {l.price && <div><span className="font-semibold text-slate-500">Price:</span> {l.price}</div>}
-                            {l.location && <div><span className="font-semibold text-slate-500">Location:</span> {l.location}</div>}
-                            {l.mileage && <div><span className="font-semibold text-slate-500">Mileage:</span> {l.mileage}</div>}
-                            {l.year && <div><span className="font-semibold text-slate-500">First Reg:</span> {l.year}</div>}
-                            {l.cubic_capacity && <div><span className="font-semibold text-slate-500">Capacity:</span> {l.cubic_capacity}</div>}
-                            {l.date_string && <div><span className="font-semibold text-slate-500">Listed:</span> {l.date_string}</div>}
-                          </div>
-                        </div>
-
-                        {l.llm_processed && (
-                          <div className="space-y-3">
-                            <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-850">
-                              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">AI Match Summary</span>
-                              <p className="text-slate-300 leading-relaxed font-sans">{l.summary}</p>
-                            </div>
-                            
-                            <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-850">
-                              <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider block mb-2 font-mono">Checklist criteria evaluations</span>
-                              <div className="space-y-2">
-                                {l.criteria_evaluations && l.criteria_evaluations.map((evalItem, idx) => (
-                                  <div key={idx} className="flex justify-between items-start py-1 border-b border-slate-900 last:border-0 font-sans">
-                                    <div className="pr-3">
-                                      <span className="font-bold text-slate-350 text-[11px]">{evalItem.name}</span>
-                                      <span className="text-[10px] text-slate-550 block leading-normal mt-0.5">{evalItem.reasoning}</span>
-                                    </div>
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${evalItem.status === 'satisfied' ? 'bg-emerald-500/10 text-emerald-400' : evalItem.status === 'dealbreaker' ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-800 text-slate-400'}`}>
-                                      {evalItem.status.toUpperCase()}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                        
-                        <div className="bg-slate-950/40 p-3.5 rounded-xl border border-slate-850">
-                          <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block mb-1">Detailed Description</span>
-                          <p className="text-slate-405 whitespace-pre-wrap leading-relaxed font-sans text-[11px]">
-                            {l.description ? l.description : "Awaiting scraping detail harvester to run..."}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <ListingDetailCard
+                    key={l.id}
+                    l={l}
+                    activeProcessingListingId={activeProcessingListingId}
+                    handleProcessSingleListing={handleProcessSingleListing}
+                    selectedListingId={selectedListingId}
+                    setSelectedListingId={setSelectedListingId}
+                  />
                 ))}
               </div>
             )}
