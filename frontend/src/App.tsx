@@ -5,7 +5,7 @@ import ListingDetailCard from './components/ListingDetailCard'
 
 export default function App() {
   // Navigation
-  const [view, setView] = useState<'landing' | 'dashboard' | 'edit'>('landing')
+  const [view, setView] = useState<'landing' | 'dashboard' | 'edit' | 'create-campaign'>('landing')
   const [isRegisteringTarget, setIsRegisteringTarget] = useState(false)
 
   // Database lists
@@ -720,93 +720,78 @@ SCHEMA:
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col justify-start">
-        
-        {/* VIEW 1: LANDING VIEW - CAMPAIGN HUB GRID */}
+            {/* VIEW 1: LANDING VIEW - CAMPAIGN HUB GRID */}
         {view === 'landing' && (
-          <div className="space-y-8 animate-fadeIn w-full">
-            <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="space-y-6 animate-fadeIn w-full">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-800/80 w-full mb-6">
               <div>
-                <h2 className="text-xl font-extrabold text-slate-200">Active Hunt Campaigns</h2>
-                <p className="text-xs text-slate-400 mt-1">Consolidated portal for starting browser crawlers, managing target search URLs, and running AI match analysis.</p>
-              </div>
-              <div className="bg-slate-950/60 border border-slate-850 p-4 rounded-2xl flex flex-wrap items-center gap-3 shadow-inner">
-                <span className="text-xs font-bold text-slate-450 uppercase tracking-wider">Quick Create:</span>
-                <input
-                  type="text"
-                  value={newCampaignName}
-                  onChange={e => setNewCampaignName(e.target.value)}
-                  placeholder="e.g. Sports Bikes"
-                  className="bg-slate-950 border border-slate-800 text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-500 placeholder-slate-700 w-48 text-slate-200 font-semibold"
-                />
-                <button
-                  onClick={async () => {
-                    if (!newCampaignName.trim()) return;
-                    await handleCreateCampaign();
-                  }}
-                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-95"
-                >
-                  Create Campaign
-                </button>
+                <h1 className="text-xl font-bold text-slate-200">Hunt Campaigns</h1>
+                <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Automated Scraper & AI Agent Portal</p>
               </div>
             </div>
 
-            {campaigns.length === 0 ? (
-              <div className="bg-slate-900/10 border border-dashed border-slate-800 rounded-2xl p-20 text-center shadow-inner max-w-2xl mx-auto space-y-4">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xl mx-auto shadow-inner">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* "+" Add Hunt Campaign Card */}
+              <div
+                onClick={() => setView('create-campaign')}
+                className="bg-slate-900/20 backdrop-blur-xl border border-dashed border-slate-800 hover:border-emerald-500/50 hover:bg-emerald-500/[0.02] p-6 rounded-2xl shadow-lg flex flex-col items-center justify-center space-y-4 hover:-translate-y-0.5 transition-all cursor-pointer group h-full min-h-[220px]"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xl group-hover:bg-emerald-500 group-hover:text-slate-950 transition-all shadow-inner">
                   +
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-300">Welcome to Kleinanzeigen Agent!</h3>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto mt-2 leading-relaxed">
-                    Create your first campaign to get started with automated listing discovery and AI-powered deal scoring.
-                  </p>
-                </div>
-                <div className="flex justify-center pt-2">
-                  <div className="bg-slate-950/80 border border-slate-850 p-3 rounded-2xl flex items-center space-x-2 w-[340px]">
-                    <input
-                      type="text"
-                      value={newCampaignName}
-                      onChange={e => setNewCampaignName(e.target.value)}
-                      placeholder="Enter campaign category name..."
-                      className="bg-slate-950 border border-slate-800 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500 placeholder-slate-700 flex-1 text-slate-200 font-semibold"
-                    />
-                    <button
-                      onClick={handleCreateCampaign}
-                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold px-3 py-2 rounded-xl transition-all font-sans"
-                    >
-                      Create
-                    </button>
-                  </div>
+                <div className="text-center">
+                  <h3 className="text-sm font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">Create Hunt Campaign</h3>
+                  <p className="text-[10px] text-slate-500 mt-1 max-w-[200px]">Launch a new automated agent search category</p>
                 </div>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {campaigns.map(c => {
-                  const campaignSearches = searches.filter(s => s.campaign_id === c.id)
-                  const campaignListings = listings.filter(l => {
-                    const s = searches.find(x => x.id === l.search_id)
-                    return s && s.campaign_id === c.id
-                  })
-                  const unprocessedCount = campaignListings.filter(l => !l.llm_processed).length
 
-                  return (
-                    <div
-                      key={c.id}
-                      onClick={() => {
-                        setCurrentCampaignId(c.id);
-                        setView('dashboard');
-                      }}
-                      className="bg-slate-900/50 backdrop-blur-xl border border-slate-855 hover:border-slate-700 p-6 rounded-2xl shadow-xl flex flex-col justify-between space-y-4 hover:-translate-y-0.5 transition-all cursor-pointer group"
-                    >
+              {campaigns.map(c => {
+                const campaignSearches = searches.filter(s => s.campaign_id === c.id)
+                const campaignListings = listings.filter(l => {
+                  const s = searches.find(x => x.id === l.search_id)
+                  return s && s.campaign_id === c.id
+                })
+                const unprocessedCount = campaignListings.filter(l => !l.llm_processed).length
+                const firstListingWithImages = campaignListings.find(l => l.images && l.images.length > 0)
+                const firstImg = firstListingWithImages?.images?.[0]
+
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => {
+                      setCurrentCampaignId(c.id);
+                      setView('dashboard');
+                    }}
+                    className="bg-slate-900/50 backdrop-blur-xl border border-slate-855 hover:border-slate-700 p-4 rounded-2xl shadow-xl flex flex-col justify-between space-y-4 hover:-translate-y-0.5 transition-all cursor-pointer group"
+                  >
+                    {firstImg ? (
+                      <div className="w-full aspect-[21/9] rounded-xl overflow-hidden relative border border-slate-800 shadow-inner">
+                        <img
+                          src={firstImg}
+                          alt={c.name}
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
+                      </div>
+                    ) : (
+                      <div className="w-full aspect-[21/9] rounded-xl relative border border-slate-800/80 bg-gradient-to-br from-indigo-500/10 via-slate-950 to-emerald-500/5 flex items-center justify-center overflow-hidden">
+                        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-500/5 via-transparent to-transparent" />
+                        <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest font-mono">No listings scraped yet</span>
+                      </div>
+                    )}
+
+                    <div className="flex-1 flex flex-col justify-between pt-1">
                       <div className="space-y-2">
                         <div className="flex justify-between items-start">
-                          <h3 className="text-base font-bold text-slate-200 group-hover:text-emerald-400 transition-colors">{c.name}</h3>
+                          <div>
+                            <h3 className="text-sm font-extrabold text-slate-200 group-hover:text-emerald-400 transition-colors tracking-tight line-clamp-1">{c.name}</h3>
+                            <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">Campaign Hunt Profile</p>
+                          </div>
                           
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               setCurrentCampaignId(c.id);
-                              // Auto select first target if available, or null
                               const firstTarget = searches.find(s => s.campaign_id === c.id);
                               setCurrentSearchId(firstTarget?.id || null);
                               setView('edit');
@@ -820,33 +805,33 @@ SCHEMA:
                             </svg>
                           </button>
                         </div>
-                        
-                        <div className="flex space-x-3 text-xs text-slate-500 font-medium items-center">
-                          <span>{campaignSearches.length} Targets</span>
-                          <span>•</span>
-                          <span className="text-emerald-400 font-semibold">{campaignListings.length} Total</span>
+
+                        <div className="flex flex-wrap gap-1.5 text-[9px] font-semibold">
+                          <span className="bg-slate-950/60 text-slate-400 border border-slate-855 px-2 py-0.5 rounded-md">
+                            {campaignSearches.length} Targets
+                          </span>
+                          <span className="bg-slate-950/60 text-emerald-400 border border-emerald-500/10 px-2 py-0.5 rounded-md font-bold">
+                            {campaignListings.length} Matches
+                          </span>
                           {unprocessedCount > 0 && (
-                            <>
-                              <span>•</span>
-                              <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded text-[10px] font-bold animate-pulse">
-                                {unprocessedCount} New Listings
-                              </span>
-                            </>
+                            <span className="bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 px-2 py-0.5 rounded-md font-extrabold animate-pulse">
+                              {unprocessedCount} New
+                            </span>
                           )}
                         </div>
                       </div>
-                      
-                      <div className="border-t border-slate-855 pt-3 flex justify-between items-center text-[11px] text-slate-400">
-                        <span className="font-semibold group-hover:text-emerald-400 transition-colors flex items-center space-x-1">
+
+                      <div className="border-t border-slate-855 mt-4 pt-3 flex justify-between items-center text-[11px] text-slate-450 font-bold">
+                        <span className="group-hover:text-emerald-400 transition-colors flex items-center space-x-1">
                           <span>Open Dashboard</span>
-                          <span className="transform group-hover:translate-x-1 transition-transform">→</span>
+                          <span className="transform group-hover:translate-x-1 transition-transform">&rarr;</span>
                         </span>
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-            )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
 
@@ -1322,6 +1307,68 @@ SCHEMA:
                     <span className="text-xs text-slate-650 block">Click "+ Register New Target" on the left panel to create your first tracking target.</span>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 4: CREATE NEW CAMPAIGN VIEW */}
+        {view === 'create-campaign' && (
+          <div className="flex flex-col items-center justify-center space-y-6 w-full animate-fadeIn py-12 max-w-lg mx-auto">
+            <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 w-full shadow-2xl space-y-6 relative overflow-hidden">
+              {/* Abstract decorative glowing orb */}
+              <div className="absolute -right-16 -top-16 w-36 h-36 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
+              <div className="absolute -left-16 -bottom-16 w-36 h-36 rounded-full bg-indigo-500/5 blur-3xl pointer-events-none" />
+
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setView('landing')}
+                    className="text-xs text-slate-400 hover:text-emerald-400 transition-colors font-bold flex items-center space-x-1"
+                  >
+                    <span>&larr; Back</span>
+                  </button>
+                </div>
+                <h2 className="text-xl font-extrabold text-slate-200 font-sans tracking-tight">Create Hunt Campaign</h2>
+                <p className="text-xs text-slate-450 leading-relaxed font-medium">Set up a new target category profile to discover listings, map scraper crawlers, and score deals with AI checklist evaluation.</p>
+              </div>
+
+              <div className="space-y-4 pt-2">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Campaign Name</label>
+                  <input
+                    type="text"
+                    value={newCampaignName}
+                    onChange={e => setNewCampaignName(e.target.value)}
+                    placeholder="e.g. Vintage Scooters, Yamaha Motorcycles"
+                    className="bg-slate-950 border border-slate-800 text-xs rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 placeholder-slate-700 w-full text-slate-200 font-semibold transition-all shadow-inner"
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter' && newCampaignName.trim()) {
+                        await handleCreateCampaign();
+                        setView('dashboard');
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  onClick={() => setView('landing')}
+                  className="flex-1 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-450 hover:text-slate-200 text-xs font-bold py-3 rounded-xl transition-all active:scale-98"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!newCampaignName.trim()) return;
+                    await handleCreateCampaign();
+                    setView('dashboard');
+                  }}
+                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold py-3 rounded-xl transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
+                >
+                  Create & Launch &rarr;
+                </button>
               </div>
             </div>
           </div>

@@ -5,3 +5,13 @@ repos:
       - id: ruff
         args: [ --fix ]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: eslint-fix
+        name: ESLint Fix & Format
+        entry: bash -c 'cd frontend && args=(); for arg in "$@"; do args+=("${arg#frontend/}"); done; npx eslint --fix "${args[@]}"' --
+        language: system
+        files: ^frontend/src/.*\.[jt]sx?$
+        types: [file]
+
