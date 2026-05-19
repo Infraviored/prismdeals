@@ -10,9 +10,32 @@ from config import API_KEY, LLM_MODEL
 from prompts import get_generalized_analysis_prompt, get_outreach_draft_prompt
 
 # Set up logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+log_file = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data",
+    "scraper.log",
 )
+os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+
+# Clear existing handlers to prevent duplicates
+for handler in list(root_logger.handlers):
+    root_logger.removeHandler(handler)
+
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+root_logger.addHandler(console_handler)
+
+# File handler
+file_handler = logging.FileHandler(log_file, encoding="utf-8")
+file_handler.setFormatter(formatter)
+root_logger.addHandler(file_handler)
+
 logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client
@@ -126,7 +149,7 @@ def process_unprocessed_listings(target_listing_id=None):
                     },
                     {"role": "user", "content": prompt},
                 ],
-                "max_completion_tokens": 800,
+                "max_completion_tokens": 4000,
             }
             if not (
                 "gpt-5" in LLM_MODEL
@@ -279,7 +302,7 @@ def generate_outreach_draft(listing_id):
                 },
                 {"role": "user", "content": prompt},
             ],
-            "max_completion_tokens": 300,
+            "max_completion_tokens": 2000,
         }
         if not (
             "gpt-5" in LLM_MODEL
@@ -398,7 +421,7 @@ def analyze_conversation(listing_id):
                 },
                 {"role": "user", "content": prompt},
             ],
-            "max_completion_tokens": 400,
+            "max_completion_tokens": 2000,
         }
         if not (
             "gpt-5" in LLM_MODEL

@@ -2,6 +2,7 @@
 config.py
 .env
 .env.*
+scripts/test_single.py
 
 # Python virtual environment
 .venv/
