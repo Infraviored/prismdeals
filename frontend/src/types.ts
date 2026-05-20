@@ -68,3 +68,19 @@ export interface ScraperProgressCardProps {
   showLogConsole: boolean;
   setShowLogConsole: (val: boolean) => void;
 }
+
+export interface ParsedKnowledgeConfig {
+  product_domain?: string;
+  extraction_criteria?: {
+    id: string;
+    description?: string;
+    type?: string;
+    question?: string;
+  }[];
+  scoring_model?: {
+    weights?: Record<string, {
+      satisfied_if?: unknown;
+      importance?: number;
+    }>;
+  };
+}
