@@ -3,6 +3,30 @@ import type { Campaign, KnowledgeSet, SearchTarget, Listing } from './types'
 import ScraperProgressCard from './components/ScraperProgressCard'
 import ListingDetailCard from './components/ListingDetailCard'
 
+interface ExtractedFactsSchema {
+  criteria?: Record<string, unknown>;
+  reasoning?: Record<string, unknown>;
+  special_info?: string[];
+  draft_message?: string;
+  [key: string]: unknown;
+}
+
+interface ParsedKnowledgeConfig {
+  product_domain?: string;
+  extraction_criteria?: {
+    id: string;
+    description?: string;
+    type?: string;
+    question?: string;
+  }[];
+  scoring_model?: {
+    weights?: Record<string, {
+      satisfied_if?: unknown;
+      importance?: number;
+    }>;
+  };
+}
+
 export default function App() {
   // Navigation
   const [view, setView] = useState<'landing' | 'dashboard' | 'edit' | 'create-campaign'>('landing')
@@ -25,7 +49,7 @@ export default function App() {
 
   // Filtering states for Deal Matcher
   const [selectedSearchId, setSelectedSearchId] = useState<string>('All')
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'Dealbreaker' | 'New' | 'Evaluate with AI'>('All')
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'New' | 'Evaluate with AI'>('All')
   const [activeProcessingListingId, setActiveProcessingListingId] = useState<string | null>(null)
 
   // Inline forms
@@ -33,7 +57,7 @@ export default function App() {
   const [newTargetName, setNewTargetName] = useState('')
   const [newTargetUrl, setNewTargetUrl] = useState('')
   const [newTargetKsId, setNewTargetKsId] = useState<string>('')
-  
+
   // Collapsible accordion state for Guidelines Editor
 
   // Knowledge Set form editor
@@ -76,7 +100,7 @@ export default function App() {
             if (data.progress && data.progress.status) {
               setScrapingStatus(data.progress.status);
             }
-            
+
             // Also fetch live logs
             const logsRes = await fetch('/api/logs');
             if (logsRes.ok) {
@@ -109,12 +133,13 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isScraping]);
-  
+
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStatus, setProcessingStatus] = useState('')
-  
+
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null)
-  
+  const [schemaPrompt, setSchemaPrompt] = useState<string>('Loading...')
+
   // Custom states for images and descriptions
   const [selectedListingId, setSelectedListingId] = useState<string | null>(null)
 
@@ -122,6 +147,7 @@ export default function App() {
   useEffect(() => {
     refreshAll()
     checkSessionStatus()
+    fetch('/api/schema-prompt').then(r => r.text()).then(setSchemaPrompt).catch(() => setSchemaPrompt('Failed to load schema_prompt.md'))
     const interval = setInterval(checkSessionStatus, 8000)
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -184,54 +210,63 @@ export default function App() {
 
         // Reconstruct criteria_evaluations from extracted_facts and search target schema
         const targetSearch = searchesData.find((s: SearchTarget) => s.id === l.search_id);
-        const boundSet = targetSearch && targetSearch.knowledge_set_id 
+        const boundSet = targetSearch && targetSearch.knowledge_set_id
           ? ksData.find((ks: KnowledgeSet) => ks.id === targetSearch.knowledge_set_id)
           : null;
-        
+
         let criteria_evaluations: NonNullable<Listing['criteria_evaluations']> = [];
+        let special_info: string[] = [];
+        let draft_message = '';
         let summary = 'Awaiting AI matching checklist evaluation...';
 
         if (l.llm_processed && boundSet && boundSet.item_json) {
           try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const itemConfig = (typeof boundSet.item_json === 'string' ? JSON.parse(boundSet.item_json) : boundSet.item_json) as any;
+            const itemConfig = (typeof boundSet.item_json === 'string' ? JSON.parse(boundSet.item_json) : boundSet.item_json) as ParsedKnowledgeConfig;
             const extractionCriteria = itemConfig.extraction_criteria || [];
-            const scoringModel = itemConfig.scoring_model || {};
-            const rules = scoringModel.rules || [];
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            criteria_evaluations = extractionCriteria.map((c: any) => {
-              const factVal = l.extracted_facts?.[c.id];
-              let status: 'satisfied' | 'dealbreaker' | 'neutral' = 'neutral';
-              
-              // Find matching scoring rules
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const rule = rules.find((r: any) => r.criterion_id === c.id && r.value === factVal);
-              if (rule && rule.is_dealbreaker) {
-                status = 'dealbreaker';
-              } else if (factVal === true) {
-                status = 'satisfied';
+            const rawFacts = l.extracted_facts as unknown as ExtractedFactsSchema;
+            const criteriaDict = rawFacts?.criteria || rawFacts || {};
+            const reasoningDict = rawFacts?.reasoning || {};
+            special_info = rawFacts?.special_info || [];
+            draft_message = rawFacts?.draft_message || '';
+
+            const weights = itemConfig.scoring_model?.weights || {};
+
+            criteria_evaluations = extractionCriteria.map((c: { id: string; question?: string; description?: string }) => {
+              const factVal = criteriaDict[c.id];
+              const wEntry = weights[c.id];
+              const satisfiedIf = wEntry?.satisfied_if;
+              let status: 'satisfied' | 'neutral' | 'violated' = 'neutral';
+
+              if (factVal !== undefined && factVal !== null && factVal !== 'unknown') {
+                if (satisfiedIf !== undefined) {
+                  status = factVal === satisfiedIf ? 'satisfied' : 'violated';
+                } else {
+                  // fallback for boolean without weights entry
+                  if (factVal === true) status = 'satisfied';
+                  else if (factVal === false) status = 'violated';
+                }
               }
 
-              const reasoning = factVal !== undefined && factVal !== null 
-                ? `Value: ${factVal}` 
-                : 'Not specified in listing description.';
+              const rawReasoning = reasoningDict[c.id];
+              const reasoning = typeof rawReasoning === 'string'
+                ? rawReasoning
+                : (rawReasoning ? String(rawReasoning) : '') || (factVal !== undefined && factVal !== null
+                  ? `Value: ${factVal}`
+                  : 'Not specified in listing description.');
 
               return {
+                id: c.id,
                 name: c.question || c.description || c.id,
                 reasoning: reasoning,
-                status: status
+                status: status,
+                value: factVal
               };
             });
 
             // Make a nice summary
             const satisfiedCount = criteria_evaluations.filter(e => e.status === 'satisfied').length;
-            const dealbreakerCount = criteria_evaluations.filter(e => e.status === 'dealbreaker').length;
-            if (dealbreakerCount > 0) {
-              summary = `Dealbreaker triggered! Evaluated ${criteria_evaluations.length} criteria, found ${dealbreakerCount} dealbreaker(s).`;
-            } else {
-              summary = `High compatibility deal! Evaluated ${criteria_evaluations.length} expert criteria, satisfied ${satisfiedCount}/${criteria_evaluations.length}. Niceness Score: ${l.niceness_score}.`;
-            }
+            summary = `Evaluated ${criteria_evaluations.length} expert criteria, satisfied ${satisfiedCount}/${criteria_evaluations.length}. Niceness Score: ${l.niceness_score}.`;
           } catch (e) {
             console.error("Error generating criteria evaluations:", e);
           }
@@ -247,6 +282,8 @@ export default function App() {
           date_string,
           description,
           criteria_evaluations,
+          special_info,
+          draft_message,
           summary
         };
       });
@@ -542,6 +579,29 @@ export default function App() {
     }
   }
 
+  const handleUpdateWeight = (criterionId: string, newImportance: number) => {
+    try {
+      const config = JSON.parse(editKsJson) as ParsedKnowledgeConfig;
+      if (!config.scoring_model) config.scoring_model = {};
+      if (!config.scoring_model.weights) config.scoring_model.weights = {};
+
+      if (!config.scoring_model.weights[criterionId]) {
+        // Default: infer satisfied_if from criterion type
+        const criterion = (config.extraction_criteria || []).find((c: { id: string; type?: string }) => c.id === criterionId);
+        config.scoring_model.weights[criterionId] = {
+          satisfied_if: criterion?.type === 'boolean' ? true : 1,
+          importance: newImportance
+        };
+      } else {
+        config.scoring_model.weights[criterionId].importance = newImportance;
+      }
+
+      setEditKsJson(JSON.stringify(config, null, 2));
+    } catch (e) {
+      console.error('Could not update weight inside invalid JSON:', e);
+    }
+  }
+
   // Trigger crawler background process (Scrape only)
   const handleStartScrape = async () => {
     setIsScraping(true)
@@ -595,12 +655,9 @@ export default function App() {
     const matchesCampaign = !currentCampaignId || (targetSearch && targetSearch.campaign_id === currentCampaignId)
     const matchesSearch = selectedSearchId === 'All' || String(l.search_id) === selectedSearchId
     const isMatched = matchesCampaign && matchesSearch
-    
+
     if (selectedStatusFilter === 'High Niceness') {
-      return isMatched && l.llm_processed && l.niceness_score >= 70 && l.status !== 'Dealbreaker'
-    }
-    if (selectedStatusFilter === 'Dealbreaker') {
-      return isMatched && l.llm_processed && (l.status === 'Dealbreaker' || l.niceness_score <= -999)
+      return isMatched && l.llm_processed && l.niceness_score >= 70
     }
     if (selectedStatusFilter === 'New') {
       return isMatched && l.status === 'New'
@@ -632,51 +689,6 @@ REFERENCE EXAMPLE (Motorbikes):
 
 Generate a highly targeted German markdown cheat sheet for: [State your target category here]`;
 
-  const prompts = [
-    {
-      id: 'researcher',
-      title: 'Researcher AI Prompt',
-      description: 'Run this prompt in your LLM with your campaign parameters to generate the exact item JSON config.',
-      content: `You are an expert market analyst. Help me build a structured ingestion profile for my deal matching portal.
-
-We are searching for a specific product target with dynamic parameters. I will provide the product parameters.
-Your goal is to output a perfect, raw JSON configuration that matches the following schema exactly.
-
-SCHEMA:
-{
-  "product_domain": "Target product category or name",
-  "extraction_criteria": [
-    {
-      "id": "camelCaseFieldId",
-      "description": "Specific attribute to extract from listing text",
-      "type": "boolean | number | string"
-    }
-  ],
-  "scoring_model": {
-    "base_score": 50,
-    "rules": [
-      {
-        "criterion_id": "camelCaseFieldId",
-        "value": "Value that triggers the score adjustment",
-        "weight": 15,
-        "is_dealbreaker": false
-      }
-    ],
-    "outreach_strategy": {
-      "tone": "casual / professional",
-      "opening_hook": "Hi, I am interested in...",
-      "questions": [
-        {
-          "target_criterion": "camelCaseFieldId",
-          "question_text": "German outreach question template"
-        }
-      ]
-    }
-  }
-}`
-    }
-  ]
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       {/* Header */}
@@ -695,7 +707,7 @@ SCHEMA:
                 {sessionEmail ? `Session: ${sessionEmail}` : 'Session: Unauthenticated'}
               </span>
             </div>
-            
+
             {!sessionEmail ? (
               <button
                 onClick={handleTriggerLogin}
@@ -720,7 +732,7 @@ SCHEMA:
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col justify-start">
-            {/* VIEW 1: LANDING VIEW - CAMPAIGN HUB GRID */}
+        {/* VIEW 1: LANDING VIEW - CAMPAIGN HUB GRID */}
         {view === 'landing' && (
           <div className="space-y-6 animate-fadeIn w-full">
             <div className="flex justify-between items-center pb-4 border-b border-slate-800/80 w-full mb-6">
@@ -774,7 +786,7 @@ SCHEMA:
                             <h3 className="text-sm font-extrabold text-slate-200 group-hover:text-emerald-400 transition-colors tracking-tight line-clamp-1">{c.name}</h3>
                             <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">Campaign Hunt Profile</p>
                           </div>
-                          
+
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -839,7 +851,7 @@ SCHEMA:
         {/* VIEW 2: CAMPAIGN DASHBOARD - FEED LISTINGS VIEW */}
         {view === 'dashboard' && (
           <div className="flex flex-col space-y-6 animate-fadeIn w-full">
-            
+
             {/* Campaign Breadcrumb Headers & Filters */}
             <div className="flex flex-wrap gap-4 items-center justify-between bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-5 shadow-lg">
               <div className="flex items-center space-x-3">
@@ -854,7 +866,7 @@ SCHEMA:
                 </button>
                 <span className="text-slate-750">|</span>
                 <h2 className="text-base font-bold text-slate-200">{campaigns.find(c => c.id === currentCampaignId)?.name} Dashboard</h2>
-                
+
                 <button
                   onClick={() => {
                     // Auto select first target if available, or null
@@ -887,10 +899,10 @@ SCHEMA:
                     disabled={isScraping || isProcessing}
                     className="bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white font-bold px-3 py-2 rounded-lg text-xs transition-colors flex items-center space-x-1 shadow-lg shadow-indigo-500/10"
                   >
-                    <span>🤖 Run AI Matcher</span>
+                    <span>🤖 Batch AI-Eval</span>
                   </button>
                 </div>
-                
+
                 {/* Target search filter */}
                 <select
                   value={selectedSearchId}
@@ -912,7 +924,7 @@ SCHEMA:
                   <option value="High Niceness">High Niceness (70+)</option>
                   <option value="Evaluate with AI">Evaluate with AI</option>
                   <option value="New">Unprocessed / New</option>
-                  <option value="Dealbreaker">Dealbreakers</option>
+
                 </select>
               </div>
             </div>
@@ -959,7 +971,7 @@ SCHEMA:
         {/* VIEW 3: CAMPAIGN TARGETS & GUIDELINES EDITOR */}
         {view === 'edit' && (
           <div className="flex flex-col space-y-6 w-full animate-fadeIn">
-            
+
             {/* Sub Header */}
             <div className="flex justify-between items-center pb-4 border-b border-slate-800 w-full">
               <div className="flex items-center space-x-3">
@@ -978,10 +990,10 @@ SCHEMA:
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start h-full w-full">
-            
+
               {/* LEFT PANEL: CAMPAIGNS & TARGETS LIST */}
               <div className="lg:col-span-1 bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-5 space-y-6 shadow-2xl flex flex-col">
-                
+
                 {/* Targets List */}
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
@@ -998,11 +1010,10 @@ SCHEMA:
                         <div
                           key={s.id}
                           onClick={() => setCurrentSearchId(s.id || null)}
-                          className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex justify-between items-center ${
-                            activeSearchTarget?.id === s.id
+                          className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex justify-between items-center ${activeSearchTarget?.id === s.id
                               ? 'bg-slate-800/80 border-slate-600 shadow-md'
                               : 'bg-slate-950/40 border-slate-855 hover:bg-slate-900/60'
-                          }`}
+                            }`}
                         >
                           <div className="flex flex-col truncate pr-2">
                             <span className="text-xs font-bold text-slate-200 truncate">{s.name}</span>
@@ -1033,7 +1044,7 @@ SCHEMA:
                           Cancel
                         </button>
                       </div>
-                      
+
                       <div className="space-y-2">
                         <input
                           type="text"
@@ -1049,7 +1060,7 @@ SCHEMA:
                           placeholder="Kleinanzeigen search URL..."
                           className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-emerald-500 font-mono text-slate-200"
                         />
-                        
+
                         <div className="flex gap-2 items-center">
                           <select
                             value={newTargetKsId}
@@ -1097,14 +1108,14 @@ SCHEMA:
               <div className="lg:col-span-2 space-y-6">
                 {activeSearchTarget ? (
                   <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
-                    
+
                     {/* Target details */}
                     <div className="flex justify-between items-start pb-4 border-b border-slate-800">
                       <div className="space-y-1">
                         <span className="text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded uppercase">Search Target</span>
                         <div className="flex items-center space-x-2">
                           <h2 className="text-xl font-bold text-slate-200">{activeSearchTarget.name}</h2>
-                          
+
                           {/* Inline Test Count Action for registered target */}
                           <button
                             onClick={() => handleTestUrl(activeSearchTarget.url)}
@@ -1121,7 +1132,7 @@ SCHEMA:
                             <span className="text-[9px] bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded font-bold">Error: {previewError}</span>
                           )}
                         </div>
-                        
+
                         {isEditingUrl ? (
                           <div className="flex items-center space-x-2 mt-1">
                             <input
@@ -1178,7 +1189,7 @@ SCHEMA:
                     <div className="bg-slate-955/40 border border-slate-850 p-4 rounded-xl space-y-3">
                       <div className="flex justify-between items-center">
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Expert Guidelines & Target Specification</span>
-                        
+
                         {!activeSearchTarget.knowledge_set_id && (
                           <button
                             onClick={() => handleCreateNewSetAndBind(activeSearchTarget)}
@@ -1244,7 +1255,7 @@ SCHEMA:
                               <div className="flex justify-between items-center bg-slate-900/40 px-2.5 py-1.5 rounded-lg border border-slate-850">
                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider font-mono">2. AI Researcher JSON schema</span>
                                 <button
-                                  onClick={() => handleCopyPrompt(prompts[0].content, 'inline-json')}
+                                  onClick={() => handleCopyPrompt(schemaPrompt, 'inline-json')}
                                   className={`text-[9px] px-2 py-0.5 rounded font-bold transition-all ${copiedPromptId === 'inline-json' ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/25' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
                                 >
                                   {copiedPromptId === 'inline-json' ? 'Copied prompt!' : 'Copy Template'}
@@ -1259,6 +1270,63 @@ SCHEMA:
                               />
                             </div>
                           </div>
+
+                          {(() => {
+                            let parsedConfig: ParsedKnowledgeConfig | null = null;
+                            try {
+                              parsedConfig = JSON.parse(editKsJson) as ParsedKnowledgeConfig;
+                            } catch {
+                              // Ignore invalid JSON in UI helper
+                            }
+
+                            if (!parsedConfig || !parsedConfig.extraction_criteria || parsedConfig.extraction_criteria.length === 0) {
+                              return null;
+                            }
+
+                            return (
+                              <div className="bg-slate-955/40 p-4 border border-slate-850 rounded-xl mt-4 space-y-4">
+                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-900 pb-2 gap-2">
+                                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                                    <span>🎛️</span>
+                                    <span>Interactive Criteria Weight Sliders</span>
+                                  </h4>
+                                  <span className="text-[10px] text-slate-500 font-sans">
+                                    Drag sliders to visually adjust checklist weights dynamically inside the raw JSON.
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  {parsedConfig.extraction_criteria.map((c: { id: string; description?: string }) => {
+                                    const weights = parsedConfig.scoring_model?.weights || {};
+                                    const wEntry = weights[c.id];
+                                    const currentImportance = wEntry ? wEntry.importance ?? 0 : 0;
+
+                                    return (
+                                      <div key={c.id} className="bg-slate-900/40 p-3 rounded-lg border border-slate-850 hover:border-slate-800 transition-all flex flex-col justify-between space-y-2">
+                                        <div className="flex justify-between items-start">
+                                          <span className="text-xs font-bold text-slate-200 line-clamp-1">{c.description || c.id}</span>
+                                          <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                                            {currentImportance}%
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center space-x-3">
+                                          <span className="text-[9px] text-slate-500 font-sans">Low</span>
+                                          <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={currentImportance}
+                                            onChange={(e) => handleUpdateWeight(c.id, parseInt(e.target.value))}
+                                            className="flex-1 accent-emerald-500 bg-slate-950 h-1.5 rounded-lg appearance-none cursor-pointer border border-slate-800"
+                                          />
+                                          <span className="text-[9px] text-slate-400 font-bold font-sans">Critical</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           {editKsError && (
                             <div className="text-xs text-rose-400 font-semibold bg-rose-500/10 p-2 rounded">{editKsError}</div>

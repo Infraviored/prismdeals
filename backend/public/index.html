@@ -125,7 +125,7 @@
       color: #FFD700;
       border: 1px solid rgba(255, 215, 0, 0.3);
     }
-    .score-badge.dealbreaker {
+    .score-badge.low {
       background: rgba(255, 23, 68, 0.15);
       color: var(--color-bad);
       border: 1px solid rgba(255, 23, 68, 0.3);
@@ -566,22 +566,19 @@
         }
 
         listings.forEach(l => {
-          // Hide deep dealbreakers if wanted, or styling differently.
-          const isDealbreaker = l.status === 'Dealbreaker' || l.niceness_score <= -999;
-          
           const card = document.createElement('div');
           card.className = `feed-card ${l.id === activeListingId ? 'active' : ''}`;
           
           let scoreClass = 'neutral';
-          if (isDealbreaker) {
-            scoreClass = 'dealbreaker';
+          if (l.niceness_score < 40) {
+            scoreClass = 'low';
           } else if (l.niceness_score >= 70) {
             scoreClass = 'excellent';
           }
 
           card.innerHTML = `
             <div class="d-flex justify-content-between align-items-start">
-              <span class="score-badge ${scoreClass}">Niceness: ${isDealbreaker ? '❌' : l.niceness_score}</span>
+              <span class="score-badge ${scoreClass}">Niceness: ${l.niceness_score}</span>
               <span class="badge bg-secondary text-uppercase">${l.status}</span>
             </div>
             <h6 class="mt-2 text-truncate font-heading" style="max-width: 250px;">${l.title}</h6>
@@ -776,17 +773,13 @@
           row.innerHTML = `
             <div class="d-flex justify-content-between align-items-center mb-2">
               <span class="fw-bold">${rule.criterion_id.replace(/_/g, ' ')} (${rule.value === true ? 'TRUE' : (rule.value === false ? 'FALSE' : rule.value)})</span>
-              <span class="badge ${rule.is_dealbreaker ? 'bg-danger' : 'bg-info'}">${rule.is_dealbreaker ? 'DEALBREAKER' : 'WEIGHT'}</span>
+              <span class="badge bg-info">WEIGHT</span>
             </div>
             
-            ${rule.is_dealbreaker ? `
-              <div class="text-danger" style="font-size:13.5px;">This triggers a hard dealbreaker rejection. Weight is set to minus infinity.</div>
-            ` : `
-              <div class="d-flex align-items-center gap-3">
-                <input type="range" class="form-range slider-weight" min="-200" max="200" value="${rule.weight}" data-index="${idx}">
-                <span class="fw-bold font-monospace badge bg-dark border border-secondary px-3 py-2 weight-label" style="min-width: 60px;">${rule.weight >= 0 ? '+' + rule.weight : rule.weight}</span>
-              </div>
-            `}
+            <div class="d-flex align-items-center gap-3">
+              <input type="range" class="form-range slider-weight" min="-200" max="200" value="${rule.weight}" data-index="${idx}">
+              <span class="fw-bold font-monospace badge bg-dark border border-secondary px-3 py-2 weight-label" style="min-width: 60px;">${rule.weight >= 0 ? '+' + rule.weight : rule.weight}</span>
+            </div>
           `;
 
           // Track changes in weights dynamically in the view
@@ -1008,8 +1001,8 @@
         const tableBody = document.getElementById('matcher-table-body');
         tableBody.innerHTML = '';
         
-        // Filter out dealbreakers and negative scores
-        const relevantListings = listings.filter(l => l.status !== 'Dealbreaker' && l.niceness_score > 0);
+        // Filter out low scores
+        const relevantListings = listings.filter(l => l.niceness_score >= 40);
         
         if (relevantListings.length === 0) {
           tableBody.innerHTML = '<tr><td colspan="6" class="text-center py-5 text-muted">No high-relevance deals found yet. Trigger an active crawl or update sliders!</td></tr>';

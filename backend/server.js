@@ -48,7 +48,7 @@ const get = (sql, params = []) => {
   });
 };
 
-// Recalculates scores for all listings under a search item
+// Recalculates scores for all listings under a search item (normalized weight schema)
 async function recalculateItemScores(searchId, scoringModelStr) {
   let scoringModel;
   try {
@@ -57,40 +57,32 @@ async function recalculateItemScores(searchId, scoringModelStr) {
     console.error('Invalid scoring model JSON:', e);
     return;
   }
-  
-  const baseScore = scoringModel.base_score !== undefined ? scoringModel.base_score : 50;
+
+  const weights = scoringModel.weights || {};
   const listings = await query('SELECT id, extracted_facts FROM listings WHERE search_id = ?', [searchId]);
-  
+
   for (const listing of listings) {
-    let facts = {};
+    let envelope = {};
     try {
-      facts = JSON.parse(listing.extracted_facts || '{}');
+      envelope = JSON.parse(listing.extracted_facts || '{}');
     } catch (e) {
       continue;
     }
-    
-    let score = baseScore;
-    let isDealbreakerTriggered = false;
-    
-    if (scoringModel.rules) {
-      for (const rule of scoringModel.rules) {
-        const factValue = facts[rule.criterion_id];
-        if (factValue === rule.value) {
-          if (rule.is_dealbreaker) {
-            isDealbreakerTriggered = true;
-          }
-          score += rule.weight;
-        }
+
+    // Support nested envelope from AI analysis
+    const facts = (envelope && envelope.criteria) ? envelope.criteria : envelope;
+
+    let score = 0;
+    for (const [criterionId, cfg] of Object.entries(weights)) {
+      const factValue = facts[criterionId];
+      if (factValue === undefined || factValue === null || factValue === 'unknown') continue;
+      if (factValue === cfg.satisfied_if) {
+        score += cfg.importance;
       }
     }
-    
-    let status = 'New';
-    if (isDealbreakerTriggered) {
-      score = -9999;
-      status = 'Dealbreaker';
-    }
-    
-    await run('UPDATE listings SET niceness_score = ?, status = ? WHERE id = ?', [score, status, listing.id]);
+
+    score = Math.max(0, Math.min(100, score));
+    await run('UPDATE listings SET niceness_score = ?, status = ? WHERE id = ?', [score, 'New', listing.id]);
   }
 }
 
@@ -123,7 +115,17 @@ if (fs.existsSync(distPath)) {
 }
 app.use(express.json());
 
-// API: Get all listings
+// API: Serve the external schema prompt template
+app.get('/api/schema-prompt', (req, res) => {
+  try {
+    const promptPath = path.join(__dirname, '..', 'data', 'schema_prompt.md');
+    const content = fs.readFileSync(promptPath, 'utf8');
+    res.type('text/plain').send(content);
+  } catch (e) {
+    res.status(500).json({ error: 'schema_prompt.md not found' });
+  }
+});
+
 // API: Get all listings
 app.get('/api/listings', async (req, res) => {
   try {
@@ -687,7 +689,11 @@ function setupScheduledScraping() {
 function runScraper() {
   console.log('Running scheduled scrape...');
   const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
-  const python = spawn(pythonExecutable, [path.join(__dirname, '..', 'scraper', 'main.py')]);
+  const python = spawn(pythonExecutable, [
+    path.join(__dirname, '..', 'scraper', 'main.py')
+  ], {
+    env: { ...process.env }
+  });
   python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
   python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
 }

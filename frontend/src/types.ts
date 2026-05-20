@@ -44,10 +44,14 @@ export interface Listing {
   date_string?: string
   summary?: string
   criteria_evaluations?: {
+    id?: string
     name: string
     reasoning: string
-    status: 'satisfied' | 'dealbreaker' | 'neutral'
+    status: 'satisfied' | 'neutral' | 'violated'
+    value?: unknown
   }[]
+  special_info?: string[]
+  draft_message?: string
   description?: string
 }
 

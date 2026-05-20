@@ -17,6 +17,7 @@ export default function ListingDetailCard({
   setSelectedListingId
 }: ListingDetailCardProps) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [copiedOutreach, setCopiedOutreach] = useState(false);
 
   const handlePrevImage = (maxImages: number) => {
     setActiveImageIndex(prev => (prev - 1 + maxImages) % maxImages);
@@ -24,6 +25,12 @@ export default function ListingDetailCard({
 
   const handleNextImage = (maxImages: number) => {
     setActiveImageIndex(prev => (prev + 1) % maxImages);
+  };
+
+  const handleCopyOutreach = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedOutreach(true);
+    setTimeout(() => setCopiedOutreach(false), 2000);
   };
 
   return (
@@ -63,40 +70,41 @@ export default function ListingDetailCard({
             <span className="text-[9px] text-emerald-500 font-semibold uppercase">{l.campaign_name}</span>
           </div>
           
-           {!l.llm_processed ? (
+          {/* AI-Eval button + score — always visible, re-eval on click */}
+          <div className="flex items-center gap-1.5">
+          {l.llm_processed && (
+            <div className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${
+                l.niceness_score >= 70
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : l.niceness_score >= 40
+                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                  : 'bg-slate-800 text-slate-400 border-slate-700'
+              }`}>
+              {l.niceness_score}
+            </div>
+          )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 handleProcessSingleListing(l.id);
               }}
-              disabled={activeProcessingListingId !== null}
-              className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center space-x-1.5 transition-all shadow-sm ${
+              disabled={activeProcessingListingId === l.id}
+              title={l.llm_processed ? 'Re-evaluate with AI' : 'Evaluate with AI'}
+              className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center space-x-1 transition-all shadow-sm ${
                 activeProcessingListingId === l.id
-                  ? 'bg-amber-500/25 text-amber-300 border-amber-400/50 animate-pulse'
+                  ? 'bg-indigo-500/25 text-indigo-300 border-indigo-400/50 animate-pulse'
+                  : l.llm_processed
+                  ? 'bg-slate-800/60 text-slate-400 border-slate-700 hover:bg-indigo-500/10 hover:text-indigo-400 hover:border-indigo-500/30'
                   : 'bg-amber-500/10 text-amber-400 border-amber-500/25 hover:bg-amber-500/20 hover:border-amber-400'
               }`}
             >
               {activeProcessingListingId === l.id ? (
-                <>
-                  <div className="animate-spin w-3 h-3 border border-amber-400 border-t-transparent rounded-full" />
-                  <span>Evaluating...</span>
-                </>
+                <div className="animate-spin w-3 h-3 border border-current border-t-transparent rounded-full" />
               ) : (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                  <span>Evaluate with AI</span>
-                </>
+                <span>{l.llm_processed ? '↺' : '🤖'} AI-Eval</span>
               )}
             </button>
-          ) : l.niceness_score <= -999 ? (
-            <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
-              DEALBREAKER
-            </div>
-          ) : (
-            <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Score: {l.niceness_score}
-            </div>
-          )}
+          </div>
         </div>
 
         <div>
@@ -127,6 +135,46 @@ export default function ListingDetailCard({
               {l.cubic_capacity}
             </span>
           )}
+
+          {/* AI checklist satisfied and violated tags */}
+          {l.llm_processed && l.criteria_evaluations && l.criteria_evaluations.map((evalItem, idx) => {
+            if (evalItem.status === 'satisfied') {
+              return (
+                <span key={`sat-${idx}`} className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-md font-semibold flex items-center gap-0.5">
+                  <span className="text-emerald-500 font-bold">✓</span> {evalItem.name}
+                </span>
+              );
+            }
+            if (evalItem.status === 'violated') {
+              return (
+                <span key={`viol-${idx}`} className="text-[9px] bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded-md font-semibold flex items-center gap-0.5">
+                  <span className="text-rose-400 font-bold">⚠️</span> {evalItem.name}
+                </span>
+              );
+            }
+            return null;
+          })}
+
+          {/* AI Special Info highlights */}
+          {l.llm_processed && l.special_info && l.special_info.map((info, idx) => (
+            <span key={`spec-${idx}`} className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-md font-semibold flex items-center gap-0.5">
+              <span className="text-amber-500">⚡</span> {info}
+            </span>
+          ))}
+        </div>
+
+        {/* Description Preview (Always visible, expands preview length if any card is expanded to match grid height) */}
+        <div className="mt-3 text-[11px] text-slate-400 font-sans leading-relaxed border-t border-slate-850/30 pt-2.5">
+          <p 
+            style={{
+              display: '-webkit-box',
+              WebkitLineClamp: selectedListingId ? 12 : 3,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden'
+            }}
+          >
+            {l.description ? l.description : "Awaiting scraping detail harvester to run..."}
+          </p>
         </div>
       </div>
 
@@ -150,22 +198,23 @@ export default function ListingDetailCard({
       {selectedListingId === l.id && (
         <div className="mt-4 pt-4 border-t border-slate-855 space-y-4 animate-fadeIn text-xs">
           
-          {/* Harvested Specs */}
-          <div className="bg-slate-955/40 border border-slate-850 p-3 rounded-xl space-y-2 text-slate-450">
-            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Harvested Specifications</span>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 font-sans">
-              {l.price && <div><span className="font-semibold text-slate-500">Price:</span> {l.price}</div>}
-              {l.location && <div><span className="font-semibold text-slate-500">Location:</span> {l.location}</div>}
-              {l.mileage && <div><span className="font-semibold text-slate-500">Mileage:</span> {l.mileage}</div>}
-              {l.year && <div><span className="font-semibold text-slate-500">First Reg:</span> {l.year}</div>}
-              {l.cubic_capacity && <div><span className="font-semibold text-slate-500">Capacity:</span> {l.cubic_capacity}</div>}
-              {l.date_string && <div><span className="font-semibold text-slate-500">Listed:</span> {l.date_string}</div>}
-            </div>
-          </div>
-
           {/* AI Match Summary & Evaluations */}
           {l.llm_processed && (
             <div className="space-y-3">
+              {/* Special Info Warnings banner if present */}
+              {l.special_info && l.special_info.length > 0 && (
+                <div className="bg-rose-500/10 border border-rose-500/25 p-3.5 rounded-xl space-y-1.5 animate-fadeIn">
+                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block font-mono">⚠️ High Priority Warnings</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {l.special_info.map((info, idx) => (
+                      <span key={idx} className="text-[10px] bg-rose-505/20 text-rose-300 px-2 py-0.5 rounded-md font-semibold border border-rose-500/20">
+                        {info}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-850">
                 <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">AI Match Summary</span>
                 <p className="text-slate-300 leading-relaxed font-sans">{l.summary}</p>
@@ -180,22 +229,37 @@ export default function ListingDetailCard({
                         <span className="font-bold text-slate-350 text-[11px]">{evalItem.name}</span>
                         <span className="text-[10px] text-slate-550 block leading-normal mt-0.5">{evalItem.reasoning}</span>
                       </div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${evalItem.status === 'satisfied' ? 'bg-emerald-500/10 text-emerald-400' : evalItem.status === 'dealbreaker' ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-800 text-slate-400'}`}>
-                        {evalItem.status.toUpperCase()}
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${evalItem.status === 'satisfied' ? 'bg-emerald-500/10 text-emerald-400' : evalItem.status === 'violated' ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-800 text-slate-400'}`}>
+                        {evalItem.status === 'satisfied' ? 'SATISFIED' : evalItem.status === 'violated' ? 'VIOLATED' : 'NEUTRAL'}
                       </span>
                     </div>
                   ))}
                 </div>
               </div>
+
+              {/* Ready-to-Send Outreach Message Assistant */}
+              {l.draft_message && (
+                <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-850 space-y-2">
+                  <div className="flex justify-between items-center border-b border-slate-900 pb-1.5">
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider font-mono">📨 Outreach Assistant (Soft Invite)</span>
+                    <button
+                      onClick={() => handleCopyOutreach(l.draft_message || '')}
+                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-lg border transition-all ${
+                        copiedOutreach
+                          ? 'bg-emerald-950 text-emerald-405 border-emerald-500/30'
+                          : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20'
+                      }`}
+                    >
+                      {copiedOutreach ? 'Copied to Clipboard!' : 'Copy Draft'}
+                    </button>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed font-sans italic text-[11px] bg-slate-950/60 p-3 rounded-lg border border-slate-900 select-all whitespace-pre-wrap">
+                    {l.draft_message}
+                  </p>
+                </div>
+              )}
             </div>
           )}
-          
-          <div className="bg-slate-955/40 p-3.5 rounded-xl border border-slate-850">
-            <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block mb-1">Detailed Description</span>
-            <p className="text-slate-400 whitespace-pre-wrap leading-relaxed font-sans text-[11px]">
-              {l.description ? l.description : "Awaiting scraping detail harvester to run..."}
-            </p>
-          </div>
         </div>
       )}
     </div>

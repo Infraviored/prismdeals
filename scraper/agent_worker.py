@@ -140,16 +140,31 @@ def process_unprocessed_listings(target_listing_id=None):
         )
 
         try:
-            kwargs = {
-                "model": LLM_MODEL,
-                "messages": [
+            messages = []
+            if (
+                "gpt-5" in LLM_MODEL
+                or LLM_MODEL.startswith("o1")
+                or LLM_MODEL.startswith("o3")
+            ):
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"You are a precise, objective product analyst.\n\n{prompt}",
+                    }
+                )
+            else:
+                messages.append(
                     {
                         "role": "system",
                         "content": "You are a precise, objective product analyst.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                "max_completion_tokens": 4000,
+                    }
+                )
+                messages.append({"role": "user", "content": prompt})
+
+            kwargs = {
+                "model": LLM_MODEL,
+                "messages": messages,
+                "max_completion_tokens": 16000,
             }
             if not (
                 "gpt-5" in LLM_MODEL
@@ -169,13 +184,21 @@ def process_unprocessed_listings(target_listing_id=None):
                 continue
 
             # Separate custom criteria facts from the meta variables
-            full_info_obtained = extracted_data.pop("_full_info_obtained", False)
+            criteria_part = extracted_data.get("criteria", {})
+            reasoning_part = extracted_data.get("reasoning", {})
+            special_info = extracted_data.get("special_info", [])
+            draft_message = extracted_data.get("draft_message", "")
+            full_info_obtained = extracted_data.get("_full_info_obtained", False)
 
             # Map values back to criteria list (normalize boolean and missing string fields)
             facts = {}
+            reasonings = {}
             for c in criteria_list:
                 cid = c["id"]
-                val = extracted_data.get(cid, "unknown")
+                val = criteria_part.get(cid)
+                if val is None:
+                    # Fallback if AI put them at root level
+                    val = extracted_data.get(cid, "unknown")
 
                 # Normalize values
                 if isinstance(val, str):
@@ -187,26 +210,29 @@ def process_unprocessed_listings(target_listing_id=None):
                     elif val_lower == "unknown":
                         val = "unknown"
                 facts[cid] = val
+                reasonings[cid] = reasoning_part.get(cid, f"Determined as {val}.")
 
-            # Score calculation
-            base_score = scoring_model.get("base_score", 50)
-            score = base_score
-            is_dealbreaker_triggered = False
+            # Score from normalized importance weights (sum to 100, no base_score)
+            weights = scoring_model.get("weights", {})
+            score = 0
+            for cid, cfg in weights.items():
+                fact_val = facts.get(cid)
+                if fact_val is None or fact_val == "unknown":
+                    continue
+                if fact_val == cfg.get("satisfied_if"):
+                    score += cfg.get("importance", 0)
 
-            if "rules" in scoring_model:
-                for rule in scoring_model["rules"]:
-                    rcid = rule["criterion_id"]
-                    rval = rule["value"]
-
-                    if facts.get(rcid) == rval:
-                        if rule.get("is_dealbreaker", False):
-                            is_dealbreaker_triggered = True
-                        score += rule.get("weight", 0)
-
+            # Cap between 0–100 (weights should sum to 100 but guard anyway)
+            score = max(0, min(100, score))
             status = "New"
-            if is_dealbreaker_triggered:
-                score = -9999
-                status = "Dealbreaker"
+
+            # Reconstruct full nested facts envelope for the DB
+            facts_envelope = {
+                "criteria": facts,
+                "reasoning": reasonings,
+                "special_info": special_info,
+                "draft_message": draft_message,
+            }
 
             # Update Listing
             cursor.execute(
@@ -223,7 +249,7 @@ def process_unprocessed_listings(target_listing_id=None):
                 (
                     datetime.datetime.now().isoformat(),
                     1 if full_info_obtained else 0,
-                    json.dumps(facts),
+                    json.dumps(facts_envelope),
                     score,
                     status,
                     listing_id,
@@ -346,7 +372,11 @@ def analyze_conversation(listing_id):
         return
 
     try:
-        facts = json.loads(row["extracted_facts"] or "{}")
+        facts_envelope = json.loads(row["extracted_facts"] or "{}")
+        if isinstance(facts_envelope, dict) and "criteria" in facts_envelope:
+            facts = facts_envelope["criteria"]
+        else:
+            facts = facts_envelope
         item_config = json.loads(row["item_json"] or "{}")
         criteria_list = item_config.get("extraction_criteria", [])
         scoring_model = item_config.get("scoring_model", {})
@@ -457,26 +487,33 @@ def analyze_conversation(listing_id):
                 )
 
         if changes_made:
-            # Recalculate score
-            base_score = scoring_model.get("base_score", 50)
-            score = base_score
-            is_dealbreaker = False
+            # Recalculate score using normalized importance weights
+            weights = scoring_model.get("weights", {})
+            score = 0
+            for cid, cfg in weights.items():
+                fact_val = facts.get(cid)
+                if fact_val is None or fact_val == "unknown":
+                    continue
+                if fact_val == cfg.get("satisfied_if"):
+                    score += cfg.get("importance", 0)
 
-            if "rules" in scoring_model:
-                for rule in scoring_model["rules"]:
-                    rcid = rule["criterion_id"]
-                    rval = rule["value"]
-                    if facts.get(rcid) == rval:
-                        if rule.get("is_dealbreaker", False):
-                            is_dealbreaker = True
-                        score += rule.get("weight", 0)
-
+            score = max(0, min(100, score))
             status = "Negotiating"
-            if is_dealbreaker:
-                score = -9999
-                status = "Dealbreaker"
 
             full_info = all(val != "unknown" for val in facts.values())
+
+            # Put back into envelope if envelope exists
+            if isinstance(facts_envelope, dict) and "criteria" in facts_envelope:
+                facts_envelope["criteria"] = facts
+                facts_envelope["_full_info_obtained"] = full_info
+                # Also update reasoning to show it was resolved via chat
+                if "reasoning" not in facts_envelope:
+                    facts_envelope["reasoning"] = {}
+                for k, v in updated_data.items():
+                    if k in facts:
+                        facts_envelope["reasoning"][k] = f"Resolved via chat to: {v}."
+            else:
+                facts_envelope = facts
 
             cursor.execute(
                 """
@@ -487,7 +524,13 @@ def analyze_conversation(listing_id):
                     full_info_obtained = ?
                 WHERE id = ?
             """,
-                (json.dumps(facts), score, status, 1 if full_info else 0, listing_id),
+                (
+                    json.dumps(facts_envelope),
+                    score,
+                    status,
+                    1 if full_info else 0,
+                    listing_id,
+                ),
             )
             conn.commit()
             logger.info(
