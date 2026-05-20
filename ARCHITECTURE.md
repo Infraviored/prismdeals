@@ -93,6 +93,41 @@ Scraped ads, harvested sub-page metrics, and calculated AI evaluations.
 
 ---
 
+## Hierarchical Intelligent Agent Pipeline (The Dual-Model Engine)
+
+The deal-matching workspace relies on a decoupled, hierarchical dual-model agent pipeline to balance high-level structural intelligence with low-cost execution.
+
+```mermaid
+graph TD
+    subgraph Architecture Stage
+        A[High-Tier Planning Model / Expert Creator]
+        A -->|Compiles Profile Prompt Template| B[Guidelines Profile: expert_knowledge & item_json]
+    end
+    
+    subgraph Bulk Processing Stage
+        C[Detailed Listing Text & specs]
+        B -->|Context Feed| D[Low-Cost Worker Model: gpt-5-nano]
+        C -->|Context Feed| D
+        D -->|JSON Checklist Output| E[Scoring & Database Storage]
+    end
+```
+
+### 1. Ingestion Profile Architect (Planning Agent)
+*   **Role**: An advanced, reasoning-capable model (or human domain expert) outlines the campaign guidelines parameters.
+*   **Operation**: The architect creates the specific ingestion configuration. It designs the core domain logic (`expert_knowledge`), maps checklist targets (`extraction_criteria`), and assigns the scoring importance weights (`scoring_model.weights`).
+*   **Logical Focus**: Decouples search design and expert criteria formulation (requiring high logical reasoning) from continuous, manual item review.
+
+### 2. Execution Processor (Low-Cost Worker Agent)
+*   **Role**: A high-efficiency, lower-cost model (`gpt-5-nano`) executes high-throughput evaluation tasks.
+*   **Context Fed to the Worker**:
+    *   **Scraped Listing Text**: The specific Kleinanzeigen ad's detailed description, title, and key specifications.
+    *   **Domain & Expert Knowledge Rules**: General instructions, specific warnings (e.g. what indicates track use or valve wear), and product constraints.
+    *   **Extraction Criteria List**: Strict target fields to evaluate and parse from the text.
+*   **Operation**: The low-cost model processes each listing independently. It maps the listing's text against the guidelines checklists and generates a clean, structured JSON output (`extracted_facts`). It has no knowledge of scoring weights, serving strictly as an objective, unbiased fact extractor.
+*   **Dynamic Scoring**: The backend server and agent worker post-calculate the score using the structured output from the cheap model and the importance weights defined by the architect.
+
+---
+
 ## Normalized Scoring Engine
 
 The matching system calculates item deal suitability using a normalized weight-based percentage (0% to 100%).
