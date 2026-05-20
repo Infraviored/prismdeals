@@ -10,8 +10,10 @@ This document maps the repository layout, data schemas, sequence workflow, and A
 ├── ARCHITECTURE.md          # System map & architectural reference
 ├── data/
 │   ├── scraper.db           # SQLite production database
-│   ├── schema_prompt.md     # Version-controlled Externalized AI Prompt template
 │   └── session_status.json  # Persisted login session data (email & timestamp)
+├── prompts/                 # Version-controlled Externalized AI Prompt templates
+│   ├── schema_prompt.md     # Ingestion JSON schema prompt reference
+│   └── expert_guidelines_prompt.md # Expert checklist/guidelines prompt reference
 ├── backend/                 # Node.js/Express SQLite API Server
 │   ├── package.json
 │   ├── db_setup.js          # SQLite table creation schema and triggers
@@ -176,7 +178,7 @@ sequenceDiagram
 1. **Per-Listing Independent AI Evaluation**:
    Users can click "AI-Eval" on any listing in the dashboard to trigger an independent, real-time background evaluation request (`POST /api/process` with listing ID). The frontend monitors execution state at the listing card level, keeping other UI components interactive.
 2. **Dynamic External Prompt Template**:
-   The AI Researcher prompt is externalized in `data/schema_prompt.md`. When evaluating a listing, the worker incorporates search-specific target parameters directly into this dynamic template. The frontend retrieves the template via `GET /api/schema-prompt` to allow copying the current prompt reference.
+   The AI Researcher prompt is externalized in `prompts/schema_prompt.md`. When evaluating a listing, the worker incorporates search-specific target parameters directly into this dynamic template. The frontend retrieves the template via `GET /api/schema-prompt` to allow copying the current prompt reference.
 3. **Resilient Environment Key Loader**:
    `scraper/config.py` contains a dynamic environment file loader that parses the parent `.env` file for `OPENAI_API_KEY` on startup. This fallback ensures standalone Python tasks (e.g. cron-like scheduler tasks) inherit the correct API key regardless of terminal environment variables.
 
