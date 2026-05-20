@@ -54,8 +54,20 @@ def get_db_connection():
 
 
 def extract_json_block(text):
-    """Robust extraction of JSON blocks from LLM markdown responses"""
-    # Look for ```json ... ``` blocks
+    """Robust extraction of JSON blocks from LLM responses"""
+    # 1. Try START_JSON ... END_JSON magic markers
+    start_marker = "START_JSON"
+    end_marker = "END_JSON"
+    if start_marker in text and end_marker in text:
+        try:
+            start_idx = text.find(start_marker) + len(start_marker)
+            end_idx = text.find(end_marker)
+            json_str = text[start_idx:end_idx].strip()
+            return json.loads(json_str)
+        except Exception as e:
+            logger.warning(f"Failed to parse JSON between magic markers: {str(e)}")
+
+    # 2. Look for ```json ... ``` blocks
     match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
     if match:
         try:
@@ -63,13 +75,130 @@ def extract_json_block(text):
         except Exception as e:
             logger.warning(f"Failed to parse inner JSON block: {str(e)}")
 
-    # Try parsing raw string
+    # 3. Try parsing raw string
     try:
-        return json.loads(text)
+        return json.loads(text.strip())
     except Exception:
         pass
 
     return None
+
+
+def validate_extracted_data(extracted_data, criteria_list):
+    """Validates the extracted JSON structure against target schema rules and returns a list of error strings"""
+    errors = []
+    if not isinstance(extracted_data, dict):
+        return ["Extracted data is not a JSON object"]
+
+    required_keys = ["criteria", "highlights", "draft_message", "_full_info_obtained"]
+    for key in required_keys:
+        if key not in extracted_data:
+            errors.append(f"Missing required top-level key: '{key}'")
+
+    if "criteria" in extracted_data:
+        criteria_part = extracted_data["criteria"]
+        if not isinstance(criteria_part, dict):
+            errors.append("'criteria' must be a JSON object")
+        else:
+            for c in criteria_list:
+                cid = c["id"]
+                if cid not in criteria_part:
+                    errors.append(f"Missing criterion ID in 'criteria': '{cid}'")
+                    continue
+                c_val = criteria_part[cid]
+                if not isinstance(c_val, dict):
+                    errors.append(f"Criterion '{cid}' must be a JSON object")
+                    continue
+
+                # Check keys
+                for subkey in [
+                    "value",
+                    "confidence",
+                    "evidence_quote",
+                    "evidence_source",
+                    "reasoning",
+                ]:
+                    if subkey not in c_val:
+                        errors.append(f"Criterion '{cid}' is missing key '{subkey}'")
+
+                # Check enums
+                val = c_val.get("value")
+                if val not in ["yes", "no", "unknown"]:
+                    errors.append(
+                        f"Criterion '{cid}' has invalid value '{val}' (must be 'yes', 'no', or 'unknown')"
+                    )
+
+                conf = c_val.get("confidence")
+                if conf not in ["high", "med", "low"]:
+                    errors.append(
+                        f"Criterion '{cid}' has invalid confidence '{conf}' (must be 'high', 'med', or 'low')"
+                    )
+
+                source = c_val.get("evidence_source")
+                if source not in ["title", "description", "details"]:
+                    errors.append(
+                        f"Criterion '{cid}' has invalid evidence_source '{source}' (must be 'title', 'description', or 'details')"
+                    )
+
+    if "highlights" in extracted_data:
+        highlights_part = extracted_data["highlights"]
+        if not isinstance(highlights_part, list):
+            errors.append("'highlights' must be a JSON array")
+        else:
+            for idx, h in enumerate(highlights_part):
+                if not isinstance(h, dict):
+                    errors.append(f"Highlight at index {idx} is not a JSON object")
+                    continue
+                for subkey in [
+                    "label",
+                    "type",
+                    "sentiment",
+                    "evidence_quote",
+                    "confidence",
+                ]:
+                    if subkey not in h:
+                        errors.append(
+                            f"Highlight at index {idx} is missing key '{subkey}'"
+                        )
+
+                h_type = h.get("type")
+                if h_type not in ["maintenance", "warning", "feature"]:
+                    errors.append(
+                        f"Highlight at index {idx} has invalid type '{h_type}'"
+                    )
+
+                h_sent = h.get("sentiment")
+                if h_sent not in ["positive", "negative", "neutral"]:
+                    errors.append(
+                        f"Highlight at index {idx} has invalid sentiment '{h_sent}'"
+                    )
+
+                h_conf = h.get("confidence")
+                if h_conf not in ["high", "med", "low"]:
+                    errors.append(
+                        f"Highlight at index {idx} has invalid confidence '{h_conf}'"
+                    )
+
+    return errors
+
+
+def is_satisfied(value, satisfied_if):
+    """Checks if the extracted criterion value matches the satisfied_if campaign target"""
+    if (
+        satisfied_if is True
+        or satisfied_if == "yes"
+        or (isinstance(satisfied_if, str) and satisfied_if.lower() == "true")
+    ):
+        target = "yes"
+    elif (
+        satisfied_if is False
+        or satisfied_if == "no"
+        or (isinstance(satisfied_if, str) and satisfied_if.lower() == "false")
+    ):
+        target = "no"
+    else:
+        target = "unknown"
+    return value == target
 
 
 def process_unprocessed_listings(target_listing_id=None):
@@ -176,62 +305,182 @@ def process_unprocessed_listings(target_listing_id=None):
             response_text = response.choices[0].message.content.strip()
 
             extracted_data = extract_json_block(response_text)
+            validation_errors = (
+                validate_extracted_data(extracted_data, criteria_list)
+                if extracted_data
+                else [
+                    "Could not extract JSON block between START_JSON and END_JSON markers."
+                ]
+            )
 
-            if not extracted_data:
+            # Bounded One-Shot Retry
+            if validation_errors:
                 logger.warning(
-                    f"Could not extract JSON from response for listing {listing_id}. Response: {response_text}"
+                    f"Validation failed for listing {listing_id}. Errors: {validation_errors}. Retrying one-shot..."
                 )
-                continue
+                errors_str = "\n".join([f"- {err}" for err in validation_errors])
+                retry_prompt = (
+                    f"{prompt}\n\n"
+                    "--- VALIDATION FAILURE ---\n"
+                    "Your previous response failed validation with the following errors:\n"
+                    f"{errors_str}\n\n"
+                    "--- PREVIOUS RESPONSE ---\n"
+                    f"{response_text}\n\n"
+                    "Please correct the errors and output the complete corrected JSON strictly between START_JSON and END_JSON lines conforming to the TARGET JSON SCHEMA."
+                )
 
-            # Separate custom criteria facts from the meta variables
+                retry_messages = []
+                if (
+                    "gpt-5" in LLM_MODEL
+                    or LLM_MODEL.startswith("o1")
+                    or LLM_MODEL.startswith("o3")
+                ):
+                    retry_messages.append({"role": "user", "content": retry_prompt})
+                else:
+                    retry_messages.append(
+                        {
+                            "role": "system",
+                            "content": "You are a precise, objective product analyst.",
+                        }
+                    )
+                    retry_messages.append({"role": "user", "content": retry_prompt})
+
+                retry_kwargs = {
+                    "model": LLM_MODEL,
+                    "messages": retry_messages,
+                    "max_completion_tokens": 16000,
+                }
+                if not (
+                    "gpt-5" in LLM_MODEL
+                    or LLM_MODEL.startswith("o1")
+                    or LLM_MODEL.startswith("o3")
+                ):
+                    retry_kwargs["temperature"] = 0.0
+
+                try:
+                    response = client.chat.completions.create(**retry_kwargs)
+                    response_text = response.choices[0].message.content.strip()
+                    extracted_data = extract_json_block(response_text)
+                    validation_errors = (
+                        validate_extracted_data(extracted_data, criteria_list)
+                        if extracted_data
+                        else [
+                            "Could not extract JSON block between START_JSON and END_JSON markers after retry."
+                        ]
+                    )
+                    if validation_errors:
+                        logger.error(
+                            f"Validation failed after retry for listing {listing_id}. Errors: {validation_errors}. Proceeding with best-effort parsing."
+                        )
+                except Exception as retry_err:
+                    logger.error(
+                        f"Error during retry for listing {listing_id}: {str(retry_err)}"
+                    )
+
+            if not extracted_data or not isinstance(extracted_data, dict):
+                extracted_data = {}
+
             criteria_part = extracted_data.get("criteria", {})
-            reasoning_part = extracted_data.get("reasoning", {})
-            special_info = extracted_data.get("special_info", [])
+            if not isinstance(criteria_part, dict):
+                criteria_part = {}
+
+            highlights_part = extracted_data.get("highlights", [])
+            if not isinstance(highlights_part, list):
+                highlights_part = []
+
             draft_message = extracted_data.get("draft_message", "")
             full_info_obtained = extracted_data.get("_full_info_obtained", False)
 
-            # Map values back to criteria list (normalize boolean and missing string fields)
-            facts = {}
-            reasonings = {}
+            # Populate and normalize criteria list
+            normalized_criteria = {}
             for c in criteria_list:
                 cid = c["id"]
-                val = criteria_part.get(cid)
-                if val is None:
-                    # Fallback if AI put them at root level
-                    val = extracted_data.get(cid, "unknown")
+                c_val = criteria_part.get(cid)
+                if not isinstance(c_val, dict):
+                    c_val = {}
 
-                # Normalize values
-                if isinstance(val, str):
-                    val_lower = val.lower().strip()
-                    if val_lower == "true":
-                        val = True
-                    elif val_lower == "false":
-                        val = False
-                    elif val_lower == "unknown":
-                        val = "unknown"
-                facts[cid] = val
-                reasonings[cid] = reasoning_part.get(cid, f"Determined as {val}.")
+                value = c_val.get("value")
+                if value is None:
+                    value = extracted_data.get(cid)
+                if value not in ["yes", "no", "unknown"]:
+                    if value is True or (
+                        isinstance(value, str) and value.lower() in ["true", "yes"]
+                    ):
+                        value = "yes"
+                    elif value is False or (
+                        isinstance(value, str) and value.lower() in ["false", "no"]
+                    ):
+                        value = "no"
+                    else:
+                        value = "unknown"
 
-            # Score from normalized importance weights (sum to 100, no base_score)
+                confidence = c_val.get("confidence")
+                if confidence not in ["high", "med", "low"]:
+                    confidence = "low" if value == "unknown" else "med"
+
+                evidence_quote = c_val.get("evidence_quote", "")
+                if not isinstance(evidence_quote, str):
+                    evidence_quote = (
+                        str(evidence_quote) if evidence_quote is not None else ""
+                    )
+
+                evidence_source = c_val.get("evidence_source", "description")
+                if evidence_source not in ["title", "description", "details"]:
+                    evidence_source = "description"
+
+                reasoning = c_val.get("reasoning", "")
+                if not reasoning:
+                    reasoning = f"Value determined as '{value}'."
+
+                normalized_criteria[cid] = {
+                    "value": value,
+                    "confidence": confidence,
+                    "evidence_quote": evidence_quote,
+                    "evidence_source": evidence_source,
+                    "reasoning": reasoning,
+                }
+
+            # Score from normalized importance weights with confidence mapping
             weights = scoring_model.get("weights", {})
             score = 0
             for cid, cfg in weights.items():
-                fact_val = facts.get(cid)
-                if fact_val is None or fact_val == "unknown":
+                c_val = normalized_criteria.get(cid)
+                if not isinstance(c_val, dict):
                     continue
-                if fact_val == cfg.get("satisfied_if"):
-                    score += cfg.get("importance", 0)
+                fact_val = c_val.get("value", "unknown")
+                confidence = c_val.get("confidence", "low")
 
-            # Cap between 0–100 (weights should sum to 100 but guard anyway)
+                satisfied_if = cfg.get("satisfied_if")
+
+                if fact_val != "unknown" and is_satisfied(fact_val, satisfied_if):
+                    if confidence == "high":
+                        mult = 1.0
+                    elif confidence == "med":
+                        mult = 0.6
+                    else:
+                        mult = 0.25
+                    score += cfg.get("importance", 0) * mult
+
             score = max(0, min(100, score))
             status = "New"
+            full_info = (
+                1
+                if (
+                    full_info_obtained is True
+                    or all(
+                        v["value"] != "unknown" for v in normalized_criteria.values()
+                    )
+                )
+                else 0
+            )
 
             # Reconstruct full nested facts envelope for the DB
             facts_envelope = {
-                "criteria": facts,
-                "reasoning": reasonings,
-                "special_info": special_info,
+                "criteria": normalized_criteria,
+                "highlights": highlights_part,
                 "draft_message": draft_message,
+                "_full_info_obtained": bool(full_info),
+                "_audit": {"_raw_model_response": response_text},
             }
 
             # Update Listing
@@ -248,7 +497,7 @@ def process_unprocessed_listings(target_listing_id=None):
             """,
                 (
                     datetime.datetime.now().isoformat(),
-                    1 if full_info_obtained else 0,
+                    full_info,
                     json.dumps(facts_envelope),
                     score,
                     status,
@@ -386,7 +635,13 @@ def analyze_conversation(listing_id):
         return
 
     # Check if there are any unknowns to resolve
-    unknown_keys = [k for k, v in facts.items() if v == "unknown"]
+    unknown_keys = []
+    for k, v in facts.items():
+        if isinstance(v, dict) and v.get("value") == "unknown":
+            unknown_keys.append(k)
+        elif v == "unknown":
+            unknown_keys.append(k)
+
     if not unknown_keys:
         logger.info(f"No unknown criteria to resolve for listing {listing_id}.")
         conn.close()
@@ -473,47 +728,89 @@ def analyze_conversation(listing_id):
         # Update facts map
         changes_made = False
         for k, v in updated_data.items():
-            if k in facts and facts[k] == "unknown" and v != "unknown":
-                # Normalize boolean
-                if isinstance(v, str):
-                    if v.lower() == "true":
-                        v = True
-                    elif v.lower() == "false":
-                        v = False
-                facts[k] = v
-                changes_made = True
-                logger.info(
-                    f"Resolved unknown criterion '{k}' to '{v}' for listing {listing_id}"
-                )
+            if k in facts and v != "unknown":
+                val = "unknown"
+                if v is True or (isinstance(v, str) and v.lower() in ["true", "yes"]):
+                    val = "yes"
+                elif v is False or (
+                    isinstance(v, str) and v.lower() in ["false", "no"]
+                ):
+                    val = "no"
+
+                # Check if it was previously unknown
+                is_prev_unknown = False
+                if isinstance(facts[k], dict):
+                    if facts[k].get("value") == "unknown":
+                        is_prev_unknown = True
+                elif facts[k] == "unknown":
+                    is_prev_unknown = True
+
+                if is_prev_unknown and val != "unknown":
+                    if isinstance(facts[k], dict):
+                        facts[k]["value"] = val
+                        facts[k]["confidence"] = "high"
+                        facts[k]["evidence_quote"] = "Clarified in chat conversation"
+                        facts[k]["evidence_source"] = "description"
+                        facts[k]["reasoning"] = f"Resolved via chat to: {val}."
+                    else:
+                        facts[k] = {
+                            "value": val,
+                            "confidence": "high",
+                            "evidence_quote": "Clarified in chat conversation",
+                            "evidence_source": "description",
+                            "reasoning": f"Resolved via chat to: {val}.",
+                        }
+                    changes_made = True
+                    logger.info(
+                        f"Resolved unknown criterion '{k}' to '{val}' for listing {listing_id}"
+                    )
 
         if changes_made:
-            # Recalculate score using normalized importance weights
+            # Recalculate score using normalized importance weights & confidence weighting
             weights = scoring_model.get("weights", {})
             score = 0
             for cid, cfg in weights.items():
-                fact_val = facts.get(cid)
-                if fact_val is None or fact_val == "unknown":
+                c_val = facts.get(cid)
+                if not isinstance(c_val, dict):
                     continue
-                if fact_val == cfg.get("satisfied_if"):
-                    score += cfg.get("importance", 0)
+                fact_val = c_val.get("value", "unknown")
+                confidence = c_val.get("confidence", "low")
+
+                satisfied_if = cfg.get("satisfied_if")
+
+                # Check if satisfied
+                if fact_val != "unknown" and is_satisfied(fact_val, satisfied_if):
+                    if confidence == "high":
+                        mult = 1.0
+                    elif confidence == "med":
+                        mult = 0.6
+                    else:
+                        mult = 0.25
+                    score += cfg.get("importance", 0) * mult
 
             score = max(0, min(100, score))
             status = "Negotiating"
 
-            full_info = all(val != "unknown" for val in facts.values())
+            # Check if all criteria are now known
+            full_info = True
+            for k, v in facts.items():
+                if isinstance(v, dict):
+                    if v.get("value") == "unknown":
+                        full_info = False
+                elif v == "unknown":
+                    full_info = False
 
-            # Put back into envelope if envelope exists
-            if isinstance(facts_envelope, dict) and "criteria" in facts_envelope:
+            # Put back into envelope
+            if isinstance(facts_envelope, dict):
                 facts_envelope["criteria"] = facts
                 facts_envelope["_full_info_obtained"] = full_info
-                # Also update reasoning to show it was resolved via chat
-                if "reasoning" not in facts_envelope:
-                    facts_envelope["reasoning"] = {}
-                for k, v in updated_data.items():
-                    if k in facts:
-                        facts_envelope["reasoning"][k] = f"Resolved via chat to: {v}."
             else:
-                facts_envelope = facts
+                facts_envelope = {
+                    "criteria": facts,
+                    "highlights": [],
+                    "draft_message": "",
+                    "_full_info_obtained": full_info,
+                }
 
             cursor.execute(
                 """

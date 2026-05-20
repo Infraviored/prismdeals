@@ -11,9 +11,8 @@ This document maps the repository layout, data schemas, sequence workflow, and A
 ├── data/
 │   ├── scraper.db           # SQLite production database
 │   └── session_status.json  # Persisted login session data (email & timestamp)
-├── prompts/                 # Version-controlled Externalized AI Prompt templates
-│   ├── schema_prompt.md     # Ingestion JSON schema prompt reference
-│   └── expert_guidelines_prompt.md # Expert checklist/guidelines prompt reference
+├── prompts/                 # Version-controlled AI prompt templates
+│   └── profile_prompt.md    # Merged campaign profile prompt (item_json + expert_knowledge in one LLM call)
 ├── backend/                 # Node.js/Express SQLite API Server
 │   ├── package.json
 │   ├── db_setup.js          # SQLite table creation schema and triggers
@@ -36,6 +35,73 @@ This document maps the repository layout, data schemas, sequence workflow, and A
 └── scripts/                 # Maintenance scripts
     └── reset_listings.py    # Database utility to purge listings while preserving credentials
 ```
+
+---
+
+## Two-Agent Architecture
+
+The system uses two distinct LLM agents with different roles:
+
+```
+YOU (buyer description)
+        │
+        ▼
+┌────────────────────────┐
+│  EXTERNAL PLANNING     │
+│  AGENT (any capable    │
+│  LLM, e.g. ChatGPT)   │
+│                        │
+│  Prompt: profile_      │
+│  prompt.md             │
+│                        │
+│  Outputs:              │
+│  1. item_json (JSON)   │
+│     extraction_criteria│
+│     scoring_model      │
+│  2. expert_knowledge   │
+│     (German checklist) │
+└───────────┬────────────┘
+            │  paste into UI once per campaign
+            ▼
+┌────────────────────────┐
+│  KNOWLEDGE SET (DB)    │
+│  knowledge_sets table  │
+│  - item_json           │
+│  - expert_knowledge    │
+└───────────┬────────────┘
+            │
+            ▼
+┌────────────────────────┐
+│  LISTING (scraped ad)  │
+│  - title               │
+│  - description         │
+│  - details             │
+└───────────┬────────────┘
+            │
+            ▼
+┌────────────────────────┐
+│  INTERNAL WORKER       │
+│  (gpt-5-nano, cheap)   │
+│                        │
+│  Prompted with:        │
+│  - expert_knowledge    │
+│  - extraction_criteria │
+│  - listing text        │
+│                        │
+│  Outputs:              │
+│  - criteria (value,    │
+│    evidence, conf.)    │
+│  - highlights          │
+│  - draft_message (DE)  │
+│  - score (computed)    │
+└────────────────────────┘
+```
+
+**External planning agent** = campaign designer (runs once per knowledge set setup, any LLM).
+**Knowledge set** = reusable evaluation scheme stored in the DB.
+**Internal worker** = listing evaluator (runs automatically for every scraped listing).
+
+The single prompt template for the external agent lives at [`prompts/profile_prompt.md`](prompts/profile_prompt.md).
 
 ---
 

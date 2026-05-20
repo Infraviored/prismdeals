@@ -47,8 +47,15 @@ export interface Listing {
     id?: string
     name: string
     reasoning: string
-    status: 'satisfied' | 'neutral' | 'violated'
+    status: 'satisfied' | 'neutral' | 'violated' | 'Needs Re-Evaluation'
     value?: unknown
+  }[]
+  highlights?: {
+    label: string
+    type: 'maintenance' | 'warning' | 'feature'
+    sentiment: 'positive' | 'negative' | 'neutral'
+    evidence_quote: string
+    confidence: 'high' | 'med' | 'low'
   }[]
   special_info?: string[]
   draft_message?: string

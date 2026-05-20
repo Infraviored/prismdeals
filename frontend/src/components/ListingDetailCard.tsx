@@ -155,12 +155,30 @@ export default function ListingDetailCard({
             return null;
           })}
 
-          {/* AI Special Info highlights */}
-          {l.llm_processed && l.special_info && l.special_info.map((info, idx) => (
-            <span key={`spec-${idx}`} className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-md font-semibold flex items-center gap-0.5">
-              <span className="text-amber-500">⚡</span> {info}
+          {/* AI checklist Needs Re-Evaluation status */}
+          {l.llm_processed && l.criteria_evaluations?.some(e => e.status === 'Needs Re-Evaluation') && (
+            <span className="text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-md font-semibold flex items-center gap-0.5 animate-pulse">
+              <span>⚠️</span> Needs Re-Evaluation
             </span>
-          ))}
+          )}
+
+          {/* AI Structured Highlights (capped to max 4 preview badges) */}
+          {l.llm_processed && l.highlights && l.highlights.slice(0, 4).map((h, idx) => {
+            let colorClasses = 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
+            let emoji = '🔹';
+            if (h.sentiment === 'positive') {
+              colorClasses = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+              emoji = '✨';
+            } else if (h.sentiment === 'negative') {
+              colorClasses = 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+              emoji = '⚠️';
+            }
+            return (
+              <span key={`highlight-${idx}`} className={`text-[9px] border px-2 py-0.5 rounded-md font-semibold flex items-center gap-0.5 transition-all duration-300 hover:scale-105 ${colorClasses}`}>
+                <span>{emoji}</span> {h.label}
+              </span>
+            );
+          })}
         </div>
 
         {/* Description Preview (Always visible, expands preview length if any card is expanded to match grid height) */}
@@ -201,16 +219,49 @@ export default function ListingDetailCard({
           {/* AI Match Summary & Evaluations */}
           {l.llm_processed && (
             <div className="space-y-3">
-              {/* Special Info Warnings banner if present */}
-              {l.special_info && l.special_info.length > 0 && (
+              {/* High Priority Warnings banner if negative highlights are present */}
+              {l.llm_processed && l.highlights && l.highlights.some(h => h.sentiment === 'negative') && (
                 <div className="bg-rose-500/10 border border-rose-500/25 p-3.5 rounded-xl space-y-1.5 animate-fadeIn">
                   <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block font-mono">⚠️ High Priority Warnings</span>
                   <div className="flex flex-wrap gap-1.5">
-                    {l.special_info.map((info, idx) => (
-                      <span key={idx} className="text-[10px] bg-rose-505/20 text-rose-300 px-2 py-0.5 rounded-md font-semibold border border-rose-500/20">
-                        {info}
+                    {l.highlights.filter(h => h.sentiment === 'negative').map((h, idx) => (
+                      <span key={idx} title={`Quote: "${h.evidence_quote}"`} className="text-[10px] bg-rose-500/20 text-rose-350 px-2 py-0.5 rounded-md font-semibold border border-rose-500/20">
+                        {h.label}
                       </span>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* All Structured Highlights Observations */}
+              {l.llm_processed && l.highlights && l.highlights.length > 0 && (
+                <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-850 space-y-2">
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block font-mono">Special highlights & observations</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-sans">
+                    {l.highlights.map((h, idx) => {
+                      let colorClasses = 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
+                      let emoji = '🔹';
+                      if (h.sentiment === 'positive') {
+                        colorClasses = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                        emoji = '✨';
+                      } else if (h.sentiment === 'negative') {
+                        colorClasses = 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+                        emoji = '⚠️';
+                      }
+                      return (
+                        <div key={idx} className={`text-[10px] border px-3 py-2 rounded-xl flex flex-col gap-1 ${colorClasses}`}>
+                          <div className="flex justify-between items-center font-bold">
+                            <span>{emoji} {h.label}</span>
+                            <span className="text-[8px] uppercase opacity-75">{h.type} ({h.confidence})</span>
+                          </div>
+                          {h.evidence_quote && (
+                            <p className="text-[9px] opacity-80 italic leading-normal border-t border-current/10 pt-1 mt-0.5">
+                              "{h.evidence_quote}"
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

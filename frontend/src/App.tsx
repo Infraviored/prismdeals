@@ -4,10 +4,17 @@ import ScraperProgressCard from './components/ScraperProgressCard'
 import ListingDetailCard from './components/ListingDetailCard'
 import CriteriaTuner from './components/CriteriaTuner'
 
+interface RawHighlight {
+  label: string;
+  sentiment: string;
+  type: string;
+  evidence_quote: string;
+  confidence: string;
+}
+
 interface ExtractedFactsSchema {
   criteria?: Record<string, unknown>;
-  reasoning?: Record<string, unknown>;
-  special_info?: string[];
+  highlights?: RawHighlight[];
   draft_message?: string;
   [key: string]: unknown;
 }
@@ -205,55 +212,83 @@ export default function App() {
         let special_info: string[] = [];
         let draft_message = '';
         let summary = 'Awaiting AI matching checklist evaluation...';
+        let isLegacy = false;
 
         if (l.llm_processed && boundSet && boundSet.item_json) {
           try {
             const itemConfig = (typeof boundSet.item_json === 'string' ? JSON.parse(boundSet.item_json) : boundSet.item_json) as ParsedKnowledgeConfig;
             const extractionCriteria = itemConfig.extraction_criteria || [];
 
-            const rawFacts = l.extracted_facts as unknown as ExtractedFactsSchema;
-            const criteriaDict = rawFacts?.criteria || rawFacts || {};
-            const reasoningDict = rawFacts?.reasoning || {};
-            special_info = rawFacts?.special_info || [];
-            draft_message = rawFacts?.draft_message || '';
-
-            const weights = itemConfig.scoring_model?.weights || {};
-
-            criteria_evaluations = extractionCriteria.map((c: { id: string; question?: string; description?: string }) => {
-              const factVal = criteriaDict[c.id];
-              const wEntry = weights[c.id];
-              const satisfiedIf = wEntry?.satisfied_if;
-              let status: 'satisfied' | 'neutral' | 'violated' = 'neutral';
-
-              if (factVal !== undefined && factVal !== null && factVal !== 'unknown') {
-                if (satisfiedIf !== undefined) {
-                  status = factVal === satisfiedIf ? 'satisfied' : 'violated';
-                } else {
-                  // fallback for boolean without weights entry
-                  if (factVal === true) status = 'satisfied';
-                  else if (factVal === false) status = 'violated';
+            const rawFacts = l.extracted_facts as ExtractedFactsSchema;
+            
+            // Check if schema is legacy/older (lacks a nested 'criteria' object)
+            const hasCriteriaKey = rawFacts && typeof rawFacts === 'object' && 'criteria' in rawFacts;
+            isLegacy = !hasCriteriaKey;
+            if (hasCriteriaKey && rawFacts.criteria && typeof rawFacts.criteria === 'object') {
+              const keys = Object.keys(rawFacts.criteria);
+              if (keys.length > 0) {
+                const firstVal = rawFacts.criteria[keys[0]];
+                if (typeof firstVal !== 'object' || firstVal === null) {
+                  isLegacy = true;
                 }
               }
+            } else if (hasCriteriaKey) {
+              isLegacy = true;
+            }
 
-              const rawReasoning = reasoningDict[c.id];
-              const reasoning = typeof rawReasoning === 'string'
-                ? rawReasoning
-                : (rawReasoning ? String(rawReasoning) : '') || (factVal !== undefined && factVal !== null
-                  ? `Value: ${factVal}`
-                  : 'Not specified in listing description.');
+            if (isLegacy) {
+              criteria_evaluations = extractionCriteria.map((c: { id: string; question?: string; description?: string }) => {
+                return {
+                  id: c.id,
+                  name: c.question || c.description || c.id,
+                  reasoning: "Older schema incompatible. Needs re-evaluation.",
+                  status: 'Needs Re-Evaluation',
+                  value: 'Needs Re-Evaluation'
+                };
+              });
+              summary = "Needs Re-Evaluation (Incompatible older schema)";
+            } else {
+              const criteriaDict = rawFacts?.criteria || {};
+              draft_message = rawFacts?.draft_message || '';
+              const highlightsList = rawFacts?.highlights || [];
+              special_info = (highlightsList as RawHighlight[]).filter((h) => h.sentiment === 'negative').map((h) => h.label);
 
-              return {
-                id: c.id,
-                name: c.question || c.description || c.id,
-                reasoning: reasoning,
-                status: status,
-                value: factVal
-              };
-            });
+              const weights = itemConfig.scoring_model?.weights || {};
 
-            // Make a nice summary
-            const satisfiedCount = criteria_evaluations.filter(e => e.status === 'satisfied').length;
-            summary = `Evaluated ${criteria_evaluations.length} expert criteria, satisfied ${satisfiedCount}/${criteria_evaluations.length}. Niceness Score: ${l.niceness_score}.`;
+              criteria_evaluations = extractionCriteria.map((c: { id: string; question?: string; description?: string }) => {
+                const criterionVal = criteriaDict[c.id];
+                const factValObj = typeof criterionVal === 'object' && criterionVal !== null ? criterionVal : null;
+                const factVal = factValObj ? factValObj.value : 'unknown';
+                const reasoning = factValObj ? factValObj.reasoning : 'Not specified in listing description.';
+
+                const wEntry = weights[c.id];
+                const satisfiedIf = wEntry?.satisfied_if;
+                let status: 'satisfied' | 'neutral' | 'violated' | 'Needs Re-Evaluation' = 'neutral';
+
+                if (factVal !== 'unknown') {
+                  if (satisfiedIf !== undefined) {
+                    const isSatisfiedBool = (factVal === 'yes' && (satisfiedIf === 'yes' || satisfiedIf === true || satisfiedIf === 'true')) ||
+                                            (factVal === 'no' && (satisfiedIf === 'no' || satisfiedIf === false || satisfiedIf === 'false'));
+                    status = isSatisfiedBool ? 'satisfied' : 'violated';
+                  } else {
+                    if (factVal === 'yes') status = 'satisfied';
+                    else if (factVal === 'no') status = 'violated';
+                  }
+                }
+
+                return {
+                  id: c.id,
+                  name: c.question || c.description || c.id,
+                  reasoning: reasoning,
+                  status: status,
+                  value: factVal
+                };
+              });
+
+              // Make a nice summary
+              const satisfiedCount = criteria_evaluations.filter(e => e.status === 'satisfied').length;
+              summary = `Evaluated ${criteria_evaluations.length} expert criteria, satisfied ${satisfiedCount}/${criteria_evaluations.length}. Niceness Score: ${l.niceness_score}.`;
+            }
           } catch (e) {
             console.error("Error generating criteria evaluations:", e);
           }
@@ -270,6 +305,7 @@ export default function App() {
           description,
           criteria_evaluations,
           special_info,
+          highlights: isLegacy ? [] : ((l.extracted_facts as ExtractedFactsSchema)?.highlights || []),
           draft_message,
           summary
         };
