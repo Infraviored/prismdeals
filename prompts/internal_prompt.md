@@ -99,6 +99,8 @@ Do not add prose before or after the JSON.
 - Use only listing evidence.
 - Prefer exact quotes from title/details/description.
 - A listing should be closer_to "bad" when it matches the weak market anchor in style, omissions, and risk profile even if one or two positive facts are present.
+- For a detailed, coherent, market-native motorcycle listing with ownership story, concrete maintenance/wear detail, legality/context for modifications, keys/original parts, and realistic inspection language, prefer trustworthiness, transparency, and conditionConfidence scores of 4 unless explicit contrary evidence exists.
+- Do not emit risk_flags for matters already represented by explicit negative criteria or by high-value unknowns.
 </rules>
 
 <dimension_guidance>
