@@ -377,51 +377,130 @@ export default function GuidelinesWizard({
               {parsedItemJson && (() => {
                 try {
                   const parsedObj = JSON.parse(parsedItemJson)
-                  const criteriaList = parsedObj.extraction_criteria || []
+
+                  // Support both old flat schema and new split schema
+                  const positiveCriteria: { id: string; description?: string; question?: string; market_frequency?: string; importance_hint?: string }[] =
+                    parsedObj.explicit_positive_criteria || parsedObj.extraction_criteria || []
+                  const negativeCriteria: { id: string; description?: string; question?: string; market_frequency?: string; importance_hint?: string }[] =
+                    parsedObj.explicit_negative_criteria || []
+                  const highValueUnknowns: { id: string; description?: string; applies_when?: string }[] =
+                    parsedObj.high_value_unknown_fields || []
+
+                  const isNewSchema = !!(parsedObj.explicit_positive_criteria || parsedObj.explicit_negative_criteria)
+
+                  // Old schema fallback: read importance from scoring_model.weights
                   const weightsDict = parsedObj.scoring_model?.weights || {}
-                  const hasNonBoolean = criteriaList.some((c: { type?: string }) => c.type !== 'boolean')
+
+                  const importanceLabel = (c: { id: string; importance_hint?: string }) => {
+                    if (isNewSchema) return c.importance_hint || 'medium'
+                    const w = weightsDict[c.id]
+                    if (!w) return 'medium'
+                    const imp = w.importance ?? 10
+                    if (imp >= 20) return 'high'
+                    if (imp >= 10) return 'medium'
+                    return 'low'
+                  }
+
+                  const importanceBadge = (hint: string) => {
+                    if (hint === 'high') return 'text-emerald-400'
+                    if (hint === 'low') return 'text-slate-600'
+                    return 'text-slate-400'
+                  }
+
+                  const totalCriteria = positiveCriteria.length + negativeCriteria.length
 
                   return (
                     <div className="space-y-4">
-                      {hasNonBoolean && (
-                        <div className="bg-rose-500/15 border border-rose-555/30 text-rose-400 p-4 rounded-2xl text-xs font-bold space-y-1.5">
-                          <span>⚠️ Legacy Mixed Schema Detected!</span>
-                          <p className="text-[10px] text-slate-450 font-semibold normal-case">The synth returned a non-boolean criterion field type. The matching pipeline requires all extraction criteria to be boolean only. Please adjust the planner output to match the boolean-only contract.</p>
+                      {/* Positive criteria */}
+                      {positiveCriteria.length > 0 && (
+                        <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider">Explicit Positive Criteria ({positiveCriteria.length})</span>
+                            <span className="text-[9px] font-bold text-slate-500 font-mono">35% Dimensions</span>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-[11px] border-collapse">
+                              <thead>
+                                <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[8px]">
+                                  <th className="py-2 pr-4">ID</th>
+                                  <th className="py-2 pr-4">Signal</th>
+                                  <th className="py-2 pr-4">Importance</th>
+                                  <th className="py-2">Frequency</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {positiveCriteria.map((c, idx) => {
+                                  const hint = importanceLabel(c)
+                                  return (
+                                    <tr key={idx} className="border-b border-slate-900/50 hover:bg-slate-900/10 text-slate-350">
+                                      <td className="py-2 pr-4 font-bold font-mono text-[9px] text-emerald-500/70">{c.id}</td>
+                                      <td className="py-2 pr-4 leading-normal">{c.description || c.question}</td>
+                                      <td className={`py-2 pr-4 font-bold text-[9px] uppercase ${importanceBadge(hint)}`}>{hint}</td>
+                                      <td className="py-2 font-semibold text-[9px] uppercase text-slate-500">{c.market_frequency || 'mixed'}</td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       )}
 
-                      <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[9px] bg-slate-800 text-slate-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider">Scoring Checklist Criteria ({criteriaList.length})</span>
-                          <span className="text-[9px] font-bold text-slate-500 font-mono">65% Checklist | 35% Soft Dimensions</span>
+                      {/* Negative criteria */}
+                      {negativeCriteria.length > 0 && (
+                        <div className="bg-slate-950/80 border border-rose-500/10 rounded-2xl p-4 space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[9px] bg-rose-500/10 text-rose-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider">Explicit Negative / Risk Criteria ({negativeCriteria.length})</span>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-[11px] border-collapse">
+                              <thead>
+                                <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[8px]">
+                                  <th className="py-2 pr-4">ID</th>
+                                  <th className="py-2 pr-4">Signal</th>
+                                  <th className="py-2 pr-4">Importance</th>
+                                  <th className="py-2">Frequency</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {negativeCriteria.map((c, idx) => {
+                                  const hint = importanceLabel(c)
+                                  return (
+                                    <tr key={idx} className="border-b border-slate-900/50 hover:bg-slate-900/10 text-slate-350">
+                                      <td className="py-2 pr-4 font-bold font-mono text-[9px] text-rose-500/70">{c.id}</td>
+                                      <td className="py-2 pr-4 leading-normal">{c.description || c.question}</td>
+                                      <td className={`py-2 pr-4 font-bold text-[9px] uppercase ${importanceBadge(hint)}`}>{hint}</td>
+                                      <td className="py-2 font-semibold text-[9px] uppercase text-slate-500">{c.market_frequency || 'mixed'}</td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
+                      )}
 
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-[11px] border-collapse">
-                            <thead>
-                              <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[8px]">
-                                <th className="py-2 pr-4">Criterion ID</th>
-                                <th className="py-2 pr-4">Target Condition</th>
-                                <th className="py-2 pr-4">Weight Impact</th>
-                                <th className="py-2">Frequency</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {criteriaList.map((c: { id: string; description?: string; question?: string; market_frequency?: string }, idx: number) => {
-                                const weightCfg = weightsDict[c.id] || {}
-                                return (
-                                  <tr key={idx} className="border-b border-slate-900/50 hover:bg-slate-900/10 text-slate-350">
-                                    <td className="py-2 pr-4 font-bold font-mono text-[9px]">{c.id}</td>
-                                    <td className="py-2 pr-4 leading-normal">{c.description || c.question}</td>
-                                    <td className="py-2 pr-4 font-mono font-bold text-emerald-450">+{weightCfg.importance || 10} pts</td>
-                                    <td className="py-2 font-semibold text-[9px] uppercase text-slate-500">{c.market_frequency || 'mixed'}</td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
+                      {/* High-value unknowns */}
+                      {highValueUnknowns.length > 0 && (
+                        <div className="bg-slate-950/80 border border-amber-500/15 rounded-2xl p-4 space-y-3">
+                          <span className="text-[9px] bg-amber-500/10 text-amber-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">High-Value Unknowns ({highValueUnknowns.length})</span>
+                          <div className="space-y-2">
+                            {highValueUnknowns.map((u, idx) => (
+                              <div key={idx} className="text-[11px] text-slate-400 leading-relaxed border-b border-slate-900/50 pb-2">
+                                <span className="font-bold font-mono text-[9px] text-amber-500/70 mr-2">{u.id}</span>
+                                <span>{u.description}</span>
+                                {u.applies_when && <span className="block text-[10px] text-slate-600 mt-0.5 italic">{u.applies_when}</span>}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                      )}
+
+                      {totalCriteria === 0 && highValueUnknowns.length === 0 && (
+                        <div className="text-center py-4 text-slate-600 text-xs font-semibold">
+                          No criteria parsed — check that the &lt;item_json&gt; block contains explicit_positive_criteria or extraction_criteria.
+                        </div>
+                      )}
                     </div>
                   )
                 } catch {

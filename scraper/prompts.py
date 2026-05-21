@@ -21,12 +21,14 @@ def build_evaluation_prompt(
     with open(_INTERNAL_PROMPT_PATH, encoding="utf-8") as f:
         template = f.read()
 
-    # Build the JSON skeleton dynamically from criteria
+    # Build the JSON skeleton dynamically from criteria (supports old and new split schema)
     criteria_list = []
     try:
         if item_json_str:
             item_config = json.loads(item_json_str)
-            criteria_list = item_config.get("extraction_criteria", [])
+            criteria_list = item_config.get("extraction_criteria") or item_config.get(
+                "explicit_positive_criteria", []
+            ) + item_config.get("explicit_negative_criteria", [])
     except Exception:
         pass
 
@@ -51,8 +53,8 @@ def build_evaluation_prompt(
             "marketAboveAverageSignal": {"score": 1, "reasoning": ""},
         },
         "reference_comparison": {"closer_to": "mixed", "reasoning": ""},
-        "highlights": [],
-        "draft_message": "",
+        "high_value_unknowns": [],
+        "risk_flags": [],
         "_full_info_obtained": False,
     }
     skeleton_str = json.dumps(skeleton, indent=2)

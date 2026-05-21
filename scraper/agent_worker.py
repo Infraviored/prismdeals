@@ -333,7 +333,8 @@ def log_outreach_draft(listing_id, prompt, response):
 
 
 def is_satisfied(value, satisfied_if):
-    """Checks if the extracted criterion value matches the satisfied_if campaign target with robust normalization"""
+    """Checks if the extracted criterion value matches the satisfied_if target.
+    unknown always returns False regardless of satisfied_if — silence is not safe."""
     if value is None or satisfied_if is None:
         return False
 
@@ -354,18 +355,13 @@ def is_satisfied(value, satisfied_if):
         return s
 
     norm_val = normalize(value)
+
+    # unknown never satisfies any criterion — not even risk guardrails
+    if norm_val == "unknown" or norm_val is None:
+        return False
+
     norm_target = normalize(satisfied_if)
-
-    # Risk guardrails (satisfied_if = False) are satisfied if risk is absent (False or unknown)
-    if norm_target is False:
-        return norm_val in (False, "unknown")
-
-    # Positive criteria (satisfied_if = True) are satisfied only if explicitly present (True)
-    if norm_target is True:
-        return norm_val is True
-
-    # General fallback for any other targets
-    if norm_val == "unknown" or norm_target == "unknown":
+    if norm_target == "unknown" or norm_target is None:
         return False
 
     if isinstance(norm_val, bool) and isinstance(norm_target, bool):
@@ -383,11 +379,19 @@ def is_satisfied(value, satisfied_if):
 
 
 def calculate_blended_score(criteria, weights, dimensions):
-    """Calculates the blended score: 65% criteria and 35% dimensions."""
+    """Calculates the blended score: 65% criteria, 35% dimensions, with a coverage factor.
+
+    Coverage factor: the fraction of all criteria that returned an explicit yes/no (not unknown).
+    A listing with mostly unknowns is penalised — it cannot score highly on vague silence.
+    Coverage below 40% caps the effective score at 50. Coverage scales linearly 40%→100%.
+    """
     # 1. Criteria score
     total_possible_weight = 0
     satisfied_weight = 0
     contributions = {}
+
+    resolved_count = 0
+    total_count = max(len(weights), 1)
 
     for cid, cfg in weights.items():
         importance = cfg.get("importance", 0)
@@ -406,6 +410,9 @@ def calculate_blended_score(criteria, weights, dimensions):
             continue
 
         fact_val = c_val.get("value", "unknown")
+        if fact_val in ("yes", "no"):
+            resolved_count += 1
+
         satisfied = is_satisfied(fact_val, satisfied_if)
 
         if satisfied:
@@ -431,6 +438,13 @@ def calculate_blended_score(criteria, weights, dimensions):
     else:
         criteria_score = 0.0
 
+    # Coverage factor: penalise sparse/vague listings
+    coverage_ratio = resolved_count / total_count
+    if coverage_ratio < 0.40:
+        coverage_factor = 0.0
+    else:
+        coverage_factor = min(1.0, (coverage_ratio - 0.40) / 0.60)
+
     # 2. Dimensions score
     expected_dims = [
         "trustworthiness",
@@ -444,7 +458,7 @@ def calculate_blended_score(criteria, weights, dimensions):
     dim_scores = []
     for dim_key in expected_dims:
         dim_data = dimensions.get(dim_key)
-        raw_score = 3  # default
+        raw_score = 3
         if isinstance(dim_data, dict):
             raw_score = dim_data.get("score", 3)
         elif isinstance(dim_data, (int, float)):
@@ -470,7 +484,10 @@ def calculate_blended_score(criteria, weights, dimensions):
     else:
         dimensions_score = 50.0
 
-    final_score = (criteria_score * 0.65) + (dimensions_score * 0.35)
+    raw_blended = (criteria_score * 0.65) + (dimensions_score * 0.35)
+
+    # Apply coverage: blend between 50 (floor for unknown-heavy listings) and raw_blended
+    final_score = 50.0 * (1 - coverage_factor) + raw_blended * coverage_factor
     final_score = max(0, min(100, round(final_score)))
 
     return final_score, criteria_score, dimensions_score, contributions
@@ -535,7 +552,10 @@ def process_unprocessed_listings(target_listing_id=None):
 
         try:
             item_config = json.loads(listing["item_json"] or "{}")
-            criteria_list = item_config.get("extraction_criteria", [])
+            # Support both old flat extraction_criteria and new split schema
+            criteria_list = item_config.get("extraction_criteria") or item_config.get(
+                "explicit_positive_criteria", []
+            ) + item_config.get("explicit_negative_criteria", [])
             scoring_model = item_config.get("scoring_model", {})
         except Exception as e:
             logger.error(f"Error parsing item_json for listing {listing_id}: {str(e)}")
@@ -716,6 +736,14 @@ def process_unprocessed_listings(target_listing_id=None):
             if not isinstance(highlights_part, list):
                 highlights_part = []
 
+            high_value_unknowns = extracted_data.get("high_value_unknowns", [])
+            if not isinstance(high_value_unknowns, list):
+                high_value_unknowns = []
+
+            risk_flags = extracted_data.get("risk_flags", [])
+            if not isinstance(risk_flags, list):
+                risk_flags = []
+
             draft_message = extracted_data.get("draft_message", "")
             full_info_obtained = extracted_data.get("_full_info_obtained", False)
 
@@ -837,6 +865,8 @@ def process_unprocessed_listings(target_listing_id=None):
                 "dimensions": normalized_dimensions,
                 "reference_comparison": normalized_ref_comp,
                 "highlights": highlights_part,
+                "high_value_unknowns": high_value_unknowns,
+                "risk_flags": risk_flags,
                 "draft_message": draft_message,
                 "_full_info_obtained": bool(full_info),
                 "_audit": {"_raw_model_response": response_text},
