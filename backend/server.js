@@ -20,6 +20,9 @@ const sqlite3 = require('sqlite3').verbose();
 // Database setup
 const dbPath = path.join(__dirname, '..', 'data', 'scraper.db');
 const db = new sqlite3.Database(dbPath);
+// WAL mode allows multiple concurrent readers/writers (parallel agent evals)
+db.run('PRAGMA journal_mode=WAL;');
+db.run('PRAGMA busy_timeout=5000;');
 
 const query = (sql, params = []) => {
   return new Promise((resolve, reject) => {
@@ -682,13 +685,19 @@ app.post('/api/scrape', (req, res) => {
   }
 });
 
+// API: Which listings currently have an AI eval running
+app.get('/api/process/active', (req, res) => {
+  res.json({ active: Array.from(activeWorkerProcesses.keys()) });
+});
+
 // API: Trigger AI matching & scoring interpretation
 app.post('/api/process', (req, res) => {
   try {
     const { listing_id } = req.body || {};
     const key = listing_id ? String(listing_id) : '__all__';
 
-    if (activeWorkerProcesses.has(key)) {
+    // Only guard per-listing duplicates; __all__ (bulk) is always allowed
+    if (listing_id && activeWorkerProcesses.has(key)) {
       return res.status(409).json({ error: 'Evaluation already running for this listing' });
     }
 

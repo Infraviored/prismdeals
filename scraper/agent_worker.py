@@ -53,7 +53,11 @@ DB_PATH = os.path.join(
 
 
 def get_db_connection():
-    return sqlite3.connect(DB_PATH)
+    # SQLite connection with high busy_timeout to support parallel worker writes
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
+    return conn
 
 
 def extract_json_block(text):

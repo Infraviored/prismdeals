@@ -46,7 +46,7 @@ export default function App() {
   // Filtering states for Deal Matcher
   const [selectedSearchId, setSelectedSearchId] = useState<string>('All')
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'New' | 'Evaluate with AI'>('All')
-  const [activeProcessingListingId, setActiveProcessingListingId] = useState<string | null>(null)
+  const [activeProcessingListingIds, setActiveProcessingListingIds] = useState<string[]>([])
 
   // Inline forms
   const [newCampaignName, setNewCampaignName] = useState('')
@@ -174,6 +174,33 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isScraping]);
+
+  // Polling loop for active AI evaluations
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const checkActiveProcesses = async () => {
+      try {
+        const res = await fetch('/api/process/active');
+        if (res.ok) {
+          const data = await res.json();
+          // If the list of active IDs changed, we might want to refresh listings
+          // to get the new scores for those that just finished.
+          setActiveProcessingListingIds(prev => {
+            const finished = prev.filter(id => !data.active.includes(id));
+            if (finished.length > 0) {
+              refreshAll();
+            }
+            return data.active;
+          });
+        }
+      } catch {
+        // Ignore
+      }
+    };
+    checkActiveProcesses();
+    intervalId = setInterval(checkActiveProcesses, 2000);
+    return () => clearInterval(intervalId);
+  }, []);
 
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStatus, setProcessingStatus] = useState('')
@@ -565,22 +592,21 @@ export default function App() {
 
   // Trigger AI agent processing on a single specific listing
   const handleProcessSingleListing = async (listingId: string) => {
-    setActiveProcessingListingId(listingId)
+    // Optimistically add to active list
+    setActiveProcessingListingIds(prev => Array.from(new Set([...prev, listingId])))
     try {
       const res = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ listing_id: listingId })
       })
-      if (res.ok) {
-        refreshAll()
-      } else {
+      if (!res.ok && res.status !== 409) {
         alert("Failed to run AI agent for this listing.")
+        setActiveProcessingListingIds(prev => prev.filter(id => id !== listingId))
       }
     } catch {
       alert("Error contacting backend AI worker.")
-    } finally {
-      setActiveProcessingListingId(null)
+      setActiveProcessingListingIds(prev => prev.filter(id => id !== listingId))
     }
   }
 
@@ -1047,7 +1073,7 @@ export default function App() {
                   <ListingDetailCard
                     key={l.id}
                     l={l}
-                    activeProcessingListingId={activeProcessingListingId}
+                    activeProcessingListingIds={activeProcessingListingIds}
                     handleProcessSingleListing={handleProcessSingleListing}
                     selectedListingId={selectedListingId}
                     setSelectedListingId={setSelectedListingId}

@@ -3,7 +3,7 @@ import type { Listing } from '../types';
 
 interface ListingDetailCardProps {
   l: Listing;
-  activeProcessingListingId: string | null;
+  activeProcessingListingIds: string[];
   handleProcessSingleListing: (id: string) => void;
   selectedListingId: string | null;
   setSelectedListingId: (id: string | null) => void;
@@ -11,7 +11,7 @@ interface ListingDetailCardProps {
 
 export default function ListingDetailCard({
   l,
-  activeProcessingListingId,
+  activeProcessingListingIds,
   handleProcessSingleListing,
   selectedListingId,
   setSelectedListingId
@@ -88,17 +88,17 @@ export default function ListingDetailCard({
                 e.stopPropagation();
                 handleProcessSingleListing(l.id);
               }}
-              disabled={activeProcessingListingId === l.id}
+              disabled={activeProcessingListingIds.includes(l.id)}
               title={l.llm_processed ? 'Re-evaluate with AI' : 'Evaluate with AI'}
               className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center space-x-1 transition-all shadow-sm ${
-                activeProcessingListingId === l.id
+                activeProcessingListingIds.includes(l.id)
                   ? 'bg-indigo-500/25 text-indigo-300 border-indigo-400/50 animate-pulse'
                   : l.llm_processed
                   ? 'bg-slate-800/60 text-slate-400 border-slate-700 hover:bg-indigo-500/10 hover:text-indigo-400 hover:border-indigo-500/30'
                   : 'bg-amber-500/10 text-amber-400 border-amber-500/25 hover:bg-amber-500/20 hover:border-amber-400'
               }`}
             >
-              {activeProcessingListingId === l.id ? (
+              {activeProcessingListingIds.includes(l.id) ? (
                 <div className="animate-spin w-3 h-3 border border-current border-t-transparent rounded-full" />
               ) : (
                 <span>{l.llm_processed ? '↺' : '🤖'} AI-Eval</span>
@@ -363,7 +363,7 @@ export default function ListingDetailCard({
               {l.draft_message && (
                 <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-850 space-y-2">
                   <div className="flex justify-between items-center border-b border-slate-900 pb-1.5">
-                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider font-mono">📨 Outreach Assistant (Soft Invite)</span>
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider font-mono">📨 Outreach Assistant</span>
                     <button
                       onClick={() => handleCopyOutreach(l.draft_message || '')}
                       className={`text-[10px] font-bold px-2.5 py-0.5 rounded-lg border transition-all ${
