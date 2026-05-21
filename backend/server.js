@@ -271,7 +271,8 @@ app.get('/api/knowledge-sets', async (req, res) => {
     const rows = await query('SELECT * FROM knowledge_sets ORDER BY name ASC');
     res.json(rows.map(r => ({
       ...r,
-      item_json: JSON.parse(r.item_json || '{}')
+      item_json: JSON.parse(r.item_json || '{}'),
+      market_samples_json: JSON.parse(r.market_samples_json || '[]')
     })));
   } catch (error) {
     console.error('Error fetching knowledge sets:', error);
@@ -282,7 +283,11 @@ app.get('/api/knowledge-sets', async (req, res) => {
 // API: Create / update a knowledge set
 app.post('/api/knowledge-sets', async (req, res) => {
   try {
-    const { id, name, expert_knowledge, item_json } = req.body;
+    const { 
+      id, name, expert_knowledge, item_json, market_memo, 
+      good_reference_description, bad_reference_description, 
+      market_samples_json, source_search_url, sample_timestamp 
+    } = req.body;
     if (!name) {
       return res.status(400).json({ error: 'Missing knowledge set name' });
     }
@@ -312,13 +317,32 @@ app.post('/api/knowledge-sets', async (req, res) => {
     let ksId = id;
     const jsonStr = JSON.stringify(item_json || {});
     const expertStr = expert_knowledge || '';
+    const memoStr = market_memo || '';
+    const goodRefStr = good_reference_description || '';
+    const badRefStr = bad_reference_description || '';
+    const samplesStr = JSON.stringify(market_samples_json || []);
+    const sourceUrlStr = source_search_url || '';
+    const timestampStr = sample_timestamp || '';
+
     if (ksId) {
-      await run('UPDATE knowledge_sets SET name = ?, expert_knowledge = ?, item_json = ? WHERE id = ?', [
-        name, expertStr, jsonStr, ksId
+      await run(`
+        UPDATE knowledge_sets 
+        SET name = ?, expert_knowledge = ?, item_json = ?, market_memo = ?, 
+            good_reference_description = ?, bad_reference_description = ?, 
+            market_samples_json = ?, source_search_url = ?, sample_timestamp = ? 
+        WHERE id = ?
+      `, [
+        name, expertStr, jsonStr, memoStr, goodRefStr, badRefStr, samplesStr, sourceUrlStr, timestampStr, ksId
       ]);
     } else {
-      const result = await run('INSERT INTO knowledge_sets (name, expert_knowledge, item_json) VALUES (?, ?, ?)', [
-        name, expertStr, jsonStr
+      const result = await run(`
+        INSERT INTO knowledge_sets (
+          name, expert_knowledge, item_json, market_memo, 
+          good_reference_description, bad_reference_description, 
+          market_samples_json, source_search_url, sample_timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        name, expertStr, jsonStr, memoStr, goodRefStr, badRefStr, samplesStr, sourceUrlStr, timestampStr
       ]);
       ksId = result.id;
     }
@@ -326,6 +350,62 @@ app.post('/api/knowledge-sets', async (req, res) => {
   } catch (error) {
     console.error('Error saving knowledge set:', error);
     res.status(500).json({ error: 'Failed to save knowledge set' });
+  }
+});
+
+// API: Get 3-8 sample listings for a target search
+app.get('/api/searches/:search_id/sample-listings', async (req, res) => {
+  try {
+    const searchId = req.params.search_id;
+    // Get listings with title, details, detailed_description that belong to this search
+    const rows = await query(`
+      SELECT id, title, detailed_description, details 
+      FROM listings 
+      WHERE search_id = ? AND detailed_description IS NOT NULL AND detailed_description != '' 
+      LIMIT 8
+    `, [searchId]);
+    
+    // Format them
+    const samples = rows.map(r => {
+      let detailsText = '';
+      try {
+        const detailsObj = JSON.parse(r.details || '{}');
+        detailsText = Object.entries(detailsObj).map(([k, v]) => `${k}: ${v}`).join(', ');
+      } catch (e) {}
+      return {
+        id: r.id,
+        title: r.title,
+        description: r.detailed_description,
+        details: detailsText
+      };
+    });
+    
+    res.json(samples);
+  } catch (error) {
+    console.error('Error fetching sample listings:', error);
+    res.status(500).json({ error: 'Failed to fetch sample listings' });
+  }
+});
+
+// API: Serve external Prompt A (Market Interpreter) template
+app.get('/api/prompts/market', (req, res) => {
+  try {
+    const promptPath = path.join(__dirname, '..', 'prompts', 'external_prompt_market.md');
+    const content = fs.readFileSync(promptPath, 'utf8');
+    res.type('text/plain').send(content);
+  } catch (e) {
+    res.status(500).json({ error: 'external_prompt_market.md not found' });
+  }
+});
+
+// API: Serve external Prompt B (Profile Synthesizer) template
+app.get('/api/prompts/profile', (req, res) => {
+  try {
+    const promptPath = path.join(__dirname, '..', 'prompts', 'external_prompt_profile.md');
+    const content = fs.readFileSync(promptPath, 'utf8');
+    res.type('text/plain').send(content);
+  } catch (e) {
+    res.status(500).json({ error: 'external_prompt_profile.md not found' });
   }
 });
 

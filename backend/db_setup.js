@@ -32,7 +32,13 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
       expert_knowledge TEXT,
-      item_json TEXT
+      item_json TEXT,
+      market_memo TEXT,
+      good_reference_description TEXT,
+      bad_reference_description TEXT,
+      market_samples_json TEXT,
+      source_search_url TEXT,
+      sample_timestamp TEXT
     )
   `);
 

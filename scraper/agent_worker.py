@@ -382,6 +382,100 @@ def is_satisfied(value, satisfied_if):
     return str(norm_val) == str(norm_target)
 
 
+def calculate_blended_score(criteria, weights, dimensions):
+    """Calculates the blended score: 65% criteria and 35% dimensions."""
+    # 1. Criteria score
+    total_possible_weight = 0
+    satisfied_weight = 0
+    contributions = {}
+
+    for cid, cfg in weights.items():
+        importance = cfg.get("importance", 0)
+        satisfied_if = cfg.get("satisfied_if")
+        total_possible_weight += importance
+
+        c_val = criteria.get(cid)
+        if not isinstance(c_val, dict):
+            contributions[cid] = {
+                "value": "unknown",
+                "satisfied_if": satisfied_if,
+                "importance": importance,
+                "satisfied": False,
+                "contribution": 0,
+            }
+            continue
+
+        fact_val = c_val.get("value", "unknown")
+        satisfied = is_satisfied(fact_val, satisfied_if)
+
+        if satisfied:
+            satisfied_weight += importance
+            contributions[cid] = {
+                "value": fact_val,
+                "satisfied_if": satisfied_if,
+                "importance": importance,
+                "satisfied": True,
+                "contribution": importance,
+            }
+        else:
+            contributions[cid] = {
+                "value": fact_val,
+                "satisfied_if": satisfied_if,
+                "importance": importance,
+                "satisfied": False,
+                "contribution": 0,
+            }
+
+    if total_possible_weight > 0:
+        criteria_score = (satisfied_weight / total_possible_weight) * 100
+    else:
+        criteria_score = 0.0
+
+    # 2. Dimensions score
+    expected_dims = [
+        "trustworthiness",
+        "transparency",
+        "conditionConfidence",
+        "documentationQuality",
+        "hiddenRiskSuspicion",
+        "marketAboveAverageSignal",
+    ]
+
+    dim_scores = []
+    for dim_key in expected_dims:
+        dim_data = dimensions.get(dim_key)
+        raw_score = 3  # default
+        if isinstance(dim_data, dict):
+            raw_score = dim_data.get("score", 3)
+        elif isinstance(dim_data, (int, float)):
+            raw_score = dim_data
+
+        try:
+            raw_score = int(float(raw_score))
+        except (ValueError, TypeError):
+            raw_score = 3
+
+        raw_score = max(1, min(5, raw_score))
+
+        if dim_key == "hiddenRiskSuspicion":
+            score_for_calc = 6 - raw_score
+        else:
+            score_for_calc = raw_score
+
+        norm_dim_score = ((score_for_calc - 1) / 4) * 100
+        dim_scores.append(norm_dim_score)
+
+    if dim_scores:
+        dimensions_score = sum(dim_scores) / len(dim_scores)
+    else:
+        dimensions_score = 50.0
+
+    final_score = (criteria_score * 0.65) + (dimensions_score * 0.35)
+    final_score = max(0, min(100, round(final_score)))
+
+    return final_score, criteria_score, dimensions_score, contributions
+
+
 def process_unprocessed_listings(target_listing_id=None):
     """Finds all unprocessed listings (or a specific single listing), extracts attributes using OpenAI, and scores them"""
     conn = get_db_connection()
@@ -392,7 +486,8 @@ def process_unprocessed_listings(target_listing_id=None):
     if target_listing_id:
         cursor.execute(
             """
-            SELECT l.id, l.title, l.detailed_description, l.details, l.search_id, k.item_json, k.expert_knowledge 
+            SELECT l.id, l.title, l.detailed_description, l.details, l.search_id, k.item_json, k.expert_knowledge,
+                   k.good_reference_description, k.bad_reference_description
             FROM listings l
             JOIN searches s ON l.search_id = s.id
             JOIN campaigns c ON s.campaign_id = c.id
@@ -404,7 +499,8 @@ def process_unprocessed_listings(target_listing_id=None):
     else:
         cursor.execute(
             """
-            SELECT l.id, l.title, l.detailed_description, l.details, l.search_id, k.item_json, k.expert_knowledge 
+            SELECT l.id, l.title, l.detailed_description, l.details, l.search_id, k.item_json, k.expert_knowledge,
+                   k.good_reference_description, k.bad_reference_description
             FROM listings l
             JOIN searches s ON l.search_id = s.id
             JOIN campaigns c ON s.campaign_id = c.id
@@ -500,7 +596,13 @@ def process_unprocessed_listings(target_listing_id=None):
 
         item_json_str = listing["item_json"] or "{}"
         prompt = build_evaluation_prompt(
-            title, details_text, description, item_json_str, listing["expert_knowledge"]
+            title,
+            details_text,
+            description,
+            item_json_str,
+            listing["expert_knowledge"],
+            good_reference_description=listing["good_reference_description"],
+            bad_reference_description=listing["bad_reference_description"],
         )
 
         try:
@@ -656,60 +758,67 @@ def process_unprocessed_listings(target_listing_id=None):
                     "reasoning": reasoning,
                 }
 
-            # Score from normalized importance weights (boolean-only)
+            # Parse dimensions
+            dimensions_part = extracted_data.get("dimensions", {})
+            if not isinstance(dimensions_part, dict):
+                dimensions_part = {}
+
+            expected_dims = [
+                "trustworthiness",
+                "transparency",
+                "conditionConfidence",
+                "documentationQuality",
+                "hiddenRiskSuspicion",
+                "marketAboveAverageSignal",
+            ]
+            normalized_dimensions = {}
+            for dim_key in expected_dims:
+                dim_data = dimensions_part.get(dim_key)
+                raw_score = 3
+                reasoning = ""
+                if isinstance(dim_data, dict):
+                    raw_score = dim_data.get("score", 3)
+                    reasoning = dim_data.get("reasoning", "")
+                elif isinstance(dim_data, (int, float)):
+                    raw_score = dim_data
+
+                try:
+                    raw_score = int(float(raw_score))
+                except (ValueError, TypeError):
+                    raw_score = 3
+                raw_score = max(1, min(5, raw_score))
+
+                normalized_dimensions[dim_key] = {
+                    "score": raw_score,
+                    "reasoning": str(reasoning),
+                }
+
+            # Parse reference comparison
+            ref_comp_part = extracted_data.get("reference_comparison", {})
+            if not isinstance(ref_comp_part, dict):
+                ref_comp_part = {}
+
+            closer_to = ref_comp_part.get("closer_to", "mixed")
+            if closer_to not in ["good", "bad", "mixed"]:
+                closer_to = "mixed"
+            ref_reasoning = ref_comp_part.get("reasoning", "")
+
+            normalized_ref_comp = {
+                "closer_to": closer_to,
+                "reasoning": str(ref_reasoning),
+            }
+
+            # Score using blended scoring: 65% criteria, 35% dimensions
             weights = scoring_model.get("weights", {})
-            total_possible_weight = 0
-            satisfied_weight = 0
+            (
+                score,
+                criteria_score,
+                dimensions_score,
+                contributions,
+            ) = calculate_blended_score(
+                normalized_criteria, weights, normalized_dimensions
+            )
 
-            # Keep track of per-criterion contribution for logging
-            contributions = {}
-
-            for cid, cfg in weights.items():
-                importance = cfg.get("importance", 0)
-                satisfied_if = cfg.get("satisfied_if")
-
-                total_possible_weight += importance
-
-                c_val = normalized_criteria.get(cid)
-                if not isinstance(c_val, dict):
-                    contributions[cid] = {
-                        "value": "unknown",
-                        "satisfied_if": satisfied_if,
-                        "importance": importance,
-                        "satisfied": False,
-                        "contribution": 0,
-                    }
-                    continue
-
-                fact_val = c_val.get("value", "unknown")
-
-                # Check if matches satisfied_if
-                satisfied = is_satisfied(fact_val, satisfied_if)
-
-                if satisfied:
-                    satisfied_weight += importance
-                    contributions[cid] = {
-                        "value": fact_val,
-                        "satisfied_if": satisfied_if,
-                        "importance": importance,
-                        "satisfied": True,
-                        "contribution": importance,
-                    }
-                else:
-                    contributions[cid] = {
-                        "value": fact_val,
-                        "satisfied_if": satisfied_if,
-                        "importance": importance,
-                        "satisfied": False,
-                        "contribution": 0,
-                    }
-
-            if total_possible_weight > 0:
-                score = (satisfied_weight / total_possible_weight) * 100
-            else:
-                score = 0
-
-            score = max(0, min(100, round(score)))
             status = "New"
             full_info = (
                 1
@@ -725,6 +834,8 @@ def process_unprocessed_listings(target_listing_id=None):
             # Reconstruct full nested facts envelope for the DB
             facts_envelope = {
                 "criteria": normalized_criteria,
+                "dimensions": normalized_dimensions,
+                "reference_comparison": normalized_ref_comp,
                 "highlights": highlights_part,
                 "draft_message": draft_message,
                 "_full_info_obtained": bool(full_info),
@@ -890,8 +1001,12 @@ def analyze_conversation(listing_id):
         facts_envelope = json.loads(row["extracted_facts"] or "{}")
         if isinstance(facts_envelope, dict) and "criteria" in facts_envelope:
             facts = facts_envelope["criteria"]
+            dimensions = facts_envelope.get("dimensions", {})
+            reference_comparison = facts_envelope.get("reference_comparison", {})
         else:
             facts = facts_envelope
+            dimensions = {}
+            reference_comparison = {}
         item_config = json.loads(row["item_json"] or "{}")
         criteria_list = item_config.get("extraction_criteria", [])
         scoring_model = item_config.get("scoring_model", {})
@@ -1034,31 +1149,15 @@ def analyze_conversation(listing_id):
                     )
 
         if changes_made:
-            # Recalculate score using normalized importance weights (boolean-only)
+            # Recalculate score using blended scoring: 65% criteria, 35% dimensions
             weights = scoring_model.get("weights", {})
-            total_possible_weight = 0
-            satisfied_weight = 0
+            (
+                score,
+                criteria_score,
+                dimensions_score,
+                contributions,
+            ) = calculate_blended_score(facts, weights, dimensions)
 
-            for cid, cfg in weights.items():
-                importance = cfg.get("importance", 0)
-                satisfied_if = cfg.get("satisfied_if")
-
-                total_possible_weight += importance
-
-                c_val = facts.get(cid)
-                if not isinstance(c_val, dict):
-                    continue
-                fact_val = c_val.get("value", "unknown")
-
-                if is_satisfied(fact_val, satisfied_if):
-                    satisfied_weight += importance
-
-            if total_possible_weight > 0:
-                score = (satisfied_weight / total_possible_weight) * 100
-            else:
-                score = 0
-
-            score = max(0, min(100, round(score)))
             status = "Negotiating"
 
             # Check if all criteria are now known
@@ -1077,6 +1176,8 @@ def analyze_conversation(listing_id):
             else:
                 facts_envelope = {
                     "criteria": facts,
+                    "dimensions": dimensions,
+                    "reference_comparison": reference_comparison,
                     "highlights": [],
                     "draft_message": "",
                     "_full_info_obtained": full_info,

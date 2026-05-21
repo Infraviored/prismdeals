@@ -8,6 +8,12 @@ export interface KnowledgeSet {
   name: string
   expert_knowledge: string
   item_json: Record<string, unknown> | string
+  market_memo?: string
+  good_reference_description?: string
+  bad_reference_description?: string
+  market_samples_json?: string
+  source_search_url?: string
+  sample_timestamp?: string
 }
 
 export interface SearchTarget {
@@ -19,6 +25,12 @@ export interface SearchTarget {
   knowledge_set_id: number | null
   expert_knowledge?: string
   item_json?: Record<string, unknown> | string
+}
+export interface SampleListing {
+  id: string
+  title: string
+  description: string
+  details: string
 }
 
 export interface Listing {
@@ -60,6 +72,8 @@ export interface Listing {
   special_info?: string[]
   draft_message?: string
   description?: string
+  dimensions?: Record<string, { score: number; reasoning: string }>
+  reference_comparison?: { closer_to: 'good' | 'bad' | 'mixed'; reasoning: string }
 }
 
 export interface ScraperProgressCardProps {

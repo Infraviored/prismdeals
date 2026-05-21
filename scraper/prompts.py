@@ -9,7 +9,13 @@ _INTERNAL_PROMPT_PATH = os.path.join(
 
 
 def build_evaluation_prompt(
-    title, details_text, description, item_json_str, expert_knowledge
+    title,
+    details_text,
+    description,
+    item_json_str,
+    expert_knowledge,
+    good_reference_description=None,
+    bad_reference_description=None,
 ):
     """Fill internal_prompt.md placeholders, build JSON skeleton, and return the complete prompt string."""
     with open(_INTERNAL_PROMPT_PATH, encoding="utf-8") as f:
@@ -36,6 +42,15 @@ def build_evaluation_prompt(
 
     skeleton = {
         "criteria": skeleton_criteria,
+        "dimensions": {
+            "trustworthiness": {"score": 1, "reasoning": ""},
+            "transparency": {"score": 1, "reasoning": ""},
+            "conditionConfidence": {"score": 1, "reasoning": ""},
+            "documentationQuality": {"score": 1, "reasoning": ""},
+            "hiddenRiskSuspicion": {"score": 1, "reasoning": ""},
+            "marketAboveAverageSignal": {"score": 1, "reasoning": ""},
+        },
+        "reference_comparison": {"closer_to": "mixed", "reasoning": ""},
         "highlights": [],
         "draft_message": "",
         "_full_info_obtained": False,
@@ -45,6 +60,8 @@ def build_evaluation_prompt(
     filled = (
         template.replace("{{EXPERT_KNOWLEDGE}}", expert_knowledge or "")
         .replace("{{ITEM_JSON}}", item_json_str)
+        .replace("{{GOOD_REFERENCE_DESCRIPTION}}", good_reference_description or "")
+        .replace("{{BAD_REFERENCE_DESCRIPTION}}", bad_reference_description or "")
         .replace("{{LISTING_TITLE}}", title)
         .replace("{{LISTING_DETAILS}}", details_text)
         .replace("{{LISTING_DESCRIPTION}}", description)

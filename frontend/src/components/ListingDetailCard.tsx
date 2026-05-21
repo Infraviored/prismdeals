@@ -270,6 +270,77 @@ export default function ListingDetailCard({
                 <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">AI Match Summary</span>
                 <p className="text-slate-300 leading-relaxed font-sans">{l.summary}</p>
               </div>
+
+              {/* Soft Dimensions */}
+              {l.dimensions && (
+                <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-850 space-y-3">
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block font-mono">Soft Trust & Risk Dimensions</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {Object.entries(l.dimensions).map(([key, dim]) => {
+                      const labels: Record<string, string> = {
+                        trustworthiness: 'Trustworthiness',
+                        transparency: 'Transparency',
+                        conditionConfidence: 'Condition Confidence',
+                        documentationQuality: 'Documentation Quality',
+                        hiddenRiskSuspicion: 'Hidden Risk Suspicion',
+                        marketAboveAverageSignal: 'Market Above Average Signal'
+                      };
+                      
+                      const label = labels[key] || key;
+                      const score = dim.score;
+                      const reasoning = dim.reasoning;
+                      
+                      const isSuspicion = key === 'hiddenRiskSuspicion';
+                      const percentage = ((score - 1) / 4) * 100;
+                      
+                      const barColor = isSuspicion
+                        ? (score >= 4 ? 'bg-rose-500' : score >= 3 ? 'bg-amber-500' : 'bg-emerald-500')
+                        : (score >= 4 ? 'bg-emerald-500' : score >= 3 ? 'bg-amber-500' : 'bg-rose-500');
+
+                      return (
+                        <div key={key} className="space-y-1">
+                          <div className="flex justify-between items-center text-[10px] font-semibold text-slate-300">
+                            <span>{label}</span>
+                            <span className="font-bold font-mono">{score}/5</span>
+                          </div>
+                          <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                            <div 
+                              className={`h-full ${barColor} transition-all duration-550`} 
+                              style={{ width: `${percentage}%` }} 
+                            />
+                          </div>
+                          {reasoning && (
+                            <p className="text-[9px] text-slate-500 font-sans leading-normal mt-0.5">{reasoning}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Reference Anchor Comparison */}
+              {l.reference_comparison && (
+                <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-850 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider block font-mono">Reference Anchor Comparison</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                      l.reference_comparison.closer_to === 'good'
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                        : l.reference_comparison.closer_to === 'bad'
+                        ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        : 'bg-slate-800 text-slate-400 border border-slate-700'
+                    }`}>
+                      Closer to: {l.reference_comparison.closer_to.toUpperCase()}
+                    </span>
+                  </div>
+                  {l.reference_comparison.reasoning && (
+                    <p className="text-slate-300 font-sans text-[10px] leading-relaxed italic bg-slate-950/30 p-2.5 rounded-lg border border-slate-900">
+                      "{l.reference_comparison.reasoning}"
+                    </p>
+                  )}
+                </div>
+              )}
               
               <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-850">
                 <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider block mb-2 font-mono">Checklist criteria evaluations</span>
