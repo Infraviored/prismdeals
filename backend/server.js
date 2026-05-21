@@ -286,6 +286,29 @@ app.post('/api/knowledge-sets', async (req, res) => {
     if (!name) {
       return res.status(400).json({ error: 'Missing knowledge set name' });
     }
+
+    // Enforce boolean-only planner schema
+    if (item_json) {
+      const criteria = item_json.extraction_criteria || [];
+      const weights = item_json.scoring_model?.weights || {};
+
+      for (const c of criteria) {
+        if (c.type !== 'boolean') {
+          return res.status(400).json({ 
+            error: `Legacy mixed-type criteria detected: Criterion '${c.id}' has type '${c.type}'. Only 'boolean' type is supported. Please recreate or update this profile.` 
+          });
+        }
+      }
+
+      for (const [cid, w] of Object.entries(weights)) {
+        if (w && typeof w.satisfied_if !== 'boolean') {
+          return res.status(400).json({
+            error: `Legacy mixed-type criteria weights detected: Weight '${cid}' has satisfied_if value '${w.satisfied_if}' which is not a boolean. Only boolean expectations are supported.`
+          });
+        }
+      }
+    }
+
     let ksId = id;
     const jsonStr = JSON.stringify(item_json || {});
     const expertStr = expert_knowledge || '';

@@ -103,6 +103,9 @@ def sanitize_extracted_data(extracted_data):
             label = h.get("label", "")
             if not isinstance(label, str):
                 label = str(label)
+            label = label.strip()
+            if not label:
+                continue
 
             # Map "kind" or legacy "type"
             kind_val = h.get("kind") or h.get("type") or "feature"
@@ -236,6 +239,9 @@ def log_listing_analysis(
     validation_errors=None,
     retry_prompt=None,
     retry_response=None,
+    parsed_json=None,
+    score_contributions=None,
+    final_score=None,
 ):
     """Logs the exact prompt, response, and any retry/validation details into a dedicated directory per listing."""
     log_dir = os.path.join(
@@ -266,6 +272,22 @@ def log_listing_analysis(
             f.write("\n\n=== RETRY RESPONSE ===\n")
             f.write(retry_response or "")
             f.write("\n")
+
+        if parsed_json is not None:
+            f.write("\n=== PARSED JSON AFTER SANITIZATION ===\n")
+            f.write(json.dumps(parsed_json, indent=2))
+            f.write("\n")
+
+        if score_contributions is not None:
+            f.write("\n=== SCORE CONTRIBUTIONS ===\n")
+            for cid, contrib in score_contributions.items():
+                f.write(
+                    f"- {cid}: value='{contrib['value']}', expected='{contrib['satisfied_if']}', importance={contrib['importance']}, satisfied={contrib['satisfied']}, contribution={contrib['contribution']}\n"
+                )
+            f.write("\n")
+
+        if final_score is not None:
+            f.write(f"\n=== FINAL NICENESS SCORE: {final_score} ===\n")
 
 
 def log_conversation_analysis(listing_id, prompt, response):
@@ -311,22 +333,53 @@ def log_outreach_draft(listing_id, prompt, response):
 
 
 def is_satisfied(value, satisfied_if):
-    """Checks if the extracted criterion value matches the satisfied_if campaign target"""
-    if (
-        satisfied_if is True
-        or satisfied_if == "yes"
-        or (isinstance(satisfied_if, str) and satisfied_if.lower() == "true")
-    ):
-        target = "yes"
-    elif (
-        satisfied_if is False
-        or satisfied_if == "no"
-        or (isinstance(satisfied_if, str) and satisfied_if.lower() == "false")
-    ):
-        target = "no"
-    else:
-        target = "unknown"
-    return value == target
+    """Checks if the extracted criterion value matches the satisfied_if campaign target with robust normalization"""
+    if value is None or satisfied_if is None:
+        return False
+
+    def normalize(val):
+        if isinstance(val, bool):
+            return val
+        s = str(val).strip().lower()
+        if s in ("yes", "y", "true", "ja", "j"):
+            return True
+        if s in ("no", "n", "false", "nein"):
+            return False
+        try:
+            if s.isdigit():
+                return int(s)
+            return float(s)
+        except ValueError:
+            pass
+        return s
+
+    norm_val = normalize(value)
+    norm_target = normalize(satisfied_if)
+
+    # Risk guardrails (satisfied_if = False) are satisfied if risk is absent (False or unknown)
+    if norm_target is False:
+        return norm_val in (False, "unknown")
+
+    # Positive criteria (satisfied_if = True) are satisfied only if explicitly present (True)
+    if norm_target is True:
+        return norm_val is True
+
+    # General fallback for any other targets
+    if norm_val == "unknown" or norm_target == "unknown":
+        return False
+
+    if isinstance(norm_val, bool) and isinstance(norm_target, bool):
+        return norm_val == norm_target
+
+    if isinstance(norm_val, (int, float)) and isinstance(norm_target, (int, float)):
+        return norm_val == norm_target
+
+    if isinstance(norm_val, bool) and isinstance(norm_target, (int, float)):
+        return norm_val == (norm_target != 0)
+    if isinstance(norm_target, bool) and isinstance(norm_val, (int, float)):
+        return norm_target == (norm_val != 0)
+
+    return str(norm_val) == str(norm_target)
 
 
 def process_unprocessed_listings(target_listing_id=None):
@@ -390,6 +443,59 @@ def process_unprocessed_listings(target_listing_id=None):
             scoring_model = item_config.get("scoring_model", {})
         except Exception as e:
             logger.error(f"Error parsing item_json for listing {listing_id}: {str(e)}")
+            continue
+
+        # Check for legacy non-boolean criteria/weights in python
+        is_legacy_profile = False
+        legacy_details = []
+        for c in criteria_list:
+            if c.get("type") != "boolean":
+                is_legacy_profile = True
+                legacy_details.append(
+                    f"Criterion '{c.get('id')}' has unsupported type '{c.get('type')}' (only 'boolean' is supported)."
+                )
+
+        weights = scoring_model.get("weights", {})
+        for cid, w in weights.items():
+            if w and not isinstance(w.get("satisfied_if"), bool):
+                is_legacy_profile = True
+                legacy_details.append(
+                    f"Weight '{cid}' has unsupported satisfied_if value '{w.get('satisfied_if')}' (must be a boolean)."
+                )
+
+        if is_legacy_profile:
+            err_msg = "; ".join(legacy_details)
+            logger.error(
+                f"Unsupported legacy profile for listing {listing_id}: {err_msg}"
+            )
+
+            facts_envelope = {
+                "criteria": {},
+                "highlights": [],
+                "draft_message": "",
+                "_full_info_obtained": False,
+                "_unsupported_legacy_profile": True,
+                "_legacy_error_details": f"Unsupported legacy profile: {err_msg}",
+            }
+
+            cursor.execute(
+                """
+                UPDATE listings 
+                SET llm_processed = 1,
+                    llm_processed_time = ?,
+                    full_info_obtained = 0,
+                    extracted_facts = ?,
+                    niceness_score = 0,
+                    status = 'Error'
+                WHERE id = ?
+            """,
+                (
+                    datetime.datetime.now().isoformat(),
+                    json.dumps(facts_envelope),
+                    listing_id,
+                ),
+            )
+            conn.commit()
             continue
 
         item_json_str = listing["item_json"] or "{}"
@@ -534,59 +640,76 @@ def process_unprocessed_listings(target_listing_id=None):
                     else:
                         value = "unknown"
 
-                confidence = c_val.get("confidence")
-                if confidence not in ["high", "med", "low"]:
-                    confidence = "low" if value == "unknown" else "med"
-
                 evidence_quote = c_val.get("evidence_quote", "")
                 if not isinstance(evidence_quote, str):
                     evidence_quote = (
                         str(evidence_quote) if evidence_quote is not None else ""
                     )
 
-                evidence_source = c_val.get("evidence_source", "description")
-                if evidence_source not in [
-                    "title",
-                    "description",
-                    "details",
-                    "unknown",
-                ]:
-                    evidence_source = "description"
-
                 reasoning = c_val.get("reasoning", "")
-                if not reasoning:
-                    reasoning = f"Value determined as '{value}'."
+                if not isinstance(reasoning, str):
+                    reasoning = str(reasoning) if reasoning is not None else ""
 
                 normalized_criteria[cid] = {
                     "value": value,
-                    "confidence": confidence,
                     "evidence_quote": evidence_quote,
-                    "evidence_source": evidence_source,
                     "reasoning": reasoning,
                 }
 
-            # Score from normalized importance weights with confidence mapping
+            # Score from normalized importance weights (boolean-only)
             weights = scoring_model.get("weights", {})
-            score = 0
-            for cid, cfg in weights.items():
-                c_val = normalized_criteria.get(cid)
-                if not isinstance(c_val, dict):
-                    continue
-                fact_val = c_val.get("value", "unknown")
-                confidence = c_val.get("confidence", "low")
+            total_possible_weight = 0
+            satisfied_weight = 0
 
+            # Keep track of per-criterion contribution for logging
+            contributions = {}
+
+            for cid, cfg in weights.items():
+                importance = cfg.get("importance", 0)
                 satisfied_if = cfg.get("satisfied_if")
 
-                if fact_val != "unknown" and is_satisfied(fact_val, satisfied_if):
-                    if confidence == "high":
-                        mult = 1.0
-                    elif confidence == "med":
-                        mult = 0.6
-                    else:
-                        mult = 0.25
-                    score += cfg.get("importance", 0) * mult
+                total_possible_weight += importance
 
-            score = max(0, min(100, score))
+                c_val = normalized_criteria.get(cid)
+                if not isinstance(c_val, dict):
+                    contributions[cid] = {
+                        "value": "unknown",
+                        "satisfied_if": satisfied_if,
+                        "importance": importance,
+                        "satisfied": False,
+                        "contribution": 0,
+                    }
+                    continue
+
+                fact_val = c_val.get("value", "unknown")
+
+                # Check if matches satisfied_if
+                satisfied = is_satisfied(fact_val, satisfied_if)
+
+                if satisfied:
+                    satisfied_weight += importance
+                    contributions[cid] = {
+                        "value": fact_val,
+                        "satisfied_if": satisfied_if,
+                        "importance": importance,
+                        "satisfied": True,
+                        "contribution": importance,
+                    }
+                else:
+                    contributions[cid] = {
+                        "value": fact_val,
+                        "satisfied_if": satisfied_if,
+                        "importance": importance,
+                        "satisfied": False,
+                        "contribution": 0,
+                    }
+
+            if total_possible_weight > 0:
+                score = (satisfied_weight / total_possible_weight) * 100
+            else:
+                score = 0
+
+            score = max(0, min(100, round(score)))
             status = "New"
             full_info = (
                 1
@@ -638,6 +761,9 @@ def process_unprocessed_listings(target_listing_id=None):
                 validation_errors=initial_validation_errors,
                 retry_prompt=retry_prompt_val,
                 retry_response=retry_response_val,
+                parsed_json=facts_envelope,
+                score_contributions=contributions,
+                final_score=score,
             )
 
             logger.info(
@@ -894,16 +1020,12 @@ def analyze_conversation(listing_id):
                 if is_prev_unknown and val != "unknown":
                     if isinstance(facts[k], dict):
                         facts[k]["value"] = val
-                        facts[k]["confidence"] = "high"
                         facts[k]["evidence_quote"] = "Clarified in chat conversation"
-                        facts[k]["evidence_source"] = "description"
                         facts[k]["reasoning"] = f"Resolved via chat to: {val}."
                     else:
                         facts[k] = {
                             "value": val,
-                            "confidence": "high",
                             "evidence_quote": "Clarified in chat conversation",
-                            "evidence_source": "description",
                             "reasoning": f"Resolved via chat to: {val}.",
                         }
                     changes_made = True
@@ -912,29 +1034,31 @@ def analyze_conversation(listing_id):
                     )
 
         if changes_made:
-            # Recalculate score using normalized importance weights & confidence weighting
+            # Recalculate score using normalized importance weights (boolean-only)
             weights = scoring_model.get("weights", {})
-            score = 0
+            total_possible_weight = 0
+            satisfied_weight = 0
+
             for cid, cfg in weights.items():
+                importance = cfg.get("importance", 0)
+                satisfied_if = cfg.get("satisfied_if")
+
+                total_possible_weight += importance
+
                 c_val = facts.get(cid)
                 if not isinstance(c_val, dict):
                     continue
                 fact_val = c_val.get("value", "unknown")
-                confidence = c_val.get("confidence", "low")
 
-                satisfied_if = cfg.get("satisfied_if")
+                if is_satisfied(fact_val, satisfied_if):
+                    satisfied_weight += importance
 
-                # Check if satisfied
-                if fact_val != "unknown" and is_satisfied(fact_val, satisfied_if):
-                    if confidence == "high":
-                        mult = 1.0
-                    elif confidence == "med":
-                        mult = 0.6
-                    else:
-                        mult = 0.25
-                    score += cfg.get("importance", 0) * mult
+            if total_possible_weight > 0:
+                score = (satisfied_weight / total_possible_weight) * 100
+            else:
+                score = 0
 
-            score = max(0, min(100, score))
+            score = max(0, min(100, round(score)))
             status = "Negotiating"
 
             # Check if all criteria are now known

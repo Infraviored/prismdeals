@@ -48,8 +48,9 @@ def build_evaluation_prompt(
         .replace("{{LISTING_TITLE}}", title)
         .replace("{{LISTING_DETAILS}}", details_text)
         .replace("{{LISTING_DESCRIPTION}}", description)
+        .replace("{{JSON_SKELETON}}", skeleton_str)
     )
-    return filled + "\n" + skeleton_str
+    return filled
 
 
 def get_outreach_draft_prompt(
