@@ -179,15 +179,47 @@ export default function GuidelinesWizard({
             </p>
           </div>
 
-          <div className="space-y-2">
-            <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block">Real Classified Listings (Conditioning Examples)</span>
+          {/* Listings fetch CTA + loaded cards */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">
+                Market Listing Samples
+                {sampledListings.length > 0 && (
+                  <span className="ml-2 text-emerald-400">({sampledListings.length} loaded)</span>
+                )}
+              </span>
+              {!sampledListingsLoading && (
+                <button
+                  onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
+                  className="text-[10px] bg-slate-800 hover:bg-slate-700 border border-slate-750 text-slate-300 font-bold px-3 py-1.5 rounded-lg transition-all"
+                >
+                  {sampledListings.length > 0 ? 'Refresh Samples' : 'Fetch Market Listings'}
+                </button>
+              )}
+            </div>
+
             {sampledListingsLoading ? (
-              <div className="text-center py-6 text-slate-500 text-xs font-semibold animate-pulse">
-                Loading real listing search samples...
+              <div className="flex items-center justify-center gap-3 py-8 border border-slate-850 rounded-xl">
+                <div className="w-4 h-4 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+                <span className="text-xs text-slate-400 font-semibold">Fetching real listings from search URL...</span>
               </div>
             ) : sampledListings.length === 0 ? (
-              <div className="text-center py-6 border border-dashed border-slate-850 rounded-xl text-slate-650 text-xs font-semibold">
-                No sample listings found. Run discovery crawl first to capture context.
+              <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0 mt-0.5 text-[10px] font-black">!</div>
+                  <div className="space-y-1">
+                    <span className="text-xs font-bold text-amber-400 block">Listing samples required</span>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Prompt A needs real listings from your search URL to calibrate the market model. Click "Fetch Market Listings" above — this pulls a fresh sample directly from your active search target.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
+                  className="w-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 font-extrabold py-2.5 rounded-xl text-xs transition-all"
+                >
+                  Fetch Market Listings Now &rarr;
+                </button>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-3 max-h-[220px] overflow-y-auto p-0.5">
@@ -207,39 +239,43 @@ export default function GuidelinesWizard({
             )}
           </div>
 
-          {/* Assembled Prompt A Segment */}
-          <div className="bg-slate-950 border border-slate-850 rounded-2xl p-4 space-y-3">
-            <div className="flex justify-between items-center">
-              <div>
-                <span className="text-xs font-bold text-slate-250 block">Market memo generation prompt (Prompt A)</span>
-                <span className="text-[9px] text-slate-500 font-semibold">Generates a grounded observation map from search distribution</span>
+          {/* Prompt A — only shown once listings are available */}
+          {sampledListings.length > 0 && (
+            <>
+              <div className="bg-slate-950 border border-slate-850 rounded-2xl p-4 space-y-3">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="text-xs font-bold text-slate-250 block">Market memo generation prompt (Prompt A)</span>
+                    <span className="text-[9px] text-slate-500 font-semibold">Generates a grounded observation map from search distribution</span>
+                  </div>
+                  <button
+                    onClick={() => handleCopyPrompt(getMarketPromptWithContext(), 'prompt-a')}
+                    className={`text-[10px] px-3 py-1.5 rounded-lg font-bold transition-all ${
+                      copiedPromptId === 'prompt-a'
+                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-550/20'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-350 border border-slate-750'
+                    }`}
+                  >
+                    {copiedPromptId === 'prompt-a' ? 'Copied Prompt A!' : 'Copy Prompt A'}
+                  </button>
+                </div>
+                <div className="text-[10px] text-slate-500 bg-slate-900/40 p-2.5 rounded-xl border border-slate-850 font-medium">
+                  Submit the copied Prompt A to your primed external model. Paste the returned &lt;market_memo&gt; block below.
+                </div>
               </div>
-              <button
-                onClick={() => handleCopyPrompt(getMarketPromptWithContext(), 'prompt-a')}
-                className={`text-[10px] px-3 py-1.5 rounded-lg font-bold transition-all ${
-                  copiedPromptId === 'prompt-a'
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-550/20'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-350 border border-slate-750'
-                }`}
-              >
-                {copiedPromptId === 'prompt-a' ? 'Copied Prompt A!' : 'Copy Prompt A'}
-              </button>
-            </div>
-            <div className="text-[10px] text-slate-500 bg-slate-900/40 p-2.5 rounded-xl border border-slate-850 font-medium">
-              Submit the copied Prompt A to your primed external model. Paste the returned &lt;market_memo&gt; block below.
-            </div>
-          </div>
 
-          <div className="space-y-1.5">
-            <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Paste Market Memo (&lt;market_memo&gt;)</label>
-            <textarea
-              value={marketMemo}
-              onChange={e => setMarketMemo(e.target.value)}
-              placeholder="Paste the full <market_memo> block response here..."
-              rows={10}
-              className="w-full bg-slate-950 border border-slate-850 rounded-xl p-3 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed"
-            />
-          </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Paste Market Memo (&lt;market_memo&gt;)</label>
+                <textarea
+                  value={marketMemo}
+                  onChange={e => setMarketMemo(e.target.value)}
+                  placeholder="Paste the full <market_memo> block response here..."
+                  rows={10}
+                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-3 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed"
+                />
+              </div>
+            </>
+          )}
 
           <div className="flex gap-3">
             <button
@@ -250,8 +286,8 @@ export default function GuidelinesWizard({
             </button>
             <button
               onClick={() => setWizardStep(3)}
-              disabled={!marketMemo.trim()}
-              className="flex-1 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold py-3 rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/10"
+              disabled={sampledListings.length === 0 || !marketMemo.trim()}
+              className="flex-1 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-extrabold py-3 rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/10"
             >
               Proceed to Synthesis &rarr;
             </button>
