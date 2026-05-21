@@ -443,10 +443,8 @@ def calculate_blended_score(criteria, weights, dimensions):
 
     # Coverage factor: penalise sparse/vague listings
     coverage_ratio = resolved_count / total_count
-    if coverage_ratio < 0.40:
-        coverage_factor = 0.0
-    else:
-        coverage_factor = min(1.0, (coverage_ratio - 0.40) / 0.60)
+    # Scale smoothly to 1.0 at 60% coverage, instead of a hard cliff at 40%
+    coverage_factor = min(1.0, coverage_ratio / 0.60)
 
     # 2. Dimensions score
     expected_dims = [
@@ -535,17 +533,15 @@ def calculate_evidence_score(
     )
     pos_score = (earned_pos_weight / max(total_pos_weight, 1)) * 100
 
-    # 2. Coverage factor (same as blended scorer)
+    # 2. Coverage factor (softer curve)
     resolved = sum(
         1
         for c in all_criteria
         if normalized_criteria.get(c["id"], {}).get("value") in ("yes", "no")
     )
     coverage_ratio = resolved / max(len(all_criteria), 1)
-    if coverage_ratio < 0.40:
-        coverage_factor = 0.0
-    else:
-        coverage_factor = min(1.0, (coverage_ratio - 0.40) / 0.60)
+    # Instead of a hard cliff at 0.40, we scale smoothly to 1.0 at 60% coverage
+    coverage_factor = min(1.0, coverage_ratio / 0.60)
 
     # 3. Negative penalty: confirmed-present bad things (0-35)
     neg_penalty = min(
@@ -571,17 +567,16 @@ def calculate_evidence_score(
         15,
     )
 
-    # 5. High-value unknowns confidence penalty (0-12)
+    # 5. High-value unknowns (small flat penalty + upside cap)
     n_profile_hvu = len(profile_hvunknowns)
     n_model_hvu = (
         len(model_high_value_unknowns)
         if isinstance(model_high_value_unknowns, list)
         else 0
     )
-    hvu_penalty = (
-        round((n_model_hvu / max(n_profile_hvu, 1)) * 12) if n_profile_hvu > 0 else 0
-    )
-    hvu_penalty = min(hvu_penalty, 12)
+    hvu_ratio = (n_model_hvu / max(n_profile_hvu, 1)) if n_profile_hvu > 0 else 0
+    hvu_penalty = round(hvu_ratio * 4)  # max 4 point flat penalty
+    hvu_cap = 100 - round(hvu_ratio * 30)  # caps upside at 70 if all HVUs are missing
 
     # 6. Risk flags penalty (0-15)
     n_flags = len(model_risk_flags) if isinstance(model_risk_flags, list) else 0
@@ -622,8 +617,11 @@ def calculate_evidence_score(
     effective = base + 0.15 * neg_relief
     penalized = effective - neg_penalty - hvu_penalty - risk_penalty + ref_mod
 
-    # Coverage floor: sparse listings collapse toward 35 instead of scoring on vague silence
-    final = coverage_factor * penalized + (1.0 - coverage_factor) * 35.0
+    # Apply HVU upside cap
+    penalized = min(penalized, hvu_cap)
+
+    # Coverage floor: sparse listings collapse toward 50 (ordinary) instead of 35
+    final = coverage_factor * penalized + (1.0 - coverage_factor) * 50.0
     final = max(0, min(100, round(final)))
 
     contributions = {
