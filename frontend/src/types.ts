@@ -48,6 +48,7 @@ export interface Listing {
   item_name?: string
   campaign_name?: string
   llm_processed: boolean
+  llm_processed_time?: string
   details?: Record<string, string>
   images?: string[]
   year?: string

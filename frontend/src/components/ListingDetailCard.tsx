@@ -73,15 +73,22 @@ export default function ListingDetailCard({
           {/* AI-Eval button + score — always visible, re-eval on click */}
           <div className="flex items-center gap-1.5">
           {l.llm_processed && (
-            <div className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${
-                l.niceness_score >= 70
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                  : l.niceness_score >= 40
-                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                  : 'bg-slate-800 text-slate-400 border-slate-700'
-              }`}>
-              {l.niceness_score}
-            </div>
+            <>
+              {l.llm_processed_time && (
+                <span className="text-[9px] text-slate-500 font-medium hidden sm:inline-block">
+                  {new Date(l.llm_processed_time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}
+                </span>
+              )}
+              <div className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${
+                  l.niceness_score >= 70
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    : l.niceness_score >= 40
+                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                }`}>
+                {l.niceness_score}
+              </div>
+            </>
           )}
             <button
               onClick={(e) => {
