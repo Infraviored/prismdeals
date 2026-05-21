@@ -579,6 +579,7 @@ app.get('/api/schedule', (req, res) => {
 });
 
 let activeScraperProcess = null;
+const activeWorkerProcesses = new Map(); // listing_id -> child process
 
 // API: Check scraper execution status and progress
 app.get('/api/scrape/status', (req, res) => {
@@ -685,29 +686,33 @@ app.post('/api/scrape', (req, res) => {
 app.post('/api/process', (req, res) => {
   try {
     const { listing_id } = req.body || {};
+    const key = listing_id ? String(listing_id) : '__all__';
+
+    if (activeWorkerProcesses.has(key)) {
+      return res.status(409).json({ error: 'Evaluation already running for this listing' });
+    }
+
     const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
-    
     const args = [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'process'
     ];
-    
     if (listing_id) {
       args.push('--listing-id', String(listing_id));
     }
-    
-    const python = spawn(pythonExecutable, args, {
-      env: { ...process.env }
-    });
-    
+
+    const python = spawn(pythonExecutable, args, { env: { ...process.env } });
+    activeWorkerProcesses.set(key, python);
+
     python.stdout.on('data', (data) => console.log(`AI worker stdout: ${data}`));
     python.stderr.on('data', (data) => console.error(`AI worker stderr: ${data}`));
-    
+
     python.on('close', (code) => {
       console.log(`AI worker exited with code ${code}`);
+      activeWorkerProcesses.delete(key);
       res.json({ success: code === 0, message: 'AI processing completed' });
     });
-    
+
   } catch (error) {
     console.error('Error triggering AI process:', error);
     res.status(500).json({ error: 'Failed to trigger AI matching' });

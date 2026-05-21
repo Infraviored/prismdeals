@@ -243,15 +243,14 @@ def log_listing_analysis(
     score_contributions=None,
     final_score=None,
 ):
-    """Logs the exact prompt, response, and any retry/validation details into a dedicated directory per listing."""
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",
         "logs",
-        str(listing_id),
     )
     os.makedirs(log_dir, exist_ok=True)
-    log_path = os.path.join(log_dir, "analysis.log")
+    log_path = os.path.join(log_dir, f"{listing_id}_{ts}.log")
 
     with open(log_path, "w", encoding="utf-8") as f:
         f.write(f"=== ANALYSIS RUN: {datetime.datetime.now().isoformat()} ===\n\n")
@@ -277,13 +276,15 @@ def log_listing_analysis(
             f.write("\n=== PARSED JSON AFTER SANITIZATION ===\n")
             f.write(json.dumps(parsed_json, indent=2))
             f.write("\n")
-
         if score_contributions is not None:
             f.write("\n=== SCORE CONTRIBUTIONS ===\n")
             for cid, contrib in score_contributions.items():
-                f.write(
-                    f"- {cid}: value='{contrib['value']}', expected='{contrib['satisfied_if']}', importance={contrib['importance']}, satisfied={contrib['satisfied']}, contribution={contrib['contribution']}\n"
-                )
+                if isinstance(contrib, dict) and "satisfied_if" in contrib:
+                    f.write(
+                        f"- {cid}: value='{contrib['value']}', expected='{contrib['satisfied_if']}', importance={contrib['importance']}, satisfied={contrib['satisfied']}, contribution={contrib['contribution']}\n"
+                    )
+                else:
+                    f.write(f"- {cid}: {contrib}\n")
             f.write("\n")
 
         if final_score is not None:
@@ -291,15 +292,14 @@ def log_listing_analysis(
 
 
 def log_conversation_analysis(listing_id, prompt, response):
-    """Logs the exact prompt and response of conversation analysis into the dedicated directory per listing."""
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",
         "logs",
-        str(listing_id),
     )
     os.makedirs(log_dir, exist_ok=True)
-    log_path = os.path.join(log_dir, "conversation_analysis.log")
+    log_path = os.path.join(log_dir, f"{listing_id}_{ts}_conversation.log")
     with open(log_path, "w", encoding="utf-8") as f:
         f.write(
             f"=== CONVERSATION ANALYSIS RUN: {datetime.datetime.now().isoformat()} ===\n\n"
@@ -312,15 +312,14 @@ def log_conversation_analysis(listing_id, prompt, response):
 
 
 def log_outreach_draft(listing_id, prompt, response):
-    """Logs the exact prompt and response of outreach draft generation into the dedicated directory per listing."""
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",
         "logs",
-        str(listing_id),
     )
     os.makedirs(log_dir, exist_ok=True)
-    log_path = os.path.join(log_dir, "outreach_draft.log")
+    log_path = os.path.join(log_dir, f"{listing_id}_{ts}_outreach.log")
     with open(log_path, "w", encoding="utf-8") as f:
         f.write(
             f"=== OUTREACH DRAFT RUN: {datetime.datetime.now().isoformat()} ===\n\n"
@@ -491,6 +490,149 @@ def calculate_blended_score(criteria, weights, dimensions):
     final_score = max(0, min(100, round(final_score)))
 
     return final_score, criteria_score, dimensions_score, contributions
+
+
+_IMPORTANCE_PTS = {"high": 3, "medium": 2, "low": 1}
+_NEG_PENALTY_PTS = {3: 12, 2: 7, 1: 3}  # per confirmed-present negative criterion
+_NEG_RELIEF_PTS = {3: 4, 2: 2, 1: 1}  # per confirmed-absent negative criterion
+
+
+def calculate_evidence_score(
+    normalized_criteria,
+    item_config,
+    normalized_dimensions,
+    model_high_value_unknowns,
+    model_risk_flags,
+    normalized_ref_comp,
+):
+    """Evidence-first scorer for the new split-schema profiles.
+
+    Positive criteria  → additive score (yes only).
+    Negative criteria  → penalty when yes (confirmed present), small relief when no.
+    High-value unknowns → confidence penalty based on how many remain unresolved.
+    Risk flags         → flat penalty per flag reported by the model.
+    Dimensions         → 45% weight (same inversion logic for hiddenRiskSuspicion).
+    Reference comparison → ±5 modifier.
+    Coverage           → floor for listings with mostly unknown answers.
+    """
+    pos_criteria = item_config.get("explicit_positive_criteria", [])
+    neg_criteria = item_config.get("explicit_negative_criteria", [])
+    all_criteria = pos_criteria + neg_criteria
+    profile_hvunknowns = item_config.get("high_value_unknown_fields", [])
+
+    # 1. Positive score (0-100)
+    total_pos_weight = sum(
+        _IMPORTANCE_PTS.get(c.get("importance_hint", "medium"), 2) for c in pos_criteria
+    )
+    earned_pos_weight = sum(
+        _IMPORTANCE_PTS.get(c.get("importance_hint", "medium"), 2)
+        for c in pos_criteria
+        if normalized_criteria.get(c["id"], {}).get("value") == "yes"
+    )
+    pos_score = (earned_pos_weight / max(total_pos_weight, 1)) * 100
+
+    # 2. Coverage factor (same as blended scorer)
+    resolved = sum(
+        1
+        for c in all_criteria
+        if normalized_criteria.get(c["id"], {}).get("value") in ("yes", "no")
+    )
+    coverage_ratio = resolved / max(len(all_criteria), 1)
+    if coverage_ratio < 0.40:
+        coverage_factor = 0.0
+    else:
+        coverage_factor = min(1.0, (coverage_ratio - 0.40) / 0.60)
+
+    # 3. Negative penalty: confirmed-present bad things (0-35)
+    neg_penalty = min(
+        sum(
+            _NEG_PENALTY_PTS.get(
+                _IMPORTANCE_PTS.get(c.get("importance_hint", "medium"), 2), 7
+            )
+            for c in neg_criteria
+            if normalized_criteria.get(c["id"], {}).get("value") == "yes"
+        ),
+        35,
+    )
+
+    # 4. Negative relief: confirmed-absent bad things (0-15)
+    neg_relief = min(
+        sum(
+            _NEG_RELIEF_PTS.get(
+                _IMPORTANCE_PTS.get(c.get("importance_hint", "medium"), 2), 2
+            )
+            for c in neg_criteria
+            if normalized_criteria.get(c["id"], {}).get("value") == "no"
+        ),
+        15,
+    )
+
+    # 5. High-value unknowns confidence penalty (0-12)
+    n_profile_hvu = len(profile_hvunknowns)
+    n_model_hvu = (
+        len(model_high_value_unknowns)
+        if isinstance(model_high_value_unknowns, list)
+        else 0
+    )
+    hvu_penalty = (
+        round((n_model_hvu / max(n_profile_hvu, 1)) * 12) if n_profile_hvu > 0 else 0
+    )
+    hvu_penalty = min(hvu_penalty, 12)
+
+    # 6. Risk flags penalty (0-15)
+    n_flags = len(model_risk_flags) if isinstance(model_risk_flags, list) else 0
+    risk_penalty = min(n_flags * 4, 15)
+
+    # 7. Dimensions score (0-100) — same inversion as blended scorer
+    expected_dims = [
+        "trustworthiness",
+        "transparency",
+        "conditionConfidence",
+        "documentationQuality",
+        "hiddenRiskSuspicion",
+        "marketAboveAverageSignal",
+    ]
+    dim_scores = []
+    for dim_key in expected_dims:
+        dim_data = normalized_dimensions.get(dim_key, {})
+        raw = dim_data.get("score", 3) if isinstance(dim_data, dict) else 3
+        try:
+            raw = max(1, min(5, int(float(raw))))
+        except (ValueError, TypeError):
+            raw = 3
+        effective = (6 - raw) if dim_key == "hiddenRiskSuspicion" else raw
+        dim_scores.append(((effective - 1) / 4) * 100)
+    dimensions_score = sum(dim_scores) / max(len(dim_scores), 1)
+
+    # 8. Reference comparison modifier
+    closer_to = (
+        normalized_ref_comp.get("closer_to", "mixed")
+        if isinstance(normalized_ref_comp, dict)
+        else "mixed"
+    )
+    ref_mod = {"good": 5, "bad": -5, "mixed": 0}.get(closer_to, 0)
+
+    # 9. Assemble: 55% positive evidence + 45% dimensions, then apply penalties
+    base = 0.55 * pos_score + 0.45 * dimensions_score
+    # Neg relief is added before penalties (confirmed safety is real positive signal)
+    effective = base + 0.15 * neg_relief
+    penalized = effective - neg_penalty - hvu_penalty - risk_penalty + ref_mod
+
+    # Coverage floor: sparse listings collapse toward 35 instead of scoring on vague silence
+    final = coverage_factor * penalized + (1.0 - coverage_factor) * 35.0
+    final = max(0, min(100, round(final)))
+
+    contributions = {
+        "_pos_score": pos_score,
+        "_dimensions_score": dimensions_score,
+        "_neg_relief": neg_relief,
+        "_neg_penalty": neg_penalty,
+        "_hvu_penalty": hvu_penalty,
+        "_risk_penalty": risk_penalty,
+        "_ref_mod": ref_mod,
+        "_coverage_factor": round(coverage_factor, 2),
+    }
+    return final, pos_score, dimensions_score, contributions
 
 
 def process_unprocessed_listings(target_listing_id=None):
@@ -836,16 +978,36 @@ def process_unprocessed_listings(target_listing_id=None):
                 "reasoning": str(ref_reasoning),
             }
 
-            # Score using blended scoring: 65% criteria, 35% dimensions
-            weights = scoring_model.get("weights", {})
-            (
-                score,
-                criteria_score,
-                dimensions_score,
-                contributions,
-            ) = calculate_blended_score(
-                normalized_criteria, weights, normalized_dimensions
+            # Score: route by schema type
+            is_new_schema = bool(
+                item_config.get("explicit_positive_criteria")
+                or item_config.get("explicit_negative_criteria")
             )
+
+            if is_new_schema:
+                (
+                    score,
+                    criteria_score,
+                    dimensions_score,
+                    contributions,
+                ) = calculate_evidence_score(
+                    normalized_criteria,
+                    item_config,
+                    normalized_dimensions,
+                    high_value_unknowns,
+                    risk_flags,
+                    normalized_ref_comp,
+                )
+            else:
+                weights = scoring_model.get("weights", {})
+                (
+                    score,
+                    criteria_score,
+                    dimensions_score,
+                    contributions,
+                ) = calculate_blended_score(
+                    normalized_criteria, weights, normalized_dimensions
+                )
 
             status = "New"
             full_info = (

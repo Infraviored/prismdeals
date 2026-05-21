@@ -1,307 +1,186 @@
-# Kleinanzeigen Scraper and AI Agent Architecture
+# KleinanzeigenScraper: Full System Architecture
 
-This document maps the repository layout, data schemas, sequence workflow, and API interfaces for the Kleinanzeigen deal-matching and automated outreach workspace.
+KleinanzeigenScraper is a classifieds intelligence system for German marketplace listings, built to scrape, structure, evaluate, and operationalize used motorcycle ads with a strong focus on evidence quality, risk detection, and explainable scoring. The project’s core idea is not “ask an LLM whether a listing is good,” but to split the problem into a pipeline where scraping, calibration, evidence extraction, scoring, and outreach are each handled by the right layer.
 
----
+The system has evolved into a dual-stage AI architecture: one model or expert process designs the evaluation profile, and another low-cost worker model applies that profile to individual listings at scale. This architecture exists because generic holistic LLM judgments were too forgiving, too opaque, and too hard to debug for a market where omission, vague wording, and hidden risk matter as much as the explicit claims.
 
-## Repository Layout
+## Product Goal
 
-```
-├── ARCHITECTURE.md          # System map & architectural reference
-├── data/
-│   ├── scraper.db           # SQLite production database
-│   ├── scraper.log          # Rotated operational log
-│   ├── logs/                # Isolated per-listing detailed prompt/response logs
-│   │   └── <listing_id>/
-│   │       ├── analysis.log
-│   │       ├── conversation_analysis.log
-│   │       └── outreach_draft.log
-│   └── session_status.json  # Persisted login session data (email & timestamp)
-├── prompts/                 # Version-controlled AI prompt templates
-│   ├── external_prompt.md   # Guidelines guidelines planning prompt template
-│   └── internal_prompt.md   # Internal evaluator prompt with skeleton placeholder
-├── backend/                 # Node.js/Express SQLite API Server
-│   ├── package.json
-│   ├── db_setup.js          # SQLite table creation schema and triggers
-│   ├── server.js            # Express server handling listing APIs & scheduler
-│   └── public/              # Legacy frontend fallback dashboard
-├── scraper/                 # Python 3 Scraper Daemon & AI worker
-│   ├── main.py              # CLI controller orchestrating crawling and interpretation stages
-│   ├── scraper.py           # Playwright scraper (index discovery & detailed specs/images harvesting)
-│   ├── agent_worker.py      # OpenAI GPT evaluator calculating scores and matching status
-│   ├── prompts.py           # Evaluation criteria & outreach message prompts templates
-│   ├── config.py            # Scraping and LLM settings, dynamic .env loader
-│   └── requirements.txt     # Python backend dependencies
-├── frontend/                # Vite + React Client App
-│   ├── src/
-│   │   ├── App.tsx          # Single-Page state-driven dashboard (Landing, Dashboard, Edit view)
-│   │   ├── types.ts         # TypeScript schema and state definitions
-│   │   ├── main.tsx
-│   │   └── index.css        # Tailwind/Vite premium styling sheet
-│   └── package.json
-└── scripts/                 # Maintenance scripts
-    └── reset_listings.py    # Database utility to purge listings while preserving credentials
-```
+The product is optimized for one specific class of problem: used high-performance motorcycle classifieds are noisy, inconsistent, and often written to maximize attractiveness while minimizing liability. For the current target segment, especially older Honda CBR1000RR / Fireblade SC57/SC59 listings, the system must identify explicit positives, explicit negatives, and high-value unknowns such as maintenance proof, crash history, original parts, ownership history, and structural integrity.
 
----
+That makes the project closer to a **forensic market filter** than a shopping assistant. It is designed to tell the user what the listing actually supports, what it does not support, and where the seller may be leaving important information out.
 
-## Two-Agent Architecture
+## High-Level Design
 
-The system uses two distinct LLM agents with different roles:
+The architecture is intentionally layered. Scraping and data acquisition are handled separately from AI interpretation, and AI interpretation is separated again from scoring and presentation. That split keeps the crawler fast, the worker cheap, and the scoring logic deterministic enough to debug when a listing feels “too good” or “too vague.”
 
-```
-YOU (buyer description)
-        │
-        ▼
-┌────────────────────────┐
-│  EXTERNAL PLANNING     │
-│  AGENT (any capable    │
-│  LLM, e.g. ChatGPT)   │
-│                        │
-│  Prompt: external_     │
-│  prompt.md             │
-│                        │
-│  Outputs:              │
-│  1. item_json (JSON)   │
-│     extraction_criteria│
-│     scoring_model      │
-│  2. expert_knowledge   │
-│     (German checklist) │
-└───────────┬────────────┘
-            │  paste into UI once per campaign
-            ▼
-┌────────────────────────┐
-│  KNOWLEDGE SET (DB)    │
-│  knowledge_sets table  │
-│  - item_json           │
-│  - expert_knowledge    │
-└───────────┬────────────┘
-            │
-            ▼
-┌────────────────────────┐
-│  LISTING (scraped ad)  │
-│  - title               │
-│  - description         │
-│  - details             │
-└───────────┬────────────┘
-            │
-            ▼
-┌────────────────────────┐
-│  INTERNAL WORKER       │
-│  (gpt-5-nano, cheap)   │
-│                        │
-│  Prompted with:        │
-│  - internal_prompt.md  │
-│  - expert_knowledge    │
-│  - extraction_criteria │
-│  - listing text        │
-│                        │
-│  Outputs:              │
-│  - criteria (value,    │
-│    evidence, conf.)    │
-│  - highlights          │
-│  - draft_message (DE)  │
-│  - score (computed)    │
-└────────────────────────┘
-```
+The main execution path is: discover listings, harvest details, load the correct knowledge profile, run a structured evaluation prompt through a worker model, sanitize the response, validate it, compute a score in Python, and persist both the structured facts and the final rating. The user then sees the result through the web interface rather than through raw prompts or raw model output.
 
-**External planning agent** = campaign designer (runs once per knowledge set setup, any LLM).
-**Knowledge set** = reusable evaluation scheme stored in the DB.
-**Internal worker** = listing evaluator (runs automatically for every scraped listing).
+## Repository Structure
 
-The planning prompt template lives at [`prompts/external_prompt.md`](prompts/external_prompt.md), and the worker prompt lives at [`prompts/internal_prompt.md`](prompts/internal_prompt.md).
+The repository is organized around the lifecycle of a listing rather than around framework boundaries. `scraper/` contains the Python worker stack, `backend/` contains the Node.js API and orchestration layer, `frontend/` contains the React UI, `prompts/` contains version-controlled prompt templates, `data/` stores the SQLite database and logs, and `scripts/` contains maintenance utilities.
 
----
+This layout is deliberate because the system needs to preserve a clear separation between:
+- the persistent market knowledge profile,
+- the current listing data,
+- the model prompt templates,
+- and the UI and API that act on that state.
 
-## Database Schema
+## Data Layer
 
-### 1. `campaigns`
-Top-level campaign entity representing a broad market segment (e.g. "Sport Bikes").
-*   `id` (INTEGER, PK)
-*   `name` (TEXT, UNIQUE)
+The central persistent store is SQLite, which is a good fit because the system is single-host, local-first, and heavily write-oriented on listings rather than on large concurrent transactions. The main production database lives in `data/scraper.db`, and the surrounding logging and session artifacts live beside it in the same `data/` hierarchy.
 
-### 2. `knowledge_sets`
-Contains expert instructions, checklists, and real-time evaluation weights.
-*   `id` (INTEGER, PK)
-*   `name` (TEXT)
-*   `expert_knowledge` (TEXT) - General domain description instructions
-*   `item_json` (TEXT) - JSON payload representing:
-    *   `extraction_criteria`: List of `{ id, description, type }` evaluated by Worker AI.
-    *   `scoring_model`: A normalized, importance-based scoring engine:
-        ```json
-        {
-          "weights": {
-            "camelCaseFieldId": {
-              "satisfied_if": true,
-              "importance": 25
-            }
-          }
-        }
-        ```
+The database design reflects the product logic rather than just the UI. `campaigns` define broad market segments, `searches` define concrete Kleinanzeigen queries tied to a campaign and a knowledge set, `knowledge_sets` store the expert evaluation profile, and `listings` store the scraped ad plus all extracted and computed outputs. That gives the application a clean separation between configuration and per-listing runtime state.
 
-### 3. `searches`
-Configured Kleinanzeigen tracking queries linked to a single guidelines profile.
-*   `id` (INTEGER, PK)
-*   `campaign_id` (INTEGER, FK -> campaigns.id)
-*   `name` (TEXT)
-*   `url` (TEXT) - Kleinanzeigen search endpoint URL
-*   `enabled` (INTEGER, BOOLEAN)
-*   `knowledge_set_id` (INTEGER, FK -> knowledge_sets.id)
+The `listings` table is especially important because it is not just a scrape cache. It holds the original card-level data, the detailed page text, specs, images, processing state, extracted facts, the score, and the status of the listing in the analysis pipeline. In other words, the database is the canonical memory of the system.
 
-### 4. `listings`
-Scraped ads, harvested sub-page metrics, and calculated AI evaluations.
-*   `id` (TEXT, PK) - Scraped Kleinanzeigen ad ID
-*   `title` (TEXT)
-*   `price` (TEXT)
-*   `location` (TEXT)
-*   `url` (TEXT)
-*   `short_description` (TEXT) - Parsed from search card list
-*   `detailed_description` (TEXT) - Harvested from full ad detail page
-*   `llm_processed` (INTEGER, BOOLEAN)
-*   `llm_processed_time` (TEXT, ISO timestamp)
-*   `full_info_obtained` (INTEGER, BOOLEAN) - 1 if all criteria evaluated cleanly
-*   `extracted_facts` (TEXT, JSON string) - KV mapping matching criterion IDs to values
-*   `niceness_score` (INTEGER) - Normalized weight-based rating from 0 to 100
-*   `status` (TEXT) - `'New' | 'Evaluating' | 'Matched'`
-*   `search_id` (INTEGER, FK -> searches.id)
-*   `details` (TEXT, JSON string) - Generic KV specifications parsed from `.addetailslist--detail`
-*   `images` (TEXT, JSON string) - List of harvested carousel image slide URLs
+## Knowledge Sets
 
----
+`knowledge_sets` are the architectural heart of the product. They store two things: `expert_knowledge`, which is the market-specific instruction set, and `item_json`, which defines the extraction criteria and scoring model. This allows each campaign or search profile to behave like a custom evaluator rather than a hardcoded one-size-fits-all classifier.
 
-## Hierarchical Intelligent Agent Pipeline (The Dual-Model Engine)
+This is the right design because different markets have different trust signals. For Fireblades, TÜV, service records, ownership history, crash disclosure, and track history matter a lot; another market would require a different checklist and different weighting. The database therefore functions as a reusable “market brain” rather than a static settings table.
 
-The deal-matching workspace relies on a decoupled, hierarchical dual-model agent pipeline to balance high-level structural intelligence with low-cost execution.
+The current profiles have clearly evolved from simpler booleans into a richer evidence schema. Earlier versions focused on straightforward criterion satisfaction, while newer versions add risk-aware outputs like `high_value_unknowns`, `risk_flags`, and `_full_info_obtained`. That is a meaningful shift toward evidence-based triage rather than binary classification.
 
-```mermaid
-graph TD
-    subgraph Architecture Stage
-        A[High-Tier Planning Model / Expert Creator]
-        A -->|Compiles Profile Prompt Template| B[Guidelines Profile: expert_knowledge & item_json]
-    end
-    
-    subgraph Bulk Processing Stage
-        C[Detailed Listing Text & specs]
-        B -->|Context Feed| D[Low-Cost Worker Model: gpt-5-nano]
-        C -->|Context Feed| D
-        D -->|JSON Checklist Output| E[Scoring & Database Storage]
-    end
-```
+## Two-Model Strategy
 
-### 1. Ingestion Profile Architect (Planning Agent)
-*   **Role**: An advanced, reasoning-capable model (or human domain expert) outlines the campaign guidelines parameters.
-*   **Operation**: The architect creates the specific ingestion configuration. It designs the core domain logic (`expert_knowledge`), maps checklist targets (`extraction_criteria`), and assigns the scoring importance weights (`scoring_model.weights`).
-*   **Logical Focus**: Decouples search design and expert criteria formulation (requiring high logical reasoning) from continuous, manual item review.
+The project currently uses a **two-agent strategy** conceptually, even if one of the agents may be a human or a stronger planning model rather than another always-on service. The external planning agent creates or refines the market profile, while the internal worker agent applies that profile to each listing.
 
-### 2. Execution Processor (Low-Cost Worker Agent)
-*   **Role**: A high-efficiency, lower-cost model (`gpt-5-nano`) executes high-throughput evaluation tasks.
-*   **Context Fed to the Worker**:
-    *   **Scraped Listing Text**: The specific Kleinanzeigen ad's detailed description, title, and key specifications.
-    *   **Domain & Expert Knowledge Rules**: General instructions, specific warnings (e.g. what indicates track use or valve wear), and product constraints.
-    *   **Extraction Criteria List**: Strict target fields to evaluate and parse from the text.
-*   **Operation**: The low-cost model processes each listing independently. It maps the listing's text against the guidelines checklists and generates a clean, structured JSON output (`extracted_facts`). It has no knowledge of scoring weights, serving strictly as an objective, unbiased fact extractor.
-*   **Dynamic Scoring**: The backend server and agent worker post-calculate the score using the structured output from the cheap model and the importance weights defined by the architect.
-*   **Robust Schema Resiliency (Soft Extraction)**: 
-    *   **Dynamic JSON Skeleton Injection**: The worker injects a pre-built target JSON skeleton populated with default values (`"unknown"`) immediately following the `START_JSON` trigger at the end of the prompt to enforce clean generation.
-    *   **Fuzzy Sanitization Layer**: The model is asked to extract arbitrary highlights. The Python logic ([agent_worker.py](file:///home/schneider/repos_private/KleinanzeigenScraper/scraper/agent_worker.py)) intercepts the response and sanitizes the output by fuzzy-mapping raw `kind` strings to standard types (`maintenance`, `warning`, `feature`), automatically deriving sentiments (`positive`, `negative`, `neutral`), and strictly truncating tag labels to 32 characters in post-processing.
-    *   **Catastrophic-Only Validation & Bounded One-Shot Retry**: Validation checks focus exclusively on catastrophic schema issues (e.g. missing required criteria fields). In the event of failure, the engine initiates a single targeted retry with a dynamic validation failure report, falling back to a best-effort parse if the retry fails.
+The external planning role is where the system decides what “good” means in a specific market. It writes `expert_knowledge`, defines the extraction criteria, and assigns weight importance through `scoring_model.weights`. This is the high-cognition layer: it interprets the market, decides what matters, and converts that into a machine-readable evaluation spec.
 
----
+The internal worker is the high-throughput execution layer. It receives the listing title, details, description, the expert knowledge, the extraction criteria, and a strict JSON skeleton, then returns evidence, uncertainty markers, and a structured comparison to reference listings. It has no role in shaping the market definition; its job is to apply it faithfully and cheaply.
 
-## Normalized Scoring Engine
+## Why This Split Exists
 
-The matching system calculates item deal suitability using a normalized weight-based percentage (0% to 100%).
+The split exists because a single model doing both calibration and evaluation tends to blur the line between evidence and judgment. For marketplace analysis, that is a problem: a listing can “feel” good while lacking hard proof, and the system should not reward that feeling as if it were evidence.
 
-1. **Decentralized Guidelines Profiles**: Expert evaluation checklists and weights are stored in the database per campaign search target via `knowledge_sets`.
-2. **Normalized Weights**: Instead of a starting baseline score and absolute adjustments, each satisfied criterion adds its specific `importance` weight.
-3. **Score Range**: Calculated as `sum(satisfied_criteria.importance)`. The frontend and backend cap the score within `[0, 100]`.
-4. **Color Badges**: Badges are rendered dynamically based on the score threshold:
-   * **Green (Excellent)**: Score >= 70
-   * **Amber (Good/Neutral)**: Score >= 40 and < 70
-   * **Grey (Low)**: Score < 40
+By separating planning from execution, the architecture lets expensive reasoning happen once per market profile instead of repeatedly per listing. That reduces cost, improves consistency, and makes the worker prompt much easier to constrain. It also gives you a cleaner debugging surface, because scoring errors can be traced to either the profile design or the per-listing extraction.
 
----
+## Scraping Pipeline
 
-## Execution & Lifecycle Pipeline
+The scraping flow is split into discovery and detail harvesting. Discovery crawls the Kleinanzeigen index pages and stores the card-level ad information: title, price, location, URL, and short description. Detail harvesting then loads individual listing pages to capture richer fields such as the longer description, structured details, and images.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Playwright as Scraper Discovery
-    participant Harvester as Scraper Harvester
-    participant DB as SQLite DB
-    participant Agent as LLM Agent Worker
-    
-    Note over Playwright, DB: Stage 1: Discovery Phase (Fast Index Crawling)
-    Playwright->>Playwright: Scan Kleinanzeigen Index Pages
-    Playwright->>DB: INSERT OR IGNORE base ad info (ID, title, price, location, short_description)
-    
-    Note over Harvester, DB: Stage 2: Detail Harvesting Phase (Sub-page Crawling)
-    Harvester->>DB: SELECT listings WHERE detailed_description IS NULL
-    loop For each missing listing
-        Harvester->>Harvester: Crawl listing page directly
-        Harvester->>DB: UPDATE listing SET detailed_description, details, images, full_info_obtained=1
-    end
-    
-    Note over Agent, DB: Stage 3: Grading & Analysis Phase (AI Interpretation)
-    Agent->>DB: SELECT listings WHERE llm_processed=0
-    loop For each unprocessed listing
-        Agent->>Agent: Generate prompt utilizing expert_knowledge and extraction_criteria
-        Agent->>DB: UPDATE listing SET llm_processed=1, extracted_facts, niceness_score, status
-    end
-```
+This two-step design is practical because not every listing needs full detail parsing at the discovery stage. It also reduces wasted work: the system can index many ads quickly, then selectively deepen only those that need full evaluation.
 
-### Key Execution Highlights
+The scraper stores everything first and evaluates later. That separation is useful because the AI worker can then operate on a stable dataset, and the scraping code does not need to wait on any model call to continue capturing new listings.
 
-1. **Per-Listing Independent AI Evaluation**:
-   Users can click "AI-Eval" on any listing in the dashboard to trigger an independent, real-time background evaluation request (`POST /api/process` with listing ID). The frontend monitors execution state at the listing card level, keeping other UI components interactive.
-2. **Dynamic Prompt Template**:
-   The AI Guidelines prompt is externalized in `prompts/external_prompt.md`. The frontend retrieves it via `GET /api/external-prompt` to allow copying the reference template.
-3. **Resilient Environment Key Loader**:
-   `scraper/config.py` contains a dynamic environment file loader that parses the parent `.env` file for `OPENAI_API_KEY` on startup. This fallback ensures standalone Python tasks (e.g. cron-like scheduler tasks) inherit the correct API key regardless of terminal environment variables.
+## Internal Worker Role
 
----
+The worker in `agent_worker.py` is the core AI execution engine. It takes listings from the database, loads the relevant knowledge set, builds the evaluation prompt, sends it to the OpenAI client, parses the result, validates the JSON structure, computes a final score, and writes the result back into SQLite.
 
-## API Documentation (backend/server.js)
+The worker is intentionally not a black box wrapper around the model. It performs post-processing and enforcement in Python, including JSON block extraction, highlight sanitization, validation, scoring, logging, and persistence. That makes the worker the true operational center of the AI pipeline rather than just a thin API caller.
 
-### Campaigns
-*   `GET /api/campaigns` - Retrieves campaigns including active listings metrics.
-*   `POST /api/campaigns` - Creates a new campaign.
-*   `DELETE /api/campaigns/:id` - Deletes a campaign and cascades associated search queries.
+## Prompt Strategy
 
-### Search Targets
-*   `GET /api/search-urls` - Retrieves active search queries and their linked `knowledge_set_id`.
-*   `POST /api/search-urls` - Persists search target lists and binds expert profiles.
-*   `DELETE /api/search-urls/:id` - Deletes a tracking search target.
+`prompts.py` is the translation layer between knowledge-set data and model calls. It reads the internal prompt template, injects the expert knowledge, listing content, market references, and a JSON skeleton, then returns the final prompt string to the worker. This means the prompt content is driven by configuration and data rather than by hardcoded branch logic.
 
-### Guidelines & Schema Prompts
-*   `GET /api/knowledge-sets` - Returns all guidelines profiles.
-*   `POST /api/knowledge-sets` - Saves or updates a dynamic guidelines profile.
-*   `GET /api/external-prompt` - Retrieves the active guidelines planning prompt markdown template.
+That design matters because it lets the same worker code support many different market profiles. A Fireblade campaign can use one checklist and scoring distribution, while another campaign can use a different schema without changing the worker’s core logic.
 
-### Session Authentication Management
-*   `GET /api/session-status` - Returns cookie-based session email and last updated timestamp.
-*   `POST /api/login-session` - Spawns Playwright browser worker in dynamic interactive login mode.
+The system also supports an outreach prompt path for generating a first-contact message once a listing is deemed interesting or once specific unknowns need to be clarified. That means the prompt stack is not just evaluative; it also supports sales follow-up and negotiation support.
 
-### Listings & Operations
-*   `GET /api/listings` - Returns detailed lists of scraped items.
-*   `POST /api/process` - Triggers match grading and scoring evaluations. Accepts optional `listing_id` parameter to run per-card evaluations.
-*   `POST /api/listings/draft` - Returns or dynamically generates a personalized outreach message draft.
-*   `POST /api/scrape` - Asynchronously triggers Python scraper daemon commands.
-*   `GET /api/scrape/progress` - Server-Sent Events (SSE) stream returning real-time progress card details.
+## Internal Prompt Philosophy
 
----
+The internal evaluation prompt has become much stricter than the earlier style of “analyze and score this ad.” It now behaves like a forensic extraction task: only explicit evidence should count, missing high-value facts should be marked as unknown, and generic seller praise should not be overvalued.
 
-## Log Rotation & Isolated Analysis Logging Architecture
+This is a strong design choice for a classifieds intelligence system. It prevents the model from smoothing over uncertainty, which is exactly what a human buyer would need to avoid when dealing with used bikes, uncertain maintenance histories, or potentially hidden damage.
 
-### Log Rotation
-To guarantee disk scalability and avoid uncontrolled log growth, the system implements a strict global rotation strategy:
-* **Log Location**: [scraper.log](file:///home/schneider/repos_private/KleinanzeigenScraper/data/scraper.log)
-* **Log Settings**: Handled via standard `RotatingFileHandler` with `maxBytes=5*1024*1024` (5 MB) and `backupCount=3 backups`.
-* **Detail Cleanliness**: Huge raw LLM prompt and response payloads are kept entirely out of the central [scraper.log](file:///home/schneider/repos_private/KleinanzeigenScraper/data/scraper.log) file to preserve readability and disk health.
+The prompt also uses reference descriptions, one strong and one weak, to anchor the model’s judgment. This helps calibrate the system toward the local market rather than toward generic internet advice. In effect, the prompt gives the model a calibration target instead of asking it to reason in a vacuum.
 
-### Listing-Level Isolated Analysis Logs
-To capture verbose LLM execution details without cluttering global systems, every evaluated listing automatically instantiates a dedicated sandboxed logging directory at `data/logs/<listing_id>/`:
-1. `analysis.log`: Records the exact dynamic initial evaluation prompt (carrying domain expert checklists, criteria, and the pre-filled JSON skeleton), the raw OpenAI completions, structural validation failures, and the complete bounded one-shot retry sequences.
-2. `conversation_analysis.log`: Records prompt history and output blocks for the chat-negotiation interpretation agent.
-3. `outreach_draft.log`: Records missing-criteria prompts and the generated outreach seller draft messages.
+## Extraction Schema
+
+The result format has evolved into a structured evidence envelope. The worker expects `criteria` with per-field values and evidence quotes, `dimensions` with score/rationale pairs, `reference_comparison`, optional `high_value_unknowns`, optional `risk_flags`, a possible `draft_message`, and the `_full_info_obtained` flag.
+
+This is a big improvement over a naive summary approach because it separates:
+- confirmed facts,
+- unresolved but important gaps,
+- explicit warning signals,
+- and the system’s overall comparison judgment.
+
+That structure also makes the outputs explainable and audit-friendly. When a score looks wrong, the extracted evidence can be inspected directly without reverse-engineering the model’s prose.
+
+## Sanitization and Validation
+
+The worker does not trust the model output blindly. It extracts the JSON block from the response, sanitizes highlights by mapping fuzzy `kind` values into a controlled type set, and validates the schema with a focus on catastrophic failures rather than minor formatting issues.
+
+This is an important engineering choice because model outputs are not always perfectly stable. The system deliberately treats severe schema failures as retry-worthy, while minor shape variations are normalized in code. That keeps the pipeline resilient without turning every minor formatting problem into a failed job.
+
+The bounded one-shot retry is another practical safeguard. If validation fails, the worker sends a targeted follow-up with the validation errors and asks for a corrected JSON response. If that still fails, it proceeds with best-effort parsing instead of blocking the whole pipeline.
+
+## Scoring Logic
+
+The current scoring strategy is a blended scoring model. The worker computes a criteria score from satisfied checklist items, computes a dimensions score from trust and risk dimensions, and then combines them with a weighting scheme. It also applies a coverage factor so that sparse or vague listings cannot score highly simply because they avoided explicit negatives.
+
+That logic is more defensible than a pure sum of positives because it recognizes the difference between “good evidence” and “little evidence.” A listing with only a few confirmed positives should not automatically outrank a listing with deeper, more complete disclosure.
+
+The helper `is_satisfied()` is intentionally strict: unknown never satisfies a criterion. That is an important philosophical choice in this project because silence is not proof of safety, and omitted risk-relevant details must not count as confirmed positives.
+
+## What Was Explored
+
+The logs and code evolution suggest a series of architectural experiments. The earliest likely stage was simple model summarization or single-pass judgment; then the system evolved toward checklist-based extraction; then toward weighted scoring; and now toward a stricter forensic extraction model with explicit uncertainty handling.
+
+That progression makes sense. Generic summaries are easy to generate but hard to trust. Pure boolean scoring is easier to verify but too brittle. The current architecture is trying to land in the middle with structured evidence, weighted interpretation, and explicit unknowns.
+
+The system has also explored reference anchoring, which is helpful in a noisy classifieds market. Instead of asking the model “is this good?”, it asks it to compare against known good and bad listing styles, which reduces calibration drift.
+
+## Logging Architecture
+
+Logging is one of the strongest parts of the implementation. The system uses a rotated global log for operational health and separate per-listing logs for detailed AI runs. That means the top-level log stays readable, while each listing gets a full audit trail of prompt, response, validation errors, retry, parsed JSON, score contributions, and final score.
+
+This design is excellent for debugging AI systems because it preserves causality. If a score looks suspicious, you can inspect exactly what the model saw, what it returned, how the parser handled it, and how the scorer converted it into the final number.
+
+The isolated log directories also make the system scalable from an observability perspective. Each listing becomes a self-contained evidence folder, which is very useful for incident review, QA, and prompt iteration.
+
+## Conversation Analysis
+
+A secondary analysis path exists for conversational follow-up. `analyze_conversation()` inspects message history and tries to resolve unknown criteria based on the actual seller conversation, then recomputes the score if new evidence is found.
+
+This is architecturally elegant because it treats confidence as a process rather than a one-time output. A listing may be incomplete at scrape time, but later messages may answer the important missing questions, and the system can incorporate that new evidence without redoing the whole pipeline.
+
+That makes the product more than a static listing parser. It becomes a negotiation assistant and evidence tracker that can adapt as the conversation unfolds.
+
+## Frontend and API
+
+The Node/Express backend exposes the operational APIs, while the React frontend presents the dashboard and listing workflows. The backend handles campaigns, searches, knowledge sets, session status, scraping triggers, processing triggers, listing retrieval, and outreach draft generation.
+
+The frontend is state-driven and is intended to show listings, editing views, and the operational dashboard for the user. The architecture suggests a single-page app experience where analysis state, processing state, and user editing all live in one coherent interface rather than being split across multiple tools.
+
+This is appropriate for a tool that combines triage, analysis, and action. Users are not just looking at data; they are deciding which listings deserve attention, which need clarification, and which are worth outreach.
+
+## Current Model Choice
+
+The current design favors a low-cost worker model for the per-listing evaluation path. That choice is sensible because the system’s workload is repetitive and high-volume, and the worker is primarily extracting structured facts rather than inventing new reasoning from scratch.
+
+The architecture implicitly assumes that more expensive reasoning should be used upstream, when the market profile is being designed and calibrated, not on every single ad. That is why the model can be cheaper in the loop while still benefiting from a stronger planning process outside the loop.
+
+This is a pragmatic cost-performance tradeoff. The system gets consistency and throughput while reserving the more expensive “what matters in this market?” reasoning for the profile-design stage.
+
+## Why This Is Better Than a Generic AI Tool
+
+A generic AI tool would summarize listings or produce a polished opinion. This system instead tries to produce an evidence ledger with a conservative score, which is much more appropriate for used vehicle markets.
+
+That distinction matters because used motorcycle purchases are dominated by hidden state: service history, crash history, structural modifications, and omission patterns. The architecture is designed to surface exactly those hidden-state questions instead of hiding them behind a smooth summary.
+
+## Current Weaknesses
+
+The biggest current weakness is that the prompt and the scorer are not yet perfectly aligned. The newer prompt outputs richer uncertainty signals, but the scoring function still primarily consumes the old-style criteria and dimensions structure, so the new semantics are not fully reflected in the final score.
+
+That is why the architecture can feel “ahead” in extraction but “behind” in scoring. The model is already flagging high-value unknowns and risks, but Python still needs to absorb those signals more explicitly for the final number to match the evidence model.
+
+A second weakness is schema drift. The system supports legacy and new formats simultaneously, which is good for migration but risky for long-term clarity. As the refactor continues, it would be wise to simplify the supported schema and make the scorer explicitly aware of every field that matters.
+
+## What the Architecture Is Trying To Become
+
+The long-term direction is clear: a market-specific evidence engine that can classify listings, explain the result, generate follow-up questions, and support outreach. It is not a chatbot bolted onto a scraper; it is a domain workflow where AI is just one layer in a larger decision pipeline.
+
+The ideal end state is a system where:
+- the market profile is carefully designed,
+- the scraper reliably captures listing reality,
+- the worker extracts explicit evidence,
+- the scorer assigns a deterministic risk-aware rating,
+- and the UI makes the whole process understandable.
+
+## Practical Summary
+
+In one sentence, KleinanzeigenScraper is a **forensic classifieds analysis pipeline** for used motorcycles, built around structured evidence extraction, deterministic scoring, and audit-friendly logging. Its architecture is intentionally split between planning, extraction, scoring, and follow-up so that each layer can be optimized independently.
+
+The current implementation is already strong in structure and observability, but the next architectural step is to make the Python scoring layer fully consume the richer uncertainty and risk semantics that the newer prompt already produces.
