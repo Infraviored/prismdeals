@@ -71,10 +71,10 @@ Return exactly this structure:
 - [What makes text feel vague, evasive, suspicious, unrealistic, or risky in this exact market]
 
 ## Calibration
-- suspicious / weak listing: [score band]
-- ordinary plausible listing: [score band]
-- clearly above-average listing: [score band]
-- exceptional listing: [score band]
+- suspicious / weak listing: 20–40
+- ordinary plausible listing: 45–55
+- clearly above-average listing: 60–75
+- exceptional listing: 80–95
 
 ## Reusable evaluation dimensions
 - trustworthiness
@@ -90,6 +90,13 @@ Return exactly this structure:
 </output_format>
 
 <rules>
+- Treat the **observed market median / ordinary plausible listing** as the scoring center of gravity; in most markets this should map to roughly **50**, not to “weak.”
+- When describing what is “normal here,” distinguish between:
+  - common explicit positives,
+  - common harmless omissions,
+  - and rarer enthusiast-level details that should only lift stronger listings, not punish average ones.
+- Do not define the market baseline using expert-best listings; define it from the **actual sampled median listing quality**.
+- If a detail is frequently absent in sampled listings, its absence should usually stay **neutral or mildly confidence-reducing**, not become a strong downward force.
 - Base your calibration primarily on the sampled listings and secondarily on domain knowledge.
 - Distinguish clearly between:
   - explicit proof,

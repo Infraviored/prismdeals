@@ -12,6 +12,11 @@ Important:
 - The LLM worker should identify explicit facts, explicit warnings, and important missing high-value evidence.
 - Do not rely on broad subjective dimensions alone.
 - Do not create criteria that treat silence as positive.
+- The generated profile must be calibrated so that an **ordinary plausible listing in this market lands around 50**.
+- Do not let common omissions for this market stack into a heavily negative profile.
+- High-value unknowns should mainly **cap upside or reduce confidence modestly**; they should not, by default, push a normal listing far below average.
+- Explicit negatives should represent **true red flags**, not merely absent ideal information.
+- Avoid double-counting the same issue across explicit negatives, risk logic, and unknown fields.
 - Separate:
   1. explicit positives,
   2. explicit negatives,
@@ -130,6 +135,7 @@ Do not output anything before <researcher_output> or after </researcher_output>.
 - Create 3 to 8 high_value_unknown_fields.
 - Prefer criteria that can be extracted directly from listing text.
 - Put “things that are useful but often absent” into high_value_unknown_fields, not into hard negative criteria.
+- If a field is often absent in normal listings, place it in `high_value_unknown_fields` only when its absence should modestly reduce confidence; otherwise treat it as a normal omission outside hard scoring.
 - Use the market memo to distinguish:
   - ordinary omission,
   - meaningful missing trust evidence,
