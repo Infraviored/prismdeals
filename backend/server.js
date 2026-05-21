@@ -115,25 +115,14 @@ if (fs.existsSync(distPath)) {
 }
 app.use(express.json());
 
-// API: Serve the external schema prompt template
-app.get('/api/schema-prompt', (req, res) => {
+// API: Serve the external research agent prompt template
+app.get('/api/external-prompt', (req, res) => {
   try {
-    const promptPath = path.join(__dirname, '..', 'prompts', 'schema_prompt.md');
+    const promptPath = path.join(__dirname, '..', 'prompts', 'external_prompt.md');
     const content = fs.readFileSync(promptPath, 'utf8');
     res.type('text/plain').send(content);
   } catch (e) {
-    res.status(500).json({ error: 'schema_prompt.md not found' });
-  }
-});
-
-// API: Serve the external expert guidelines prompt template
-app.get('/api/expert-guidelines-prompt', (req, res) => {
-  try {
-    const promptPath = path.join(__dirname, '..', 'prompts', 'expert_guidelines_prompt.md');
-    const content = fs.readFileSync(promptPath, 'utf8');
-    res.type('text/plain').send(content);
-  } catch (e) {
-    res.status(500).json({ error: 'expert_guidelines_prompt.md not found' });
+    res.status(500).json({ error: 'external_prompt.md not found' });
   }
 });
 

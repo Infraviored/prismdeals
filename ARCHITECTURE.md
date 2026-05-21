@@ -10,9 +10,16 @@ This document maps the repository layout, data schemas, sequence workflow, and A
 ├── ARCHITECTURE.md          # System map & architectural reference
 ├── data/
 │   ├── scraper.db           # SQLite production database
+│   ├── scraper.log          # Rotated operational log
+│   ├── logs/                # Isolated per-listing detailed prompt/response logs
+│   │   └── <listing_id>/
+│   │       ├── analysis.log
+│   │       ├── conversation_analysis.log
+│   │       └── outreach_draft.log
 │   └── session_status.json  # Persisted login session data (email & timestamp)
 ├── prompts/                 # Version-controlled AI prompt templates
-│   └── profile_prompt.md    # Merged campaign profile prompt (item_json + expert_knowledge in one LLM call)
+│   ├── external_prompt.md   # Guidelines guidelines planning prompt template
+│   └── internal_prompt.md   # Internal evaluator prompt with skeleton placeholder
 ├── backend/                 # Node.js/Express SQLite API Server
 │   ├── package.json
 │   ├── db_setup.js          # SQLite table creation schema and triggers
@@ -51,7 +58,7 @@ YOU (buyer description)
 │  AGENT (any capable    │
 │  LLM, e.g. ChatGPT)   │
 │                        │
-│  Prompt: profile_      │
+│  Prompt: external_     │
 │  prompt.md             │
 │                        │
 │  Outputs:              │
@@ -84,6 +91,7 @@ YOU (buyer description)
 │  (gpt-5-nano, cheap)   │
 │                        │
 │  Prompted with:        │
+│  - internal_prompt.md  │
 │  - expert_knowledge    │
 │  - extraction_criteria │
 │  - listing text        │
@@ -101,7 +109,7 @@ YOU (buyer description)
 **Knowledge set** = reusable evaluation scheme stored in the DB.
 **Internal worker** = listing evaluator (runs automatically for every scraped listing).
 
-The single prompt template for the external agent lives at [`prompts/profile_prompt.md`](prompts/profile_prompt.md).
+The planning prompt template lives at [`prompts/external_prompt.md`](prompts/external_prompt.md), and the worker prompt lives at [`prompts/internal_prompt.md`](prompts/internal_prompt.md).
 
 ---
 
@@ -193,6 +201,10 @@ graph TD
     *   **Extraction Criteria List**: Strict target fields to evaluate and parse from the text.
 *   **Operation**: The low-cost model processes each listing independently. It maps the listing's text against the guidelines checklists and generates a clean, structured JSON output (`extracted_facts`). It has no knowledge of scoring weights, serving strictly as an objective, unbiased fact extractor.
 *   **Dynamic Scoring**: The backend server and agent worker post-calculate the score using the structured output from the cheap model and the importance weights defined by the architect.
+*   **Robust Schema Resiliency (Soft Extraction)**: 
+    *   **Dynamic JSON Skeleton Injection**: The worker injects a pre-built target JSON skeleton populated with default values (`"unknown"`) immediately following the `START_JSON` trigger at the end of the prompt to enforce clean generation.
+    *   **Fuzzy Sanitization Layer**: The model is asked to extract arbitrary highlights. The Python logic ([agent_worker.py](file:///home/schneider/repos_private/KleinanzeigenScraper/scraper/agent_worker.py)) intercepts the response and sanitizes the output by fuzzy-mapping raw `kind` strings to standard types (`maintenance`, `warning`, `feature`), automatically deriving sentiments (`positive`, `negative`, `neutral`), and strictly truncating tag labels to 32 characters in post-processing.
+    *   **Catastrophic-Only Validation & Bounded One-Shot Retry**: Validation checks focus exclusively on catastrophic schema issues (e.g. missing required criteria fields). In the event of failure, the engine initiates a single targeted retry with a dynamic validation failure report, falling back to a best-effort parse if the retry fails.
 
 ---
 
@@ -243,8 +255,8 @@ sequenceDiagram
 
 1. **Per-Listing Independent AI Evaluation**:
    Users can click "AI-Eval" on any listing in the dashboard to trigger an independent, real-time background evaluation request (`POST /api/process` with listing ID). The frontend monitors execution state at the listing card level, keeping other UI components interactive.
-2. **Dynamic External Prompt Template**:
-   The AI Researcher prompt is externalized in `prompts/schema_prompt.md`. When evaluating a listing, the worker incorporates search-specific target parameters directly into this dynamic template. The frontend retrieves the template via `GET /api/schema-prompt` to allow copying the current prompt reference.
+2. **Dynamic Prompt Template**:
+   The AI Guidelines prompt is externalized in `prompts/external_prompt.md`. The frontend retrieves it via `GET /api/external-prompt` to allow copying the reference template.
 3. **Resilient Environment Key Loader**:
    `scraper/config.py` contains a dynamic environment file loader that parses the parent `.env` file for `OPENAI_API_KEY` on startup. This fallback ensures standalone Python tasks (e.g. cron-like scheduler tasks) inherit the correct API key regardless of terminal environment variables.
 
@@ -265,7 +277,7 @@ sequenceDiagram
 ### Guidelines & Schema Prompts
 *   `GET /api/knowledge-sets` - Returns all guidelines profiles.
 *   `POST /api/knowledge-sets` - Saves or updates a dynamic guidelines profile.
-*   `GET /api/schema-prompt` - Retrieves the active dynamic AI Researcher prompt markdown template.
+*   `GET /api/external-prompt` - Retrieves the active guidelines planning prompt markdown template.
 
 ### Session Authentication Management
 *   `GET /api/session-status` - Returns cookie-based session email and last updated timestamp.
@@ -277,3 +289,19 @@ sequenceDiagram
 *   `POST /api/listings/draft` - Returns or dynamically generates a personalized outreach message draft.
 *   `POST /api/scrape` - Asynchronously triggers Python scraper daemon commands.
 *   `GET /api/scrape/progress` - Server-Sent Events (SSE) stream returning real-time progress card details.
+
+---
+
+## Log Rotation & Isolated Analysis Logging Architecture
+
+### Log Rotation
+To guarantee disk scalability and avoid uncontrolled log growth, the system implements a strict global rotation strategy:
+* **Log Location**: [scraper.log](file:///home/schneider/repos_private/KleinanzeigenScraper/data/scraper.log)
+* **Log Settings**: Handled via standard `RotatingFileHandler` with `maxBytes=5*1024*1024` (5 MB) and `backupCount=3 backups`.
+* **Detail Cleanliness**: Huge raw LLM prompt and response payloads are kept entirely out of the central [scraper.log](file:///home/schneider/repos_private/KleinanzeigenScraper/data/scraper.log) file to preserve readability and disk health.
+
+### Listing-Level Isolated Analysis Logs
+To capture verbose LLM execution details without cluttering global systems, every evaluated listing automatically instantiates a dedicated sandboxed logging directory at `data/logs/<listing_id>/`:
+1. `analysis.log`: Records the exact dynamic initial evaluation prompt (carrying domain expert checklists, criteria, and the pre-filled JSON skeleton), the raw OpenAI completions, structural validation failures, and the complete bounded one-shot retry sequences.
+2. `conversation_analysis.log`: Records prompt history and output blocks for the chat-negotiation interpretation agent.
+3. `outreach_draft.log`: Records missing-criteria prompts and the generated outreach seller draft messages.

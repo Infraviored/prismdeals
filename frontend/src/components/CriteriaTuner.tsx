@@ -18,7 +18,7 @@ export default function CriteriaTuner({ editKsJson, onChange }: CriteriaTunerPro
   }
 
   const weights = parsedConfig.scoring_model?.weights || {};
-  const totalWeight = Object.values(weights).reduce((sum, w) => sum + (w.importance || 0), 0);
+
 
   const handleUpdateWeight = (criterionId: string, newImportance: number) => {
     if (!parsedConfig) return;
@@ -107,15 +107,9 @@ export default function CriteriaTuner({ editKsJson, onChange }: CriteriaTunerPro
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {totalWeight === 100 ? (
-            <span className="text-[10px] bg-emerald-500/10 text-emerald-450 border border-emerald-500/20 px-2.5 py-1 rounded-lg font-bold font-mono">
-              ✓ Weight Sum: 100%
-            </span>
-          ) : (
-            <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-1 rounded-lg font-bold font-mono animate-pulse">
-              ⚠ Sum: {totalWeight}% (Must be 100%)
-            </span>
-          )}
+          <span className="text-[10px] bg-slate-800/50 text-slate-400 border border-slate-700/50 px-2.5 py-1 rounded-lg font-bold font-mono">
+            Auto-Normalized Weights
+          </span>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

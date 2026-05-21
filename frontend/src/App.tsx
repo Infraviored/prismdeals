@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect } from 'react'
 import type { Campaign, KnowledgeSet, SearchTarget, Listing, ParsedKnowledgeConfig } from './types'
 import ScraperProgressCard from './components/ScraperProgressCard'
@@ -54,8 +55,29 @@ export default function App() {
 
   // Knowledge Set form editor
   const [editKsName, setEditKsName] = useState('')
+  const [editKsRawResponse, setEditKsRawResponse] = useState('')
   const [editKsKnowledge, setEditKsKnowledge] = useState('')
   const [editKsJson, setEditKsJson] = useState('')
+
+   
+  useEffect(() => {
+    const ekMatch = editKsRawResponse.match(/<expert_knowledge>([\s\S]*?)<\/expert_knowledge>/i)
+    setEditKsKnowledge(ekMatch ? ekMatch[1].trim() : '')
+
+    const ijMatch = editKsRawResponse.match(/<item_json>([\s\S]*?)<\/item_json>/i)
+    setEditKsJson(ijMatch ? ijMatch[1].trim() : '')
+  }, [editKsRawResponse])
+
+  const handleEditKsJsonChange = (newJson: string) => {
+    setEditKsJson(newJson)
+    setEditKsRawResponse(prev => {
+      if (prev.match(/<item_json>[\s\S]*?<\/item_json>/i)) {
+        return prev.replace(/<item_json>[\s\S]*?<\/item_json>/i, `<item_json>\n${newJson}\n</item_json>`)
+      } else {
+        return prev + `\n\n<item_json>\n${newJson}\n</item_json>`
+      }
+    })
+  }
   const [editKsError, setEditKsError] = useState('')
 
   // Live URL validation preview
@@ -130,8 +152,7 @@ export default function App() {
   const [processingStatus, setProcessingStatus] = useState('')
 
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null)
-  const [schemaPrompt, setSchemaPrompt] = useState<string>('Loading...')
-  const [expertGuidelinesPrompt, setExpertGuidelinesPrompt] = useState<string>('Loading...')
+  const [profilePrompt, setProfilePrompt] = useState<string>('Loading...')
 
   // Custom states for images and descriptions
   const [selectedListingId, setSelectedListingId] = useState<string | null>(null)
@@ -140,8 +161,7 @@ export default function App() {
   useEffect(() => {
     refreshAll()
     checkSessionStatus()
-    fetch('/api/schema-prompt').then(r => r.text()).then(setSchemaPrompt).catch(() => setSchemaPrompt('Failed to load schema_prompt.md'))
-    fetch('/api/expert-guidelines-prompt').then(r => r.text()).then(setExpertGuidelinesPrompt).catch(() => setExpertGuidelinesPrompt('Failed to load expert_guidelines_prompt.md'))
+    fetch('/api/external-prompt').then(r => r.text()).then(setProfilePrompt).catch(() => setProfilePrompt('Failed to load external_prompt.md'))
     const interval = setInterval(checkSessionStatus, 8000)
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -257,9 +277,9 @@ export default function App() {
 
               criteria_evaluations = extractionCriteria.map((c: { id: string; question?: string; description?: string }) => {
                 const criterionVal = criteriaDict[c.id];
-                const factValObj = typeof criterionVal === 'object' && criterionVal !== null ? criterionVal : null;
-                const factVal = factValObj ? factValObj.value : 'unknown';
-                const reasoning = factValObj ? factValObj.reasoning : 'Not specified in listing description.';
+                const factValObj = typeof criterionVal === 'object' && criterionVal !== null ? (criterionVal as Record<string, unknown>) : null;
+                const factVal = factValObj ? (factValObj.value as string) : 'unknown';
+                const reasoning = factValObj ? (factValObj.reasoning as string) : 'Not specified in listing description.';
 
                 const wEntry = weights[c.id];
                 const satisfiedIf = wEntry?.satisfied_if;
@@ -330,18 +350,25 @@ export default function App() {
     if (activeSearchTarget && activeSearchTarget.knowledge_set_id) {
       const boundSet = knowledgeSets.find(ks => ks.id === activeSearchTarget.knowledge_set_id)
       if (boundSet) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setCurrentKnowledgeSetId(boundSet.id || null)
         setEditKsName(boundSet.name)
-        setEditKsKnowledge(boundSet.expert_knowledge)
-        setEditKsJson(JSON.stringify(boundSet.item_json, null, 2))
+
+        let raw = ''
+        if (boundSet.expert_knowledge) {
+          raw += `<expert_knowledge>\n${boundSet.expert_knowledge}\n</expert_knowledge>\n\n`
+        }
+        if (boundSet.item_json) {
+          const ijStr = typeof boundSet.item_json === 'string' ? boundSet.item_json : JSON.stringify(boundSet.item_json, null, 2)
+          raw += `<item_json>\n${ijStr}\n</item_json>`
+        }
+        setEditKsRawResponse(raw.trim())
         setEditKsError('')
       }
     } else {
       setCurrentKnowledgeSetId(null)
       setEditKsName('')
-      setEditKsKnowledge('')
-      setEditKsJson('')
+      setEditKsRawResponse('')
       setEditKsError('')
     }
   }, [activeSearchTarget, searches, knowledgeSets])
@@ -640,6 +667,48 @@ export default function App() {
       alert("Error contacting AI Matching backend.")
       setIsProcessing(false)
     }
+  }
+
+  // Context injection for external prompt
+  const getPromptWithContext = () => {
+    if (!profilePrompt || !activeSearchTarget?.url) return profilePrompt
+    const url = activeSearchTarget.url
+    
+    let ctx = `User is buying on Kleinanzeigen.de\nTarget URL: ${url}\n\nParsed Filters:\n`
+    try {
+      const decoded = decodeURIComponent(url)
+      
+      // eslint-disable-next-line no-useless-escape
+      const cbrMatch = decoded.match(/\/([^\/]+)\/k0/)
+      if (cbrMatch && !cbrMatch[1].includes('preis:')) {
+        ctx += `- Target Product: ${cbrMatch[1].replace(/-/g, ' ')}\n`
+      }
+
+      const priceMatch = decoded.match(/preis:(\d*\.?\d*):(\d*\.?\d*)/)
+      if (priceMatch) {
+        if (priceMatch[1] && priceMatch[2]) ctx += `- Price: ${priceMatch[1]} to ${priceMatch[2]} EUR\n`
+        else if (priceMatch[1]) ctx += `- Price: from ${priceMatch[1]} EUR\n`
+        else if (priceMatch[2]) ctx += `- Price: up to ${priceMatch[2]} EUR\n`
+      }
+      
+      const ezMatch = decoded.match(/ez_i:(\d{4})?,(\d{4})?/)
+      if (ezMatch) {
+        if (ezMatch[1] && ezMatch[2]) ctx += `- Registration Year: ${ezMatch[1]} to ${ezMatch[2]}\n`
+        else if (ezMatch[1]) ctx += `- Registration Year: from ${ezMatch[1]}\n`
+        else if (ezMatch[2]) ctx += `- Registration Year: up to ${ezMatch[2]}\n`
+      }
+      
+      const kmMatch = decoded.match(/km_i:(\d+)?,(\d+)?/)
+      if (kmMatch) {
+        if (kmMatch[1] && kmMatch[2]) ctx += `- Mileage: ${kmMatch[1]} to ${kmMatch[2]} km\n`
+        else if (kmMatch[1]) ctx += `- Mileage: from ${kmMatch[1]} km\n`
+        else if (kmMatch[2]) ctx += `- Mileage: up to ${kmMatch[2]} km\n`
+      }
+    } catch(e) {
+      console.error("Failed to parse URL context", e)
+    }
+    
+    return profilePrompt.replace('{{USER_CONTEXT}}', ctx.trim())
   }
 
   // Copy helper
@@ -1210,49 +1279,30 @@ export default function App() {
                             />
                           </div>
 
-                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                            {/* Left Column: Guidelines Checklist */}
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center bg-slate-900/40 px-2.5 py-1.5 rounded-lg border border-slate-850">
-                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">1. Expert guidelines checklist</span>
-                                <button
-                                  onClick={() => handleCopyPrompt(expertGuidelinesPrompt, 'inline-guidelines')}
-                                  className={`text-[9px] px-2 py-0.5 rounded font-bold transition-all ${copiedPromptId === 'inline-guidelines' ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/25' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
-                                >
-                                  {copiedPromptId === 'inline-guidelines' ? 'Copied prompt!' : 'Copy Template'}
-                                </button>
-                              </div>
-                              <textarea
-                                value={editKsKnowledge}
-                                onChange={e => setEditKsKnowledge(e.target.value)}
-                                placeholder="Paste model vulnerabilities, soft seller questions, big service milestones..."
-                                rows={8}
-                                className="w-full bg-slate-955 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500 font-sans whitespace-pre-wrap"
-                              />
-                            </div>
-
-                            {/* Right Column: Ingestion Schema JSON */}
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center bg-slate-900/40 px-2.5 py-1.5 rounded-lg border border-slate-850">
-                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider font-mono">2. AI Researcher JSON schema</span>
-                                <button
-                                  onClick={() => handleCopyPrompt(schemaPrompt, 'inline-json')}
-                                  className={`text-[9px] px-2 py-0.5 rounded font-bold transition-all ${copiedPromptId === 'inline-json' ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/25' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
-                                >
-                                  {copiedPromptId === 'inline-json' ? 'Copied prompt!' : 'Copy Template'}
-                                </button>
-                              </div>
-                              <textarea
-                                value={editKsJson}
-                                onChange={e => setEditKsJson(e.target.value)}
-                                placeholder="Paste structured JSON criteria config containing 'extraction_criteria' and 'scoring_model'..."
-                                rows={8}
-                                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono focus:outline-none focus:border-emerald-500"
-                              />
-                            </div>
+                          <div className="flex justify-between items-center bg-slate-900/40 px-2.5 py-1.5 rounded-lg border border-slate-850 mb-1">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">External Research Agent Prompt</span>
+                            <button
+                              onClick={() => handleCopyPrompt(getPromptWithContext(), 'inline-profile')}
+                              className={`text-[9px] px-2 py-0.5 rounded font-bold transition-all ${copiedPromptId === 'inline-profile' ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/25' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                            >
+                              {copiedPromptId === 'inline-profile' ? 'Copied prompt!' : 'Copy Profile Prompt'}
+                            </button>
                           </div>
 
-                          <CriteriaTuner editKsJson={editKsJson} onChange={setEditKsJson} />
+                          <div className="space-y-2 pt-2">
+                            <div className="text-[11px] text-slate-400 mb-2 leading-relaxed bg-slate-900/50 p-3 rounded-lg border border-slate-800">
+                              Hand the <span className="text-emerald-400 font-bold">External Research Agent Prompt</span> above to an external smart research agent model (like ChatGPT). It will generate a complete evaluation profile. Paste that exact response below.
+                            </div>
+                            <textarea
+                              value={editKsRawResponse}
+                              onChange={e => setEditKsRawResponse(e.target.value)}
+                              placeholder="Paste the full <researcher_output> response here..."
+                              rows={14}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed"
+                            />
+                          </div>
+
+                          <CriteriaTuner editKsJson={editKsJson} onChange={handleEditKsJsonChange} />
 
                           {editKsError && (
                             <div className="text-xs text-rose-400 font-semibold bg-rose-500/10 p-2 rounded">{editKsError}</div>

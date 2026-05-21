@@ -4,10 +4,11 @@ import json
 import sqlite3
 import datetime
 import logging
+from logging.handlers import RotatingFileHandler
 import re
 from openai import OpenAI
 from config import API_KEY, LLM_MODEL
-from prompts import get_generalized_analysis_prompt, get_outreach_draft_prompt
+from prompts import build_evaluation_prompt, get_outreach_draft_prompt
 
 # Set up logging
 log_file = os.path.join(
@@ -31,8 +32,10 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 root_logger.addHandler(console_handler)
 
-# File handler
-file_handler = logging.FileHandler(log_file, encoding="utf-8")
+# File handler with rotation (max 5MB, keep 3 backups)
+file_handler = RotatingFileHandler(
+    log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+)
 file_handler.setFormatter(formatter)
 root_logger.addHandler(file_handler)
 
@@ -84,102 +87,227 @@ def extract_json_block(text):
     return None
 
 
+def sanitize_extracted_data(extracted_data):
+    """Sanitizes highlights by mapping 'kind' (or legacy 'type') to the strict frontend schema and populating defaults."""
+    if not isinstance(extracted_data, dict):
+        return extracted_data
+
+    if "highlights" in extracted_data and isinstance(
+        extracted_data["highlights"], list
+    ):
+        sanitized_highlights = []
+        for h in extracted_data["highlights"]:
+            if not isinstance(h, dict):
+                continue
+
+            label = h.get("label", "")
+            if not isinstance(label, str):
+                label = str(label)
+
+            # Map "kind" or legacy "type"
+            kind_val = h.get("kind") or h.get("type") or "feature"
+            k = str(kind_val).lower().strip()
+
+            # Reconstruct legacy type
+            h_type = "feature"
+            if k in [
+                "maintenance",
+                "service",
+                "tüv",
+                "tuv",
+                "oil change",
+                "repair",
+                "tires",
+                "inspektion",
+                "wartung",
+            ]:
+                h_type = "maintenance"
+            elif k in [
+                "warning",
+                "defect",
+                "issue",
+                "damage",
+                "flaw",
+                "problem",
+                "scratch",
+                "unfall",
+                "schade",
+            ]:
+                h_type = "warning"
+            elif k in [
+                "feature",
+                "upgrade",
+                "accessory",
+                "extra",
+                "mod",
+                "modification",
+                "tuning",
+                "part",
+                "zubehör",
+            ]:
+                h_type = "feature"
+            else:
+                # Fuzzy matching fallback
+                if any(
+                    x in k
+                    for x in [
+                        "defect",
+                        "damage",
+                        "broken",
+                        "accident",
+                        "warn",
+                        "fail",
+                        "issue",
+                        "schade",
+                        "unfall",
+                        "rost",
+                    ]
+                ):
+                    h_type = "warning"
+                elif any(
+                    x in k
+                    for x in [
+                        "service",
+                        "tüv",
+                        "tuv",
+                        "maintenance",
+                        "öl",
+                        "oil",
+                        "reifen",
+                        "kett",
+                    ]
+                ):
+                    h_type = "maintenance"
+                else:
+                    h_type = "feature"
+
+            # Auto-populate sentiment based on type
+            sentiment = "neutral"
+            if h_type == "warning":
+                sentiment = "negative"
+            elif h_type == "feature":
+                sentiment = "positive"
+            elif h_type == "maintenance":
+                sentiment = "neutral"
+
+            sanitized_highlights.append(
+                {
+                    "label": label[:32],  # Ensure length limit under 32 chars
+                    "type": h_type,
+                    "sentiment": sentiment,
+                    "evidence_quote": h.get("evidence_quote") or "",
+                    "confidence": h.get("confidence") or "high",
+                }
+            )
+        extracted_data["highlights"] = sanitized_highlights
+    return extracted_data
+
+
 def validate_extracted_data(extracted_data, criteria_list):
-    """Validates the extracted JSON structure against target schema rules and returns a list of error strings"""
+    """Validates the extracted JSON structure against target schema rules, strictly checking only catastrophic requirements to avoid unnecessary retries."""
     errors = []
     if not isinstance(extracted_data, dict):
         return ["Extracted data is not a JSON object"]
 
-    required_keys = ["criteria", "highlights", "draft_message", "_full_info_obtained"]
-    for key in required_keys:
-        if key not in extracted_data:
-            errors.append(f"Missing required top-level key: '{key}'")
+    # Catastrophic: missing 'criteria' top-level key
+    if "criteria" not in extracted_data:
+        errors.append("Missing required top-level key: 'criteria'")
 
     if "criteria" in extracted_data:
         criteria_part = extracted_data["criteria"]
         if not isinstance(criteria_part, dict):
             errors.append("'criteria' must be a JSON object")
         else:
+            # Catastrophic: missing required criterion IDs
             for c in criteria_list:
                 cid = c["id"]
                 if cid not in criteria_part:
-                    errors.append(f"Missing criterion ID in 'criteria': '{cid}'")
-                    continue
-                c_val = criteria_part[cid]
-                if not isinstance(c_val, dict):
-                    errors.append(f"Criterion '{cid}' must be a JSON object")
-                    continue
-
-                # Check keys
-                for subkey in [
-                    "value",
-                    "confidence",
-                    "evidence_quote",
-                    "evidence_source",
-                    "reasoning",
-                ]:
-                    if subkey not in c_val:
-                        errors.append(f"Criterion '{cid}' is missing key '{subkey}'")
-
-                # Check enums
-                val = c_val.get("value")
-                if val not in ["yes", "no", "unknown"]:
                     errors.append(
-                        f"Criterion '{cid}' has invalid value '{val}' (must be 'yes', 'no', or 'unknown')"
-                    )
-
-                conf = c_val.get("confidence")
-                if conf not in ["high", "med", "low"]:
-                    errors.append(
-                        f"Criterion '{cid}' has invalid confidence '{conf}' (must be 'high', 'med', or 'low')"
-                    )
-
-                source = c_val.get("evidence_source")
-                if source not in ["title", "description", "details"]:
-                    errors.append(
-                        f"Criterion '{cid}' has invalid evidence_source '{source}' (must be 'title', 'description', or 'details')"
-                    )
-
-    if "highlights" in extracted_data:
-        highlights_part = extracted_data["highlights"]
-        if not isinstance(highlights_part, list):
-            errors.append("'highlights' must be a JSON array")
-        else:
-            for idx, h in enumerate(highlights_part):
-                if not isinstance(h, dict):
-                    errors.append(f"Highlight at index {idx} is not a JSON object")
-                    continue
-                for subkey in [
-                    "label",
-                    "type",
-                    "sentiment",
-                    "evidence_quote",
-                    "confidence",
-                ]:
-                    if subkey not in h:
-                        errors.append(
-                            f"Highlight at index {idx} is missing key '{subkey}'"
-                        )
-
-                h_type = h.get("type")
-                if h_type not in ["maintenance", "warning", "feature"]:
-                    errors.append(
-                        f"Highlight at index {idx} has invalid type '{h_type}'"
-                    )
-
-                h_sent = h.get("sentiment")
-                if h_sent not in ["positive", "negative", "neutral"]:
-                    errors.append(
-                        f"Highlight at index {idx} has invalid sentiment '{h_sent}'"
-                    )
-
-                h_conf = h.get("confidence")
-                if h_conf not in ["high", "med", "low"]:
-                    errors.append(
-                        f"Highlight at index {idx} has invalid confidence '{h_conf}'"
+                        f"Missing required criterion ID in 'criteria': '{cid}'"
                     )
 
     return errors
+
+
+def log_listing_analysis(
+    listing_id,
+    prompt,
+    initial_response,
+    validation_errors=None,
+    retry_prompt=None,
+    retry_response=None,
+):
+    """Logs the exact prompt, response, and any retry/validation details into a dedicated directory per listing."""
+    log_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data",
+        "logs",
+        str(listing_id),
+    )
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "analysis.log")
+
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(f"=== ANALYSIS RUN: {datetime.datetime.now().isoformat()} ===\n\n")
+        f.write("=== INITIAL PROMPT ===\n")
+        f.write(prompt)
+        f.write("\n\n=== INITIAL RESPONSE ===\n")
+        f.write(initial_response or "")
+        f.write("\n")
+
+        if validation_errors:
+            f.write("\n=== VALIDATION ERRORS ===\n")
+            f.write("\n".join(validation_errors))
+            f.write("\n")
+
+        if retry_prompt:
+            f.write("\n=== RETRY PROMPT ===\n")
+            f.write(retry_prompt)
+            f.write("\n\n=== RETRY RESPONSE ===\n")
+            f.write(retry_response or "")
+            f.write("\n")
+
+
+def log_conversation_analysis(listing_id, prompt, response):
+    """Logs the exact prompt and response of conversation analysis into the dedicated directory per listing."""
+    log_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data",
+        "logs",
+        str(listing_id),
+    )
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "conversation_analysis.log")
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(
+            f"=== CONVERSATION ANALYSIS RUN: {datetime.datetime.now().isoformat()} ===\n\n"
+        )
+        f.write("=== PROMPT ===\n")
+        f.write(prompt)
+        f.write("\n\n=== RESPONSE ===\n")
+        f.write(response or "")
+        f.write("\n")
+
+
+def log_outreach_draft(listing_id, prompt, response):
+    """Logs the exact prompt and response of outreach draft generation into the dedicated directory per listing."""
+    log_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data",
+        "logs",
+        str(listing_id),
+    )
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "outreach_draft.log")
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(
+            f"=== OUTREACH DRAFT RUN: {datetime.datetime.now().isoformat()} ===\n\n"
+        )
+        f.write("=== PROMPT ===\n")
+        f.write(prompt)
+        f.write("\n\n=== RESPONSE ===\n")
+        f.write(response or "")
+        f.write("\n")
 
 
 def is_satisfied(value, satisfied_if):
@@ -244,13 +372,13 @@ def process_unprocessed_listings(target_listing_id=None):
         listing_id = listing["id"]
         title = listing["title"]
         description = listing["detailed_description"] or ""
+        details_text = ""
         try:
             details_obj = json.loads(listing["details"] or "{}")
             if details_obj:
                 details_text = "\n".join(
                     [f"- {k}: {v}" for k, v in details_obj.items()]
                 )
-                description = f"Key attributes/details:\n{details_text}\n\nDescription:\n{description}"
         except Exception as e:
             logger.warning(f"Failed to parse listing details for LLM prompt: {str(e)}")
 
@@ -264,31 +392,13 @@ def process_unprocessed_listings(target_listing_id=None):
             logger.error(f"Error parsing item_json for listing {listing_id}: {str(e)}")
             continue
 
-        prompt = get_generalized_analysis_prompt(
-            title, description, criteria_list, listing["expert_knowledge"]
+        item_json_str = listing["item_json"] or "{}"
+        prompt = build_evaluation_prompt(
+            title, details_text, description, item_json_str, listing["expert_knowledge"]
         )
 
         try:
-            messages = []
-            if (
-                "gpt-5" in LLM_MODEL
-                or LLM_MODEL.startswith("o1")
-                or LLM_MODEL.startswith("o3")
-            ):
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": f"You are a precise, objective product analyst.\n\n{prompt}",
-                    }
-                )
-            else:
-                messages.append(
-                    {
-                        "role": "system",
-                        "content": "You are a precise, objective product analyst.",
-                    }
-                )
-                messages.append({"role": "user", "content": prompt})
+            messages = [{"role": "user", "content": prompt}]
 
             kwargs = {
                 "model": LLM_MODEL,
@@ -304,7 +414,13 @@ def process_unprocessed_listings(target_listing_id=None):
             response = client.chat.completions.create(**kwargs)
             response_text = response.choices[0].message.content.strip()
 
+            initial_response_text = response_text
+            retry_prompt_val = None
+            retry_response_val = None
+            initial_validation_errors = None
+
             extracted_data = extract_json_block(response_text)
+            extracted_data = sanitize_extracted_data(extracted_data)
             validation_errors = (
                 validate_extracted_data(extracted_data, criteria_list)
                 if extracted_data
@@ -315,6 +431,7 @@ def process_unprocessed_listings(target_listing_id=None):
 
             # Bounded One-Shot Retry
             if validation_errors:
+                initial_validation_errors = list(validation_errors)
                 logger.warning(
                     f"Validation failed for listing {listing_id}. Errors: {validation_errors}. Retrying one-shot..."
                 )
@@ -328,6 +445,7 @@ def process_unprocessed_listings(target_listing_id=None):
                     f"{response_text}\n\n"
                     "Please correct the errors and output the complete corrected JSON strictly between START_JSON and END_JSON lines conforming to the TARGET JSON SCHEMA."
                 )
+                retry_prompt_val = retry_prompt
 
                 retry_messages = []
                 if (
@@ -360,7 +478,9 @@ def process_unprocessed_listings(target_listing_id=None):
                 try:
                     response = client.chat.completions.create(**retry_kwargs)
                     response_text = response.choices[0].message.content.strip()
+                    retry_response_val = response_text
                     extracted_data = extract_json_block(response_text)
+                    extracted_data = sanitize_extracted_data(extracted_data)
                     validation_errors = (
                         validate_extracted_data(extracted_data, criteria_list)
                         if extracted_data
@@ -425,7 +545,12 @@ def process_unprocessed_listings(target_listing_id=None):
                     )
 
                 evidence_source = c_val.get("evidence_source", "description")
-                if evidence_source not in ["title", "description", "details"]:
+                if evidence_source not in [
+                    "title",
+                    "description",
+                    "details",
+                    "unknown",
+                ]:
                     evidence_source = "description"
 
                 reasoning = c_val.get("reasoning", "")
@@ -505,6 +630,15 @@ def process_unprocessed_listings(target_listing_id=None):
                 ),
             )
             conn.commit()
+
+            log_listing_analysis(
+                listing_id=listing_id,
+                prompt=prompt,
+                initial_response=initial_response_text,
+                validation_errors=initial_validation_errors,
+                retry_prompt=retry_prompt_val,
+                retry_response=retry_response_val,
+            )
 
             logger.info(
                 f"Successfully processed and scored listing {listing_id}: Score = {score}, Status = {status}"
@@ -588,6 +722,12 @@ def generate_outreach_draft(listing_id):
         response = client.chat.completions.create(**kwargs)
         draft_message = response.choices[0].message.content.strip()
         print(draft_message)
+        try:
+            log_outreach_draft(listing_id, prompt, draft_message)
+        except Exception as log_err:
+            logger.warning(
+                f"Failed to log outreach draft for listing {listing_id}: {str(log_err)}"
+            )
     except Exception as e:
         print(f"Error generating outreach draft from OpenAI: {str(e)}")
         sys.exit(1)
@@ -716,6 +856,12 @@ def analyze_conversation(listing_id):
             kwargs["temperature"] = 0.0
         response = client.chat.completions.create(**kwargs)
         response_text = response.choices[0].message.content.strip()
+        try:
+            log_conversation_analysis(listing_id, prompt, response_text)
+        except Exception as log_err:
+            logger.warning(
+                f"Failed to log conversation analysis for listing {listing_id}: {str(log_err)}"
+            )
         updated_data = extract_json_block(response_text)
 
         if not updated_data:
