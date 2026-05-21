@@ -578,9 +578,9 @@ def calculate_evidence_score(
     hvu_penalty = round(hvu_ratio * 4)  # max 4 point flat penalty
     hvu_cap = 100 - round(hvu_ratio * 30)  # caps upside at 70 if all HVUs are missing
 
-    # 6. Risk flags penalty (0-15)
+    # 6. Risk flags penalty (0-8)
     n_flags = len(model_risk_flags) if isinstance(model_risk_flags, list) else 0
-    risk_penalty = min(n_flags * 4, 15)
+    risk_penalty = min(n_flags * 2, 8)
 
     # 7. Dimensions score (0-100) — same inversion as blended scorer
     expected_dims = [

@@ -26,6 +26,7 @@ Important:
 - Extremely short or vague descriptions for old/complex/high-risk items are themselves a weak market signal.
 - Foreign location, import context, replacement frame, untraceable mileage, removed safety systems, race conversion, and missing history on complex items are meaningful risk signals.
 - Missing mention may be normal for some soft details, but not for high-value trust evidence such as service proof, ownership story, keys/papers, structural history, or safety-relevant modifications.
+- Unverified claims (e.g. "laut Vorbesitzer" or "wurden gemacht" without paperwork) must NOT be marked as "yes" for criteria that explicitly ask for invoices, receipts, or documented proof. Treat them as "unknown" for the strict criteria, but you may reward them slightly in conditionConfidence.
 - Use the market calibration as an anchor: a **normal plausible listing in this exact market is not weak by default** and should correspond to roughly mid-scale dimension scores unless there is clear negative evidence.
 - Missing high-value evidence should usually **limit upside**, not automatically imply a very poor listing.
 - Honest disclosure of one issue should improve transparency relative to evasive listings, even when the disclosed issue is negative.

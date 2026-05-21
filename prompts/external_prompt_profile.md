@@ -12,6 +12,7 @@ Important:
 - The LLM worker should identify explicit facts, explicit warnings, and important missing high-value evidence.
 - Do not rely on broad subjective dimensions alone.
 - Do not create criteria that treat silence as positive.
+- Specify in criteria descriptions that unverified verbal claims (e.g., "laut Vorbesitzer") do not satisfy requirements for documented proof.
 - The generated profile must be calibrated so that an **ordinary plausible listing in this market lands around 50**.
 - Do not let common omissions for this market stack into a heavily negative profile.
 - High-value unknowns should mainly **cap upside or reduce confidence modestly**; they should not, by default, push a normal listing far below average.
