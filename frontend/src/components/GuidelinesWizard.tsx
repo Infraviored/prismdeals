@@ -17,6 +17,7 @@ interface GuidelinesWizardProps {
   fetchSampleListings: (searchId: number) => Promise<void>
   researcherOutput: string
   setResearcherOutput: (output: string) => void
+  researchPromptTemplate: string
   marketPromptTemplate: string
   profilePromptTemplate: string
   editKsError: string
@@ -33,6 +34,34 @@ interface GuidelinesWizardProps {
   scrapingProgress: { phase: string; current: number; total: number; status: string; } | null
 }
 
+// Helper to parse target search URL for buyer context attributes
+function parseKleinanzeigenUrl(url: string, name: string) {
+  let maxPrice = 'Any';
+  const priceMatch = url.match(/preis:(?:\d*):(\d+)/) || url.match(/preis::(\d+)/);
+  if (priceMatch && priceMatch[1]) {
+    maxPrice = priceMatch[1] + ' Euro';
+  }
+
+  let maxMileage = 'Any';
+  const decodedUrl = decodeURIComponent(url);
+  const kmMatch = decodedUrl.match(/km_i:(?:\d*),(\d+)/) || decodedUrl.match(/km_i:,(\d+)/) || decodedUrl.match(/km_i:(\d+)/);
+  if (kmMatch && kmMatch[1]) {
+    maxMileage = kmMatch[1] + ' km';
+  }
+
+  let query = 'Used product';
+  const cleanedName = name.replace(/\s*Settings\s*/gi, '').trim();
+  if (cleanedName) {
+    query = cleanedName;
+  }
+
+  return {
+    query,
+    maxMileage,
+    maxPrice
+  };
+}
+
 export default function GuidelinesWizard({
   activeSearchTarget,
   editKsName,
@@ -44,6 +73,7 @@ export default function GuidelinesWizard({
   fetchSampleListings,
   researcherOutput,
   setResearcherOutput,
+  researchPromptTemplate,
   marketPromptTemplate,
   profilePromptTemplate,
   editKsError,
@@ -60,30 +90,55 @@ export default function GuidelinesWizard({
   setWizardStep
 }: GuidelinesWizardProps) {
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null)
+  
+  // Progressive return box disclosure states
+  const [showStep1Next, setShowStep1Next] = useState(false)
+  const [showStep2Return, setShowStep2Return] = useState(false)
+  const [showStep3Return, setShowStep3Return] = useState(false)
 
   // Copy helper
   const handleCopyPrompt = (text: string, id: string) => {
     navigator.clipboard.writeText(text)
     setCopiedPromptId(id)
     setTimeout(() => setCopiedPromptId(null), 2000)
+    
+    // Auto-reveal the respective return field/action
+    if (id === 'prompt-research') {
+      setShowStep1Next(true)
+    } else if (id === 'prompt-market') {
+      setShowStep2Return(true)
+    } else if (id === 'prompt-profile') {
+      setShowStep3Return(true)
+    }
   }
 
-  // Compile Market memo generation prompt (Prompt A)
+  // Compile Research prompt (Prompt 1)
+  const getResearchPromptWithContext = () => {
+    if (!researchPromptTemplate) return 'Loading...'
+    const parsed = parseKleinanzeigenUrl(activeSearchTarget?.url || '', activeSearchTarget?.name || '')
+    const buyerContext = `Search Query: ${parsed.query}\nMax Mileage: ${parsed.maxMileage}\nMax Price: ${parsed.maxPrice}`
+    return researchPromptTemplate
+      .replace('{{USER_CONTEXT}}', buyerContext)
+  }
+
+  // Compile Market memo generation prompt (Prompt 2)
   const getMarketPromptWithContext = () => {
     if (!marketPromptTemplate) return 'Loading...'
     const sampledStr = sampledListings.map((s, idx) => (
       `=== Sample #${idx + 1} ===\nTitle: ${s.title}\nDetails: ${s.details || ''}\nDescription:\n${s.description}\n`
     )).join('\n')
-    const buyerContext = `Target Product: ${activeSearchTarget?.name || 'Used product'}\nSearch URL: ${activeSearchTarget?.url || ''}`
+    const parsed = parseKleinanzeigenUrl(activeSearchTarget?.url || '', activeSearchTarget?.name || '')
+    const buyerContext = `Search Query: ${parsed.query}\nMax Mileage: ${parsed.maxMileage}\nMax Price: ${parsed.maxPrice}`
     return marketPromptTemplate
       .replace('{{USER_CONTEXT}}', buyerContext)
       .replace('{{SAMPLED_LISTINGS}}', sampledStr || 'No sampled listings available.')
   }
 
-  // Compile Guidelines Profile synthesis prompt (Prompt B)
+  // Compile Guidelines Profile synthesis prompt (Prompt 3)
   const getProfilePromptWithContext = () => {
     if (!profilePromptTemplate) return 'Loading...'
-    const buyerContext = `Target Product: ${activeSearchTarget?.name || 'Used product'}\nSearch URL: ${activeSearchTarget?.url || ''}`
+    const parsed = parseKleinanzeigenUrl(activeSearchTarget?.url || '', activeSearchTarget?.name || '')
+    const buyerContext = `Search Query: ${parsed.query}\nMax Mileage: ${parsed.maxMileage}\nMax Price: ${parsed.maxPrice}`
     return profilePromptTemplate
       .replace('{{USER_CONTEXT}}', buyerContext)
       .replace('{{MARKET_MEMO}}', marketMemo || 'No market memo provided.')
@@ -116,11 +171,11 @@ export default function GuidelinesWizard({
                 : 'border-transparent text-slate-500 hover:text-slate-400'
             }`}
           >
-            Step 1: Market Sampling
+            Step 1: Deep Research
           </button>
           <button
-            onClick={() => sampledListings.length > 0 && setWizardStep(2)}
-            disabled={sampledListings.length === 0}
+            onClick={() => (showStep1Next || showStep2Return || marketMemo.trim()) && setWizardStep(2)}
+            disabled={!(showStep1Next || showStep2Return || marketMemo.trim())}
             className={`pb-2 border-b-2 transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
               wizardStep === 2
                 ? 'border-emerald-500 text-emerald-400'
@@ -149,113 +204,53 @@ export default function GuidelinesWizard({
       {/* SINGLE COLUMN STEP CONTENT WORKSPACE */}
       <div className="bg-slate-900/20 border border-slate-800/80 rounded-2xl p-5 min-h-[300px]">
         
-        {/* STEP 1: MARKET SAMPLING */}
+        {/* STEP 1: DEEP RESEARCH */}
         {wizardStep === 1 && (
           <div className="space-y-5 animate-fadeIn">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-800/50">
-              <div>
-                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">1. Capture Market Samples</span>
-                <p className="text-[11px] text-slate-450 mt-0.5">Harvest listing text to calibrate matching criteria.</p>
-              </div>
-              {!sampledListingsLoading && sampledListings.length > 0 && (
-                <button
-                  disabled={isScraping}
-                  onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
-                  className="text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all border bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 disabled:opacity-50"
-                >
-                  Refresh Samples
-                </button>
-              )}
+            <div className="pb-2 border-b border-slate-800/50">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">Step 1: Deep Research (Knowledge Acquisition)</span>
+              <p className="text-[11px] text-slate-450 mt-0.5">Use Perplexity Deep Research or another external agent to understand specifications, revisions, critical check points, and pitfalls for this exact product.</p>
             </div>
 
-            {/* Scraper progress inside Step 1 */}
-            {isScraping && (
-              <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-4 flex flex-col space-y-2">
-                <div className="flex items-center space-x-2 text-xs font-semibold text-emerald-400">
-                  <div className="w-3.5 h-3.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-                  <span>
-                    {scrapingProgress
-                      ? `Crawling Market Listings (${scrapingProgress.current}/${scrapingProgress.total})`
-                      : scrapingStatus || 'Crawling fresh listings...'}
-                  </span>
-                </div>
-                {scrapingProgress && (
-                  <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
-                    <div 
-                      className="bg-emerald-500 h-1.5 transition-all duration-300" 
-                      style={{ width: `${(scrapingProgress.current / scrapingProgress.total) * 100}%` }}
-                    />
-                  </div>
-                )}
+            <div className="space-y-2">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Demo Research Prompt</label>
+              <div className="relative">
+                <pre className="w-full bg-slate-950 border border-slate-850 rounded-xl p-4 text-[10px] text-slate-450 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
+                  {getResearchPromptWithContext()}
+                </pre>
               </div>
-            )}
+            </div>
 
-            {sampledListingsLoading ? (
-              <div className="flex items-center justify-center gap-3 py-16 border border-dashed border-slate-800 rounded-xl">
-                <div className="w-4 h-4 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-                <span className="text-xs text-slate-400 font-semibold">Loading real classified listings...</span>
-              </div>
-            ) : sampledListings.length === 0 ? (
-              <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-6 text-center space-y-3 max-w-md mx-auto">
-                <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto text-[12px] font-black">!</div>
-                <div className="space-y-1">
-                  <span className="text-xs font-bold text-slate-300 block">Listing samples required</span>
-                  <p className="text-[10px] text-slate-500 leading-relaxed font-semibold">
-                    Harvesting real listing descriptions is required to calibrate matching criteria. The background crawler has been triggered automatically.
-                  </p>
-                </div>
-                <button
-                  disabled={isScraping || sampledListingsLoading}
-                  onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
-                  className="w-full font-extrabold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2 border bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400 disabled:opacity-40"
-                >
-                  {sampledListingsLoading ? 'Checking...' : 'Check for Crawled Listings'}
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                {sampledListings.map((s, idx) => {
-                  const isExpanded = expandedIndex === idx;
-                  return (
-                    <div key={s.id || idx} className="bg-slate-950/40 border border-slate-900 rounded-xl p-3.5 space-y-2 hover:border-slate-800/80 transition-colors">
-                      <div 
-                        onClick={() => setExpandedIndex(isExpanded ? null : idx)}
-                        className="flex justify-between items-center cursor-pointer select-none"
-                      >
-                        <div className="flex-1 pr-4">
-                          <span className="font-bold text-xs text-slate-200 block">#{idx + 1}: {s.title}</span>
-                          {s.details && (
-                            <span className="text-[10px] text-slate-500 font-mono block mt-0.5">{s.details}</span>
-                          )}
-                        </div>
-                        <span className="text-slate-500 transition-transform">
-                          {isExpanded ? (
-                            <svg className="w-3.5 h-3.5 transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" /></svg>
-                          ) : (
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" /></svg>
-                          )}
-                        </span>
-                      </div>
-                      {isExpanded && (
-                        <div className="text-[11px] text-slate-400 mt-2 border-t border-slate-900/60 pt-2 leading-relaxed whitespace-pre-wrap font-mono text-[9px] bg-slate-950/80 p-3 rounded-lg border border-slate-900 max-h-[150px] overflow-y-auto">
-                          {s.description}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="pt-4 border-t border-slate-800/40 flex justify-end">
+            <div className="flex justify-center py-2">
               <button
-                disabled={sampledListings.length === 0}
-                onClick={() => setWizardStep(2)}
-                className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-extrabold py-2.5 px-5 rounded-xl text-xs transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
+                onClick={() => handleCopyPrompt(getResearchPromptWithContext(), 'prompt-research')}
+                className={`font-extrabold px-6 py-2.5 rounded-xl text-xs transition-all border flex items-center justify-center gap-2 ${
+                  copiedPromptId === 'prompt-research'
+                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                    : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/10'
+                }`}
               >
-                Proceed to Step 2: Calibrate Distribution →
+                {copiedPromptId === 'prompt-research' ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                    <span>Research Prompt Copied!</span>
+                  </>
+                ) : (
+                  <span>Copy Research Prompt</span>
+                )}
               </button>
             </div>
+
+            {showStep1Next && (
+              <div className="pt-4 border-t border-slate-800/40 flex justify-end animate-fadeIn">
+                <button
+                  onClick={() => setWizardStep(2)}
+                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold py-2.5 px-5 rounded-xl text-xs transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
+                >
+                  Proceed to Step 2: Calibrate Live Market →
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -263,50 +258,146 @@ export default function GuidelinesWizard({
         {wizardStep === 2 && (
           <div className="space-y-5 animate-fadeIn">
             <div className="pb-2 border-b border-slate-800/50">
-              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">2. Market Calibration</span>
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">Step 2: Market Calibration & Sample Injection</span>
               <p className="text-[11px] text-slate-450 mt-0.5">Calibrate positive and negative listing factors from market samples.</p>
             </div>
 
-            {/* High Contrast Copy Prompt A Panel */}
-            <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-6 text-center space-y-4 max-w-lg mx-auto shadow-inner">
-              <div className="space-y-1">
-                <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest block">Model Prompt A</span>
-                <h3 className="text-sm font-bold text-slate-200">Generate Market Calibration Memo</h3>
-                <p className="text-[10px] text-slate-400 leading-relaxed">
-                  Copy this prompt to analyze the listings with Perplexity or a web-searching AI model to capture standard features, model pricing, and common defects.
-                </p>
+            {/* Scraper progress & listing samples context */}
+            <div className="space-y-3 bg-slate-950/40 border border-slate-850 rounded-2xl p-4">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-900">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-mono">Live Market Samples (Additional Context)</span>
+                {!sampledListingsLoading && sampledListings.length > 0 && (
+                  <button
+                    disabled={isScraping}
+                    onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
+                    className="text-[9px] font-bold px-2 py-1 rounded-lg transition-all border bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-350 disabled:opacity-50"
+                  >
+                    Refresh Samples
+                  </button>
+                )}
               </div>
 
+              {isScraping && (
+                <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-3 flex flex-col space-y-2">
+                  <div className="flex items-center space-x-2 text-[11px] font-semibold text-emerald-400">
+                    <div className="w-3 h-3 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+                    <span>
+                      {scrapingProgress
+                        ? `Crawling Market Listings (${scrapingProgress.current}/${scrapingProgress.total})`
+                        : scrapingStatus || 'Crawling fresh listings...'}
+                    </span>
+                  </div>
+                  {scrapingProgress && (
+                    <div className="w-full bg-slate-950 rounded-full h-1 overflow-hidden">
+                      <div 
+                        className="bg-emerald-500 h-1 transition-all duration-300" 
+                        style={{ width: `${(scrapingProgress.current / scrapingProgress.total) * 100}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {sampledListingsLoading ? (
+                <div className="flex items-center justify-center gap-3 py-6 border border-dashed border-slate-900 rounded-xl">
+                  <div className="w-3.5 h-3.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+                  <span className="text-[11px] text-slate-500 font-semibold">Loading real classified listings...</span>
+                </div>
+              ) : sampledListings.length === 0 ? (
+                <div className="bg-slate-950/20 border border-slate-900 rounded-xl p-4 text-center space-y-2 max-w-sm mx-auto">
+                  <div className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto text-[10px] font-black">!</div>
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-bold text-slate-350 block">Listing samples required</span>
+                    <p className="text-[9px] text-slate-500 leading-relaxed font-semibold">
+                      Harvesting real listing descriptions is required to calibrate matching criteria. The background crawler runs automatically.
+                    </p>
+                  </div>
+                  <button
+                    disabled={isScraping || sampledListingsLoading}
+                    onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
+                    className="w-full font-extrabold py-2 rounded-xl text-[10px] transition-all flex items-center justify-center gap-1.5 border bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400 disabled:opacity-40"
+                  >
+                    {sampledListingsLoading ? 'Checking...' : 'Check for Crawled Listings'}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+                  {sampledListings.map((s, idx) => {
+                    const isExpanded = expandedIndex === idx;
+                    return (
+                      <div key={s.id || idx} className="bg-slate-950/20 border border-slate-900 rounded-xl p-2.5 space-y-1.5 hover:border-slate-800/80 transition-colors">
+                        <div 
+                          onClick={() => setExpandedIndex(isExpanded ? null : idx)}
+                          className="flex justify-between items-center cursor-pointer select-none"
+                        >
+                          <div className="flex-1 pr-3">
+                            <span className="font-bold text-[11px] text-slate-300 block">#{idx + 1}: {s.title}</span>
+                            {s.details && (
+                              <span className="text-[9px] text-slate-500 font-mono block mt-0.5">{s.details}</span>
+                            )}
+                          </div>
+                          <span className="text-slate-500 transition-transform">
+                            {isExpanded ? (
+                              <svg className="w-3 h-3 transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" /></svg>
+                            ) : (
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" /></svg>
+                            )}
+                          </span>
+                        </div>
+                        {isExpanded && (
+                          <div className="text-[10px] text-slate-450 mt-1 border-t border-slate-900/60 pt-1.5 leading-relaxed whitespace-pre-wrap font-mono bg-slate-950/50 p-2 rounded border border-slate-900 max-h-[100px] overflow-y-auto">
+                            {s.description}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Demo Calibration Prompt</label>
+              <div className="relative">
+                <pre className="w-full bg-slate-950 border border-slate-850 rounded-xl p-4 text-[10px] text-slate-450 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
+                  {getMarketPromptWithContext()}
+                </pre>
+              </div>
+            </div>
+
+            <div className="flex justify-center py-2">
               <button
-                onClick={() => handleCopyPrompt(getMarketPromptWithContext(), 'prompt-a')}
-                className={`mx-auto font-extrabold px-6 py-2.5 rounded-xl text-xs transition-all border flex items-center justify-center gap-2 ${
-                  copiedPromptId === 'prompt-a'
+                onClick={() => handleCopyPrompt(getMarketPromptWithContext(), 'prompt-market')}
+                className={`font-extrabold px-6 py-2.5 rounded-xl text-xs transition-all border flex items-center justify-center gap-2 ${
+                  copiedPromptId === 'prompt-market'
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
                     : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/10'
                 }`}
               >
-                {copiedPromptId === 'prompt-a' ? (
+                {copiedPromptId === 'prompt-market' ? (
                   <>
                     <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
-                    <span>Prompt A Copied!</span>
+                    <span>Calibration Prompt Copied!</span>
                   </>
                 ) : (
-                  <span>Copy Prompt A (High Contrast)</span>
+                  <span>Copy Calibration Prompt</span>
                 )}
               </button>
             </div>
 
-            {/* Paste market_memo text area */}
-            <div className="space-y-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Paste &lt;market_memo&gt; block response</label>
-              <textarea
-                value={marketMemo}
-                onChange={e => setMarketMemo(e.target.value)}
-                placeholder="Paste <market_memo>...</market_memo> block response here..."
-                rows={8}
-                className="w-full bg-slate-950 border border-slate-850 rounded-xl p-3.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed shadow-inner placeholder-slate-805"
-              />
-            </div>
+            {/* Disclosed Return Box */}
+            {showStep2Return && (
+              <div className="space-y-2 animate-fadeIn border-t border-slate-800/40 pt-4">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Paste &lt;market_memo&gt; block response</label>
+                <textarea
+                  value={marketMemo}
+                  onChange={e => setMarketMemo(e.target.value)}
+                  placeholder="Paste <market_memo>...</market_memo> block response here..."
+                  rows={8}
+                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-3.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed shadow-inner placeholder-slate-805"
+                />
+              </div>
+            )}
 
             <div className="pt-4 border-t border-slate-800/40 flex justify-between">
               <button
@@ -315,13 +406,14 @@ export default function GuidelinesWizard({
               >
                 Back to Step 1
               </button>
-              <button
-                disabled={!marketMemo.trim()}
-                onClick={() => setWizardStep(3)}
-                className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-extrabold py-2.5 px-5 rounded-xl text-xs transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
-              >
-                Proceed to Step 3: Synthesis Checklist →
-              </button>
+              {marketMemo.trim().length > 0 && (
+                <button
+                  onClick={() => setWizardStep(3)}
+                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold py-2.5 px-5 rounded-xl text-xs transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98 animate-fadeIn"
+                >
+                  Proceed to Step 3: Synthesis Checklist →
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -330,51 +422,53 @@ export default function GuidelinesWizard({
         {wizardStep === 3 && (
           <div className="space-y-5 animate-fadeIn">
             <div className="pb-2 border-b border-slate-800/50">
-              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">3. Synthesis Checklist</span>
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">Step 3: Synthesis Checklist & Verification</span>
               <p className="text-[11px] text-slate-450 mt-0.5">Paste synthesized matching checklist output to establish deal scoring rules.</p>
             </div>
 
-            {/* High Contrast Copy Prompt B Panel */}
-            <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-6 text-center space-y-4 max-w-lg mx-auto shadow-inner">
-              <div className="space-y-1">
-                <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest block">Model Prompt B</span>
-                <h3 className="text-sm font-bold text-slate-200">Synthesize Matching Guidelines</h3>
-                <p className="text-[10px] text-slate-400 leading-relaxed">
-                  Copy this prompt to process the calibration memo and generate structured checklist rules, anchors, and scoring weights.
-                </p>
+            <div className="space-y-2">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Demo Synthesis Prompt</label>
+              <div className="relative">
+                <pre className="w-full bg-slate-950 border border-slate-850 rounded-xl p-4 text-[10px] text-slate-450 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
+                  {getProfilePromptWithContext()}
+                </pre>
               </div>
+            </div>
 
+            <div className="flex justify-center py-2">
               <button
                 disabled={!marketMemo.trim()}
-                onClick={() => handleCopyPrompt(getProfilePromptWithContext(), 'prompt-b')}
-                className={`mx-auto font-extrabold px-6 py-2.5 rounded-xl text-xs transition-all border flex items-center justify-center gap-2 ${
-                  copiedPromptId === 'prompt-b'
+                onClick={() => handleCopyPrompt(getProfilePromptWithContext(), 'prompt-profile')}
+                className={`font-extrabold px-6 py-2.5 rounded-xl text-xs transition-all border flex items-center justify-center gap-2 ${
+                  copiedPromptId === 'prompt-profile'
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
                     : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/10'
                 }`}
               >
-                {copiedPromptId === 'prompt-b' ? (
+                {copiedPromptId === 'prompt-profile' ? (
                   <>
                     <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
-                    <span>Prompt B Copied!</span>
+                    <span>Synthesis Prompt Copied!</span>
                   </>
                 ) : (
-                  <span>Copy Prompt B (High Contrast)</span>
+                  <span>Copy Synthesis Prompt</span>
                 )}
               </button>
             </div>
 
-            {/* Paste researcher_output textarea */}
-            <div className="space-y-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Paste &lt;researcher_output&gt; block response</label>
-              <textarea
-                value={researcherOutput}
-                onChange={e => setResearcherOutput(e.target.value)}
-                placeholder="Paste <researcher_output>...</researcher_output> block here..."
-                rows={8}
-                className="w-full bg-slate-950 border border-slate-855 rounded-xl p-3.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed shadow-inner placeholder-slate-805"
-              />
-            </div>
+            {/* Disclosed Return Box */}
+            {showStep3Return && (
+              <div className="space-y-2 animate-fadeIn border-t border-slate-800/40 pt-4">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Paste &lt;researcher_output&gt; block response</label>
+                <textarea
+                  value={researcherOutput}
+                  onChange={e => setResearcherOutput(e.target.value)}
+                  placeholder="Paste <researcher_output>...</researcher_output> block here..."
+                  rows={8}
+                  className="w-full bg-slate-950 border border-slate-855 rounded-xl p-3.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed shadow-inner placeholder-slate-805"
+                />
+              </div>
+            )}
 
             {/* REACTIVE LIVE PREVIEW BLOCK */}
             {(parsedExpertKnowledge || parsedGoodRef || parsedBadRef || parsedDemoMsg || parsedItemJson) && (
@@ -408,7 +502,7 @@ export default function GuidelinesWizard({
                   <div className="bg-slate-950/40 border border-indigo-500/10 rounded-xl p-4 relative overflow-hidden shadow-sm">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
                     <span className="text-[9px] bg-indigo-500/10 text-indigo-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit mb-1.5">Outreach Starter Message Draft</span>
-                    <p className="text-[11px] text-slate-200 leading-relaxed italic font-medium">"{parsedDemoMsg}"</p>
+                    <p className="text-[11px] text-slate-250 leading-relaxed italic font-medium">"{parsedDemoMsg}"</p>
                   </div>
                 )}
 
@@ -439,7 +533,7 @@ export default function GuidelinesWizard({
                     const importanceBadge = (hint: string) => {
                       if (hint === 'high') return 'text-emerald-400'
                       if (hint === 'low') return 'text-slate-600'
-                      return 'text-slate-400'
+                      return 'text-slate-450'
                     }
 
                     return (
@@ -514,7 +608,7 @@ export default function GuidelinesWizard({
                                 <div key={idx} className="text-[11px] text-slate-450 leading-relaxed border-b border-slate-900/40 pb-2">
                                   <span className="font-bold font-mono text-[9px] text-amber-500/70 mr-2">{u.id}</span>
                                   <span>{u.description}</span>
-                                  {u.applies_when && <span className="block text-[10px] text-slate-600 mt-0.5 italic">{u.applies_when}</span>}
+                                  {u.applies_when && <span className="block text-[10px] text-slate-650 mt-0.5 italic">{u.applies_when}</span>}
                                 </div>
                               ))}
                             </div>

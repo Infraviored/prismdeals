@@ -412,6 +412,17 @@ app.get('/api/prompts/profile', (req, res) => {
   }
 });
 
+// API: Serve external Prompt Research template
+app.get('/api/prompts/research', (req, res) => {
+  try {
+    const promptPath = path.join(__dirname, '..', 'prompts', 'external_prompt_research.md');
+    const content = fs.readFileSync(promptPath, 'utf8');
+    res.type('text/plain').send(content);
+  } catch (e) {
+    res.status(500).json({ error: 'external_prompt_research.md not found' });
+  }
+});
+
 // API: Delete a knowledge set
 app.delete('/api/knowledge-sets/:id', async (req, res) => {
   try {

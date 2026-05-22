@@ -98,6 +98,7 @@ export default function App() {
   const [researcherOutput, setResearcherOutput] = useState<string>('')
 
   // Prompt templates from backend
+  const [researchPromptTemplate, setResearchPromptTemplate] = useState<string>('')
   const [marketPromptTemplate, setMarketPromptTemplate] = useState<string>('')
   const [profilePromptTemplate, setProfilePromptTemplate] = useState<string>('')
 
@@ -288,8 +289,13 @@ export default function App() {
     })
   }
 
-  // Load Prompt A and B templates
+  // Load Prompt templates
   useEffect(() => {
+    fetch('/api/prompts/research')
+      .then(r => r.text())
+      .then(setResearchPromptTemplate)
+      .catch(err => console.error("Error loading research template:", err))
+
     fetch('/api/prompts/market')
       .then(r => r.text())
       .then(setMarketPromptTemplate)
@@ -1464,6 +1470,7 @@ export default function App() {
                           fetchSampleListings={fetchSampleListings}
                           researcherOutput={researcherOutput}
                           setResearcherOutput={setResearcherOutput}
+                          researchPromptTemplate={researchPromptTemplate}
                           marketPromptTemplate={marketPromptTemplate}
                           profilePromptTemplate={profilePromptTemplate}
                           editKsError={editKsError}
