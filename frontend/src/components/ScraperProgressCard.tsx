@@ -4,9 +4,6 @@ export default function ScraperProgressCard({
   isScraping,
   scrapingStatus,
   scrapingProgress,
-  liveLogs,
-  showLogConsole,
-  setShowLogConsole
 }: ScraperProgressCardProps) {
   if (!isScraping) return null;
 
@@ -14,6 +11,8 @@ export default function ScraperProgressCard({
   const total = scrapingProgress?.total ?? 100;
   const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((current / total) * 100))) : 0;
   const phase = scrapingProgress?.phase || 'starting';
+  const remaining = total - current;
+  const secondsLeft = Math.max(0, remaining * 3);
 
   let phaseLabel = "Initializing";
   let phaseColor = "bg-amber-500/10 text-amber-400 border border-amber-500/25";
@@ -61,24 +60,27 @@ export default function ScraperProgressCard({
         </div>
       </div>
 
-      {/* Retro Log Console */}
-      <div className="border border-slate-850 rounded-xl overflow-hidden bg-slate-950">
-        <button
-          onClick={() => setShowLogConsole(!showLogConsole)}
-          className="w-full px-4 py-2.5 bg-slate-900/60 hover:bg-slate-900 transition-colors flex items-center justify-between text-xs text-slate-400 hover:text-slate-250 font-bold focus:outline-none"
-        >
-          <div className="flex items-center space-x-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-            <span className="font-mono">view_live_scraper_logs.sh</span>
-          </div>
-          <span>{showLogConsole ? 'Collapse [-]' : 'Expand [+]'}</span>
-        </button>
-        
-        {showLogConsole && (
-          <div className="p-4 border-t border-slate-900 font-mono text-[11px] text-slate-350 leading-relaxed h-48 overflow-y-auto whitespace-pre-wrap select-text selection:bg-emerald-500/30 selection:text-white">
-            {liveLogs ? liveLogs : "Waiting for log stream lines..."}
-          </div>
-        )}
+      {/* Time Remaining & Meta Details */}
+      <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium px-1 pt-0.5">
+        <div>
+          {phase === 'harvesting' && remaining > 0 ? (
+            <span className="flex items-center space-x-1">
+              <svg className="w-3.5 h-3.5 text-emerald-500/85" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+              <span>Estimated time remaining: <strong className="text-slate-300 font-semibold">{secondsLeft}s</strong></span>
+            </span>
+          ) : phase === 'harvesting' ? (
+            <span className="text-emerald-450 font-bold">Finalizing session...</span>
+          ) : phase === 'discovery' ? (
+            <span className="text-sky-400">Discovering listings on index pages...</span>
+          ) : (
+            <span className="text-slate-450">Connecting to scraper worker...</span>
+          )}
+        </div>
+        <div className="text-[9px] text-slate-600 font-bold uppercase tracking-wider select-none">
+          Live Scraper
+        </div>
       </div>
     </div>
   );

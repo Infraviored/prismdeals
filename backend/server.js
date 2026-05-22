@@ -612,14 +612,46 @@ app.post('/api/listings/draft', async (req, res) => {
 app.get('/api/schedule', (req, res) => {
   try {
     const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
+    const defaultConfig = {
+      interval: 10,
+      autoAiEval: true,
+      fullFetchOnStartup: false
+    };
     if (!fs.existsSync(configPath)) {
-      fs.writeFileSync(configPath, JSON.stringify({ interval: 60 }, null, 2));
+      fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
     }
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    res.json(config);
+    res.json({ ...defaultConfig, ...config });
   } catch (error) {
     console.error('Error reading schedule config:', error);
     res.status(500).json({ error: 'Failed to load schedule config' });
+  }
+});
+
+// API: Save schedule config and dynamically update timers
+app.post('/api/schedule', (req, res) => {
+  try {
+    const { interval, autoAiEval, fullFetchOnStartup } = req.body;
+    if (interval === undefined) {
+      return res.status(400).json({ error: 'Missing interval field' });
+    }
+    
+    const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
+    const newConfig = {
+      interval: parseInt(interval, 10),
+      autoAiEval: !!autoAiEval,
+      fullFetchOnStartup: !!fullFetchOnStartup
+    };
+    
+    fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2));
+    
+    // Apply changes dynamically
+    setupScheduledScraping();
+    
+    res.json({ success: true, config: newConfig });
+  } catch (error) {
+    console.error('Error saving schedule config:', error);
+    res.status(500).json({ error: 'Failed to save schedule config' });
   }
 });
 
@@ -690,7 +722,18 @@ app.post('/api/scrape', (req, res) => {
     
     if (interval) {
       const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
-      fs.writeFileSync(configPath, JSON.stringify({ interval }, null, 2));
+      let currentConfig = {};
+      try {
+        if (fs.existsSync(configPath)) {
+          currentConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        }
+      } catch (e) {}
+      const updatedConfig = {
+        ...currentConfig,
+        interval: parseInt(interval, 10)
+      };
+      fs.writeFileSync(configPath, JSON.stringify(updatedConfig, null, 2));
+      setupScheduledScraping();
     }
     
     // Clear old progress file
@@ -926,23 +969,60 @@ app.get('/', (req, res) => {
   }
 });
 
+let scheduledScrapeInterval = null;
+let startupScrapeTimeout = null;
+
 // Scheduled Scrape configuration helper
 function setupScheduledScraping() {
   try {
     const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
+    const defaultConfig = {
+      interval: 10,
+      autoAiEval: true,
+      fullFetchOnStartup: false
+    };
+    
     if (!fs.existsSync(configPath)) {
-      fs.writeFileSync(configPath, JSON.stringify({ interval: 60 }, null, 2));
+      fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
     }
     
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    const intervalMinutes = config.interval || 60;
+    let config = defaultConfig;
+    try {
+      const fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      config = { ...defaultConfig, ...fileConfig };
+    } catch (e) {
+      console.error('Error parsing schedule config, overwriting with default:', e);
+      fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
+    }
+
+    const intervalMinutes = parseInt(config.interval, 10) || 10;
+    const fullFetchOnStartup = !!config.fullFetchOnStartup;
     
-    console.log(`Scheduled scraping set every ${intervalMinutes} minutes`);
+    console.log(`Scheduled scraping setup: every ${intervalMinutes} minutes.`);
     
-    setTimeout(() => {
+    // Clear any existing timers
+    if (startupScrapeTimeout) {
+      clearTimeout(startupScrapeTimeout);
+      startupScrapeTimeout = null;
+    }
+    if (scheduledScrapeInterval) {
+      clearInterval(scheduledScrapeInterval);
+      scheduledScrapeInterval = null;
+    }
+    
+    if (fullFetchOnStartup) {
+      console.log('Immediate startup crawl scheduled in 10s');
+      startupScrapeTimeout = setTimeout(() => {
+        runScraper();
+      }, 10000);
+    } else {
+      console.log('Skipping immediate startup crawl (fullFetchOnStartup is false)');
+    }
+    
+    scheduledScrapeInterval = setInterval(() => {
       runScraper();
-      setInterval(runScraper, intervalMinutes * 60 * 1000);
-    }, 10000);
+    }, intervalMinutes * 60 * 1000);
+    
   } catch (error) {
     console.error('Error setting up scheduled scraping:', error);
   }
@@ -950,9 +1030,27 @@ function setupScheduledScraping() {
 
 function runScraper() {
   console.log('Running scheduled scrape...');
+  
+  let autoAiEval = true;
+  try {
+    const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (config.autoAiEval !== undefined) {
+        autoAiEval = !!config.autoAiEval;
+      }
+    }
+  } catch (e) {
+    console.error('Failed to read config in runScraper:', e);
+  }
+  
+  const mode = autoAiEval ? 'both' : 'scrape';
+  console.log(`Scheduled scrape running in mode: ${mode}`);
+
   const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
   const python = spawn(pythonExecutable, [
-    path.join(__dirname, '..', 'scraper', 'main.py')
+    path.join(__dirname, '..', 'scraper', 'main.py'),
+    '--mode', mode
   ], {
     env: { ...process.env }
   });
