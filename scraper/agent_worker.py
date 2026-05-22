@@ -5,11 +5,12 @@ import sqlite3
 import datetime
 import logging
 from logging.handlers import RotatingFileHandler
-import re
 from openai import OpenAI
 from config import API_KEY, LLM_MODEL
 from prompts import build_evaluation_prompt, get_outreach_draft_prompt
 from scoring import score_listing
+
+from evidence_extractor import EvidenceExtractor
 
 # Set up logging
 log_file = os.path.join(
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 # Initialize OpenAI client
 openai_key = os.environ.get("OPENAI_API_KEY") or API_KEY
 client = OpenAI(api_key=openai_key)
+extractor = EvidenceExtractor()
 
 DB_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -59,182 +61,6 @@ def get_db_connection():
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA busy_timeout=5000;")
     return conn
-
-
-def extract_json_block(text):
-    """Robust extraction of JSON blocks from LLM responses"""
-    # 1. Try START_JSON ... END_JSON magic markers
-    start_marker = "START_JSON"
-    end_marker = "END_JSON"
-    if start_marker in text and end_marker in text:
-        try:
-            start_idx = text.find(start_marker) + len(start_marker)
-            end_idx = text.find(end_marker)
-            json_str = text[start_idx:end_idx].strip()
-            return json.loads(json_str)
-        except Exception as e:
-            logger.warning(f"Failed to parse JSON between magic markers: {str(e)}")
-
-    # 2. Look for ```json ... ``` blocks
-    match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except Exception as e:
-            logger.warning(f"Failed to parse inner JSON block: {str(e)}")
-
-    # 3. Try parsing raw string
-    try:
-        return json.loads(text.strip())
-    except Exception:
-        pass
-
-    return None
-
-
-def sanitize_extracted_data(extracted_data):
-    """Sanitizes highlights by mapping 'kind' (or legacy 'type') to the strict frontend schema and populating defaults."""
-    if not isinstance(extracted_data, dict):
-        return extracted_data
-
-    if "highlights" in extracted_data and isinstance(
-        extracted_data["highlights"], list
-    ):
-        sanitized_highlights = []
-        for h in extracted_data["highlights"]:
-            if not isinstance(h, dict):
-                continue
-
-            label = h.get("label", "")
-            if not isinstance(label, str):
-                label = str(label)
-            label = label.strip()
-            if not label:
-                continue
-
-            # Map "kind" or legacy "type"
-            kind_val = h.get("kind") or h.get("type") or "feature"
-            k = str(kind_val).lower().strip()
-
-            # Reconstruct legacy type
-            h_type = "feature"
-            if k in [
-                "maintenance",
-                "service",
-                "tüv",
-                "tuv",
-                "oil change",
-                "repair",
-                "tires",
-                "inspektion",
-                "wartung",
-            ]:
-                h_type = "maintenance"
-            elif k in [
-                "warning",
-                "defect",
-                "issue",
-                "damage",
-                "flaw",
-                "problem",
-                "scratch",
-                "unfall",
-                "schade",
-            ]:
-                h_type = "warning"
-            elif k in [
-                "feature",
-                "upgrade",
-                "accessory",
-                "extra",
-                "mod",
-                "modification",
-                "tuning",
-                "part",
-                "zubehör",
-            ]:
-                h_type = "feature"
-            else:
-                # Fuzzy matching fallback
-                if any(
-                    x in k
-                    for x in [
-                        "defect",
-                        "damage",
-                        "broken",
-                        "accident",
-                        "warn",
-                        "fail",
-                        "issue",
-                        "schade",
-                        "unfall",
-                        "rost",
-                    ]
-                ):
-                    h_type = "warning"
-                elif any(
-                    x in k
-                    for x in [
-                        "service",
-                        "tüv",
-                        "tuv",
-                        "maintenance",
-                        "öl",
-                        "oil",
-                        "reifen",
-                        "kett",
-                    ]
-                ):
-                    h_type = "maintenance"
-                else:
-                    h_type = "feature"
-
-            # Auto-populate sentiment based on type
-            sentiment = "neutral"
-            if h_type == "warning":
-                sentiment = "negative"
-            elif h_type == "feature":
-                sentiment = "positive"
-            elif h_type == "maintenance":
-                sentiment = "neutral"
-
-            sanitized_highlights.append(
-                {
-                    "label": label[:32],  # Ensure length limit under 32 chars
-                    "type": h_type,
-                    "sentiment": sentiment,
-                    "evidence_quote": h.get("evidence_quote") or "",
-                    "confidence": h.get("confidence") or "high",
-                }
-            )
-        extracted_data["highlights"] = sanitized_highlights
-    return extracted_data
-
-
-def validate_extracted_data(extracted_data, criteria_list):
-    """Validates the extracted JSON structure against target schema rules, strictly checking only catastrophic requirements to avoid unnecessary retries."""
-    errors = []
-    if not isinstance(extracted_data, dict):
-        return ["Extracted data is not a JSON object"]
-
-    # Catastrophic: missing 'criteria' top-level key
-    if "criteria" not in extracted_data:
-        errors.append("Missing required top-level key: 'criteria'")
-
-    if "criteria" in extracted_data:
-        criteria_part = extracted_data["criteria"]
-        if not isinstance(criteria_part, dict):
-            errors.append("'criteria' must be a JSON object")
-        else:
-            # Catastrophic: missing required criterion IDs
-            for c in criteria_list:
-                cid = c["id"]
-                if cid not in criteria_part:
-                    errors.append(
-                        f"Missing required criterion ID in 'criteria': '{cid}'"
-                    )
-
-    return errors
 
 
 def log_listing_analysis(
@@ -514,14 +340,8 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
             retry_response_val = None
             initial_validation_errors = None
 
-            extracted_data = extract_json_block(response_text)
-            extracted_data = sanitize_extracted_data(extracted_data)
-            validation_errors = (
-                validate_extracted_data(extracted_data, criteria_list)
-                if extracted_data
-                else [
-                    "Could not extract JSON block between START_JSON and END_JSON markers."
-                ]
+            extracted_data, validation_errors = extractor.extract(
+                response_text, criteria_list
             )
 
             # Bounded One-Shot Retry
@@ -574,14 +394,8 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
                     response = client.chat.completions.create(**retry_kwargs)
                     response_text = response.choices[0].message.content.strip()
                     retry_response_val = response_text
-                    extracted_data = extract_json_block(response_text)
-                    extracted_data = sanitize_extracted_data(extracted_data)
-                    validation_errors = (
-                        validate_extracted_data(extracted_data, criteria_list)
-                        if extracted_data
-                        else [
-                            "Could not extract JSON block between START_JSON and END_JSON markers after retry."
-                        ]
+                    extracted_data, validation_errors = extractor.extract(
+                        response_text, criteria_list
                     )
                     if validation_errors:
                         logger.error(
@@ -1003,7 +817,7 @@ def analyze_conversation(listing_id):
             logger.warning(
                 f"Failed to log conversation analysis for listing {listing_id}: {str(log_err)}"
             )
-        updated_data = extract_json_block(response_text)
+        updated_data = extractor.extract_json_block(response_text)
 
         if not updated_data:
             logger.warning(

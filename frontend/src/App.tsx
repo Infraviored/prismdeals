@@ -59,9 +59,31 @@ interface ExtractedFactsSchema {
   [key: string]: unknown;
 }
 
+const parseHash = (hashStr: string) => {
+  const hash = hashStr || '#landing';
+  const match = hash.match(/^#([^?]+)(?:\?(.+))?$/);
+  if (!match) return { view: 'landing' as const, campaignId: null, searchId: null };
+  const path = match[1];
+  const queryParams = new URLSearchParams(match[2] || '');
+  if (['landing', 'dashboard', 'edit', 'create-campaign', 'settings'].includes(path)) {
+    const view = path as 'landing' | 'dashboard' | 'edit' | 'create-campaign' | 'settings';
+    const campaignIdStr = queryParams.get('campaignId');
+    const campaignId = campaignIdStr ? parseInt(campaignIdStr, 10) : null;
+    const searchIdStr = queryParams.get('searchId');
+    const searchId = searchIdStr ? parseInt(searchIdStr, 10) : null;
+    return {
+      view,
+      campaignId: campaignId && !isNaN(campaignId) ? campaignId : null,
+      searchId: searchId && !isNaN(searchId) ? searchId : null
+    };
+  }
+  return { view: 'landing' as const, campaignId: null, searchId: null };
+};
+
 export default function App() {
+  const initialNav = parseHash(window.location.hash);
   // Navigation
-  const [view, setView] = useState<'landing' | 'dashboard' | 'edit' | 'create-campaign' | 'settings'>('landing')
+  const [view, setView] = useState<'landing' | 'dashboard' | 'edit' | 'create-campaign' | 'settings'>(initialNav.view)
   const [previousView, setPreviousView] = useState<'landing' | 'dashboard' | 'edit' | 'create-campaign'>('landing')
   const [isRegisteringTarget, setIsRegisteringTarget] = useState(false)
 
@@ -75,12 +97,45 @@ export default function App() {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null)
 
   // Sidebar selections & details
-  const [currentCampaignId, setCurrentCampaignId] = useState<number | null>(null)
-  const [currentSearchId, setCurrentSearchId] = useState<number | null>(null)
+  const [currentCampaignId, setCurrentCampaignId] = useState<number | null>(initialNav.campaignId)
+  const [currentSearchId, setCurrentSearchId] = useState<number | null>(initialNav.searchId)
   const [currentKnowledgeSetId, setCurrentKnowledgeSetId] = useState<number | null>(null)
 
   const activeSearches = searches.filter(s => s.campaign_id === currentCampaignId)
   const activeSearchTarget = searches.find(s => s.id === currentSearchId) || activeSearches[0]
+
+  // Dynamic hash synchronization effects
+  useEffect(() => {
+    let hash = `#${view}`;
+    const params = new URLSearchParams();
+    if (currentCampaignId !== null) {
+      params.set('campaignId', currentCampaignId.toString());
+    }
+    if (currentSearchId !== null) {
+      params.set('searchId', currentSearchId.toString());
+    }
+    const paramStr = params.toString();
+    if (paramStr) {
+      hash += `?${paramStr}`;
+    }
+    if (window.location.hash !== hash) {
+      window.location.hash = hash;
+    }
+  }, [view, currentCampaignId, currentSearchId]);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const parsed = parseHash(window.location.hash);
+      setView(parsed.view);
+      setCurrentCampaignId(parsed.campaignId);
+      setCurrentSearchId(parsed.searchId);
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, []);
 
 
   // Filtering states for Deal Matcher
