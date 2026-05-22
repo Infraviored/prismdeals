@@ -1206,7 +1206,7 @@ export default function App() {
         )}
             {/* VIEW 3: CAMPAIGN TARGETS & GUIDELINES EDITOR */}
         {view === 'edit' && (
-          <div className="flex flex-col space-y-6 w-full animate-fadeIn max-w-4xl mx-auto py-2">
+          <div className="flex flex-col space-y-6 w-full animate-fadeIn max-w-6xl mx-auto py-2">
 
             {/* Sub Header */}
             <div className="flex justify-between items-center pb-4 border-b border-slate-800 w-full">

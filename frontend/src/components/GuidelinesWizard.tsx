@@ -207,9 +207,12 @@ export default function GuidelinesWizard({
         {/* STEP 1: DEEP RESEARCH */}
         {wizardStep === 1 && (
           <div className="space-y-5 animate-fadeIn">
-            <div className="pb-2 border-b border-slate-800/50">
-              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">Step 1: Deep Research (Knowledge Acquisition)</span>
-              <p className="text-[11px] text-slate-450 mt-0.5">Use Perplexity Deep Research or another external agent to understand specifications, revisions, critical check points, and pitfalls for this exact product.</p>
+            <div className="pb-4 border-b border-slate-800/50 space-y-1">
+              <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest block font-mono">Knowledge Acquisition</span>
+              <h3 className="text-base font-bold text-slate-100">Step 1: Deep Specification & Risk Research</h3>
+              <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
+                Leverage deep external research models (such as Perplexity Deep Research) to systematically analyze technical specifications, target wear points, critical revisions, and common mechanical or electrical pitfalls for this exact product category before scanning live market listings.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -257,9 +260,12 @@ export default function GuidelinesWizard({
         {/* STEP 2: MARKET CALIBRATION */}
         {wizardStep === 2 && (
           <div className="space-y-5 animate-fadeIn">
-            <div className="pb-2 border-b border-slate-800/50">
-              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">Step 2: Market Calibration & Sample Injection</span>
-              <p className="text-[11px] text-slate-450 mt-0.5">Calibrate positive and negative listing factors from market samples.</p>
+            <div className="pb-4 border-b border-slate-800/50 space-y-1">
+              <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest block font-mono">Market Calibration</span>
+              <h3 className="text-base font-bold text-slate-100">Step 2: Live Market Sample Calibration</h3>
+              <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
+                Calibrate positive and negative evaluation criteria against actual live market samples crawled by our background scraper. Comparing theoretical checklists against local classified descriptions reveals real-world warning patterns and trust indicators.
+              </p>
             </div>
 
             {/* Scraper progress & listing samples context */}
@@ -421,9 +427,12 @@ export default function GuidelinesWizard({
         {/* STEP 3: CHECKLIST SYNTHESIS & REACTIVE PREVIEW */}
         {wizardStep === 3 && (
           <div className="space-y-5 animate-fadeIn">
-            <div className="pb-2 border-b border-slate-800/50">
-              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">Step 3: Synthesis Checklist & Verification</span>
-              <p className="text-[11px] text-slate-450 mt-0.5">Paste synthesized matching checklist output to establish deal scoring rules.</p>
+            <div className="pb-4 border-b border-slate-800/50 space-y-1">
+              <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest block font-mono">Final Synthesis</span>
+              <h3 className="text-base font-bold text-slate-100">Step 3: Synthesis Matching Checklist & Verification</h3>
+              <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
+                Synthesize the calibrated market memo into structured deal scoring guidelines. Paste the final structured memo below to dynamically parse the matching rules, extract deal scoring weights, draft outreach templates, and activate live listing scoring.
+              </p>
             </div>
 
             <div className="space-y-2">
