@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import type { SampleListing } from '../types'
 
 interface GuidelinesWizardProps {
@@ -28,6 +28,10 @@ interface GuidelinesWizardProps {
   parsedBadRef: string
   parsedDemoMsg: string
   parsedItemJson: string
+  isScraping: boolean
+  scrapingStatus: string
+  scrapingProgress: { phase: string; current: number; total: number; status: string; } | null
+  triggerFastScrape: (searchId: number) => Promise<void>
 }
 
 export default function GuidelinesWizard({
@@ -51,7 +55,11 @@ export default function GuidelinesWizard({
   parsedGoodRef,
   parsedBadRef,
   parsedDemoMsg,
-  parsedItemJson
+  parsedItemJson,
+  isScraping,
+  scrapingStatus,
+  scrapingProgress,
+  triggerFastScrape
 }: GuidelinesWizardProps) {
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null)
 
@@ -190,10 +198,24 @@ export default function GuidelinesWizard({
               </span>
               {!sampledListingsLoading && (
                 <button
+                  disabled={isScraping}
                   onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
-                  className="text-[10px] bg-slate-800 hover:bg-slate-700 border border-slate-750 text-slate-300 font-bold px-3 py-1.5 rounded-lg transition-all"
+                  className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all border ${
+                    isScraping
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-not-allowed'
+                      : 'bg-slate-800 hover:bg-slate-700 border-slate-750 text-slate-300'
+                  }`}
                 >
-                  {sampledListings.length > 0 ? 'Refresh Samples' : 'Fetch Market Listings'}
+                  {isScraping ? (
+                    <span className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+                      Scraping...
+                    </span>
+                  ) : sampledListings.length > 0 ? (
+                    'Refresh Samples'
+                  ) : (
+                    'Fetch Market Listings'
+                  )}
                 </button>
               )}
             </div>
@@ -210,15 +232,31 @@ export default function GuidelinesWizard({
                   <div className="space-y-1">
                     <span className="text-xs font-bold text-amber-400 block">Listing samples required</span>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Prompt A needs real listings from your search URL to calibrate the market model. Click "Fetch Market Listings" above — this pulls a fresh sample directly from your active search target.
+                      Prompt A needs real listings from your search URL to calibrate the market model. Click below to pull a fresh sample directly from your active search target.
                     </p>
                   </div>
                 </div>
                 <button
-                  onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
-                  className="w-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 font-extrabold py-2.5 rounded-xl text-xs transition-all"
+                  disabled={isScraping || sampledListingsLoading}
+                  onClick={() => activeSearchTarget?.id && triggerFastScrape(activeSearchTarget.id)}
+                  className={`w-full font-extrabold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2 border ${
+                    isScraping
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-not-allowed'
+                      : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/30 text-amber-400'
+                  }`}
                 >
-                  Fetch Market Listings Now &rarr;
+                  {isScraping ? (
+                    <>
+                      <div className="w-3.5 h-3.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+                      <span>
+                        {scrapingProgress
+                          ? `Scraping: ${scrapingProgress.phase} (${scrapingProgress.current}/${scrapingProgress.total}) — ${scrapingProgress.status}`
+                          : scrapingStatus || 'Scraping fresh listings...'}
+                      </span>
+                    </>
+                  ) : (
+                    <span>No listings in database — Trigger Fast Crawler Scrape (Takes ~20s) &rarr;</span>
+                  )}
                 </button>
               </div>
             ) : (

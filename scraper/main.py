@@ -77,6 +77,12 @@ def main():
         default=None,
         help="Specific listing ID to process",
     )
+    parser.add_argument(
+        "--search-id",
+        type=int,
+        default=None,
+        help="Search ID to associate the scraped listings with",
+    )
 
     args = parser.parse_args()
 
@@ -109,7 +115,7 @@ def main():
         if args.urls is not None:
             # Overridden via command line arguments
             for url in args.urls:
-                search_targets.append({"url": url, "profile_id": None})
+                search_targets.append({"url": url, "search_id": args.search_id})
         else:
             try:
                 cursor.execute("SELECT id, url FROM searches WHERE enabled = 1")

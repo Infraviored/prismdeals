@@ -42,6 +42,9 @@ export default function App() {
   const [currentSearchId, setCurrentSearchId] = useState<number | null>(null)
   const [currentKnowledgeSetId, setCurrentKnowledgeSetId] = useState<number | null>(null)
 
+  const activeSearches = searches.filter(s => s.campaign_id === currentCampaignId)
+  const activeSearchTarget = searches.find(s => s.id === currentSearchId) || activeSearches[0]
+
 
   // Filtering states for Deal Matcher
   const [selectedSearchId, setSelectedSearchId] = useState<string>('All')
@@ -76,151 +79,7 @@ export default function App() {
   const [editKsName, setEditKsName] = useState('')
   const [editKsError, setEditKsError] = useState('')
 
-  // Load Prompt A and B templates
-  useEffect(() => {
-    fetch('/api/prompts/market')
-      .then(r => r.text())
-      .then(setMarketPromptTemplate)
-      .catch(err => console.error("Error loading market template:", err))
-
-    fetch('/api/prompts/profile')
-      .then(r => r.text())
-      .then(setProfilePromptTemplate)
-      .catch(err => console.error("Error loading profile template:", err))
-  }, [])
-
-  // Parse XML blocks in Step 3 on the fly
-  useEffect(() => {
-    const ekMatch = researcherOutput.match(/<expert_knowledge>([\s\S]*?)<\/expert_knowledge>/i)
-    setParsedExpertKnowledge(ekMatch ? ekMatch[1].trim() : '')
-
-    const grMatch = researcherOutput.match(/<good_reference_description>([\s\S]*?)<\/good_reference_description>/i)
-    setParsedGoodRef(grMatch ? grMatch[1].trim() : '')
-
-    const brMatch = researcherOutput.match(/<bad_reference_description>([\s\S]*?)<\/bad_reference_description>/i)
-    setParsedBadRef(brMatch ? brMatch[1].trim() : '')
-
-    const dmMatch = researcherOutput.match(/<demo_message>([\s\S]*?)<\/demo_message>/i)
-    setParsedDemoMsg(dmMatch ? dmMatch[1].trim() : '')
-
-    const ijMatch = researcherOutput.match(/<item_json>([\s\S]*?)<\/item_json>/i)
-    setParsedItemJson(ijMatch ? ijMatch[1].trim() : '')
-  }, [researcherOutput])
-
-  // Live URL validation preview
-  const [previewLoading, setPreviewLoading] = useState(false)
-  const [previewCount, setPreviewCount] = useState<number | null>(null)
-  const [previewError, setPreviewError] = useState<string | null>(null)
-  const [isEditingUrl, setIsEditingUrl] = useState(false)
-  const [editingUrlValue, setEditingUrlValue] = useState('')
-
-  // General state
-  const [isScraping, setIsScraping] = useState(false)
-  const [scrapingStatus, setScrapingStatus] = useState('')
-  const [scrapingProgress, setScrapingProgress] = useState<{
-    phase: string;
-    current: number;
-    total: number;
-    status: string;
-  } | null>(null)
-  const [liveLogs, setLiveLogs] = useState<string>('')
-  const [showLogConsole, setShowLogConsole] = useState(false)
-
-  // Polling loop for active scraping task
-  useEffect(() => {
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    const checkStatus = async () => {
-      try {
-        const res = await fetch('/api/scrape/status');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.active) {
-            setIsScraping(true);
-            setScrapingProgress(data.progress);
-            if (data.progress && data.progress.status) {
-              setScrapingStatus(data.progress.status);
-            }
-
-            // Also fetch live logs
-            const logsRes = await fetch('/api/logs');
-            if (logsRes.ok) {
-              const logsData = await logsRes.json();
-              setLiveLogs(logsData.logs || '');
-            }
-          } else {
-            // Scraper is no longer active in backend
-            if (isScraping) {
-              setIsScraping(false);
-              setScrapingProgress(null);
-              setScrapingStatus("Scraping completed!");
-              refreshAll();
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Error polling scraper status:", e);
-      }
-    };
-
-    // Run immediately
-    checkStatus();
-
-    // Poll every 1.5 seconds
-    intervalId = setInterval(checkStatus, 1500);
-
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isScraping]);
-
-  // Polling loop for active AI evaluations
-  useEffect(() => {
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-    const checkActiveProcesses = async () => {
-      try {
-        const res = await fetch('/api/process/active');
-        if (res.ok) {
-          const data = await res.json();
-          // If the list of active IDs changed, we might want to refresh listings
-          // to get the new scores for those that just finished.
-          setActiveProcessingListingIds(prev => {
-            const finished = prev.filter(id => !data.active.includes(id));
-            if (finished.length > 0) {
-              refreshAll();
-            }
-            return data.active;
-          });
-        }
-      } catch {
-        // Ignore
-      }
-    };
-    checkActiveProcesses();
-    intervalId = setInterval(checkActiveProcesses, 2000);
-    return () => clearInterval(intervalId);
-  }, []);
-
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [processingStatus, setProcessingStatus] = useState('')
-
-
-
-  // Custom states for images and descriptions
-  const [selectedListingId, setSelectedListingId] = useState<string | null>(null)
-
-  // Initial load
-  useEffect(() => {
-    refreshAll()
-    checkSessionStatus()
-
-    const interval = setInterval(checkSessionStatus, 8000)
-    return () => clearInterval(interval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function checkSessionStatus() {
+  const checkSessionStatus = async () => {
     try {
       const res = await fetch('/api/session-status')
       if (res.ok) {
@@ -232,30 +91,26 @@ export default function App() {
     }
   }
 
-  const handleTriggerLogin = async () => {
-    setIsScraping(true)
-    setScrapingStatus("Opening interactive browser window on your host... Please complete the login form inside the browser window. We will automatically detect when you have successfully logged in.")
+  const fetchSampleListings = async (searchId: number) => {
+    setSampledListingsLoading(true)
     try {
-      const res = await fetch('/api/login-session', { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.success) {
-          setScrapingStatus("Authentication completed successfully!")
-          checkSessionStatus()
-        } else {
-          setScrapingStatus("Session watcher finished or timed out.")
-        }
+      const response = await fetch(`/api/searches/${searchId}/sample-listings`)
+      if (response.ok) {
+        const data = await response.json()
+        setSampledListings(data)
       } else {
-        setScrapingStatus("Authentication process failed to trigger.")
+        console.error("Failed to fetch sample listings")
+        alert("Failed to fetch sample listings from server.")
       }
-    } catch {
-      setScrapingStatus("Error connecting to backend server.")
+    } catch (error) {
+      console.error("Error fetching sample listings:", error)
+      alert("Error contacting the backend to fetch listings.")
     } finally {
-      setIsScraping(false)
+      setSampledListingsLoading(false)
     }
   }
 
-  function refreshAll() {
+  const refreshAll = () => {
     Promise.all([
       fetch('/api/campaigns').then(res => res.json()),
       fetch('/api/search-urls').then(res => res.json()),
@@ -397,8 +252,179 @@ export default function App() {
     })
   }
 
-  const activeSearches = searches.filter(s => s.campaign_id === currentCampaignId)
-  const activeSearchTarget = searches.find(s => s.id === currentSearchId) || activeSearches[0]
+  // Load Prompt A and B templates
+  useEffect(() => {
+    fetch('/api/prompts/market')
+      .then(r => r.text())
+      .then(setMarketPromptTemplate)
+      .catch(err => console.error("Error loading market template:", err))
+
+    fetch('/api/prompts/profile')
+      .then(r => r.text())
+      .then(setProfilePromptTemplate)
+      .catch(err => console.error("Error loading profile template:", err))
+  }, [])
+
+  // Parse XML blocks in Step 3 on the fly
+  useEffect(() => {
+    const ekMatch = researcherOutput.match(/<expert_knowledge>([\s\S]*?)<\/expert_knowledge>/i)
+    setParsedExpertKnowledge(ekMatch ? ekMatch[1].trim() : '')
+
+    const grMatch = researcherOutput.match(/<good_reference_description>([\s\S]*?)<\/good_reference_description>/i)
+    setParsedGoodRef(grMatch ? grMatch[1].trim() : '')
+
+    const brMatch = researcherOutput.match(/<bad_reference_description>([\s\S]*?)<\/bad_reference_description>/i)
+    setParsedBadRef(brMatch ? brMatch[1].trim() : '')
+
+    const dmMatch = researcherOutput.match(/<demo_message>([\s\S]*?)<\/demo_message>/i)
+    setParsedDemoMsg(dmMatch ? dmMatch[1].trim() : '')
+
+    const ijMatch = researcherOutput.match(/<item_json>([\s\S]*?)<\/item_json>/i)
+    setParsedItemJson(ijMatch ? ijMatch[1].trim() : '')
+  }, [researcherOutput])
+
+  // Live URL validation preview
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewCount, setPreviewCount] = useState<number | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [isEditingUrl, setIsEditingUrl] = useState(false)
+  const [editingUrlValue, setEditingUrlValue] = useState('')
+
+  // General state
+  const [isScraping, setIsScraping] = useState(false)
+  const [scrapingStatus, setScrapingStatus] = useState('')
+  const [scrapingProgress, setScrapingProgress] = useState<{
+    phase: string;
+    current: number;
+    total: number;
+    status: string;
+  } | null>(null)
+  const [liveLogs, setLiveLogs] = useState<string>('')
+  const [showLogConsole, setShowLogConsole] = useState(false)
+
+  // Polling loop for active scraping task
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch('/api/scrape/status');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.active) {
+            setIsScraping(true);
+            setScrapingProgress(data.progress);
+            if (data.progress && data.progress.status) {
+              setScrapingStatus(data.progress.status);
+            }
+
+            // Also fetch live logs
+            const logsRes = await fetch('/api/logs');
+            if (logsRes.ok) {
+              const logsData = await logsRes.json();
+              setLiveLogs(logsData.logs || '');
+            }
+          } else {
+            // Scraper is no longer active in backend
+            if (isScraping) {
+              setIsScraping(false);
+              setScrapingProgress(null);
+              setScrapingStatus("Scraping completed!");
+              refreshAll();
+              if (activeSearchTarget?.id) {
+                fetchSampleListings(activeSearchTarget.id);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Error polling scraper status:", e);
+      }
+    };
+
+    // Run immediately
+    checkStatus();
+
+    // Poll every 1.5 seconds
+    intervalId = setInterval(checkStatus, 1500);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isScraping, activeSearchTarget?.id]);
+
+  // Polling loop for active AI evaluations
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const checkActiveProcesses = async () => {
+      try {
+        const res = await fetch('/api/process/active');
+        if (res.ok) {
+          const data = await res.json();
+          // If the list of active IDs changed, we might want to refresh listings
+          // to get the new scores for those that just finished.
+          setActiveProcessingListingIds(prev => {
+            const finished = prev.filter(id => !data.active.includes(id));
+            if (finished.length > 0) {
+              refreshAll();
+            }
+            return data.active;
+          });
+        }
+      } catch {
+        // Ignore
+      }
+    };
+    checkActiveProcesses();
+    intervalId = setInterval(checkActiveProcesses, 2000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [processingStatus, setProcessingStatus] = useState('')
+
+
+
+  // Custom states for images and descriptions
+  const [selectedListingId, setSelectedListingId] = useState<string | null>(null)
+
+  // Initial load
+  useEffect(() => {
+    refreshAll()
+    checkSessionStatus()
+
+    const interval = setInterval(checkSessionStatus, 8000)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+
+
+  const handleTriggerLogin = async () => {
+    setIsScraping(true)
+    setScrapingStatus("Opening interactive browser window on your host... Please complete the login form inside the browser window. We will automatically detect when you have successfully logged in.")
+    try {
+      const res = await fetch('/api/login-session', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setScrapingStatus("Authentication completed successfully!")
+          checkSessionStatus()
+        } else {
+          setScrapingStatus("Session watcher finished or timed out.")
+        }
+      } else {
+        setScrapingStatus("Authentication process failed to trigger.")
+      }
+    } catch {
+      setScrapingStatus("Error connecting to backend server.")
+    } finally {
+      setIsScraping(false)
+    }
+  }
+
+
 
   // Auto load active guidelines when active search target changes
   useEffect(() => {
@@ -766,23 +792,26 @@ export default function App() {
     }
   }
 
-  // Fetch real classified listings to use as sample context
-  const fetchSampleListings = async (searchId: number) => {
-    setSampledListingsLoading(true)
+
+
+  // Trigger a fast crawler scrape directly from the target URL
+  const triggerFastScrape = async (searchId: number) => {
+    setIsScraping(true)
+    setScrapingStatus("Spawning targeted crawler to fetch market listings...")
+    setLiveLogs("Starting targeted Chrome headless scraper session...")
+    setScrapingProgress({ phase: 'starting', current: 0, total: 100, status: 'Spawning scraper worker...' })
     try {
-      const response = await fetch(`/api/searches/${searchId}/sample-listings`)
-      if (response.ok) {
-        const data = await response.json()
-        setSampledListings(data)
-      } else {
-        console.error("Failed to fetch sample listings")
+      const res = await fetch(`/api/searches/${searchId}/scrape`, { method: 'POST' })
+      if (!res.ok) {
+        alert("Failed to start targeted scraper.")
+        setIsScraping(false)
       }
-    } catch (error) {
-      console.error("Error fetching sample listings:", error)
-    } finally {
-      setSampledListingsLoading(false)
+    } catch {
+      alert("Error triggering targeted scraper.")
+      setIsScraping(false)
     }
   }
+
 
   // Filter listings based on currentCampaignId
   const filteredListings = listings.filter(l => {
@@ -1355,6 +1384,10 @@ export default function App() {
                           parsedBadRef={parsedBadRef}
                           parsedDemoMsg={parsedDemoMsg}
                           parsedItemJson={parsedItemJson}
+                          isScraping={isScraping}
+                          scrapingStatus={scrapingStatus}
+                          scrapingProgress={scrapingProgress}
+                          triggerFastScrape={triggerFastScrape}
                         />
                       )}
                       

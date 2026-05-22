@@ -567,12 +567,22 @@ def scrape_listings(urls, output_file, max_listings=None):
 
                 logger.info(f"Scraping page {page} of {PAGES_TO_SCRAPE}: {current_url}")
 
+                # Calculate remaining listings to scrape
+                remaining = None
+                if max_listings is not None:
+                    remaining = max_listings - len(all_scraped_listings)
+                    if remaining <= 0:
+                        logger.info(
+                            "Reached maximum listings limit, stopping scrape early."
+                        )
+                        break
+
                 # Scrape the current page
                 scraped_listings = scrape_page(
                     driver,
                     current_url,
                     output_file=output_file,
-                    max_listings=max_listings,
+                    max_listings=remaining,
                 )
                 all_scraped_listings.extend(scraped_listings)
 

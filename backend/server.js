@@ -685,6 +685,55 @@ app.post('/api/scrape', (req, res) => {
   }
 });
 
+// API: Trigger a targeted scraper execution for a specific search ID
+app.post('/api/searches/:search_id/scrape', async (req, res) => {
+  try {
+    const searchId = req.params.search_id;
+    const search = await get('SELECT * FROM searches WHERE id = ?', [searchId]);
+    if (!search) {
+      return res.status(404).json({ error: 'Search target not found' });
+    }
+
+    if (activeScraperProcess !== null) {
+      return res.status(400).json({ error: 'Scraper is already running' });
+    }
+
+    // Clear old progress file
+    const progressFile = path.join(__dirname, '..', 'data', 'scraper_progress.json');
+    if (fs.existsSync(progressFile)) {
+      try { fs.unlinkSync(progressFile); } catch (e) {}
+    }
+
+    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const python = spawn(pythonExecutable, [
+      path.join(__dirname, '..', 'scraper', 'main.py'),
+      '--mode', 'scrape',
+      '--urls', search.url,
+      '--search-id', String(search.id),
+      '--max-listings', '5'
+    ], {
+      env: { ...process.env }
+    });
+
+    activeScraperProcess = python;
+    console.log(`Background targeted scraper spawned for search ID ${searchId}`);
+
+    python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
+    python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
+
+    python.on('close', (code) => {
+      console.log(`Python targeted scraper exited with code ${code}`);
+      activeScraperProcess = null;
+    });
+
+    res.json({ success: true, message: 'Targeted scraping started' });
+
+  } catch (error) {
+    console.error('Error triggering targeted scrape:', error);
+    res.status(500).json({ error: 'Failed to trigger targeted scraping' });
+  }
+});
+
 // API: Which listings currently have an AI eval running
 app.get('/api/process/active', (req, res) => {
   res.json({ active: Array.from(activeWorkerProcesses.keys()) });

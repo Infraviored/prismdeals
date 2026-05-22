@@ -23,6 +23,17 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM EXIT
 
+# Clear ports 3030 and 5173 if they are in use
+echo "Ensuring ports 3030 and 5173 are free..."
+for PORT in 3030 5173; do
+    PID=$(lsof -t -i :$PORT 2>/dev/null)
+    if [ -n "$PID" ]; then
+        echo "Port $PORT is already in use by process $PID. Killing it..."
+        kill -9 $PID 2>/dev/null
+        sleep 0.5
+    fi
+done
+
 # 1. Start Backend Server
 echo "Starting backend server..."
 if [ -n "$VENV_PATH" ]; then
