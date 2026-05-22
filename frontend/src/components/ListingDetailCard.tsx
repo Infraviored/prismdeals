@@ -117,14 +117,11 @@ export default function ListingDetailCard({
                               !l.last_ai_evaluated_at || 
                               (l.last_description_changed_at && l.last_ai_evaluated_at && l.last_description_changed_at > l.last_ai_evaluated_at);
               
-              let buttonStyles = '';
-              if (activeProcessingListingIds.includes(l.id)) {
-                buttonStyles = 'bg-indigo-500/25 text-indigo-300 border-indigo-400/50 animate-pulse';
-              } else if (isStale) {
-                buttonStyles = 'animate-pulse bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20';
-              } else {
-                buttonStyles = 'bg-slate-800/60 text-slate-400 border-slate-700 hover:bg-indigo-500/10 hover:text-indigo-400 hover:border-indigo-500/30';
-              }
+              const buttonStyles = activeProcessingListingIds.includes(l.id)
+                ? 'bg-indigo-500/25 text-indigo-300 border-indigo-400/50 animate-pulse'
+                : isStale
+                ? 'animate-pulse bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20'
+                : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:bg-indigo-500/10 hover:text-indigo-400 hover:border-indigo-500/30';
 
               return (
                 <Button

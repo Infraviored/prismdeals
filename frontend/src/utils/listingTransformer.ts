@@ -146,7 +146,7 @@ export function transformListing(
     description,
     criteria_evaluations,
     special_info,
-    highlights: isLegacy ? [] : (((l.extracted_facts as ExtractedFactsSchema)?.highlights as any) || []),
+    highlights: isLegacy ? [] : (((l.extracted_facts as ExtractedFactsSchema)?.highlights as Listing['highlights']) || []),
     draft_message,
     summary,
     dimensions: (l.extracted_facts as ExtractedFactsSchema)?.dimensions,

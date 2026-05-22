@@ -38,22 +38,24 @@ export function useTranslation() {
     replacements?: Record<string, string | number>
   ): string => {
     const keys = path.split('.');
-    let current: any = translations[lang];
+    let current: unknown = translations[lang];
     
     for (const key of keys) {
-      if (current === undefined || current[key] === undefined) {
+      if (current && typeof current === 'object' && key in (current as Record<string, unknown>)) {
+        current = (current as Record<string, unknown>)[key];
+      } else {
         // Fallback to English if key is missing in active language
-        let fallback: any = translations['en'];
+        let fallback: unknown = translations['en'];
         for (const fKey of keys) {
-          if (fallback === undefined || fallback[fKey] === undefined) {
+          if (fallback && typeof fallback === 'object' && fKey in (fallback as Record<string, unknown>)) {
+            fallback = (fallback as Record<string, unknown>)[fKey];
+          } else {
             return path;
           }
-          fallback = fallback[fKey];
         }
         current = fallback;
         break;
       }
-      current = current[key];
     }
 
     if (typeof current !== 'string') {

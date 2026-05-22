@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import { Button } from './ui/Button';
@@ -18,10 +19,6 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
 
-  useEffect(() => {
-    fetchConfig();
-  }, []);
-
   const fetchConfig = async () => {
     setLoading(true);
     try {
@@ -41,6 +38,11 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
