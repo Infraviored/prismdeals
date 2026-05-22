@@ -148,13 +148,15 @@ def harvest_missing_descriptions(driver):
                 cursor.execute(
                     """
                     UPDATE listings 
-                    SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1
+                    SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
+                        last_description_changed_at = ?
                     WHERE id = ?
                 """,
                     (
                         detailed_description,
                         json.dumps(details),
                         json.dumps(images),
+                        datetime.datetime.now().isoformat(),
                         listing_id,
                     ),
                 )
@@ -708,5 +710,194 @@ def harvest_descriptions():
 
     except Exception as e:
         logger.error(f"Error during description harvesting session: {str(e)}")
+    finally:
+        driver.quit()
+
+
+def update_all_descriptions(driver):
+    """Query SQLite database for all listings under active searches, visit them, and update if description changed"""
+    db_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data",
+        "scraper.db",
+    )
+    if not os.path.exists(db_path):
+        logger.warning(
+            f"Database not found at {db_path}. Skipping update all descriptions."
+        )
+        return
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
+            JOIN searches s ON l.search_id = s.id
+            WHERE s.enabled = 1
+        """
+        )
+        rows = cursor.fetchall()
+        logger.info(f"Found {len(rows)} listings to check for description updates")
+
+        total = len(rows)
+        if total == 0:
+            update_progress(
+                "updating-descriptions", 0, 0, "No listings found to update."
+            )
+        else:
+            update_progress(
+                "updating-descriptions",
+                0,
+                total,
+                f"Found {total} listings to check/update.",
+            )
+
+        for idx, r in enumerate(rows):
+            listing_id = r["id"]
+            url = r["url"]
+            title = r["title"]
+            old_description = r["detailed_description"] or ""
+
+            logger.info(f"Checking updates for listing {listing_id} ({title}): {url}")
+            update_progress(
+                "updating-descriptions",
+                idx,
+                total,
+                f"Checking listing {idx + 1}/{total}: {title}",
+            )
+            try:
+                driver.get(url)
+
+                # Wait for the description element to load
+                try:
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "viewad-description"))
+                    )
+                except TimeoutException:
+                    logger.warning(
+                        f"Timeout waiting for description element for listing {listing_id}"
+                    )
+                    continue
+
+                soup = BeautifulSoup(driver.page_source, "html.parser")
+                desc_elem = soup.select_one("#viewad-description-text")
+                detailed_description = ""
+                if desc_elem:
+                    detailed_description = desc_elem.get_text(
+                        separator="\n", strip=False
+                    )
+
+                # Parse details key-value pairs
+                details = {}
+                details_list = soup.select("#viewad-details .addetailslist--detail")
+                for detail in details_list:
+                    val_elem = detail.select_one(".addetailslist--detail--value")
+                    if val_elem:
+                        val_text = val_elem.get_text(strip=True)
+                        key_text = detail.get_text(strip=True)
+                        if key_text.endswith(val_text):
+                            key_text = key_text[: -len(val_text)].strip()
+                        details[key_text] = val_text
+
+                # Parse images
+                images = []
+                image_elems = soup.select(".galleryimage-element img")
+                for img in image_elems:
+                    src = img.get("src") or img.get("data-imgsrc")
+                    if src:
+                        images.append(src)
+
+                # Compare: Only update database and timestamp if description has changed
+                if detailed_description.strip() != old_description.strip():
+                    logger.info(
+                        f"Description changed for listing {listing_id}! Updating in DB."
+                    )
+                    cursor.execute(
+                        """
+                        UPDATE listings 
+                        SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
+                            last_description_changed_at = ?
+                        WHERE id = ?
+                    """,
+                        (
+                            detailed_description,
+                            json.dumps(details),
+                            json.dumps(images),
+                            datetime.datetime.now().isoformat(),
+                            listing_id,
+                        ),
+                    )
+                    conn.commit()
+                else:
+                    logger.info(f"No description changes for listing {listing_id}.")
+
+            except Exception as e:
+                logger.error(
+                    f"Error updating details for listing {listing_id}: {str(e)}"
+                )
+
+            # Delay to mimic human behavior
+            time.sleep(DELAY_BETWEEN_LISTINGS)
+
+        if total > 0:
+            update_progress(
+                "updating-descriptions", total, total, "Deep updates completed."
+            )
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error in update_all_descriptions: {str(e)}")
+
+
+def update_all_descriptions_session():
+    """Main wrapper function to launch driver and update all descriptions in one go"""
+    data_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
+    )
+    cookies_path = os.path.join(data_dir, "cookies.pkl")
+    user_data_dir = os.path.join(data_dir, "chrome_profile")
+
+    options = webdriver.ChromeOptions()
+    options.add_argument(f"user-data-dir={user_data_dir}")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.binary_location = "/opt/google/chrome/chrome"
+
+    # Always headless for harvesting/updating since session is already logged in
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()), options=options
+    )
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {
+            "source": """
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined
+        })
+        """
+        },
+    )
+
+    try:
+        # Load persistent login session cookies
+        if os.path.exists(cookies_path):
+            driver.get("https://www.kleinanzeigen.de")
+            with open(cookies_path, "rb") as f:
+                cookies = pickle.load(f)
+                for cookie in cookies:
+                    driver.add_cookie(cookie)
+            logger.info("Loaded persistent session cookies for description update")
+
+        # Sequential update loop
+        update_all_descriptions(driver)
+
+    except Exception as e:
+        logger.error(f"Error during description update session: {str(e)}")
     finally:
         driver.quit()

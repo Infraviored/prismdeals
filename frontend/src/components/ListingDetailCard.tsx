@@ -68,49 +68,64 @@ export default function ListingDetailCard({
           <div className="flex flex-col truncate pr-2">
             <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold truncate max-w-[150px]">{l.item_name}</span>
             <span className="text-[9px] text-emerald-500 font-semibold uppercase">{l.campaign_name}</span>
+            {l.last_description_changed_at && (
+              <span className="text-[8px] text-slate-500 font-mono mt-0.5" title="Description last modified">
+                Mod: {new Date(l.last_description_changed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}
+              </span>
+            )}
           </div>
           
           {/* AI-Eval button + score — always visible, re-eval on click */}
           <div className="flex items-center gap-1.5">
-          {l.llm_processed && (
-            <>
-              {l.llm_processed_time && (
-                <span className="text-[9px] text-slate-500 font-medium hidden sm:inline-block">
-                  {new Date(l.llm_processed_time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}
-                </span>
-              )}
-              <div className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${
-                  l.niceness_score >= 70
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                    : l.niceness_score >= 40
-                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                    : 'bg-slate-800 text-slate-400 border-slate-700'
-                }`}>
-                {l.niceness_score}
-              </div>
-            </>
-          )}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleProcessSingleListing(l.id);
-              }}
-              disabled={activeProcessingListingIds.includes(l.id)}
-              title={l.llm_processed ? 'Re-evaluate with AI' : 'Evaluate with AI'}
-              className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center space-x-1 transition-all shadow-sm ${
-                activeProcessingListingIds.includes(l.id)
-                  ? 'bg-indigo-500/25 text-indigo-300 border-indigo-400/50 animate-pulse'
-                  : l.llm_processed
-                  ? 'bg-slate-800/60 text-slate-400 border-slate-700 hover:bg-indigo-500/10 hover:text-indigo-400 hover:border-indigo-500/30'
-                  : 'bg-amber-500/10 text-amber-400 border-amber-500/25 hover:bg-amber-500/20 hover:border-amber-400'
-              }`}
-            >
-              {activeProcessingListingIds.includes(l.id) ? (
-                <div className="animate-spin w-3 h-3 border border-current border-t-transparent rounded-full" />
-              ) : (
-                <span>{l.llm_processed ? '↺' : '🤖'} AI-Eval</span>
-              )}
-            </button>
+            {l.llm_processed_time && (
+              <span className="text-[9px] text-slate-500 font-medium hidden sm:inline-block">
+                {new Date(l.llm_processed_time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}
+              </span>
+            )}
+            <div className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${
+                l.niceness_score === undefined || l.niceness_score === null
+                  ? 'bg-slate-900/60 text-slate-500 border-slate-800'
+                  : l.niceness_score >= 70
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : l.niceness_score >= 40
+                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                  : 'bg-slate-800 text-slate-400 border-slate-700'
+              }`}>
+              {l.niceness_score === undefined || l.niceness_score === null ? '-' : l.niceness_score}
+            </div>
+
+            {(() => {
+              const isStale = !l.llm_processed || 
+                              !l.last_ai_evaluated_at || 
+                              (l.last_description_changed_at && l.last_ai_evaluated_at && l.last_description_changed_at > l.last_ai_evaluated_at);
+              
+              let buttonStyles = '';
+              if (activeProcessingListingIds.includes(l.id)) {
+                buttonStyles = 'bg-indigo-500/25 text-indigo-300 border-indigo-400/50 animate-pulse';
+              } else if (isStale) {
+                buttonStyles = 'animate-pulse bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20';
+              } else {
+                buttonStyles = 'bg-slate-800/60 text-slate-400 border-slate-700 hover:bg-indigo-500/10 hover:text-indigo-400 hover:border-indigo-500/30';
+              }
+
+              return (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleProcessSingleListing(l.id);
+                  }}
+                  disabled={activeProcessingListingIds.includes(l.id)}
+                  title={l.llm_processed ? (isStale ? 'AI score is stale. Re-evaluate.' : 'Re-evaluate with AI') : 'Evaluate with AI'}
+                  className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center space-x-1 transition-all shadow-sm ${buttonStyles}`}
+                >
+                  {activeProcessingListingIds.includes(l.id) ? (
+                    <div className="animate-spin w-3 h-3 border border-current border-t-transparent rounded-full" />
+                  ) : (
+                    <span>{l.llm_processed ? '↺' : '🤖'} AI-Eval</span>
+                  )}
+                </button>
+              );
+            })()}
           </div>
         </div>
 

@@ -4,7 +4,12 @@ import sqlite3
 import logging
 from logging.handlers import RotatingFileHandler
 import argparse
-from scraper import scrape_listings, preview_url_listings_count, harvest_descriptions
+from scraper import (
+    scrape_listings,
+    preview_url_listings_count,
+    harvest_descriptions,
+    update_all_descriptions_session,
+)
 
 # Set up logging to both console and file
 log_file = os.path.join(
@@ -55,9 +60,9 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["scrape", "process", "both", "preview"],
+        choices=["scrape", "process", "both", "preview", "update-all"],
         default="both",
-        help="Operation mode: scrape, process, both, or preview",
+        help="Operation mode: scrape, process, both, preview, or update-all",
     )
     parser.add_argument(
         "--urls",
@@ -91,6 +96,15 @@ def main():
             print("__PREVIEW_ERROR__:No target URL provided")
             return
         preview_url_listings_count(args.urls[0])
+        return
+
+    if args.mode == "update-all":
+        logger.info("Executing deep update of existing descriptions...")
+        try:
+            update_all_descriptions_session()
+            logger.info("Deep updates completed successfully.")
+        except Exception as e:
+            logger.error(f"Error during deep updates: {str(e)}")
         return
 
     # Define paths for data

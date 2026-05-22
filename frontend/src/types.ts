@@ -42,13 +42,15 @@ export interface Listing {
   short_description: string
   detailed_description: string
   extracted_facts: Record<string, unknown>
-  niceness_score: number
+  niceness_score?: number | null
   status: string
   search_id: number
   item_name?: string
   campaign_name?: string
   llm_processed: boolean
   llm_processed_time?: string
+  last_description_changed_at?: string
+  last_ai_evaluated_at?: string
   details?: Record<string, string>
   images?: string[]
   year?: string

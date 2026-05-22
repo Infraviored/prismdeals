@@ -778,6 +778,24 @@ export default function App() {
     }
   }
 
+  // Trigger deep description updates for all existing listings
+  const handleStartDeepUpdate = async () => {
+    setIsScraping(true)
+    setScrapingStatus("Spawning deep update worker...")
+    setLiveLogs("Initializing browser context for deep listing harvesting...")
+    setScrapingProgress({ phase: 'starting', current: 0, total: 100, status: 'Spawning deep update worker...' })
+    try {
+      const res = await fetch('/api/scrape/update-all', { method: 'POST' })
+      if (!res.ok) {
+        alert("Failed to start deep update.")
+        setIsScraping(false)
+      }
+    } catch {
+      alert("Error triggering deep update process.")
+      setIsScraping(false)
+    }
+  }
+
   // Trigger AI Matching Process
   const handleStartProcess = async () => {
     setIsProcessing(true)
@@ -813,7 +831,7 @@ export default function App() {
     const isMatched = matchesCampaign && matchesSearch
 
     if (selectedStatusFilter === 'High Niceness') {
-      return isMatched && l.llm_processed && l.niceness_score >= 70
+      return isMatched && l.llm_processed && l.niceness_score !== null && l.niceness_score !== undefined && l.niceness_score >= 70
     }
     if (selectedStatusFilter === 'New') {
       return isMatched && l.status === 'New'
@@ -1028,20 +1046,27 @@ export default function App() {
 
               <div className="flex items-center space-x-3">
                 {/* Crawler and AI control actions */}
-                <div className="flex space-x-1.5 bg-slate-950/80 p-1 rounded-xl border border-slate-800 shadow-inner">
+                <div className="flex items-center space-x-2">
                   <button
                     onClick={handleStartScrape}
                     disabled={isScraping || isProcessing}
-                    className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold px-3 py-2 rounded-lg text-xs transition-colors flex items-center space-x-1 shadow-lg shadow-emerald-500/10"
+                    className="bg-slate-900 hover:bg-slate-850 text-slate-350 hover:text-emerald-400 text-xs font-bold px-3.5 py-2 rounded-xl transition-all border border-slate-800 flex items-center space-x-1.5 shadow-sm active:scale-95 disabled:opacity-50"
                   >
-                    <span>🔍 Scrape Listings</span>
+                    <span>🔍 Fetch Fresh Listings</span>
+                  </button>
+                  <button
+                    onClick={handleStartDeepUpdate}
+                    disabled={isScraping || isProcessing}
+                    className="bg-slate-900 hover:bg-slate-850 text-slate-350 hover:text-sky-400 text-xs font-bold px-3.5 py-2 rounded-xl transition-all border border-slate-800 flex items-center space-x-1.5 shadow-sm active:scale-95 disabled:opacity-50"
+                  >
+                    <span>🔄 Update Descriptions</span>
                   </button>
                   <button
                     onClick={handleStartProcess}
                     disabled={isScraping || isProcessing}
-                    className="bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white font-bold px-3 py-2 rounded-lg text-xs transition-colors flex items-center space-x-1 shadow-lg shadow-indigo-500/10"
+                    className="bg-slate-900 hover:bg-slate-850 text-slate-350 hover:text-indigo-400 text-xs font-bold px-3.5 py-2 rounded-xl transition-all border border-slate-800 flex items-center space-x-1.5 shadow-sm active:scale-95 disabled:opacity-50"
                   >
-                    <span>🤖 Batch AI-Eval</span>
+                    <span>🤖 Evaluate Stale & New</span>
                   </button>
                 </div>
 

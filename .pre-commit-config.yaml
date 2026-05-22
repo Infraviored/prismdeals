@@ -1,17 +1,23 @@
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.5
-    hooks:
-      - id: ruff
-        args: [ --fix ]
-      - id: ruff-format
-
   - repo: local
     hooks:
+      - id: ruff
+        name: Ruff Lint & Fix
+        entry: bash -c 'ruff check --fix "$@"; git add "$@"; true' --
+        language: system
+        types: [python]
+
+      - id: ruff-format
+        name: Ruff Format
+        entry: bash -c 'ruff format "$@"; git add "$@"; true' --
+        language: system
+        types: [python]
+
       - id: eslint-fix
         name: ESLint Fix & Format
-        entry: bash -c 'cd frontend && args=(); for arg in "$@"; do args+=("${arg#frontend/}"); done; npx eslint --fix "${args[@]}"' --
+        entry: bash -c 'cd frontend && args=(); for arg in "$@"; do args+=("${arg#frontend/}"); done; npx eslint --fix "${args[@]}"; cd ..; git add "$@"; true' --
         language: system
         files: ^frontend/src/.*\.[jt]sx?$
         types: [file]
+
 

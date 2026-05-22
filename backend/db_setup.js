@@ -68,11 +68,13 @@ db.serialize(() => {
       llm_processed_time TEXT,
       full_info_obtained INTEGER DEFAULT 0,
       extracted_facts TEXT,
-      niceness_score INTEGER DEFAULT 50,
+      niceness_score INTEGER,
       status TEXT DEFAULT 'New',
       search_id INTEGER REFERENCES searches(id) ON DELETE CASCADE,
       details TEXT,
-      images TEXT
+      images TEXT,
+      last_description_changed_at TEXT,
+      last_ai_evaluated_at TEXT
     )
   `);
 

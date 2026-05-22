@@ -365,7 +365,11 @@ def process_unprocessed_listings(target_listing_id=None):
             JOIN searches s ON l.search_id = s.id
             JOIN campaigns c ON s.campaign_id = c.id
             LEFT JOIN knowledge_sets k ON s.knowledge_set_id = k.id
-            WHERE l.llm_processed = 0
+            WHERE s.enabled = 1 AND (
+                l.llm_processed = 0 OR 
+                l.last_ai_evaluated_at IS NULL OR 
+                l.last_description_changed_at > l.last_ai_evaluated_at
+            )
         """
         )
     listings = cursor.fetchall()
@@ -442,6 +446,7 @@ def process_unprocessed_listings(target_listing_id=None):
                 UPDATE listings 
                 SET llm_processed = 1,
                     llm_processed_time = ?,
+                    last_ai_evaluated_at = ?,
                     full_info_obtained = 0,
                     extracted_facts = ?,
                     niceness_score = 0,
@@ -449,6 +454,7 @@ def process_unprocessed_listings(target_listing_id=None):
                 WHERE id = ?
             """,
                 (
+                    datetime.datetime.now().isoformat(),
                     datetime.datetime.now().isoformat(),
                     json.dumps(facts_envelope),
                     listing_id,
@@ -722,6 +728,7 @@ def process_unprocessed_listings(target_listing_id=None):
                 UPDATE listings 
                 SET llm_processed = 1,
                     llm_processed_time = ?,
+                    last_ai_evaluated_at = ?,
                     full_info_obtained = ?,
                     extracted_facts = ?,
                     niceness_score = ?,
@@ -729,6 +736,7 @@ def process_unprocessed_listings(target_listing_id=None):
                 WHERE id = ?
             """,
                 (
+                    datetime.datetime.now().isoformat(),
                     datetime.datetime.now().isoformat(),
                     full_info,
                     json.dumps(facts_envelope),

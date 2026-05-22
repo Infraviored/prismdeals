@@ -24,6 +24,37 @@ const db = new sqlite3.Database(dbPath);
 db.run('PRAGMA journal_mode=WAL;');
 db.run('PRAGMA busy_timeout=5000;');
 
+// Perform database schema migration on startup (non-destructive)
+db.serialize(() => {
+  db.all("PRAGMA table_info(listings)", (err, rows) => {
+    if (err) {
+      console.error('Error reading table info:', err);
+      return;
+    }
+    const columns = rows.map(r => r.name);
+    
+    if (!columns.includes('last_description_changed_at')) {
+      db.run("ALTER TABLE listings ADD COLUMN last_description_changed_at TEXT", (err) => {
+        if (err) console.error("Failed to add last_description_changed_at column:", err);
+        else {
+          console.log("Added column: last_description_changed_at");
+          db.run("UPDATE listings SET last_description_changed_at = COALESCE(llm_processed_time, datetime('now', 'localtime'))");
+        }
+      });
+    }
+    
+    if (!columns.includes('last_ai_evaluated_at')) {
+      db.run("ALTER TABLE listings ADD COLUMN last_ai_evaluated_at TEXT", (err) => {
+        if (err) console.error("Failed to add last_ai_evaluated_at column:", err);
+        else {
+          console.log("Added column: last_ai_evaluated_at");
+          db.run("UPDATE listings SET last_ai_evaluated_at = llm_processed_time WHERE llm_processed = 1 AND llm_processed_time IS NOT NULL");
+        }
+      });
+    }
+  });
+});
+
 const query = (sql, params = []) => {
   return new Promise((resolve, reject) => {
     db.all(sql, params, (err, rows) => {
@@ -693,6 +724,47 @@ app.post('/api/scrape', (req, res) => {
   } catch (error) {
     console.error('Error triggering scrape:', error);
     res.status(500).json({ error: 'Failed to trigger scraping' });
+  }
+});
+
+// API: Trigger deep description updates for all existing listings
+app.post('/api/scrape/update-all', (req, res) => {
+  try {
+    if (activeScraperProcess !== null) {
+      return res.status(400).json({ error: 'Scraper or update process is already running' });
+    }
+    
+    // Clear old progress file
+    const progressFile = path.join(__dirname, '..', 'data', 'scraper_progress.json');
+    if (fs.existsSync(progressFile)) {
+      try { fs.unlinkSync(progressFile); } catch (e) {}
+    }
+    
+    // Spawn scraper execution in 'update-all' mode
+    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const python = spawn(pythonExecutable, [
+      path.join(__dirname, '..', 'scraper', 'main.py'),
+      '--mode', 'update-all'
+    ], {
+      env: { ...process.env }
+    });
+    
+    activeScraperProcess = python;
+    console.log('Background deep update scraper spawned');
+    
+    python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
+    python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
+    
+    python.on('close', (code) => {
+      console.log(`Python scraper exited with code ${code}`);
+      activeScraperProcess = null;
+    });
+    
+    res.json({ success: true, message: 'Deep description update started' });
+    
+  } catch (error) {
+    console.error('Error triggering deep update:', error);
+    res.status(500).json({ error: 'Failed to trigger deep description update' });
   }
 });
 
