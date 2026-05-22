@@ -1,10 +1,12 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect } from 'react'
-import type { Campaign, KnowledgeSet, SearchTarget, Listing, ParsedKnowledgeConfig, SampleListing } from './types'
+import type { Campaign, KnowledgeSet, SearchTarget, Listing, SampleListing } from './types'
 import ScraperProgressCard from './components/ScraperProgressCard'
 import ListingDetailCard from './components/ListingDetailCard'
 import GuidelinesWizard from './components/GuidelinesWizard'
 import SettingsView from './components/SettingsView'
+import { transformListing } from './utils/listingTransformer'
+import { useHashRouter } from './hooks/useHashRouter'
 
 
 const isValidKleinanzeigenUrl = (urlStr: string): boolean => {
@@ -42,49 +44,24 @@ const suggestTitleFromUrl = (urlStr: string): string => {
 };
 
 
-interface RawHighlight {
-  label: string;
-  sentiment: string;
-  type: string;
-  evidence_quote: string;
-  confidence: string;
-}
 
-interface ExtractedFactsSchema {
-  criteria?: Record<string, unknown>;
-  highlights?: RawHighlight[];
-  draft_message?: string;
-  dimensions?: Record<string, { score: number; reasoning: string }>;
-  reference_comparison?: { closer_to: 'good' | 'bad' | 'mixed'; reasoning: string };
-  [key: string]: unknown;
-}
-
-const parseHash = (hashStr: string) => {
-  const hash = hashStr || '#landing';
-  const match = hash.match(/^#([^?]+)(?:\?(.+))?$/);
-  if (!match) return { view: 'landing' as const, campaignId: null, searchId: null };
-  const path = match[1];
-  const queryParams = new URLSearchParams(match[2] || '');
-  if (['landing', 'dashboard', 'edit', 'create-campaign', 'settings'].includes(path)) {
-    const view = path as 'landing' | 'dashboard' | 'edit' | 'create-campaign' | 'settings';
-    const campaignIdStr = queryParams.get('campaignId');
-    const campaignId = campaignIdStr ? parseInt(campaignIdStr, 10) : null;
-    const searchIdStr = queryParams.get('searchId');
-    const searchId = searchIdStr ? parseInt(searchIdStr, 10) : null;
-    return {
-      view,
-      campaignId: campaignId && !isNaN(campaignId) ? campaignId : null,
-      searchId: searchId && !isNaN(searchId) ? searchId : null
-    };
-  }
-  return { view: 'landing' as const, campaignId: null, searchId: null };
-};
 
 export default function App() {
-  const initialNav = parseHash(window.location.hash);
-  // Navigation
-  const [view, setView] = useState<'landing' | 'dashboard' | 'edit' | 'create-campaign' | 'settings'>(initialNav.view)
-  const [previousView, setPreviousView] = useState<'landing' | 'dashboard' | 'edit' | 'create-campaign'>('landing')
+  const {
+    view,
+    currentCampaignId,
+    currentSearchId,
+    selectedListingId,
+    wizardStep,
+    previousView,
+    setView,
+    setCurrentCampaignId,
+    setCurrentSearchId,
+    setSelectedListingId,
+    setWizardStep,
+    navigate
+  } = useHashRouter()
+
   const [isRegisteringTarget, setIsRegisteringTarget] = useState(false)
 
   // Database lists
@@ -97,45 +74,10 @@ export default function App() {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null)
 
   // Sidebar selections & details
-  const [currentCampaignId, setCurrentCampaignId] = useState<number | null>(initialNav.campaignId)
-  const [currentSearchId, setCurrentSearchId] = useState<number | null>(initialNav.searchId)
   const [currentKnowledgeSetId, setCurrentKnowledgeSetId] = useState<number | null>(null)
 
   const activeSearches = searches.filter(s => s.campaign_id === currentCampaignId)
   const activeSearchTarget = searches.find(s => s.id === currentSearchId) || activeSearches[0]
-
-  // Dynamic hash synchronization effects
-  useEffect(() => {
-    let hash = `#${view}`;
-    const params = new URLSearchParams();
-    if (currentCampaignId !== null) {
-      params.set('campaignId', currentCampaignId.toString());
-    }
-    if (currentSearchId !== null) {
-      params.set('searchId', currentSearchId.toString());
-    }
-    const paramStr = params.toString();
-    if (paramStr) {
-      hash += `?${paramStr}`;
-    }
-    if (window.location.hash !== hash) {
-      window.location.hash = hash;
-    }
-  }, [view, currentCampaignId, currentSearchId]);
-
-  useEffect(() => {
-    const handleHashChange = () => {
-      const parsed = parseHash(window.location.hash);
-      setView(parsed.view);
-      setCurrentCampaignId(parsed.campaignId);
-      setCurrentSearchId(parsed.searchId);
-    };
-
-    window.addEventListener('hashchange', handleHashChange);
-    return () => {
-      window.removeEventListener('hashchange', handleHashChange);
-    };
-  }, []);
 
 
   // Filtering states for Deal Matcher
@@ -149,7 +91,6 @@ export default function App() {
   const [isEditingCampaignName, setIsEditingCampaignName] = useState(false)
 
   // Step wizard states for Guidelines Editor
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
   const [sampledListings, setSampledListings] = useState<SampleListing[]>([])
   const [sampledListingsLoading, setSampledListingsLoading] = useState(false)
   const [marketMemo, setMarketMemo] = useState<string>('')
@@ -214,134 +155,14 @@ export default function App() {
       setKnowledgeSets(ksData)
 
       // Map raw listings to include React UI helper properties
-      const mappedListings = listingsData.map((l: Listing) => {
-        const year = l.details?.['Erstzulassung'] || '';
-        const mileage = l.details?.['Kilometerstand'] || '';
-        const cubic_capacity = l.details?.['Hubraum'] || '';
-        const date_string = l.details?.['Erstellungsdatum'] || '';
-
-        const description = l.detailed_description || l.short_description || '';
-
-        // Reconstruct criteria_evaluations from extracted_facts and search target schema
-        const targetSearch = searchesData.find((s: SearchTarget) => s.id === l.search_id);
-        const boundSet = targetSearch && targetSearch.knowledge_set_id
-          ? ksData.find((ks: KnowledgeSet) => ks.id === targetSearch.knowledge_set_id)
-          : null;
-
-        let criteria_evaluations: NonNullable<Listing['criteria_evaluations']> = [];
-        let special_info: string[] = [];
-        let draft_message = '';
-        let summary = 'Awaiting AI matching checklist evaluation...';
-        let isLegacy = false;
-
-        if (l.llm_processed && boundSet && boundSet.item_json) {
-          try {
-            const itemConfig = (typeof boundSet.item_json === 'string' ? JSON.parse(boundSet.item_json) : boundSet.item_json) as ParsedKnowledgeConfig;
-            const extractionCriteria = itemConfig.extraction_criteria || [];
-
-            const rawFacts = l.extracted_facts as ExtractedFactsSchema;
-            
-            // Check if schema is legacy/older (lacks a nested 'criteria' object)
-            const hasCriteriaKey = rawFacts && typeof rawFacts === 'object' && 'criteria' in rawFacts;
-            isLegacy = !hasCriteriaKey;
-            if (hasCriteriaKey && rawFacts.criteria && typeof rawFacts.criteria === 'object') {
-              const keys = Object.keys(rawFacts.criteria);
-              if (keys.length > 0) {
-                const firstVal = rawFacts.criteria[keys[0]];
-                if (typeof firstVal !== 'object' || firstVal === null) {
-                  isLegacy = true;
-                }
-              }
-            } else if (hasCriteriaKey) {
-              isLegacy = true;
-            }
-
-            if (isLegacy) {
-              criteria_evaluations = extractionCriteria.map((c: { id: string; question?: string; description?: string }) => {
-                return {
-                  id: c.id,
-                  name: c.question || c.description || c.id,
-                  reasoning: "Older schema incompatible. Needs re-evaluation.",
-                  status: 'Needs Re-Evaluation',
-                  value: 'Needs Re-Evaluation'
-                };
-              });
-              summary = "Needs Re-Evaluation (Incompatible older schema)";
-            } else {
-              const criteriaDict = rawFacts?.criteria || {};
-              draft_message = rawFacts?.draft_message || '';
-              const highlightsList = rawFacts?.highlights || [];
-              special_info = (highlightsList as RawHighlight[]).filter((h) => h.sentiment === 'negative').map((h) => h.label);
-
-              const weights = itemConfig.scoring_model?.weights || {};
-
-              criteria_evaluations = extractionCriteria.map((c: { id: string; question?: string; description?: string }) => {
-                const criterionVal = criteriaDict[c.id];
-                const factValObj = typeof criterionVal === 'object' && criterionVal !== null ? (criterionVal as Record<string, unknown>) : null;
-                const factVal = factValObj ? (factValObj.value as string) : 'unknown';
-                const reasoning = factValObj ? (factValObj.reasoning as string) : 'Not specified in listing description.';
-
-                const wEntry = weights[c.id];
-                const satisfiedIf = wEntry?.satisfied_if;
-                let status: 'satisfied' | 'neutral' | 'violated' | 'Needs Re-Evaluation' = 'neutral';
-
-                if (factVal !== 'unknown') {
-                  if (satisfiedIf !== undefined) {
-                    const isSatisfiedBool = (factVal === 'yes' && (satisfiedIf === 'yes' || satisfiedIf === true || satisfiedIf === 'true')) ||
-                                            (factVal === 'no' && (satisfiedIf === 'no' || satisfiedIf === false || satisfiedIf === 'false'));
-                    status = isSatisfiedBool ? 'satisfied' : 'violated';
-                  } else {
-                    if (factVal === 'yes') status = 'satisfied';
-                    else if (factVal === 'no') status = 'violated';
-                  }
-                }
-
-                return {
-                  id: c.id,
-                  name: c.question || c.description || c.id,
-                  reasoning: reasoning,
-                  status: status,
-                  value: factVal
-                };
-              });
-
-              // Make a nice summary
-              const satisfiedCount = criteria_evaluations.filter(e => e.status === 'satisfied').length;
-              summary = `Evaluated ${criteria_evaluations.length} expert criteria, satisfied ${satisfiedCount}/${criteria_evaluations.length}. Niceness Score: ${l.niceness_score}.`;
-            }
-          } catch (e) {
-            console.error("Error generating criteria evaluations:", e);
-          }
-        } else if (l.llm_processed) {
-          summary = `AI processed basic listing facts. Niceness Score: ${l.niceness_score}.`;
-        }
-
-        return {
-          ...l,
-          year,
-          mileage,
-          cubic_capacity,
-          date_string,
-          description,
-          criteria_evaluations,
-          special_info,
-          highlights: isLegacy ? [] : ((l.extracted_facts as ExtractedFactsSchema)?.highlights || []),
-          draft_message,
-          summary,
-          dimensions: (l.extracted_facts as ExtractedFactsSchema)?.dimensions,
-          reference_comparison: (l.extracted_facts as ExtractedFactsSchema)?.reference_comparison
-        };
-      });
+      const mappedListings = listingsData.map((l: Listing) => transformListing(l, searchesData, ksData));
 
       setListings(mappedListings)
 
       // Set default campaign selection if none set
-      setCurrentCampaignId(prevId => {
-        if (campaignsData.length > 0 && prevId === null) {
-          return campaignsData[0].id;
-        }
-        return prevId;
-      });
+      if (campaignsData.length > 0 && currentCampaignId === null) {
+        setCurrentCampaignId(campaignsData[0].id);
+      }
     }).catch(err => {
       console.error("Error refreshing dashboard state:", err)
     })
@@ -485,7 +306,6 @@ export default function App() {
 
 
   // Custom states for images and descriptions
-  const [selectedListingId, setSelectedListingId] = useState<string | null>(null)
 
   // Initial load
   useEffect(() => {
@@ -502,11 +322,10 @@ export default function App() {
     if (currentCampaignId && view === 'dashboard') {
       const campaignSearches = searches.filter(s => s.campaign_id === currentCampaignId);
       if (campaignSearches.length === 0) {
-        setView('edit');
-        setCurrentSearchId(null);
+        navigate('edit', currentCampaignId, null);
       }
     }
-  }, [currentCampaignId, searches, view]);
+  }, [currentCampaignId, searches, view, navigate]);
 
   // Trigger a fast crawler scrape directly from the target URL
   async function triggerFastScrape(searchId: number) {
@@ -702,8 +521,8 @@ export default function App() {
   }, [activeSearchTarget, searches, knowledgeSets])
 
   // Create Campaign
-  const handleCreateCampaign = async () => {
-    if (!newCampaignName.trim()) return
+  const handleCreateCampaign = async (): Promise<number | null> => {
+    if (!newCampaignName.trim()) return null
     try {
       const res = await fetch('/api/campaigns', {
         method: 'POST',
@@ -713,14 +532,15 @@ export default function App() {
       const data = await res.json()
       if (res.ok) {
         setNewCampaignName('')
-        setCurrentCampaignId(data.id)
         refreshAll()
+        return data.id
       } else {
         alert(data.error || "Failed to create campaign.")
       }
     } catch {
       alert("Failed to connect to backend server.")
     }
+    return null
   }
 
   const handleUpdateCampaignName = async (name: string) => {
@@ -956,7 +776,6 @@ export default function App() {
           <button
             onClick={() => {
               if (view !== 'settings') {
-                setPreviousView(view);
                 setView('settings');
               }
             }}
@@ -1006,13 +825,11 @@ export default function App() {
                   <div
                     key={c.id}
                     onClick={() => {
-                      setCurrentCampaignId(c.id);
                       const campaignSearches = searches.filter(s => s.campaign_id === c.id);
                       if (campaignSearches.length === 0) {
-                        setCurrentSearchId(null);
-                        setView('edit');
+                        navigate('edit', c.id, null);
                       } else {
-                        setView('dashboard');
+                        navigate('dashboard', c.id);
                       }
                     }}
                     className="bg-slate-900/50 backdrop-blur-xl border border-slate-855 hover:border-slate-700 p-4 rounded-2xl shadow-xl flex flex-col justify-between space-y-4 hover:-translate-y-0.5 transition-all cursor-pointer group"
@@ -1044,10 +861,8 @@ export default function App() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setCurrentCampaignId(c.id);
                               const firstTarget = searches.find(s => s.campaign_id === c.id);
-                              setCurrentSearchId(firstTarget?.id || null);
-                              setView('edit');
+                              navigate('edit', c.id, firstTarget?.id || null);
                             }}
                             title="Configure Searches & Guidelines"
                             className="p-1.5 rounded-lg bg-slate-850 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 transition-all border border-slate-800"
@@ -1111,8 +926,7 @@ export default function App() {
               <div className="flex items-center space-x-3">
                 <button
                   onClick={() => {
-                    setCurrentCampaignId(null);
-                    setView('landing');
+                    navigate('landing', null, null);
                   }}
                   className="text-xs text-slate-400 hover:text-slate-200 font-bold flex items-center space-x-1 bg-slate-850 hover:bg-slate-755 px-3 py-1.5 rounded-xl border border-slate-800 transition-all"
                 >
@@ -1124,8 +938,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
-                    setCurrentSearchId(firstTarget?.id || null);
-                    setView('edit');
+                    navigate('edit', currentCampaignId, firstTarget?.id || null);
                   }}
                   title="Configure Searches & Guidelines"
                   className="p-1.5 rounded-lg bg-slate-850 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 transition-all border border-slate-800"
@@ -1445,8 +1258,10 @@ export default function App() {
                     className="bg-slate-950 border border-slate-800 text-xs rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 placeholder-slate-700 w-full text-slate-200 font-semibold transition-all shadow-inner"
                     onKeyDown={async (e) => {
                       if (e.key === 'Enter' && newCampaignName.trim()) {
-                        await handleCreateCampaign();
-                        setView('edit');
+                        const newId = await handleCreateCampaign();
+                        if (newId) {
+                          navigate('edit', newId, null);
+                        }
                       }
                     }}
                   />
@@ -1463,8 +1278,10 @@ export default function App() {
                 <button
                   onClick={async () => {
                     if (!newCampaignName.trim()) return;
-                    await handleCreateCampaign();
-                    setView('edit');
+                    const newId = await handleCreateCampaign();
+                    if (newId) {
+                      navigate('edit', newId, null);
+                    }
                   }}
                   className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold py-3 rounded-xl transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
                 >
