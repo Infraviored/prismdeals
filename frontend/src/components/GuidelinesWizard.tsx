@@ -8,8 +8,6 @@ interface GuidelinesWizardProps {
     url: string
     knowledge_set_id?: number | null
   }
-  editKsName: string
-  setEditKsName: (name: string) => void
   marketMemo: string
   setMarketMemo: (memo: string) => void
   sampledListings: SampleListing[]
@@ -64,8 +62,6 @@ function parseKleinanzeigenUrl(url: string, name: string) {
 
 export default function GuidelinesWizard({
   activeSearchTarget,
-  editKsName,
-  setEditKsName,
   marketMemo,
   setMarketMemo,
   sampledListings,
@@ -148,57 +144,40 @@ export default function GuidelinesWizard({
 
   return (
     <div className="space-y-6 w-full">
-      {/* Guidelines Profile Name Header */}
-      <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 space-y-2">
-        <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Guidelines Profile Name</label>
-        <input
-          type="text"
-          value={editKsName}
-          onChange={e => setEditKsName(e.target.value)}
-          placeholder="e.g. Honda CBR SC57 Checksheet"
-          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-emerald-500 text-slate-200 transition-all"
-        />
-      </div>
-
       {/* Step Indicator Header */}
-      <div className="flex flex-wrap items-center justify-between border-b border-slate-800/60 pb-3 gap-3">
-        <div className="flex space-x-5 text-xs font-bold">
-          <button
-            onClick={() => setWizardStep(1)}
-            className={`pb-2 border-b-2 transition-all ${
-              wizardStep === 1
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-slate-500 hover:text-slate-400'
-            }`}
-          >
-            Step 1: Deep Research
-          </button>
-          <button
-            onClick={() => (showStep1Next || showStep2Return || marketMemo.trim()) && setWizardStep(2)}
-            disabled={!(showStep1Next || showStep2Return || marketMemo.trim())}
-            className={`pb-2 border-b-2 transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-              wizardStep === 2
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-slate-500 hover:text-slate-400'
-            }`}
-          >
-            Step 2: Market Calibration
-          </button>
-          <button
-            onClick={() => marketMemo.trim().length > 0 && setWizardStep(3)}
-            disabled={!marketMemo.trim()}
-            className={`pb-2 border-b-2 transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-              wizardStep === 3
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-slate-500 hover:text-slate-400'
-            }`}
-          >
-            Step 3: Synthesis Checklist
-          </button>
-        </div>
-        <span className="text-[10px] bg-slate-900 border border-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono font-bold">
-          Step {wizardStep} of 3
-        </span>
+      <div className="grid grid-cols-3 w-full border border-slate-800 rounded-xl overflow-hidden bg-slate-950/60">
+        <button
+          onClick={() => setWizardStep(1)}
+          className={`py-3.5 text-xs sm:text-sm font-bold transition-all text-center border-b-2 ${
+            wizardStep === 1
+              ? 'border-emerald-500 text-emerald-400 bg-slate-900/40'
+              : 'border-transparent text-slate-500 hover:text-slate-400 hover:bg-slate-900/20'
+          }`}
+        >
+          Step 1: Deep Research
+        </button>
+        <button
+          onClick={() => (showStep1Next || showStep2Return || marketMemo.trim()) && setWizardStep(2)}
+          disabled={!(showStep1Next || showStep2Return || marketMemo.trim())}
+          className={`py-3.5 text-xs sm:text-sm font-bold transition-all text-center border-b-2 disabled:opacity-30 disabled:cursor-not-allowed ${
+            wizardStep === 2
+              ? 'border-emerald-500 text-emerald-400 bg-slate-900/40'
+              : 'border-transparent text-slate-500 hover:text-slate-400 hover:bg-slate-900/20'
+          }`}
+        >
+          Step 2: Market Calibration
+        </button>
+        <button
+          onClick={() => marketMemo.trim().length > 0 && setWizardStep(3)}
+          disabled={!marketMemo.trim()}
+          className={`py-3.5 text-xs sm:text-sm font-bold transition-all text-center border-b-2 disabled:opacity-30 disabled:cursor-not-allowed ${
+            wizardStep === 3
+              ? 'border-emerald-500 text-emerald-400 bg-slate-900/40'
+              : 'border-transparent text-slate-500 hover:text-slate-400 hover:bg-slate-900/20'
+          }`}
+        >
+          Step 3: Synthesis Checklist
+        </button>
       </div>
 
       {/* SINGLE COLUMN STEP CONTENT WORKSPACE */}
@@ -208,7 +187,6 @@ export default function GuidelinesWizard({
         {wizardStep === 1 && (
           <div className="space-y-5 animate-fadeIn">
             <div className="pb-4 border-b border-slate-800/50 space-y-1">
-              <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest block font-mono">Knowledge Acquisition</span>
               <h3 className="text-base font-bold text-slate-100">Step 1: Deep Specification & Risk Research</h3>
               <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
                 Leverage deep external research models (such as Perplexity Deep Research) to systematically analyze technical specifications, target wear points, critical revisions, and common mechanical or electrical pitfalls for this exact product category before scanning live market listings.
@@ -261,8 +239,8 @@ export default function GuidelinesWizard({
         {wizardStep === 2 && (
           <div className="space-y-5 animate-fadeIn">
             <div className="pb-4 border-b border-slate-800/50 space-y-1">
-              <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest block font-mono">Market Calibration</span>
               <h3 className="text-base font-bold text-slate-100">Step 2: Live Market Sample Calibration</h3>
+
               <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
                 Calibrate positive and negative evaluation criteria against actual live market samples crawled by our background scraper. Comparing theoretical checklists against local classified descriptions reveals real-world warning patterns and trust indicators.
               </p>
@@ -272,7 +250,7 @@ export default function GuidelinesWizard({
             <div className="space-y-3 bg-slate-950/40 border border-slate-850 rounded-2xl p-4">
               <div className="flex justify-between items-center pb-2 border-b border-slate-900">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-mono">Live Market Samples (Additional Context)</span>
-                {!sampledListingsLoading && sampledListings.length > 0 && (
+                {!sampledListingsLoading && (
                   <button
                     disabled={isScraping}
                     onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
@@ -309,24 +287,7 @@ export default function GuidelinesWizard({
                   <div className="w-3.5 h-3.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
                   <span className="text-[11px] text-slate-500 font-semibold">Loading real classified listings...</span>
                 </div>
-              ) : sampledListings.length === 0 ? (
-                <div className="bg-slate-950/20 border border-slate-900 rounded-xl p-4 text-center space-y-2 max-w-sm mx-auto">
-                  <div className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto text-[10px] font-black">!</div>
-                  <div className="space-y-1">
-                    <span className="text-[11px] font-bold text-slate-350 block">Listing samples required</span>
-                    <p className="text-[9px] text-slate-500 leading-relaxed font-semibold">
-                      Harvesting real listing descriptions is required to calibrate matching criteria. The background crawler runs automatically.
-                    </p>
-                  </div>
-                  <button
-                    disabled={isScraping || sampledListingsLoading}
-                    onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
-                    className="w-full font-extrabold py-2 rounded-xl text-[10px] transition-all flex items-center justify-center gap-1.5 border bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400 disabled:opacity-40"
-                  >
-                    {sampledListingsLoading ? 'Checking...' : 'Check for Crawled Listings'}
-                  </button>
-                </div>
-              ) : (
+              ) : sampledListings.length > 0 ? (
                 <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
                   {sampledListings.map((s, idx) => {
                     const isExpanded = expandedIndex === idx;
@@ -359,7 +320,7 @@ export default function GuidelinesWizard({
                     );
                   })}
                 </div>
-              )}
+              ) : null}
             </div>
 
             <div className="space-y-2">
@@ -428,7 +389,6 @@ export default function GuidelinesWizard({
         {wizardStep === 3 && (
           <div className="space-y-5 animate-fadeIn">
             <div className="pb-4 border-b border-slate-800/50 space-y-1">
-              <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest block font-mono">Final Synthesis</span>
               <h3 className="text-base font-bold text-slate-100">Step 3: Synthesis Matching Checklist & Verification</h3>
               <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
                 Synthesize the calibrated market memo into structured deal scoring guidelines. Paste the final structured memo below to dynamically parse the matching rules, extract deal scoring weights, draft outreach templates, and activate live listing scoring.

@@ -89,6 +89,7 @@ export default function App() {
   // Inline forms
   const [newCampaignName, setNewCampaignName] = useState('')
   const [newTargetUrl, setNewTargetUrl] = useState('')
+  const [isEditingCampaignName, setIsEditingCampaignName] = useState(false)
 
   // Step wizard states for Guidelines Editor
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
@@ -329,8 +330,6 @@ export default function App() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewCount, setPreviewCount] = useState<number | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
-  const [isEditingUrl, setIsEditingUrl] = useState(false)
-  const [editingUrlValue, setEditingUrlValue] = useState('')
 
   // General state
   const [isScraping, setIsScraping] = useState(false)
@@ -667,57 +666,21 @@ export default function App() {
     }
   }
 
-  // Update target knowledge set binding directly
-  const handleBindKnowledgeSet = async (target: SearchTarget, ksId: number | null) => {
+  const handleUpdateCampaignName = async (name: string) => {
+    if (!currentCampaignId) return
+    setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, name } : c))
     try {
-      const res = await fetch('/api/searches', {
+      await fetch('/api/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: target.id,
-          campaign_id: target.campaign_id,
-          name: target.name,
-          url: target.url,
-          knowledge_set_id: ksId
-        })
+        body: JSON.stringify({ id: currentCampaignId, name })
       })
-      if (res.ok) {
-        refreshAll()
-      }
     } catch (err) {
-      console.error("Error linking knowledge set:", err)
+      console.error("Error updating campaign name:", err)
     }
   }
 
-  // Update target search URL directly
-  const handleUpdateTargetUrl = async (target: SearchTarget, newUrl: string) => {
-    if (!newUrl.trim()) {
-      alert("URL cannot be empty.")
-      return
-    }
-    try {
-      const res = await fetch('/api/searches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: target.id,
-          campaign_id: target.campaign_id,
-          name: target.name,
-          url: newUrl.trim(),
-          knowledge_set_id: target.knowledge_set_id
-        })
-      })
-      if (res.ok) {
-        setIsEditingUrl(false)
-        refreshAll()
-      } else {
-        const data = await res.json()
-        alert(data.error || "Failed to update search URL.")
-      }
-    } catch {
-      alert("Connection to backend server failed.")
-    }
-  }
+
 
   // Trigger AI agent processing on a single specific listing
   const handleProcessSingleListing = async (listingId: string) => {
@@ -739,65 +702,7 @@ export default function App() {
     }
   }
 
-  // Create new Knowledge Profile and link instantly
-  const handleCreateNewSetAndBind = async (target: SearchTarget) => {
-    const name = prompt("Enter a name for the new Guidelines Profile:", `${target.name} Guidelines`)
-    if (!name) return
-    try {
-      const res = await fetch('/api/knowledge-sets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name,
-          expert_knowledge: '',
-          item_json: {}
-        })
-      })
-      const data = await res.json()
-      if (res.ok) {
-        await handleBindKnowledgeSet(target, data.id)
-      } else {
-        alert(data.error || "Failed to create knowledge profile.")
-      }
-    } catch {
-      alert("Error contacting server.")
-    }
-  }
 
-  // Update target enabled toggle directly
-  const handleToggleTarget = async (target: SearchTarget, enabled: boolean) => {
-    try {
-      await fetch('/api/searches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: target.id,
-          campaign_id: target.campaign_id,
-          name: target.name,
-          url: target.url,
-          knowledge_set_id: target.knowledge_set_id,
-          enabled: enabled ? 1 : 0
-        })
-      })
-      refreshAll()
-    } catch (err) {
-      console.error("Error toggling status:", err)
-    }
-  }
-
-  // Delete search target
-  const handleDeleteTarget = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this target?")) return
-    try {
-      const res = await fetch(`/api/searches/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        setCurrentSearchId(null)
-        refreshAll()
-      }
-    } catch (err) {
-      console.error("Error deleting target:", err)
-    }
-  }
 
   // Save Knowledge Set
   const handleSaveKnowledgeSet = async () => {
@@ -844,8 +749,8 @@ export default function App() {
       })
       if (res.ok) {
         setEditKsError('')
-        alert("Guidelines profile saved and listings matching score recalibrated successfully!")
         refreshAll()
+        setView('dashboard')
       } else {
         const data = await res.json()
         setEditKsError(data.error || "Failed to save guidelines profile.")
@@ -1218,15 +1123,52 @@ export default function App() {
                   <span>← Back to Dashboard</span>
                 </button>
                 <div className="w-[1px] h-5 bg-slate-800" />
-                <div>
-                  <h1 className="text-base font-bold text-slate-200">{campaigns.find(c => c.id === currentCampaignId)?.name} Configuration</h1>
-                  <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider">Targets &amp; Guidelines Configuration</p>
+                <div className="flex flex-col">
+                  {isEditingCampaignName ? (
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        value={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
+                        onChange={e => handleUpdateCampaignName(e.target.value)}
+                        onBlur={() => setIsEditingCampaignName(false)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            setIsEditingCampaignName(false);
+                          }
+                        }}
+                        className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-sm font-bold text-slate-200 focus:outline-none focus:border-emerald-500 transition-all shadow-inner"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => setIsEditingCampaignName(false)}
+                        className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold px-2 py-1 rounded-lg transition-colors border border-emerald-500/20"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2 group">
+                      <h1 className="text-base font-bold text-slate-200">
+                        {campaigns.find(c => c.id === currentCampaignId)?.name} Configuration
+                      </h1>
+                      <button
+                        onClick={() => setIsEditingCampaignName(true)}
+                        className="text-slate-500 hover:text-slate-350 transition-colors p-1 rounded-lg hover:bg-slate-900"
+                        title="Rename Campaign"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">Targets &amp; Guidelines Configuration</p>
                 </div>
               </div>
             </div>
 
-            {/* IF NO SEARCH REGISTERS OR EXPLICITLY REGISTERING */}
-            {(activeSearches.length === 0 || isRegisteringTarget) ? (
+            {activeSearches.length === 0 ? (
               <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 max-w-xl mx-auto w-full shadow-2xl space-y-6 relative overflow-hidden animate-fadeIn">
                 <div className="absolute -right-16 -top-16 w-36 h-36 rounded-full bg-emerald-500/5 blur-3xl pointer-events-none" />
                 
@@ -1250,7 +1192,7 @@ export default function App() {
 
                   {/* Reactive Indicators Panel */}
                   {newTargetUrl && (
-                    <div className="bg-slate-950/60 border border-slate-850 rounded-2xl p-4 space-y-3 shadow-inner animate-fadeIn">
+                    <div className="bg-slate-950/60 border border-slate-855 rounded-2xl p-4 space-y-3 shadow-inner animate-fadeIn">
                       <div className="text-xs font-bold text-slate-400 border-b border-slate-900 pb-1.5 flex justify-between items-center">
                         <span>Registration Diagnostics</span>
                         {previewLoading && (
@@ -1267,7 +1209,7 @@ export default function App() {
                         {isValidKleinanzeigenUrl(newTargetUrl) ? (
                           <span className="text-emerald-400 font-semibold">✓ Valid Kleinanzeigen Domain</span>
                         ) : (
-                          <span className="text-rose-450 font-semibold">✗ Invalid / Waiting for Kleinanzeigen URL</span>
+                          <span className="text-rose-455 font-semibold">✗ Invalid / Waiting for Kleinanzeigen URL</span>
                         )}
                       </div>
 
@@ -1317,214 +1259,37 @@ export default function App() {
                     </div>
                   )}
                 </div>
-
-                {activeSearches.length > 0 && (
-                  <div className="pt-2">
-                    <button
-                      onClick={() => setIsRegisteringTarget(false)}
-                      className="w-full bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 text-xs font-bold py-3 rounded-xl transition-all"
-                    >
-                      Cancel & Back to Cockpit
-                    </button>
-                  </div>
-                )}
               </div>
             ) : (
-              /* CENTRALIZED CAMPAIGN ACTIVE SEARCH QUERY & GUIDELINES MANAGER */
-              <div className="space-y-6 w-full animate-fadeIn">
-                
-                {/* Searches Pills/Tabs bar - CENTERED */}
-                <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 p-3 rounded-2xl flex flex-col items-center justify-center shadow-xl space-y-3">
-                  <div className="flex flex-wrap gap-2 items-center justify-center">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-2">Active Searches:</span>
-                    {activeSearches.map(s => (
-                      <button
-                        key={s.id}
-                        onClick={() => setCurrentSearchId(s.id || null)}
-                        className={`text-xs font-bold px-3.5 py-2 rounded-xl border transition-all flex items-center space-x-2 ${
-                          activeSearchTarget?.id === s.id
-                            ? 'bg-slate-800 text-emerald-405 border-slate-600 shadow-md'
-                            : 'bg-slate-950/40 border-slate-900 hover:bg-slate-900/60 text-slate-400'
-                        }`}
-                      >
-                        <span>{s.name}</span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${s.enabled ? 'bg-emerald-500' : 'bg-slate-700'}`} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Main Config Card for the Active Search */}
+              /* DIRECT 3-STEP GUIDELINES WIZARD WORKSPACE */
+              <div className="w-full animate-fadeIn">
                 {activeSearchTarget && (
-                  <div className="bg-slate-900/30 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6 animate-fadeIn">
-                    
-                    {/* Header with Search title & Controls */}
-                    <div className="flex flex-wrap justify-between items-center pb-4 border-b border-slate-800 gap-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-2.5">
-                          <h2 className="text-lg font-bold text-slate-200">{activeSearchTarget.name}</h2>
-                          <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wider ${activeSearchTarget.enabled ? 'bg-emerald-500/10 text-emerald-450 border border-emerald-500/10' : 'bg-slate-800 text-slate-500'}`}>
-                            {activeSearchTarget.enabled ? 'Active Scrape' : 'Scraping Paused'}
-                          </span>
-                        </div>
-
-                        {/* Search URL with inline editor */}
-                        {isEditingUrl ? (
-                          <div className="flex items-center space-x-2 mt-1.5">
-                            <input
-                              type="text"
-                              value={editingUrlValue}
-                              onChange={e => setEditingUrlValue(e.target.value)}
-                              className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-emerald-500 text-slate-200 font-mono w-[380px]"
-                              placeholder="https://www.kleinanzeigen.de/..."
-                            />
-                            <button
-                              onClick={() => handleUpdateTargetUrl(activeSearchTarget, editingUrlValue)}
-                              className="text-[10px] bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-2.5 py-1.5 rounded-lg transition-colors"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => setIsEditingUrl(false)}
-                              className="text-[10px] bg-slate-850 hover:bg-slate-755 text-slate-400 font-bold px-2.5 py-1.5 rounded-lg transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center space-x-2 mt-1">
-                            <a href={activeSearchTarget.url} target="_blank" rel="noreferrer" className="text-xs text-slate-500 font-mono hover:text-emerald-400 truncate block max-w-[450px]">
-                              {activeSearchTarget.url}
-                            </a>
-                            <button
-                              onClick={() => {
-                                setEditingUrlValue(activeSearchTarget.url);
-                                setIsEditingUrl(true);
-                              }}
-                              className="text-[9px] bg-slate-850 hover:bg-slate-700 text-slate-400 px-2 py-0.5 rounded border border-slate-800 transition-all font-semibold"
-                            >
-                              Edit URL
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Action buttons (toggle status) */}
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handleToggleTarget(activeSearchTarget, !activeSearchTarget.enabled)}
-                          className={`text-[10px] font-bold px-3 py-1.5 rounded-xl border transition-all ${
-                            activeSearchTarget.enabled
-                              ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-455 border-rose-500/20'
-                              : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-450 border-emerald-500/20'
-                          }`}
-                        >
-                          {activeSearchTarget.enabled ? 'Pause Scraper' : 'Activate Scraper'}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Linked Checklist Editor Section */}
-                    <div className="bg-slate-950/20 border border-slate-855 p-5 rounded-3xl space-y-4 shadow-inner">
-                      <div className="flex flex-wrap justify-between items-center gap-2">
-                        <div>
-                          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">AI Guidelines & Matching Checklist</span>
-                          <span className="text-[10px] text-slate-600 block mt-0.5">Checklist profile used by the AI agent to evaluate deal criteria.</span>
-                        </div>
-
-                        {!activeSearchTarget.knowledge_set_id && (
-                          <button
-                            onClick={() => handleCreateNewSetAndBind(activeSearchTarget)}
-                            className="text-[10px] bg-emerald-500/10 text-emerald-405 border border-emerald-500/20 hover:bg-emerald-500/20 font-bold px-3 py-1.5 rounded-xl transition-all"
-                          >
-                            + Create Guidelines Profile
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex items-center space-x-3">
-                        <select
-                          value={activeSearchTarget.knowledge_set_id || ''}
-                          onChange={e => {
-                            const id = e.target.value ? parseInt(e.target.value, 10) : null
-                            handleBindKnowledgeSet(activeSearchTarget, id)
-                          }}
-                          className="bg-slate-950 text-xs font-semibold text-slate-400 border border-slate-850 rounded-xl px-3 py-3.5 focus:outline-none focus:border-emerald-500 flex-1"
-                        >
-                          <option value="">No guidelines checklist (Scrapes listing details, but skips matching scoring)</option>
-                          {knowledgeSets.map(ks => (
-                            <option key={ks.id} value={ks.id}>{ks.name}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {activeSearchTarget.knowledge_set_id && (
-                        <GuidelinesWizard
-                          activeSearchTarget={activeSearchTarget}
-                          editKsName={editKsName}
-                          setEditKsName={setEditKsName}
-                          marketMemo={marketMemo}
-                          setMarketMemo={setMarketMemo}
-                          sampledListings={sampledListings}
-                          sampledListingsLoading={sampledListingsLoading}
-                          fetchSampleListings={fetchSampleListings}
-                          researcherOutput={researcherOutput}
-                          setResearcherOutput={setResearcherOutput}
-                          researchPromptTemplate={researchPromptTemplate}
-                          marketPromptTemplate={marketPromptTemplate}
-                          profilePromptTemplate={profilePromptTemplate}
-                          editKsError={editKsError}
-                          wizardStep={wizardStep}
-                          setWizardStep={setWizardStep}
-                          handleSaveKnowledgeSet={handleSaveKnowledgeSet}
-                          parsedExpertKnowledge={parsedExpertKnowledge}
-                          parsedGoodRef={parsedGoodRef}
-                          parsedBadRef={parsedBadRef}
-                          parsedDemoMsg={parsedDemoMsg}
-                          parsedItemJson={parsedItemJson}
-                          isScraping={isScraping}
-                          scrapingStatus={scrapingStatus}
-                          scrapingProgress={scrapingProgress}
-                        />
-                      )}
-                      
-                      {!activeSearchTarget.knowledge_set_id && (
-                        <div className="text-center py-8 space-y-3">
-                          <p className="text-xs text-slate-500 font-semibold">No active guidelines profile linked to this search query.</p>
-                          <button
-                            onClick={() => handleCreateNewSetAndBind(activeSearchTarget)}
-                            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/10"
-                          >
-                            Create & Link New Guidelines Profile
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Dangerous actions */}
-                    <div className="pt-4 border-t border-slate-800 flex justify-end">
-                      <button
-                        onClick={() => handleDeleteTarget(activeSearchTarget.id!)}
-                        className="text-xs text-rose-500 hover:text-rose-455 font-bold transition-colors"
-                      >
-                        Delete Search Query
-                      </button>
-                    </div>
-
-                  </div>
+                  <GuidelinesWizard
+                    activeSearchTarget={activeSearchTarget}
+                    marketMemo={marketMemo}
+                    setMarketMemo={setMarketMemo}
+                    sampledListings={sampledListings}
+                    sampledListingsLoading={sampledListingsLoading}
+                    fetchSampleListings={fetchSampleListings}
+                    researcherOutput={researcherOutput}
+                    setResearcherOutput={setResearcherOutput}
+                    researchPromptTemplate={researchPromptTemplate}
+                    marketPromptTemplate={marketPromptTemplate}
+                    profilePromptTemplate={profilePromptTemplate}
+                    editKsError={editKsError}
+                    wizardStep={wizardStep}
+                    setWizardStep={setWizardStep}
+                    handleSaveKnowledgeSet={handleSaveKnowledgeSet}
+                    parsedExpertKnowledge={parsedExpertKnowledge}
+                    parsedGoodRef={parsedGoodRef}
+                    parsedBadRef={parsedBadRef}
+                    parsedDemoMsg={parsedDemoMsg}
+                    parsedItemJson={parsedItemJson}
+                    isScraping={isScraping}
+                    scrapingStatus={scrapingStatus}
+                    scrapingProgress={scrapingProgress}
+                  />
                 )}
-                {/* Centered Add Search Target Button at the bottom of the page */}
-                <div className="flex justify-center pt-6">
-                  <button
-                    onClick={() => {
-                      setNewTargetUrl('')
-                      setIsRegisteringTarget(true)
-                    }}
-                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-6 py-3.5 rounded-2xl text-xs transition-all flex items-center space-x-2 shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-95"
-                  >
-                    <span>+ Add New Search to Campaign</span>
-                  </button>
-                </div>
               </div>
             )}
           </div>
