@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import type { Listing } from '../types';
+import { useTranslation } from '../hooks/useTranslation';
+import { Button } from './ui/Button';
+import { Card } from './ui/Card';
 
 interface ListingDetailCardProps {
   l: Listing;
@@ -16,6 +19,7 @@ export default function ListingDetailCard({
   selectedListingId,
   setSelectedListingId
 }: ListingDetailCardProps) {
+  const { t, lang } = useTranslation();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [copiedOutreach, setCopiedOutreach] = useState(false);
 
@@ -34,7 +38,7 @@ export default function ListingDetailCard({
   };
 
   return (
-    <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 hover:border-slate-755 rounded-2xl p-5 flex flex-col justify-between shadow-lg transition-all hover:-translate-y-0.5 group">
+    <Card className="p-5 justify-between hover:border-slate-700 hover:-translate-y-0.5 transition-all group">
       <div className="space-y-3">
         
         {/* Image Slideshow */}
@@ -70,7 +74,15 @@ export default function ListingDetailCard({
             <span className="text-[9px] text-emerald-500 font-semibold uppercase">{l.campaign_name}</span>
             {l.last_description_changed_at && (
               <span className="text-[8px] text-slate-500 font-mono mt-0.5" title="Description last modified">
-                Mod: {new Date(l.last_description_changed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}
+                {t('listing.mod', {
+                  date: new Date(l.last_description_changed_at).toLocaleString(lang === 'en' ? 'en-US' : 'de-DE', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                  })
+                })}
               </span>
             )}
           </div>
@@ -79,7 +91,13 @@ export default function ListingDetailCard({
           <div className="flex items-center gap-1.5">
             {l.llm_processed_time && (
               <span className="text-[9px] text-slate-500 font-medium hidden sm:inline-block">
-                {new Date(l.llm_processed_time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}
+                {new Date(l.llm_processed_time).toLocaleString(lang === 'en' ? 'en-US' : 'de-DE', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: false
+                })}
               </span>
             )}
             <div className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${
@@ -109,21 +127,24 @@ export default function ListingDetailCard({
               }
 
               return (
-                <button
+                <Button
+                  type="button"
+                  variant="badge"
+                  size="xs"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleProcessSingleListing(l.id);
                   }}
                   disabled={activeProcessingListingIds.includes(l.id)}
-                  title={l.llm_processed ? (isStale ? 'AI score is stale. Re-evaluate.' : 'Re-evaluate with AI') : 'Evaluate with AI'}
-                  className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center space-x-1 transition-all shadow-sm ${buttonStyles}`}
+                  title={l.llm_processed ? (isStale ? t('listing.aiStale') : t('listing.reEvaluate')) : t('listing.evaluateWithAi')}
+                  className={`flex items-center space-x-1 ${buttonStyles}`}
                 >
                   {activeProcessingListingIds.includes(l.id) ? (
                     <div className="animate-spin w-3 h-3 border border-current border-t-transparent rounded-full" />
                   ) : (
-                    <span>{l.llm_processed ? '↺' : '🤖'} AI-Eval</span>
+                    <span>{l.llm_processed ? '↺' : '🤖'} {t('listing.aiEval')}</span>
                   )}
-                </button>
+                </Button>
               );
             })()}
           </div>
@@ -144,7 +165,7 @@ export default function ListingDetailCard({
         <div className="flex flex-wrap gap-1.5 pt-1.5">
           {l.year && (
             <span className="text-[9px] bg-slate-950/80 text-slate-400 border border-slate-800 px-2 py-0.5 rounded-md font-semibold">
-              Year: {l.year}
+              {t('listing.year', { year: l.year })}
             </span>
           )}
           {l.mileage && (
@@ -180,11 +201,11 @@ export default function ListingDetailCard({
           {/* AI checklist Needs Re-Evaluation status */}
           {l.llm_processed && l.criteria_evaluations?.some(e => e.status === 'Needs Re-Evaluation') && (
             <span className="text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-md font-semibold flex items-center gap-0.5 animate-pulse">
-              <span>⚠️</span> Needs Re-Evaluation
+              <span>⚠️</span> {t('listing.needsReEval')}
             </span>
           )}
 
-          {/* AI Structured Highlights (capped to max 4 preview badges) */}
+          {/* AI Structured Highlights */}
           {l.llm_processed && l.highlights && l.highlights.slice(0, 4).map((h, idx) => {
             let colorClasses = 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
             let emoji = '🔹';
@@ -203,7 +224,7 @@ export default function ListingDetailCard({
           })}
         </div>
 
-        {/* Description Preview (Always visible, expands preview length if any card is expanded to match grid height) */}
+        {/* Description Preview */}
         <div className="mt-3 text-[11px] text-slate-400 font-sans leading-relaxed border-t border-slate-850/30 pt-2.5">
           <p 
             style={{
@@ -213,17 +234,17 @@ export default function ListingDetailCard({
               overflow: 'hidden'
             }}
           >
-            {l.description ? l.description : "Awaiting scraping detail harvester to run..."}
+            {l.description ? l.description : t('listing.awaitingScraper')}
           </p>
         </div>
       </div>
 
-      <div className="mt-4 pt-4 border-t border-slate-850 flex justify-between items-center">
+      <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between items-center">
         <button
           onClick={() => setSelectedListingId(selectedListingId === l.id ? null : l.id)}
           className="text-xs text-slate-400 hover:text-slate-200 font-bold transition-colors"
         >
-          {selectedListingId === l.id ? 'Hide Details' : 'Expand Details'}
+          {selectedListingId === l.id ? t('listing.hideDetails') : t('listing.expandDetails')}
         </button>
         <a
           href={l.url}
@@ -231,20 +252,20 @@ export default function ListingDetailCard({
           rel="noreferrer"
           className="text-xs text-emerald-400 hover:text-emerald-300 font-bold transition-colors"
         >
-          View Original &rarr;
+          {t('listing.viewOriginal')} &rarr;
         </a>
       </div>
 
       {selectedListingId === l.id && (
-        <div className="mt-4 pt-4 border-t border-slate-855 space-y-4 animate-fadeIn text-xs">
+        <div className="mt-4 pt-4 border-t border-slate-800 space-y-4 animate-fadeIn text-xs">
           
           {/* AI Match Summary & Evaluations */}
           {l.llm_processed && (
             <div className="space-y-3">
-              {/* High Priority Warnings banner if negative highlights are present */}
+              {/* High Priority Warnings banner */}
               {l.llm_processed && l.highlights && l.highlights.some(h => h.sentiment === 'negative') && (
                 <div className="bg-rose-500/10 border border-rose-500/25 p-3.5 rounded-xl space-y-1.5 animate-fadeIn">
-                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block font-mono">⚠️ High Priority Warnings</span>
+                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block font-mono">{t('listing.highPriorityWarnings')}</span>
                   <div className="flex flex-wrap gap-1.5">
                     {l.highlights.filter(h => h.sentiment === 'negative').map((h, idx) => (
                       <span key={idx} title={`Quote: "${h.evidence_quote}"`} className="text-[10px] bg-rose-500/20 text-rose-350 px-2 py-0.5 rounded-md font-semibold border border-rose-500/20">
@@ -257,8 +278,8 @@ export default function ListingDetailCard({
 
               {/* All Structured Highlights Observations */}
               {l.llm_processed && l.highlights && l.highlights.length > 0 && (
-                <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-850 space-y-2">
-                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block font-mono">Special highlights & observations</span>
+                <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block font-mono">{t('listing.specialHighlights')}</span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-sans">
                     {l.highlights.map((h, idx) => {
                       let colorClasses = 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
@@ -288,24 +309,24 @@ export default function ListingDetailCard({
                 </div>
               )}
 
-              <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-850">
-                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">AI Match Summary</span>
+              <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">{t('listing.aiMatchSummary')}</span>
                 <p className="text-slate-300 leading-relaxed font-sans">{l.summary}</p>
               </div>
 
               {/* Soft Dimensions */}
               {l.dimensions && (
-                <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-850 space-y-3">
-                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block font-mono">Soft Trust & Risk Dimensions</span>
+                <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-800 space-y-3">
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block font-mono">{t('listing.softDimensions')}</span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {Object.entries(l.dimensions).map(([key, dim]) => {
                       const labels: Record<string, string> = {
-                        trustworthiness: 'Trustworthiness',
-                        transparency: 'Transparency',
-                        conditionConfidence: 'Condition Confidence',
-                        documentationQuality: 'Documentation Quality',
-                        hiddenRiskSuspicion: 'Hidden Risk Suspicion',
-                        marketAboveAverageSignal: 'Market Above Average Signal'
+                        trustworthiness: lang === 'en' ? 'Trustworthiness' : 'Vertrauenswürdigkeit',
+                        transparency: lang === 'en' ? 'Transparency' : 'Transparenz',
+                        conditionConfidence: lang === 'en' ? 'Condition Confidence' : 'Zustandssicherheit',
+                        documentationQuality: lang === 'en' ? 'Documentation Quality' : 'Dokumentationsqualität',
+                        hiddenRiskSuspicion: lang === 'en' ? 'Hidden Risk Suspicion' : 'Versteckter Risikoverdacht',
+                        marketAboveAverageSignal: lang === 'en' ? 'Market Above Average Signal' : 'Überdurchschnittliches Marktsignal'
                       };
                       
                       const label = labels[key] || key;
@@ -343,9 +364,9 @@ export default function ListingDetailCard({
 
               {/* Reference Anchor Comparison */}
               {l.reference_comparison && (
-                <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-850 space-y-2">
+                <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-800 space-y-2">
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider block font-mono">Reference Anchor Comparison</span>
+                    <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider block font-mono">{t('listing.referenceComparison')}</span>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
                       l.reference_comparison.closer_to === 'good'
                         ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
@@ -353,7 +374,7 @@ export default function ListingDetailCard({
                         ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                         : 'bg-slate-800 text-slate-400 border border-slate-700'
                     }`}>
-                      Closer to: {l.reference_comparison.closer_to.toUpperCase()}
+                      {t('listing.closerTo', { type: l.reference_comparison.closer_to.toUpperCase() })}
                     </span>
                   </div>
                   {l.reference_comparison.reasoning && (
@@ -364,8 +385,8 @@ export default function ListingDetailCard({
                 </div>
               )}
               
-              <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-850">
-                <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider block mb-2 font-mono">Checklist criteria evaluations</span>
+              <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider block mb-2 font-mono">{t('dashboard.checklist')}</span>
                 <div className="space-y-2">
                   {l.criteria_evaluations && l.criteria_evaluations.map((evalItem, idx) => (
                     <div key={idx} className="flex justify-between items-start py-1 border-b border-slate-900 last:border-0 font-sans">
@@ -374,7 +395,7 @@ export default function ListingDetailCard({
                         <span className="text-[10px] text-slate-550 block leading-normal mt-0.5">{evalItem.reasoning}</span>
                       </div>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${evalItem.status === 'satisfied' ? 'bg-emerald-500/10 text-emerald-400' : evalItem.status === 'violated' ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-800 text-slate-400'}`}>
-                        {evalItem.status === 'satisfied' ? 'SATISFIED' : evalItem.status === 'violated' ? 'VIOLATED' : 'NEUTRAL'}
+                        {evalItem.status === 'satisfied' ? t('listing.satisfied').toUpperCase() : evalItem.status === 'violated' ? t('listing.violated').toUpperCase() : 'NEUTRAL'}
                       </span>
                     </div>
                   ))}
@@ -383,19 +404,22 @@ export default function ListingDetailCard({
 
               {/* Ready-to-Send Outreach Message Assistant */}
               {l.draft_message && (
-                <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-850 space-y-2">
+                <div className="bg-slate-955/60 p-3.5 rounded-xl border border-slate-800 space-y-2">
                   <div className="flex justify-between items-center border-b border-slate-900 pb-1.5">
-                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider font-mono">📨 Outreach Assistant</span>
-                    <button
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider font-mono">{t('listing.outreachAssistant')}</span>
+                    <Button
+                      type="button"
+                      variant="mini-slate"
+                      size="xs"
                       onClick={() => handleCopyOutreach(l.draft_message || '')}
-                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-lg border transition-all ${
+                      className={`font-bold px-2.5 py-0.5 transition-all ${
                         copiedOutreach
-                          ? 'bg-emerald-950 text-emerald-405 border-emerald-500/30'
-                          : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20'
+                          ? 'bg-emerald-950 hover:bg-emerald-900 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/20 hover:text-emerald-300'
                       }`}
                     >
-                      {copiedOutreach ? 'Copied to Clipboard!' : 'Copy Draft'}
-                    </button>
+                      {copiedOutreach ? t('listing.copiedToClipboard') : t('listing.copyDraft')}
+                    </Button>
                   </div>
                   <p className="text-slate-300 leading-relaxed font-sans italic text-[11px] bg-slate-950/60 p-3 rounded-lg border border-slate-900 select-all whitespace-pre-wrap">
                     {l.draft_message}
@@ -406,6 +430,6 @@ export default function ListingDetailCard({
           )}
         </div>
       )}
-    </div>
+    </Card>
   );
 }

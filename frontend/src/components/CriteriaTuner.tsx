@@ -1,4 +1,6 @@
 import type { ParsedKnowledgeConfig } from '../types'
+import { useTranslation } from '../hooks/useTranslation'
+import { Button } from './ui/Button'
 
 interface CriteriaTunerProps {
   editKsJson: string
@@ -6,6 +8,7 @@ interface CriteriaTunerProps {
 }
 
 export default function CriteriaTuner({ editKsJson, onChange }: CriteriaTunerProps) {
+  const { t } = useTranslation();
   let parsedConfig: ParsedKnowledgeConfig | null = null;
   try {
     parsedConfig = JSON.parse(editKsJson) as ParsedKnowledgeConfig;
@@ -18,7 +21,6 @@ export default function CriteriaTuner({ editKsJson, onChange }: CriteriaTunerPro
   }
 
   const weights = parsedConfig.scoring_model?.weights || {};
-
 
   const handleUpdateWeight = (criterionId: string, newImportance: number) => {
     if (!parsedConfig) return;
@@ -95,20 +97,20 @@ export default function CriteriaTuner({ editKsJson, onChange }: CriteriaTunerPro
   };
 
   return (
-    <div className="bg-slate-955/40 p-4 border border-slate-850 rounded-xl mt-4 space-y-4">
+    <div className="bg-slate-950/40 p-5 border border-slate-800 rounded-2xl mt-4 space-y-4">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-900 pb-3 gap-2">
         <div>
-          <h4 className="text-xs font-bold text-slate-350 uppercase tracking-wider font-mono flex items-center gap-1.5">
+          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider font-mono flex items-center gap-1.5">
             <span>🎛️</span>
-            <span>Interactive Criteria Tuner</span>
+            <span>{t('tuner.title')}</span>
           </h4>
           <p className="text-[10px] text-slate-500 font-sans mt-0.5">
-            Toggle positive/negative targets and adjust relative importance weights inside the raw JSON.
+            {t('tuner.desc')}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] bg-slate-800/50 text-slate-400 border border-slate-700/50 px-2.5 py-1 rounded-lg font-bold font-mono">
-            Auto-Normalized Weights
+            {t('tuner.autoNormalized')}
           </span>
         </div>
       </div>
@@ -126,12 +128,12 @@ export default function CriteriaTuner({ editKsJson, onChange }: CriteriaTunerPro
             ? 'text-slate-500 bg-slate-800/40 border-slate-800'
             : (typeof resolvedSatisfiedVal === 'boolean'
               ? (resolvedSatisfiedVal
-                ? 'text-emerald-455 bg-emerald-500/10 border-emerald-500/20'
-                : 'text-rose-455 bg-rose-500/10 border-rose-500/20')
+                ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                : 'text-rose-400 bg-rose-500/10 border-rose-500/20')
               : 'text-sky-400 bg-sky-500/10 border-sky-500/20');
 
           return (
-            <div key={c.id} className="bg-slate-900/40 p-4 rounded-xl border border-slate-855 hover:border-slate-800 transition-all flex flex-col space-y-4 shadow-inner">
+            <div key={c.id} className="bg-slate-900/40 p-4 rounded-xl border border-slate-800 hover:border-slate-700 transition-all flex flex-col space-y-4 shadow-inner">
               <div className="flex justify-between items-start gap-2">
                 <div className="flex flex-col space-y-1">
                   <span className="text-xs font-bold text-slate-200 line-clamp-1">{c.description || c.id}</span>
@@ -143,18 +145,21 @@ export default function CriteriaTuner({ editKsJson, onChange }: CriteriaTunerPro
               </div>
 
               <div className="flex items-center gap-2 pt-2 border-t border-slate-900/30">
-                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Target:</span>
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{t('tuner.target')}</span>
                 {typeof resolvedSatisfiedVal === 'boolean' ? (
-                  <button
+                  <Button
+                    type="button"
+                    variant="badge"
+                    size="xs"
                     onClick={() => handleToggleSatisfiedIf(c.id)}
-                    className={`text-[9px] font-extrabold px-2.5 py-1.5 rounded-lg border transition-all active:scale-95 cursor-pointer ${
+                    className={`font-extrabold px-2.5 py-1.5 border transition-all active:scale-95 cursor-pointer ${
                       resolvedSatisfiedVal
-                        ? 'bg-emerald-500/10 text-emerald-450 border-emerald-500/20 hover:bg-emerald-500/25'
-                        : 'bg-rose-500/10 text-rose-455 border-rose-500/20 hover:bg-rose-500/25'
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/25'
+                        : 'bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/25'
                     }`}
                   >
-                    {resolvedSatisfiedVal ? '🟢 Positive (TRUE)' : '🔴 Negative (FALSE)'}
-                  </button>
+                    {resolvedSatisfiedVal ? t('tuner.positiveTrue') : t('tuner.negativeFalse')}
+                  </Button>
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <input
@@ -164,17 +169,17 @@ export default function CriteriaTuner({ editKsJson, onChange }: CriteriaTunerPro
                         const val = e.target.value === '' ? '' : Number(e.target.value);
                         handleUpdateSatisfiedIfValue(c.id, val);
                       }}
-                      className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-[10px] font-bold text-slate-200 font-mono w-16 text-center"
+                      className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-[10px] font-bold text-slate-200 font-mono w-16 text-center focus:outline-none focus:border-emerald-500"
                     />
-                    <span className="text-[9px] text-slate-500 font-bold uppercase">(Ideal)</span>
+                    <span className="text-[9px] text-slate-500 font-bold uppercase">{t('tuner.ideal')}</span>
                   </div>
                 )}
               </div>
 
               <div className="flex flex-col space-y-1.5 pt-1">
                 <div className="flex justify-between text-[9px] text-slate-500 font-semibold font-sans px-0.5">
-                  <span>Low Importance</span>
-                  <span>Critical Importance</span>
+                  <span>{t('tuner.lowImportance')}</span>
+                  <span>{t('tuner.criticalImportance')}</span>
                 </div>
                 <input
                   type="range"
@@ -182,7 +187,7 @@ export default function CriteriaTuner({ editKsJson, onChange }: CriteriaTunerPro
                   max="100"
                   value={currentImportance}
                   onChange={(e) => handleUpdateWeight(c.id, parseInt(e.target.value))}
-                  className="w-full accent-emerald-500 bg-slate-950 h-1.5 rounded-lg appearance-none cursor-pointer border border-slate-800"
+                  className="w-full accent-emerald-500 bg-slate-950 h-1.5 rounded-lg appearance-none cursor-pointer border border-slate-800 focus:outline-none"
                   style={{
                     background: `linear-gradient(to right, rgb(16, 185, 129) 0%, rgb(16, 185, 129) ${currentImportance}%, rgb(15, 23, 42) ${currentImportance}%, rgb(15, 23, 42) 100%)`
                   }}

@@ -8,6 +8,10 @@ import SettingsView from './components/SettingsView'
 import { transformListing } from './utils/listingTransformer'
 import { useHashRouter } from './hooks/useHashRouter'
 import { GearIcon } from './components/GearIcon'
+import { useTranslation } from './hooks/useTranslation'
+import { Button } from './components/ui/Button'
+import { Input } from './components/ui/Input'
+import { Card } from './components/ui/Card'
 
 
 const isValidKleinanzeigenUrl = (urlStr: string): boolean => {
@@ -62,6 +66,8 @@ export default function App() {
     setWizardStep,
     navigate
   } = useHashRouter()
+
+  const { t, lang, toggleLanguage } = useTranslation()
 
   const [isRegisteringTarget, setIsRegisteringTarget] = useState(false)
 
@@ -749,42 +755,54 @@ export default function App() {
             <div className="flex items-center space-x-1.5">
               <span className={`w-2 h-2 rounded-full ${sessionEmail ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
               <span className="text-[10px] font-semibold text-slate-400">
-                {sessionEmail ? `Session: ${sessionEmail}` : 'Session: Unauthenticated'}
+                {sessionEmail ? t('common.sessionActive', { email: sessionEmail }) : t('common.sessionUnauth')}
               </span>
             </div>
 
             {!sessionEmail ? (
-              <button
+              <Button
+                variant="mini-emerald"
+                size="xs"
                 onClick={handleTriggerLogin}
                 disabled={isScraping || isProcessing}
-                className="text-[9px] bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold px-2 py-0.5 rounded transition-colors"
               >
-                Log In
-              </button>
+                {t('common.login')}
+              </Button>
             ) : (
-              <button
+              <Button
+                variant="mini-slate"
+                size="xs"
                 onClick={handleTriggerLogin}
                 disabled={isScraping || isProcessing}
-                className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-400 px-2 py-0.5 rounded transition-colors"
               >
-                Re-auth
-              </button>
+                {t('common.reauth')}
+              </Button>
             )}
           </div>
         </div>
 
-        <div className="flex items-center space-x-4">
-          <button
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="badge"
+            size="sm"
+            onClick={toggleLanguage}
+            className="px-2.5 py-1.5 text-[10px]"
+          >
+            {lang.toUpperCase()}
+          </Button>
+
+          <Button
+            variant="icon"
             onClick={() => {
               if (view !== 'settings') {
                 setView('settings');
               }
             }}
-            title="Global Settings"
-            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-400 hover:text-emerald-455 transition-all border border-slate-700/50 hover:border-emerald-500/30 group shadow-md"
+            title={t('common.globalSettings')}
+            className="p-2"
           >
             <GearIcon className="w-4.5 h-4.5 transition-transform duration-500 group-hover:rotate-90 text-slate-400 group-hover:text-emerald-400" />
-          </button>
+          </Button>
         </div>
 
       </header>
@@ -796,13 +814,12 @@ export default function App() {
           <div className="space-y-6 animate-fadeIn w-full">
             <div className="flex justify-between items-center pb-4 border-b border-slate-800/80 w-full mb-6">
               <div>
-                <h1 className="text-xl font-bold text-slate-200">Hunt Campaigns</h1>
-                <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Automated Scraper & AI Agent Portal</p>
+                <h1 className="text-xl font-bold text-slate-200">{t('landing.title')}</h1>
+                <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">{t('landing.subtitle')}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* "+" Add Hunt Campaign Card */}
               {campaigns.map(c => {
                 const campaignSearches = searches.filter(s => s.campaign_id === c.id)
                 const campaignListings = listings.filter(l => {
@@ -814,7 +831,8 @@ export default function App() {
                 const firstImg = firstListingWithImages?.images?.[0]
 
                 return (
-                  <div
+                  <Card
+                    interactive
                     key={c.id}
                     onClick={() => {
                       const campaignSearches = searches.filter(s => s.campaign_id === c.id);
@@ -824,7 +842,7 @@ export default function App() {
                         navigate('dashboard', c.id);
                       }
                     }}
-                    className="bg-slate-900/50 backdrop-blur-xl border border-slate-855 hover:border-slate-700 p-4 rounded-2xl shadow-xl flex flex-col justify-between space-y-4 hover:-translate-y-0.5 transition-all cursor-pointer group"
+                    className="p-4 justify-between space-y-4"
                   >
                     {firstImg ? (
                       <div className="w-full aspect-[21/9] rounded-xl overflow-hidden relative border border-slate-800 shadow-inner">
@@ -838,7 +856,7 @@ export default function App() {
                     ) : (
                       <div className="w-full aspect-[21/9] rounded-xl relative border border-slate-800/80 bg-gradient-to-br from-indigo-500/10 via-slate-950 to-emerald-500/5 flex items-center justify-center overflow-hidden">
                         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-500/5 via-transparent to-transparent" />
-                        <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest font-mono">No listings scraped yet</span>
+                        <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest font-mono">{t('landing.noListings')}</span>
                       </div>
                     )}
 
@@ -847,32 +865,34 @@ export default function App() {
                         <div className="flex justify-between items-start">
                           <div>
                             <h3 className="text-sm font-extrabold text-slate-200 group-hover:text-emerald-400 transition-colors tracking-tight line-clamp-1">{c.name}</h3>
-                            <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">Campaign Hunt Profile</p>
+                            <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">{t('landing.profileType')}</p>
                           </div>
 
-                          <button
+                          <Button
+                            variant="icon"
+                            size="xs"
                             onClick={(e) => {
                               e.stopPropagation();
                               const firstTarget = searches.find(s => s.campaign_id === c.id);
                               navigate('edit', c.id, firstTarget?.id || null);
                             }}
-                            title="Configure Searches & Guidelines"
-                            className="p-1.5 rounded-lg bg-slate-850 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 transition-all border border-slate-800"
+                            title={t('landing.configureTooltip')}
+                            className="p-1.5"
                           >
                             <GearIcon className="w-4 h-4 transition-transform duration-500 hover:rotate-90" />
-                          </button>
+                          </Button>
                         </div>
 
                         <div className="flex flex-wrap gap-1.5 text-[9px] font-semibold">
                           <span className="bg-slate-950/60 text-slate-400 border border-slate-855 px-2 py-0.5 rounded-md">
-                            {campaignSearches.length} Targets
+                            {campaignSearches.length} {t('landing.targets')}
                           </span>
                           <span className="bg-slate-950/60 text-emerald-400 border border-emerald-500/10 px-2 py-0.5 rounded-md font-bold">
-                            {campaignListings.length} Matches
+                            {campaignListings.length} {t('landing.matches')}
                           </span>
                           {unprocessedCount > 0 && (
                             <span className="bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 px-2 py-0.5 rounded-md font-extrabold animate-pulse">
-                              {unprocessedCount} New
+                              {unprocessedCount} {t('landing.new')}
                             </span>
                           )}
                         </div>
@@ -880,28 +900,29 @@ export default function App() {
 
                       <div className="border-t border-slate-855 mt-4 pt-3 flex justify-between items-center text-[11px] text-slate-450 font-bold">
                         <span className="group-hover:text-emerald-400 transition-colors flex items-center space-x-1">
-                          <span>Open Dashboard</span>
+                          <span>{t('landing.openDashboard')}</span>
                           <span className="transform group-hover:translate-x-1 transition-transform">&rarr;</span>
                         </span>
                       </div>
                     </div>
-                  </div>
+                  </Card>
                 )
               })}
 
               {/* "+" Add Hunt Campaign Card */}
-              <div
+              <Card
+                interactive
                 onClick={() => setView('create-campaign')}
-                className="bg-slate-900/20 backdrop-blur-xl border border-dashed border-slate-800 hover:border-emerald-500/50 hover:bg-emerald-500/[0.02] p-6 rounded-2xl shadow-lg flex flex-col items-center justify-center space-y-4 hover:-translate-y-0.5 transition-all cursor-pointer group h-full min-h-[220px]"
+                className="bg-slate-900/20 border-dashed border-slate-800 hover:border-emerald-500/50 hover:bg-emerald-500/[0.02] p-6 items-center justify-center space-y-4 h-full min-h-[220px]"
               >
                 <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xl group-hover:bg-emerald-500 group-hover:text-slate-950 transition-all shadow-inner">
                   +
                 </div>
                 <div className="text-center">
-                  <h3 className="text-sm font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">Create Hunt Campaign</h3>
-                  <p className="text-[10px] text-slate-500 mt-1 max-w-[200px]">Launch a new automated agent search category</p>
+                  <h3 className="text-sm font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">{t('landing.createCampaign')}</h3>
+                  <p className="text-[10px] text-slate-500 mt-1 max-w-[200px]">{t('landing.createSubtitle')}</p>
                 </div>
-              </div>
+              </Card>
             </div>
           </div>
         )}
@@ -911,55 +932,64 @@ export default function App() {
           <div className="flex flex-col space-y-6 animate-fadeIn w-full">
 
             {/* Campaign Breadcrumb Headers & Filters */}
-            <div className="flex flex-wrap gap-4 items-center justify-between bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-5 shadow-lg">
+            <Card className="flex-row flex-wrap gap-4 items-center justify-between p-5">
               <div className="flex items-center space-x-3">
-                <button
+                <Button
+                  variant="badge"
+                  size="sm"
                   onClick={() => {
                     navigate('landing', null, null);
                   }}
-                  className="text-xs text-slate-400 hover:text-slate-200 font-bold flex items-center space-x-1 bg-slate-850 hover:bg-slate-755 px-3 py-1.5 rounded-xl border border-slate-800 transition-all"
                 >
-                  ← Back to Campaigns
-                </button>
+                  <span className="mr-1">←</span>
+                  <span>{t('common.backToCampaigns')}</span>
+                </Button>
                 <span className="text-slate-750">|</span>
-                <h2 className="text-base font-bold text-slate-200">{campaigns.find(c => c.id === currentCampaignId)?.name} Dashboard</h2>
+                <h2 className="text-base font-bold text-slate-200">
+                  {campaigns.find(c => c.id === currentCampaignId)?.name} {lang === 'en' ? 'Dashboard' : 'Dashboard'}
+                </h2>
 
-                <button
+                <Button
+                  variant="icon"
+                  size="xs"
                   onClick={() => {
                     const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
                     navigate('edit', currentCampaignId, firstTarget?.id || null);
                   }}
-                  title="Configure Searches & Guidelines"
-                  className="p-1.5 rounded-lg bg-slate-850 hover:bg-slate-700 text-slate-400 hover:text-emerald-450 transition-all border border-slate-800"
+                  title={t('landing.configureTooltip')}
+                  className="p-1.5"
                 >
                   <GearIcon className="w-4 h-4 transition-transform duration-500 hover:rotate-90" />
-                </button>
+                </Button>
               </div>
 
               <div className="flex items-center space-x-3">
                 {/* Crawler and AI control actions */}
                 <div className="flex items-center space-x-2">
-                  <button
+                  <Button
+                    variant="action-emerald"
+                    size="sm"
                     onClick={handleStartScrape}
                     disabled={isScraping || isProcessing}
-                    className="bg-slate-900 hover:bg-slate-850 text-slate-350 hover:text-emerald-400 text-xs font-bold px-3.5 py-2 rounded-xl transition-all border border-slate-800 flex items-center space-x-1.5 shadow-sm active:scale-95 disabled:opacity-50"
                   >
-                    <span>🔍 Fetch Fresh Listings</span>
-                  </button>
-                  <button
+                    <span>🔍 {t('dashboard.fetchFresh')}</span>
+                  </Button>
+                  <Button
+                    variant="action-sky"
+                    size="sm"
                     onClick={handleStartDeepUpdate}
                     disabled={isScraping || isProcessing}
-                    className="bg-slate-900 hover:bg-slate-850 text-slate-350 hover:text-sky-400 text-xs font-bold px-3.5 py-2 rounded-xl transition-all border border-slate-800 flex items-center space-x-1.5 shadow-sm active:scale-95 disabled:opacity-50"
                   >
-                    <span>🔄 Update Descriptions</span>
-                  </button>
-                  <button
+                    <span>🔄 {t('dashboard.updateDesc')}</span>
+                  </Button>
+                  <Button
+                    variant="action-indigo"
+                    size="sm"
                     onClick={handleStartProcess}
                     disabled={isScraping || isProcessing}
-                    className="bg-slate-900 hover:bg-slate-850 text-slate-350 hover:text-indigo-400 text-xs font-bold px-3.5 py-2 rounded-xl transition-all border border-slate-800 flex items-center space-x-1.5 shadow-sm active:scale-95 disabled:opacity-50"
                   >
-                    <span>🤖 Evaluate Stale & New</span>
-                  </button>
+                    <span>🤖 {t('dashboard.autoAi')}</span>
+                  </Button>
                 </div>
 
                 {/* Target search filter */}
@@ -968,7 +998,7 @@ export default function App() {
                   onChange={e => setSelectedSearchId(e.target.value)}
                   className="bg-slate-950 text-xs font-semibold text-slate-300 border border-slate-800 rounded-lg px-2.5 py-2.5 focus:outline-none focus:border-emerald-500"
                 >
-                  <option value="All">All Targets</option>
+                  <option value="All">{t('dashboard.filterAllSearches')}</option>
                   {searches.filter(s => s.campaign_id === currentCampaignId).map(s => (
                     <option key={s.id} value={String(s.id)}>{s.name}</option>
                   ))}
@@ -979,14 +1009,13 @@ export default function App() {
                   onChange={e => setSelectedStatusFilter(e.target.value as typeof selectedStatusFilter)}
                   className="bg-slate-950 text-xs font-semibold text-slate-300 border border-slate-800 rounded-lg px-2.5 py-2.5 focus:outline-none focus:border-emerald-500"
                 >
-                  <option value="All">All Statuses</option>
-                  <option value="High Niceness">High Niceness (70+)</option>
-                  <option value="Evaluate with AI">Evaluate with AI</option>
-                  <option value="New">Unprocessed / New</option>
-
+                  <option value="All">{t('dashboard.statusAll')}</option>
+                  <option value="High Niceness">{t('dashboard.statusMatches')} (70+)</option>
+                  <option value="Evaluate with AI">{t('dashboard.statusPending')}</option>
+                  <option value="New">{t('dashboard.statusEvaluated')}</option>
                 </select>
               </div>
-            </div>
+            </Card>
 
             <ScraperProgressCard
               isScraping={isScraping}
@@ -1033,17 +1062,18 @@ export default function App() {
             {/* Sub Header */}
             <div className="flex justify-between items-center pb-4 border-b border-slate-800 w-full">
               <div className="flex items-center space-x-3">
-                <button
+                <Button
+                  variant="badge"
+                  size="sm"
                   onClick={() => setView('dashboard')}
-                  className="bg-slate-900 hover:bg-slate-850 text-slate-350 hover:text-emerald-400 text-xs font-bold px-3.5 py-2 rounded-xl transition-all border border-slate-800 flex items-center space-x-1.5 shadow-sm active:scale-95"
                 >
-                  <span>← Back to Dashboard</span>
-                </button>
+                  <span>← {t('common.backToDashboard')}</span>
+                </Button>
                 <div className="w-[1px] h-5 bg-slate-800" />
                 <div className="flex flex-col">
                   {isEditingCampaignName ? (
                     <div className="flex items-center space-x-2">
-                      <input
+                      <Input
                         type="text"
                         value={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
                         onChange={e => handleUpdateCampaignName(e.target.value)}
@@ -1053,57 +1083,60 @@ export default function App() {
                             setIsEditingCampaignName(false);
                           }
                         }}
-                        className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-sm font-bold text-slate-200 focus:outline-none focus:border-emerald-500 transition-all shadow-inner"
+                        className="py-1 text-sm rounded-lg"
                         autoFocus
                       />
-                      <button
+                      <Button
+                        variant="primary"
+                        size="xs"
                         onClick={() => setIsEditingCampaignName(false)}
-                        className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold px-2 py-1 rounded-lg transition-colors border border-emerald-500/20"
                       >
-                        Done
-                      </button>
+                        {t('common.done')}
+                      </Button>
                     </div>
                   ) : (
                     <div className="flex items-center space-x-2 group">
                       <h1 className="text-base font-bold text-slate-200">
-                        {campaigns.find(c => c.id === currentCampaignId)?.name} Configuration
+                        {campaigns.find(c => c.id === currentCampaignId)?.name} {t('common.settings')}
                       </h1>
-                      <button
+                      <Button
+                        variant="icon"
+                        size="xs"
                         onClick={() => setIsEditingCampaignName(true)}
-                        className="text-slate-500 hover:text-slate-350 transition-colors p-1 rounded-lg hover:bg-slate-900"
-                        title="Rename Campaign"
+                        title={t('common.renameCampaign')}
+                        className="p-1"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                           <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                         </svg>
-                      </button>
+                      </Button>
                     </div>
                   )}
-                  <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">Targets &amp; Guidelines Configuration</p>
+                  <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">{t('common.targetsAndGuidelines')}</p>
                 </div>
               </div>
             </div>
 
             {activeSearches.length === 0 ? (
-              <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 max-w-xl mx-auto w-full shadow-2xl space-y-6 relative overflow-hidden animate-fadeIn">
+              <Card className="p-8 max-w-xl mx-auto w-full relative overflow-hidden animate-fadeIn">
                 <div className="absolute -right-16 -top-16 w-36 h-36 rounded-full bg-emerald-500/5 blur-3xl pointer-events-none" />
                 
                 <div className="space-y-1.5 text-center">
-                  <span className="mx-auto text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2.5 py-0.5 rounded uppercase tracking-wider w-fit block">Campaign Target Configuration</span>
-                  <h2 className="text-lg font-bold text-slate-200 font-sans tracking-tight">Paste Kleinanzeigen Search URL</h2>
-                  <p className="text-xs text-slate-450 leading-relaxed font-semibold">We will automatically parse the URL, suggest a search title, check listing counts, link a new Guidelines checklist, and kick off the initial scraper crawl in the background.</p>
+                  <span className="mx-auto text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2.5 py-0.5 rounded uppercase tracking-wider w-fit block">{t('common.campaignTargetConfig')}</span>
+                  <h2 className="text-lg font-bold text-slate-200 font-sans tracking-tight">{t('common.pasteSearchUrl')}</h2>
+                  <p className="text-xs text-slate-450 leading-relaxed font-semibold">{t('wizard.targetsDescription')}</p>
                 </div>
 
                 <div className="space-y-4 pt-2">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Kleinanzeigen Search URL</label>
-                    <input
+                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">{t('common.pasteSearchUrl')}</label>
+                    <Input
                       type="text"
                       value={newTargetUrl}
                       onChange={e => setNewTargetUrl(e.target.value)}
-                      placeholder="Paste your Kleinanzeigen search result URL here..."
-                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-emerald-500 font-mono text-slate-200 transition-all shadow-inner"
+                      placeholder={t('common.searchUrlPlaceholder')}
+                      className="font-mono"
                     />
                   </div>
 
@@ -1111,31 +1144,31 @@ export default function App() {
                   {newTargetUrl && (
                     <div className="bg-slate-950/60 border border-slate-855 rounded-2xl p-4 space-y-3 shadow-inner animate-fadeIn">
                       <div className="text-xs font-bold text-slate-400 border-b border-slate-900 pb-1.5 flex justify-between items-center">
-                        <span>Registration Diagnostics</span>
+                        <span>{t('common.diagnostics')}</span>
                         {previewLoading && (
                           <div className="flex items-center space-x-1">
                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                            <span className="text-[10px] text-emerald-400 font-mono">Processing...</span>
+                            <span className="text-[10px] text-emerald-400 font-mono">{t('common.processing')}</span>
                           </div>
                         )}
                       </div>
 
                       {/* URL Validity indicator */}
                       <div className="flex items-center space-x-2 text-xs">
-                        <span className="text-[10px] font-mono w-24 text-slate-500">URL Status:</span>
+                        <span className="text-[10px] font-mono w-24 text-slate-500">{t('common.urlStatus')}</span>
                         {isValidKleinanzeigenUrl(newTargetUrl) ? (
-                          <span className="text-emerald-400 font-semibold">✓ Valid Kleinanzeigen Domain</span>
+                          <span className="text-emerald-400 font-semibold">{t('common.validUrl')}</span>
                         ) : (
-                          <span className="text-rose-455 font-semibold">✗ Invalid / Waiting for Kleinanzeigen URL</span>
+                          <span className="text-rose-455 font-semibold">{t('common.invalidUrl')}</span>
                         )}
                       </div>
 
                       {/* Suggested Title */}
                       {isValidKleinanzeigenUrl(newTargetUrl) && (
                         <div className="flex items-center space-x-2 text-xs">
-                          <span className="text-[10px] font-mono w-24 text-slate-500">Suggested Name:</span>
+                          <span className="text-[10px] font-mono w-24 text-slate-500">{t('common.suggestedName')}</span>
                           <span className="text-slate-200 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                            {suggestTitleFromUrl(newTargetUrl) || 'Extracting title...'}
+                            {suggestTitleFromUrl(newTargetUrl) || t('common.extractingTitle')}
                           </span>
                         </div>
                       )}
@@ -1145,26 +1178,26 @@ export default function App() {
                         <div className="text-[11px] text-slate-450 space-y-1 font-mono pt-1">
                           <div className="flex items-center space-x-1.5">
                             <span className="text-emerald-400">&gt;</span>
-                            <span>Parsing URL path segments for product tags...</span>
+                            <span>{t('common.diagnosticLog1')}</span>
                           </div>
                           <div className="flex items-center space-x-1.5">
                             <span className="text-emerald-400">&gt;</span>
-                            <span>Querying Kleinanzeigen live search count...</span>
+                            <span>{t('common.diagnosticLog2')}</span>
                           </div>
                           <div className="flex items-center space-x-1.5">
                             <span className="text-emerald-400">&gt;</span>
-                            <span>Creating linked guidelines calibration checklist...</span>
+                            <span>{t('common.diagnosticLog3')}</span>
                           </div>
                           <div className="flex items-center space-x-1.5">
                             <span className="text-emerald-400">&gt;</span>
-                            <span>Triggering headless background crawler crawl...</span>
+                            <span>{t('common.diagnosticLog4')}</span>
                           </div>
                         </div>
                       )}
 
                       {previewCount !== null && (
                         <div className="text-xs bg-emerald-500/10 text-emerald-400 px-3.5 py-2.5 rounded-xl border border-emerald-500/10 font-bold animate-fadeIn">
-                          ✓ Found {previewCount} live listings! Target registered successfully.
+                          {t('common.foundCount', { count: previewCount })}
                         </div>
                       )}
 
@@ -1176,7 +1209,7 @@ export default function App() {
                     </div>
                   )}
                 </div>
-              </div>
+              </Card>
             ) : (
               /* DIRECT 3-STEP GUIDELINES WIZARD WORKSPACE */
               <div className="w-full animate-fadeIn">
@@ -1215,33 +1248,33 @@ export default function App() {
         {/* VIEW 4: CREATE NEW CAMPAIGN VIEW */}
         {view === 'create-campaign' && (
           <div className="flex flex-col items-center justify-center space-y-6 w-full animate-fadeIn py-12 max-w-lg mx-auto">
-            <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 w-full shadow-2xl space-y-6 relative overflow-hidden">
+            <Card className="p-8 w-full relative overflow-hidden">
               {/* Abstract decorative glowing orb */}
               <div className="absolute -right-16 -top-16 w-36 h-36 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
               <div className="absolute -left-16 -bottom-16 w-36 h-36 rounded-full bg-indigo-500/5 blur-3xl pointer-events-none" />
 
               <div className="space-y-2">
                 <div className="flex items-center space-x-2">
-                  <button
+                  <Button
+                    variant="badge"
+                    size="xs"
                     onClick={() => setView('landing')}
-                    className="text-xs text-slate-400 hover:text-emerald-400 transition-colors font-bold flex items-center space-x-1"
                   >
-                    <span>&larr; Back</span>
-                  </button>
+                    <span>&larr; {t('common.back')}</span>
+                  </Button>
                 </div>
-                <h2 className="text-xl font-extrabold text-slate-200 font-sans tracking-tight">Create Hunt Campaign</h2>
-                <p className="text-xs text-slate-450 leading-relaxed font-medium">Set up a new target category profile to discover listings, map scraper crawlers, and score deals with AI checklist evaluation.</p>
+                <h2 className="text-xl font-extrabold text-slate-200 font-sans tracking-tight">{t('wizard.createCampaignTitle')}</h2>
+                <p className="text-xs text-slate-450 leading-relaxed font-medium">{t('wizard.createCampaignDesc')}</p>
               </div>
 
               <div className="space-y-4 pt-2">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Campaign Name</label>
-                  <input
+                  <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">{t('wizard.campaignNameLabel')}</label>
+                  <Input
                     type="text"
                     value={newCampaignName}
                     onChange={e => setNewCampaignName(e.target.value)}
-                    placeholder="e.g. Vintage Scooters, Yamaha Motorcycles"
-                    className="bg-slate-950 border border-slate-800 text-xs rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 placeholder-slate-700 w-full text-slate-200 font-semibold transition-all shadow-inner"
+                    placeholder={t('wizard.campaignNamePlaceholder')}
                     onKeyDown={async (e) => {
                       if (e.key === 'Enter' && newCampaignName.trim()) {
                         const newId = await handleCreateCampaign();
@@ -1255,13 +1288,15 @@ export default function App() {
               </div>
 
               <div className="flex space-x-3 pt-4">
-                <button
+                <Button
+                  variant="secondary"
                   onClick={() => setView('landing')}
-                  className="flex-1 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-455 hover:text-slate-200 text-xs font-bold py-3 rounded-xl transition-all active:scale-98"
+                  className="flex-1 py-3"
                 >
-                  Cancel
-                </button>
-                <button
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  variant="primary"
                   onClick={async () => {
                     if (!newCampaignName.trim()) return;
                     const newId = await handleCreateCampaign();
@@ -1269,12 +1304,12 @@ export default function App() {
                       navigate('edit', newId, null);
                     }
                   }}
-                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold py-3 rounded-xl transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
+                  className="flex-1 py-3"
                 >
-                  Create & Launch &rarr;
-                </button>
+                  {t('common.save')} &rarr;
+                </Button>
               </div>
-            </div>
+            </Card>
           </div>
         )}
 
