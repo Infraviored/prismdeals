@@ -31,7 +31,6 @@ interface GuidelinesWizardProps {
   isScraping: boolean
   scrapingStatus: string
   scrapingProgress: { phase: string; current: number; total: number; status: string; } | null
-  triggerFastScrape: (searchId: number) => Promise<void>
 }
 
 export default function GuidelinesWizard({
@@ -48,8 +47,6 @@ export default function GuidelinesWizard({
   marketPromptTemplate,
   profilePromptTemplate,
   editKsError,
-  wizardStep,
-  setWizardStep,
   handleSaveKnowledgeSet,
   parsedExpertKnowledge,
   parsedGoodRef,
@@ -59,7 +56,8 @@ export default function GuidelinesWizard({
   isScraping,
   scrapingStatus,
   scrapingProgress,
-  triggerFastScrape
+  wizardStep,
+  setWizardStep
 }: GuidelinesWizardProps) {
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null)
 
@@ -91,486 +89,472 @@ export default function GuidelinesWizard({
       .replace('{{MARKET_MEMO}}', marketMemo || 'No market memo provided.')
   }
 
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full">
       {/* Guidelines Profile Name Header */}
-      <div className="space-y-1">
-        <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Guidelines Profile Name</label>
+      <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 space-y-2">
+        <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Guidelines Profile Name</label>
         <input
           type="text"
           value={editKsName}
           onChange={e => setEditKsName(e.target.value)}
           placeholder="e.g. Honda CBR SC57 Checksheet"
-          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-emerald-500 text-slate-200"
+          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-emerald-500 text-slate-200 transition-all"
         />
       </div>
 
-      {/* Center 3-Step Wizard Navigation Stepper */}
-      <div className="flex justify-between items-center bg-slate-950/80 border border-slate-850 p-1.5 rounded-2xl">
-        <button
-          onClick={() => setWizardStep(1)}
-          className={`flex-1 text-center py-2 text-xs font-extrabold rounded-xl transition-all ${
-            wizardStep === 1
-              ? 'bg-slate-800 text-emerald-400 shadow-md border border-slate-700/50'
-              : 'text-slate-500 hover:text-slate-300'
-          }`}
-        >
-          1. Product Knowledge
-        </button>
-        <button
-          onClick={async () => {
-            if (activeSearchTarget?.id) {
-              await fetchSampleListings(activeSearchTarget.id)
-            }
-            setWizardStep(2)
-          }}
-          className={`flex-1 text-center py-2 text-xs font-extrabold rounded-xl transition-all ${
-            wizardStep === 2
-              ? 'bg-slate-800 text-emerald-400 shadow-md border border-slate-700/50'
-              : 'text-slate-500 hover:text-slate-300'
-          }`}
-        >
-          2. Market Analysis
-        </button>
-        <button
-          onClick={() => setWizardStep(3)}
-          className={`flex-1 text-center py-2 text-xs font-extrabold rounded-xl transition-all ${
-            wizardStep === 3
-              ? 'bg-slate-800 text-emerald-400 shadow-md border border-slate-700/50'
-              : 'text-slate-500 hover:text-slate-300'
-          }`}
-        >
-          3. Synthesis & Profile
-        </button>
-      </div>
-
-      {/* WIZARD STEP 1: PRODUCT KNOWLEDGE ACQUISITION */}
-      {wizardStep === 1 && (
-        <div className="space-y-4 animate-fadeIn">
-          <div className="bg-slate-950/80 border border-slate-850 rounded-2xl p-4 space-y-3.5">
-            <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest block font-mono">Product Knowledge Acquisition</span>
-            <div className="text-xs text-slate-300 space-y-3 leading-relaxed">
-              <p>
-                Before generating guidelines, prime your external AI (such as Perplexity or another research assistant) with domain knowledge about the exact product target.
-              </p>
-              <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-3 text-[11px] text-slate-400 space-y-2">
-                <span className="font-bold text-slate-300 block">Recommended workflow:</span>
-                <ul className="list-disc pl-4 space-y-1 text-slate-400">
-                  <li>Use Perplexity or a similar web-search assistant.</li>
-                  <li>Research exact details about the item: known technical flaws, year changes, specific options, and crucial inspection criteria (e.g. "demo for bike research").</li>
-                  <li>You can skip this research step entirely if your search campaign is already connected to an active guidelines database.</li>
-                </ul>
-              </div>
-            </div>
-          </div>
+      {/* Step Indicator Header */}
+      <div className="flex flex-wrap items-center justify-between border-b border-slate-800/60 pb-3 gap-3">
+        <div className="flex space-x-5 text-xs font-bold">
           <button
-            onClick={async () => {
-              if (activeSearchTarget?.id) {
-                await fetchSampleListings(activeSearchTarget.id)
-              }
-              setWizardStep(2)
-            }}
-            className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold py-3 rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/10"
+            onClick={() => setWizardStep(1)}
+            className={`pb-2 border-b-2 transition-all ${
+              wizardStep === 1
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-500 hover:text-slate-400'
+            }`}
           >
-            Continue to Market Analysis &rarr;
+            Step 1: Market Sampling
+          </button>
+          <button
+            onClick={() => sampledListings.length > 0 && setWizardStep(2)}
+            disabled={sampledListings.length === 0}
+            className={`pb-2 border-b-2 transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+              wizardStep === 2
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-500 hover:text-slate-400'
+            }`}
+          >
+            Step 2: Market Calibration
+          </button>
+          <button
+            onClick={() => marketMemo.trim().length > 0 && setWizardStep(3)}
+            disabled={!marketMemo.trim()}
+            className={`pb-2 border-b-2 transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+              wizardStep === 3
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-500 hover:text-slate-400'
+            }`}
+          >
+            Step 3: Synthesis Checklist
           </button>
         </div>
-      )}
+        <span className="text-[10px] bg-slate-900 border border-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono font-bold">
+          Step {wizardStep} of 3
+        </span>
+      </div>
 
-      {/* WIZARD STEP 2: SAMPLE RETRIEVAL & MARKET MEMO */}
-      {wizardStep === 2 && (
-        <div className="space-y-5 animate-fadeIn">
-          <div className="bg-slate-950/80 border border-slate-850 rounded-2xl p-4 space-y-2">
-            <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest block font-mono">Market Calibration Steps</span>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              We retrieve real classified listing samples from your target search to calibrate the model. Copy the generated **Market Memo Prompt (Prompt A)**, run it in your primed external AI, and then copy the &lt;market_memo&gt; output block back here.
-            </p>
-          </div>
-
-          {/* Listings fetch CTA + loaded cards */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">
-                Market Listing Samples
-                {sampledListings.length > 0 && (
-                  <span className="ml-2 text-emerald-400">({sampledListings.length} loaded)</span>
-                )}
-              </span>
-              {!sampledListingsLoading && (
+      {/* SINGLE COLUMN STEP CONTENT WORKSPACE */}
+      <div className="bg-slate-900/20 border border-slate-800/80 rounded-2xl p-5 min-h-[300px]">
+        
+        {/* STEP 1: MARKET SAMPLING */}
+        {wizardStep === 1 && (
+          <div className="space-y-5 animate-fadeIn">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800/50">
+              <div>
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">1. Capture Market Samples</span>
+                <p className="text-[11px] text-slate-450 mt-0.5">Harvest listing text to calibrate matching criteria.</p>
+              </div>
+              {!sampledListingsLoading && sampledListings.length > 0 && (
                 <button
                   disabled={isScraping}
                   onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
-                  className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all border ${
-                    isScraping
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-not-allowed'
-                      : 'bg-slate-800 hover:bg-slate-700 border-slate-750 text-slate-300'
-                  }`}
+                  className="text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all border bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 disabled:opacity-50"
                 >
-                  {isScraping ? (
-                    <span className="flex items-center gap-1.5">
-                      <div className="w-2.5 h-2.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-                      Scraping...
-                    </span>
-                  ) : sampledListings.length > 0 ? (
-                    'Refresh Samples'
-                  ) : (
-                    'Fetch Market Listings'
-                  )}
+                  Refresh Samples
                 </button>
               )}
             </div>
 
+            {/* Scraper progress inside Step 1 */}
+            {isScraping && (
+              <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-4 flex flex-col space-y-2">
+                <div className="flex items-center space-x-2 text-xs font-semibold text-emerald-400">
+                  <div className="w-3.5 h-3.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+                  <span>
+                    {scrapingProgress
+                      ? `Crawling Market Listings (${scrapingProgress.current}/${scrapingProgress.total})`
+                      : scrapingStatus || 'Crawling fresh listings...'}
+                  </span>
+                </div>
+                {scrapingProgress && (
+                  <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-1.5 transition-all duration-300" 
+                      style={{ width: `${(scrapingProgress.current / scrapingProgress.total) * 100}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
             {sampledListingsLoading ? (
-              <div className="flex items-center justify-center gap-3 py-8 border border-slate-850 rounded-xl">
+              <div className="flex items-center justify-center gap-3 py-16 border border-dashed border-slate-800 rounded-xl">
                 <div className="w-4 h-4 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-                <span className="text-xs text-slate-400 font-semibold">Fetching real listings from search URL...</span>
+                <span className="text-xs text-slate-400 font-semibold">Loading real classified listings...</span>
               </div>
             ) : sampledListings.length === 0 ? (
-              <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0 mt-0.5 text-[10px] font-black">!</div>
-                  <div className="space-y-1">
-                    <span className="text-xs font-bold text-amber-400 block">Listing samples required</span>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Prompt A needs real listings from your search URL to calibrate the market model. Click below to pull a fresh sample directly from your active search target.
-                    </p>
-                  </div>
+              <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-6 text-center space-y-3 max-w-md mx-auto">
+                <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto text-[12px] font-black">!</div>
+                <div className="space-y-1">
+                  <span className="text-xs font-bold text-slate-300 block">Listing samples required</span>
+                  <p className="text-[10px] text-slate-500 leading-relaxed font-semibold">
+                    Harvesting real listing descriptions is required to calibrate matching criteria. The background crawler has been triggered automatically.
+                  </p>
                 </div>
                 <button
                   disabled={isScraping || sampledListingsLoading}
-                  onClick={() => activeSearchTarget?.id && triggerFastScrape(activeSearchTarget.id)}
-                  className={`w-full font-extrabold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2 border ${
-                    isScraping
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-not-allowed'
-                      : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/30 text-amber-400'
-                  }`}
+                  onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
+                  className="w-full font-extrabold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2 border bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400 disabled:opacity-40"
                 >
-                  {isScraping ? (
-                    <>
-                      <div className="w-3.5 h-3.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-                      <span>
-                        {scrapingProgress
-                          ? `Scraping: ${scrapingProgress.phase} (${scrapingProgress.current}/${scrapingProgress.total}) — ${scrapingProgress.status}`
-                          : scrapingStatus || 'Scraping fresh listings...'}
-                      </span>
-                    </>
-                  ) : (
-                    <span>No listings in database — Trigger Fast Crawler Scrape (Takes ~20s) &rarr;</span>
-                  )}
+                  {sampledListingsLoading ? 'Checking...' : 'Check for Crawled Listings'}
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 max-h-[220px] overflow-y-auto p-0.5">
-                {sampledListings.map((s, idx) => (
-                  <div key={s.id || idx} className="bg-slate-950 border border-slate-850 rounded-xl p-3 space-y-1.5 text-xs">
-                    <span className="font-extrabold text-slate-200">#{idx + 1}: {s.title}</span>
-                    {s.details && (
-                      <span className="text-[10px] text-slate-500 font-semibold block">{s.details}</span>
-                    )}
-                    <details className="text-[11px] text-slate-400 mt-1 cursor-pointer">
-                      <summary className="text-[10px] text-emerald-500 font-bold hover:text-emerald-400 select-none">View description snippet</summary>
-                      <p className="mt-1.5 leading-relaxed whitespace-pre-wrap font-mono text-[10px] max-h-[120px] overflow-y-auto bg-slate-900/50 p-2 rounded border border-slate-800">{s.description}</p>
-                    </details>
-                  </div>
-                ))}
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                {sampledListings.map((s, idx) => {
+                  const isExpanded = expandedIndex === idx;
+                  return (
+                    <div key={s.id || idx} className="bg-slate-950/40 border border-slate-900 rounded-xl p-3.5 space-y-2 hover:border-slate-800/80 transition-colors">
+                      <div 
+                        onClick={() => setExpandedIndex(isExpanded ? null : idx)}
+                        className="flex justify-between items-center cursor-pointer select-none"
+                      >
+                        <div className="flex-1 pr-4">
+                          <span className="font-bold text-xs text-slate-200 block">#{idx + 1}: {s.title}</span>
+                          {s.details && (
+                            <span className="text-[10px] text-slate-500 font-mono block mt-0.5">{s.details}</span>
+                          )}
+                        </div>
+                        <span className="text-slate-500 transition-transform">
+                          {isExpanded ? (
+                            <svg className="w-3.5 h-3.5 transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" /></svg>
+                          ) : (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" /></svg>
+                          )}
+                        </span>
+                      </div>
+                      {isExpanded && (
+                        <div className="text-[11px] text-slate-400 mt-2 border-t border-slate-900/60 pt-2 leading-relaxed whitespace-pre-wrap font-mono text-[9px] bg-slate-950/80 p-3 rounded-lg border border-slate-900 max-h-[150px] overflow-y-auto">
+                          {s.description}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
-          </div>
 
-          {/* Prompt A — only shown once listings are available */}
-          {sampledListings.length > 0 && (
-            <>
-              <div className="bg-slate-950 border border-slate-850 rounded-2xl p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <span className="text-xs font-bold text-slate-250 block">Market memo generation prompt (Prompt A)</span>
-                    <span className="text-[9px] text-slate-500 font-semibold">Generates a grounded observation map from search distribution</span>
-                  </div>
-                  <button
-                    onClick={() => handleCopyPrompt(getMarketPromptWithContext(), 'prompt-a')}
-                    className={`text-[10px] px-3 py-1.5 rounded-lg font-bold transition-all ${
-                      copiedPromptId === 'prompt-a'
-                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-550/20'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-350 border border-slate-750'
-                    }`}
-                  >
-                    {copiedPromptId === 'prompt-a' ? 'Copied Prompt A!' : 'Copy Prompt A'}
-                  </button>
-                </div>
-                <div className="text-[10px] text-slate-500 bg-slate-900/40 p-2.5 rounded-xl border border-slate-850 font-medium">
-                  Submit the copied Prompt A to your primed external model. Paste the returned &lt;market_memo&gt; block below.
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Paste Market Memo (&lt;market_memo&gt;)</label>
-                <textarea
-                  value={marketMemo}
-                  onChange={e => setMarketMemo(e.target.value)}
-                  placeholder="Paste the full <market_memo> block response here..."
-                  rows={10}
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-3 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed"
-                />
-              </div>
-            </>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => setWizardStep(1)}
-              className="flex-1 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 text-xs font-bold py-3 rounded-xl transition-all"
-            >
-              &larr; Back to Research
-            </button>
-            <button
-              onClick={() => setWizardStep(3)}
-              disabled={sampledListings.length === 0 || !marketMemo.trim()}
-              className="flex-1 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-extrabold py-3 rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/10"
-            >
-              Proceed to Synthesis &rarr;
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* WIZARD STEP 3: SYNTHESIS & TARGET PROFILE SCHEMA */}
-      {wizardStep === 3 && (
-        <div className="space-y-5 animate-fadeIn">
-          {/* Assembled Prompt B Segment */}
-          <div className="bg-slate-950 border border-slate-850 rounded-2xl p-4 space-y-3">
-            <div className="flex justify-between items-center">
-              <div>
-                <span className="text-xs font-bold text-slate-250 block">Guidelines Profile synthesis prompt (Prompt B)</span>
-                <span className="text-[9px] text-slate-500 font-semibold">Generates expert cheat sheets, matching schema, and anchors</span>
-              </div>
+            <div className="pt-4 border-t border-slate-800/40 flex justify-end">
               <button
-                onClick={() => handleCopyPrompt(getProfilePromptWithContext(), 'prompt-b')}
-                className={`text-[10px] px-3 py-1.5 rounded-lg font-bold transition-all ${
-                  copiedPromptId === 'prompt-b'
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-550/20'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-350 border border-slate-750'
-                }`}
+                disabled={sampledListings.length === 0}
+                onClick={() => setWizardStep(2)}
+                className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-extrabold py-2.5 px-5 rounded-xl text-xs transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
               >
-                {copiedPromptId === 'prompt-b' ? 'Copied Prompt B!' : 'Copy Prompt B'}
+                Proceed to Step 2: Calibrate Distribution →
               </button>
             </div>
-            <div className="text-[10px] text-slate-500 bg-slate-900/40 p-2.5 rounded-xl border border-slate-850 font-medium">
-              Run the synthesized Prompt B externally. Paste the output XML envelope (&lt;researcher_output&gt;) below to preview the immediate extraction schema.
+          </div>
+        )}
+
+        {/* STEP 2: MARKET CALIBRATION */}
+        {wizardStep === 2 && (
+          <div className="space-y-5 animate-fadeIn">
+            <div className="pb-2 border-b border-slate-800/50">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">2. Market Calibration</span>
+              <p className="text-[11px] text-slate-450 mt-0.5">Calibrate positive and negative listing factors from market samples.</p>
+            </div>
+
+            {/* High Contrast Copy Prompt A Panel */}
+            <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-6 text-center space-y-4 max-w-lg mx-auto shadow-inner">
+              <div className="space-y-1">
+                <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest block">Model Prompt A</span>
+                <h3 className="text-sm font-bold text-slate-200">Generate Market Calibration Memo</h3>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Copy this prompt to analyze the listings with Perplexity or a web-searching AI model to capture standard features, model pricing, and common defects.
+                </p>
+              </div>
+
+              <button
+                onClick={() => handleCopyPrompt(getMarketPromptWithContext(), 'prompt-a')}
+                className={`mx-auto font-extrabold px-6 py-2.5 rounded-xl text-xs transition-all border flex items-center justify-center gap-2 ${
+                  copiedPromptId === 'prompt-a'
+                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                    : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/10'
+                }`}
+              >
+                {copiedPromptId === 'prompt-a' ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                    <span>Prompt A Copied!</span>
+                  </>
+                ) : (
+                  <span>Copy Prompt A (High Contrast)</span>
+                )}
+              </button>
+            </div>
+
+            {/* Paste market_memo text area */}
+            <div className="space-y-2">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Paste &lt;market_memo&gt; block response</label>
+              <textarea
+                value={marketMemo}
+                onChange={e => setMarketMemo(e.target.value)}
+                placeholder="Paste <market_memo>...</market_memo> block response here..."
+                rows={8}
+                className="w-full bg-slate-950 border border-slate-850 rounded-xl p-3.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed shadow-inner placeholder-slate-805"
+              />
+            </div>
+
+            <div className="pt-4 border-t border-slate-800/40 flex justify-between">
+              <button
+                onClick={() => setWizardStep(1)}
+                className="bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 text-xs font-bold py-2.5 px-4 rounded-xl transition-all"
+              >
+                Back to Step 1
+              </button>
+              <button
+                disabled={!marketMemo.trim()}
+                onClick={() => setWizardStep(3)}
+                className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-extrabold py-2.5 px-5 rounded-xl text-xs transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
+              >
+                Proceed to Step 3: Synthesis Checklist →
+              </button>
             </div>
           </div>
+        )}
 
-          <div className="space-y-1.5">
-            <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Paste Synthesis Output (&lt;researcher_output&gt;)</label>
-            <textarea
-              value={researcherOutput}
-              onChange={e => setResearcherOutput(e.target.value)}
-              placeholder="Paste the full <researcher_output> response containing <expert_knowledge>, <good_reference_description>, <bad_reference_description>, <demo_message>, and <item_json> here..."
-              rows={12}
-              className="w-full bg-slate-950 border border-slate-850 rounded-xl p-3 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-550 whitespace-pre-wrap leading-relaxed"
-            />
-          </div>
-
-          {/* IMMEDIATE parsed live preview */}
-          {(parsedExpertKnowledge || parsedGoodRef || parsedBadRef || parsedDemoMsg || parsedItemJson) && (
-            <div className="border-t border-slate-850 pt-5 space-y-4 animate-fadeIn">
-              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest block font-mono">Immediate Synthesis Preview</span>
-
-              {/* side-by-side Anchors */}
-              {(parsedGoodRef || parsedBadRef) && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {parsedGoodRef && (
-                    <div className="bg-slate-950/80 border border-emerald-500/20 rounded-2xl p-4 space-y-2">
-                      <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Good Reference Listing Anchor</span>
-                      <p className="text-[11px] text-slate-350 leading-relaxed font-mono whitespace-pre-wrap">{parsedGoodRef}</p>
-                    </div>
-                  )}
-
-                  {parsedBadRef && (
-                    <div className="bg-slate-950/80 border border-rose-500/25 rounded-2xl p-4 space-y-2">
-                      <span className="text-[9px] bg-rose-500/10 text-rose-450 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Bad Reference Listing Anchor</span>
-                      <p className="text-[11px] text-slate-350 leading-relaxed font-mono whitespace-pre-wrap">{parsedBadRef}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Outreach Demo */}
-              {parsedDemoMsg && (
-                <div className="bg-slate-950/80 border border-indigo-500/20 rounded-2xl p-4 space-y-2 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
-                  <span className="text-[9px] bg-indigo-500/10 text-indigo-450 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Outreach Starter Draft</span>
-                  <p className="text-[11px] text-slate-200 font-semibold leading-relaxed italic">"{parsedDemoMsg}"</p>
-                </div>
-              )}
-
-              {/* Cheat Sheet */}
-              {parsedExpertKnowledge && (
-                <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2">
-                  <span className="text-[9px] bg-slate-800 text-slate-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Parsed Cheat Sheet (Expert Knowledge)</span>
-                  <div className="text-[11px] text-slate-300 leading-relaxed font-mono whitespace-pre-wrap max-h-[150px] overflow-y-auto bg-slate-900/40 p-2.5 rounded-xl border border-slate-850">{parsedExpertKnowledge}</div>
-                </div>
-              )}
-
-              {/* parsed schema checklist */}
-              {parsedItemJson && (() => {
-                try {
-                  const parsedObj = JSON.parse(parsedItemJson)
-
-                  // Support both old flat schema and new split schema
-                  const positiveCriteria: { id: string; description?: string; question?: string; market_frequency?: string; importance_hint?: string }[] =
-                    parsedObj.explicit_positive_criteria || parsedObj.extraction_criteria || []
-                  const negativeCriteria: { id: string; description?: string; question?: string; market_frequency?: string; importance_hint?: string }[] =
-                    parsedObj.explicit_negative_criteria || []
-                  const highValueUnknowns: { id: string; description?: string; applies_when?: string }[] =
-                    parsedObj.high_value_unknown_fields || []
-
-                  const isNewSchema = !!(parsedObj.explicit_positive_criteria || parsedObj.explicit_negative_criteria)
-
-                  // Old schema fallback: read importance from scoring_model.weights
-                  const weightsDict = parsedObj.scoring_model?.weights || {}
-
-                  const importanceLabel = (c: { id: string; importance_hint?: string }) => {
-                    if (isNewSchema) return c.importance_hint || 'medium'
-                    const w = weightsDict[c.id]
-                    if (!w) return 'medium'
-                    const imp = w.importance ?? 10
-                    if (imp >= 20) return 'high'
-                    if (imp >= 10) return 'medium'
-                    return 'low'
-                  }
-
-                  const importanceBadge = (hint: string) => {
-                    if (hint === 'high') return 'text-emerald-400'
-                    if (hint === 'low') return 'text-slate-600'
-                    return 'text-slate-400'
-                  }
-
-                  const totalCriteria = positiveCriteria.length + negativeCriteria.length
-
-                  return (
-                    <div className="space-y-4">
-                      {/* Positive criteria */}
-                      {positiveCriteria.length > 0 && (
-                        <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider">Explicit Positive Criteria ({positiveCriteria.length})</span>
-                            <span className="text-[9px] font-bold text-slate-500 font-mono">35% Dimensions</span>
-                          </div>
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-left text-[11px] border-collapse">
-                              <thead>
-                                <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[8px]">
-                                  <th className="py-2 pr-4">ID</th>
-                                  <th className="py-2 pr-4">Signal</th>
-                                  <th className="py-2 pr-4">Importance</th>
-                                  <th className="py-2">Frequency</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {positiveCriteria.map((c, idx) => {
-                                  const hint = importanceLabel(c)
-                                  return (
-                                    <tr key={idx} className="border-b border-slate-900/50 hover:bg-slate-900/10 text-slate-350">
-                                      <td className="py-2 pr-4 font-bold font-mono text-[9px] text-emerald-500/70">{c.id}</td>
-                                      <td className="py-2 pr-4 leading-normal">{c.description || c.question}</td>
-                                      <td className={`py-2 pr-4 font-bold text-[9px] uppercase ${importanceBadge(hint)}`}>{hint}</td>
-                                      <td className="py-2 font-semibold text-[9px] uppercase text-slate-500">{c.market_frequency || 'mixed'}</td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Negative criteria */}
-                      {negativeCriteria.length > 0 && (
-                        <div className="bg-slate-950/80 border border-rose-500/10 rounded-2xl p-4 space-y-3">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[9px] bg-rose-500/10 text-rose-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider">Explicit Negative / Risk Criteria ({negativeCriteria.length})</span>
-                          </div>
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-left text-[11px] border-collapse">
-                              <thead>
-                                <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[8px]">
-                                  <th className="py-2 pr-4">ID</th>
-                                  <th className="py-2 pr-4">Signal</th>
-                                  <th className="py-2 pr-4">Importance</th>
-                                  <th className="py-2">Frequency</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {negativeCriteria.map((c, idx) => {
-                                  const hint = importanceLabel(c)
-                                  return (
-                                    <tr key={idx} className="border-b border-slate-900/50 hover:bg-slate-900/10 text-slate-350">
-                                      <td className="py-2 pr-4 font-bold font-mono text-[9px] text-rose-500/70">{c.id}</td>
-                                      <td className="py-2 pr-4 leading-normal">{c.description || c.question}</td>
-                                      <td className={`py-2 pr-4 font-bold text-[9px] uppercase ${importanceBadge(hint)}`}>{hint}</td>
-                                      <td className="py-2 font-semibold text-[9px] uppercase text-slate-500">{c.market_frequency || 'mixed'}</td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* High-value unknowns */}
-                      {highValueUnknowns.length > 0 && (
-                        <div className="bg-slate-950/80 border border-amber-500/15 rounded-2xl p-4 space-y-3">
-                          <span className="text-[9px] bg-amber-500/10 text-amber-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">High-Value Unknowns ({highValueUnknowns.length})</span>
-                          <div className="space-y-2">
-                            {highValueUnknowns.map((u, idx) => (
-                              <div key={idx} className="text-[11px] text-slate-400 leading-relaxed border-b border-slate-900/50 pb-2">
-                                <span className="font-bold font-mono text-[9px] text-amber-500/70 mr-2">{u.id}</span>
-                                <span>{u.description}</span>
-                                {u.applies_when && <span className="block text-[10px] text-slate-600 mt-0.5 italic">{u.applies_when}</span>}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {totalCriteria === 0 && highValueUnknowns.length === 0 && (
-                        <div className="text-center py-4 text-slate-600 text-xs font-semibold">
-                          No criteria parsed — check that the &lt;item_json&gt; block contains explicit_positive_criteria or extraction_criteria.
-                        </div>
-                      )}
-                    </div>
-                  )
-                } catch {
-                  return (
-                    <div className="bg-amber-500/10 border border-amber-500/25 text-amber-500/80 p-3 rounded-2xl text-[10px] font-mono">
-                      Awaiting valid &lt;item_json&gt; syntax parser...
-                    </div>
-                  )
-                }
-              })()}
+        {/* STEP 3: CHECKLIST SYNTHESIS & REACTIVE PREVIEW */}
+        {wizardStep === 3 && (
+          <div className="space-y-5 animate-fadeIn">
+            <div className="pb-2 border-b border-slate-800/50">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">3. Synthesis Checklist</span>
+              <p className="text-[11px] text-slate-450 mt-0.5">Paste synthesized matching checklist output to establish deal scoring rules.</p>
             </div>
-          )}
 
-          {editKsError && (
-            <div className="text-xs text-rose-450 font-semibold bg-rose-500/10 p-3.5 rounded-xl">{editKsError}</div>
-          )}
+            {/* High Contrast Copy Prompt B Panel */}
+            <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-6 text-center space-y-4 max-w-lg mx-auto shadow-inner">
+              <div className="space-y-1">
+                <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest block">Model Prompt B</span>
+                <h3 className="text-sm font-bold text-slate-200">Synthesize Matching Guidelines</h3>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Copy this prompt to process the calibration memo and generate structured checklist rules, anchors, and scoring weights.
+                </p>
+              </div>
 
-          <div className="flex gap-3 pt-3 border-t border-slate-900">
-            <button
-              onClick={() => setWizardStep(2)}
-              className="flex-1 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-450 hover:text-slate-200 text-xs font-bold py-3.5 rounded-xl transition-all"
-            >
-              &larr; Back to Market Analysis
-            </button>
-            <button
-              onClick={handleSaveKnowledgeSet}
-              className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold py-3.5 rounded-xl text-xs transition-all shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
-            >
-              Save Guidelines Profile
-            </button>
+              <button
+                disabled={!marketMemo.trim()}
+                onClick={() => handleCopyPrompt(getProfilePromptWithContext(), 'prompt-b')}
+                className={`mx-auto font-extrabold px-6 py-2.5 rounded-xl text-xs transition-all border flex items-center justify-center gap-2 ${
+                  copiedPromptId === 'prompt-b'
+                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                    : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/10'
+                }`}
+              >
+                {copiedPromptId === 'prompt-b' ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                    <span>Prompt B Copied!</span>
+                  </>
+                ) : (
+                  <span>Copy Prompt B (High Contrast)</span>
+                )}
+              </button>
+            </div>
+
+            {/* Paste researcher_output textarea */}
+            <div className="space-y-2">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Paste &lt;researcher_output&gt; block response</label>
+              <textarea
+                value={researcherOutput}
+                onChange={e => setResearcherOutput(e.target.value)}
+                placeholder="Paste <researcher_output>...</researcher_output> block here..."
+                rows={8}
+                className="w-full bg-slate-950 border border-slate-855 rounded-xl p-3.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed shadow-inner placeholder-slate-805"
+              />
+            </div>
+
+            {/* REACTIVE LIVE PREVIEW BLOCK */}
+            {(parsedExpertKnowledge || parsedGoodRef || parsedBadRef || parsedDemoMsg || parsedItemJson) && (
+              <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-5 space-y-4 mt-6 shadow-2xl animate-fadeIn">
+                <div className="border-b border-slate-800 pb-2 flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest block font-mono">Reactive Checklist Preview</span>
+                  <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/10 px-2 py-0.5 rounded uppercase tracking-wider">Live Parsed</span>
+                </div>
+
+                {/* Target & Risk Reference Anchors */}
+                {(parsedGoodRef || parsedBadRef) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {parsedGoodRef && (
+                      <div className="bg-slate-950/40 border border-emerald-500/10 rounded-xl p-4 space-y-1.5 shadow-sm">
+                        <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Target Deal Reference Anchor</span>
+                        <p className="text-[11px] text-slate-350 leading-relaxed font-mono whitespace-pre-wrap">{parsedGoodRef}</p>
+                      </div>
+                    )}
+
+                    {parsedBadRef && (
+                      <div className="bg-slate-950/40 border border-rose-500/10 rounded-xl p-4 space-y-1.5 shadow-sm">
+                        <span className="text-[9px] bg-rose-500/10 text-rose-450 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Risk Listing Reference Anchor</span>
+                        <p className="text-[11px] text-slate-350 leading-relaxed font-mono whitespace-pre-wrap">{parsedBadRef}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Outreach Message Starter */}
+                {parsedDemoMsg && (
+                  <div className="bg-slate-950/40 border border-indigo-500/10 rounded-xl p-4 relative overflow-hidden shadow-sm">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
+                    <span className="text-[9px] bg-indigo-500/10 text-indigo-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit mb-1.5">Outreach Starter Message Draft</span>
+                    <p className="text-[11px] text-slate-200 leading-relaxed italic font-medium">"{parsedDemoMsg}"</p>
+                  </div>
+                )}
+
+                {/* Checklist table logic */}
+                {parsedItemJson && (() => {
+                  try {
+                    const parsedObj = JSON.parse(parsedItemJson)
+                    const positiveCriteria: { id: string; description?: string; question?: string; market_frequency?: string; importance_hint?: string }[] =
+                      parsedObj.explicit_positive_criteria || parsedObj.extraction_criteria || []
+                    const negativeCriteria: { id: string; description?: string; question?: string; market_frequency?: string; importance_hint?: string }[] =
+                      parsedObj.explicit_negative_criteria || []
+                    const highValueUnknowns: { id: string; description?: string; applies_when?: string }[] =
+                      parsedObj.high_value_unknown_fields || []
+
+                    const isNewSchema = !!(parsedObj.explicit_positive_criteria || parsedObj.explicit_negative_criteria)
+                    const weightsDict = parsedObj.scoring_model?.weights || {}
+
+                    const importanceLabel = (c: { id: string; importance_hint?: string }) => {
+                      if (isNewSchema) return c.importance_hint || 'medium'
+                      const w = weightsDict[c.id]
+                      if (!w) return 'medium'
+                      const imp = w.importance ?? 10
+                      if (imp >= 20) return 'high'
+                      if (imp >= 10) return 'medium'
+                      return 'low'
+                    }
+
+                    const importanceBadge = (hint: string) => {
+                      if (hint === 'high') return 'text-emerald-400'
+                      if (hint === 'low') return 'text-slate-600'
+                      return 'text-slate-400'
+                    }
+
+                    return (
+                      <div className="space-y-4">
+                        {positiveCriteria.length > 0 && (
+                          <div className="bg-slate-950/50 border border-slate-900 rounded-xl p-4 space-y-3 shadow-inner">
+                            <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Positive Target Signals ({positiveCriteria.length})</span>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-[11px] border-collapse">
+                                <thead>
+                                  <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[8px]">
+                                    <th className="py-2 pr-4">ID</th>
+                                    <th className="py-2 pr-4">Signal Description</th>
+                                    <th className="py-2 pr-4">Importance</th>
+                                    <th className="py-2">Frequency</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {positiveCriteria.map((c, idx) => {
+                                    const hint = importanceLabel(c)
+                                    return (
+                                      <tr key={idx} className="border-b border-slate-900/40 hover:bg-slate-900/10 text-slate-350">
+                                        <td className="py-2 pr-4 font-bold font-mono text-[9px] text-emerald-500/70">{c.id}</td>
+                                        <td className="py-2 pr-4 leading-normal">{c.description || c.question}</td>
+                                        <td className={`py-2 pr-4 font-bold text-[9px] uppercase ${importanceBadge(hint)}`}>{hint}</td>
+                                        <td className="py-2 font-semibold text-[9px] uppercase text-slate-500">{c.market_frequency || 'mixed'}</td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {negativeCriteria.length > 0 && (
+                          <div className="bg-slate-955/50 border border-rose-500/10 rounded-xl p-4 space-y-3 shadow-inner">
+                            <span className="text-[9px] bg-rose-500/10 text-rose-450 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Negative Risk Signals ({negativeCriteria.length})</span>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-[11px] border-collapse">
+                                <thead>
+                                  <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[8px]">
+                                    <th className="py-2 pr-4">ID</th>
+                                    <th className="py-2 pr-4">Risk Factor Description</th>
+                                    <th className="py-2 pr-4">Importance</th>
+                                    <th className="py-2">Frequency</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {negativeCriteria.map((c, idx) => {
+                                    const hint = importanceLabel(c)
+                                    return (
+                                      <tr key={idx} className="border-b border-slate-900/40 hover:bg-slate-900/10 text-slate-350">
+                                        <td className="py-2 pr-4 font-bold font-mono text-[9px] text-rose-500/70">{c.id}</td>
+                                        <td className="py-2 pr-4 leading-normal">{c.description || c.question}</td>
+                                        <td className={`py-2 pr-4 font-bold text-[9px] uppercase ${importanceBadge(hint)}`}>{hint}</td>
+                                        <td className="py-2 font-semibold text-[9px] uppercase text-slate-500">{c.market_frequency || 'mixed'}</td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {highValueUnknowns.length > 0 && (
+                          <div className="bg-slate-950/50 border border-amber-500/10 rounded-xl p-4 space-y-3 shadow-inner">
+                            <span className="text-[9px] bg-amber-500/10 text-amber-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">High-Value Unknown Fields ({highValueUnknowns.length})</span>
+                            <div className="space-y-2">
+                              {highValueUnknowns.map((u, idx) => (
+                                <div key={idx} className="text-[11px] text-slate-450 leading-relaxed border-b border-slate-900/40 pb-2">
+                                  <span className="font-bold font-mono text-[9px] text-amber-500/70 mr-2">{u.id}</span>
+                                  <span>{u.description}</span>
+                                  {u.applies_when && <span className="block text-[10px] text-slate-600 mt-0.5 italic">{u.applies_when}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  } catch {
+                    return (
+                      <div className="bg-amber-500/5 border border-amber-500/20 text-amber-500/70 p-4 rounded-xl text-[10px] font-mono">
+                        Waiting for valid &lt;item_json&gt; block from synthesis output...
+                      </div>
+                    )
+                  }
+                })()}
+              </div>
+            )}
+
+            <div className="pt-4 border-t border-slate-800/40 flex justify-between">
+              <button
+                onClick={() => setWizardStep(2)}
+                className="bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 text-xs font-bold py-2.5 px-4 rounded-xl transition-all"
+              >
+                Back to Step 2
+              </button>
+              
+              <button
+                onClick={handleSaveKnowledgeSet}
+                disabled={!researcherOutput.trim()}
+                className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-extrabold py-3 px-6 rounded-xl text-xs transition-all shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
+              >
+                Save Checklist & Link Guidelines
+              </button>
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {editKsError && (
+        <div className="text-xs text-rose-450 font-semibold bg-rose-500/10 p-3.5 rounded-xl border border-rose-500/20">{editKsError}</div>
       )}
     </div>
   )
