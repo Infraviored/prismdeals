@@ -88,6 +88,12 @@ def main():
         default=None,
         help="Search ID to associate the scraped listings with",
     )
+    parser.add_argument(
+        "--campaign-id",
+        type=int,
+        default=None,
+        help="Campaign ID to filter searches, description updates, and AI matching",
+    )
 
     args = parser.parse_args()
 
@@ -101,7 +107,7 @@ def main():
     if args.mode == "update-all":
         logger.info("Executing deep update of existing descriptions...")
         try:
-            update_all_descriptions_session()
+            update_all_descriptions_session(args.campaign_id)
             logger.info("Deep updates completed successfully.")
         except Exception as e:
             logger.error(f"Error during deep updates: {str(e)}")
@@ -132,7 +138,13 @@ def main():
                 search_targets.append({"url": url, "search_id": args.search_id})
         else:
             try:
-                cursor.execute("SELECT id, url FROM searches WHERE enabled = 1")
+                if args.campaign_id is not None:
+                    cursor.execute(
+                        "SELECT id, url FROM searches WHERE enabled = 1 AND campaign_id = ?",
+                        (args.campaign_id,),
+                    )
+                else:
+                    cursor.execute("SELECT id, url FROM searches WHERE enabled = 1")
                 rows = cursor.fetchall()
                 for r in rows:
                     search_targets.append({"url": r["url"], "search_id": r["id"]})
@@ -210,7 +222,7 @@ def main():
         # 1.5. Sequential detailed description harvesting phase
         logger.info("Executing optimized sequential detailed description harvesting...")
         try:
-            harvest_descriptions()
+            harvest_descriptions(args.campaign_id)
             logger.info("Description harvesting completed successfully.")
         except Exception as e:
             logger.error(f"Error during detailed description harvesting: {str(e)}")
@@ -230,6 +242,8 @@ def main():
             cmd = ["python3", worker_path, "process"]
             if args.listing_id:
                 cmd.append(args.listing_id)
+            if args.campaign_id is not None:
+                cmd.extend(["--campaign-id", str(args.campaign_id)])
             subprocess.run(cmd, check=True)
             logger.info("Successfully executed agent_worker processing.")
         except subprocess.CalledProcessError as e:

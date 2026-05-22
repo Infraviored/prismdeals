@@ -686,7 +686,7 @@ app.post('/api/scrape', (req, res) => {
       return res.status(400).json({ error: 'Scraper is already running' });
     }
 
-    const { interval } = req.body;
+    const { interval, campaignId } = req.body;
     
     if (interval) {
       const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
@@ -701,10 +701,14 @@ app.post('/api/scrape', (req, res) => {
     
     // Spawn scraper execution in 'scrape' mode
     const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
-    const python = spawn(pythonExecutable, [
+    const args = [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'scrape'
-    ], {
+    ];
+    if (campaignId) {
+      args.push('--campaign-id', String(campaignId));
+    }
+    const python = spawn(pythonExecutable, args, {
       env: { ...process.env }
     });
     
@@ -734,6 +738,8 @@ app.post('/api/scrape/update-all', (req, res) => {
       return res.status(400).json({ error: 'Scraper or update process is already running' });
     }
     
+    const { campaignId } = req.body || {};
+    
     // Clear old progress file
     const progressFile = path.join(__dirname, '..', 'data', 'scraper_progress.json');
     if (fs.existsSync(progressFile)) {
@@ -742,10 +748,14 @@ app.post('/api/scrape/update-all', (req, res) => {
     
     // Spawn scraper execution in 'update-all' mode
     const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
-    const python = spawn(pythonExecutable, [
+    const args = [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'update-all'
-    ], {
+    ];
+    if (campaignId) {
+      args.push('--campaign-id', String(campaignId));
+    }
+    const python = spawn(pythonExecutable, args, {
       env: { ...process.env }
     });
     
@@ -825,7 +835,7 @@ app.get('/api/process/active', (req, res) => {
 // API: Trigger AI matching & scoring interpretation
 app.post('/api/process', (req, res) => {
   try {
-    const { listing_id } = req.body || {};
+    const { listing_id, campaignId } = req.body || {};
     const key = listing_id ? String(listing_id) : '__all__';
 
     // Only guard per-listing duplicates; __all__ (bulk) is always allowed
@@ -840,6 +850,9 @@ app.post('/api/process', (req, res) => {
     ];
     if (listing_id) {
       args.push('--listing-id', String(listing_id));
+    }
+    if (campaignId) {
+      args.push('--campaign-id', String(campaignId));
     }
 
     const python = spawn(pythonExecutable, args, { env: { ...process.env } });

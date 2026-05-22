@@ -44,7 +44,7 @@ def update_progress(phase, current, total, status):
         logger.error(f"Error writing progress file: {str(e)}")
 
 
-def harvest_missing_descriptions(driver):
+def harvest_missing_descriptions(driver, campaign_id=None):
     """Query SQLite database for listings missing detailed descriptions, and visit them sequentially"""
     db_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -63,17 +63,31 @@ def harvest_missing_descriptions(driver):
         cursor = conn.cursor()
 
         # Query all listings that have no detailed description, details, or images and belong to enabled searches
-        cursor.execute(
-            """
-            SELECT l.id, l.url, l.title FROM listings l
-            JOIN searches s ON l.search_id = s.id
-            WHERE s.enabled = 1 AND (
-                l.detailed_description IS NULL OR l.detailed_description = '' OR
-                l.details IS NULL OR l.details = '' OR l.details = '{}' OR
-                l.images IS NULL OR l.images = '' OR l.images = '[]'
+        if campaign_id is not None:
+            cursor.execute(
+                """
+                SELECT l.id, l.url, l.title FROM listings l
+                JOIN searches s ON l.search_id = s.id
+                WHERE s.enabled = 1 AND s.campaign_id = ? AND (
+                    l.detailed_description IS NULL OR l.detailed_description = '' OR
+                    l.details IS NULL OR l.details = '' OR l.details = '{}' OR
+                    l.images IS NULL OR l.images = '' OR l.images = '[]'
+                )
+            """,
+                (campaign_id,),
             )
-        """
-        )
+        else:
+            cursor.execute(
+                """
+                SELECT l.id, l.url, l.title FROM listings l
+                JOIN searches s ON l.search_id = s.id
+                WHERE s.enabled = 1 AND (
+                    l.detailed_description IS NULL OR l.detailed_description = '' OR
+                    l.details IS NULL OR l.details = '' OR l.details = '{}' OR
+                    l.images IS NULL OR l.images = '' OR l.images = '[]'
+                )
+            """
+            )
         rows = cursor.fetchall()
         logger.info(
             f"Found {len(rows)} listings missing detailed descriptions to harvest"
@@ -662,7 +676,7 @@ def preview_url_listings_count(url):
         driver.quit()
 
 
-def harvest_descriptions():
+def harvest_descriptions(campaign_id=None):
     """Main wrapper function to launch driver and harvest all missing descriptions in one go"""
     data_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
@@ -706,7 +720,7 @@ def harvest_descriptions():
             logger.info("Loaded persistent session cookies for description harvesting")
 
         # Sequential harvest loop
-        harvest_missing_descriptions(driver)
+        harvest_missing_descriptions(driver, campaign_id)
 
     except Exception as e:
         logger.error(f"Error during description harvesting session: {str(e)}")
@@ -714,7 +728,7 @@ def harvest_descriptions():
         driver.quit()
 
 
-def update_all_descriptions(driver):
+def update_all_descriptions(driver, campaign_id=None):
     """Query SQLite database for all listings under active searches, visit them, and update if description changed"""
     db_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -732,13 +746,23 @@ def update_all_descriptions(driver):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        cursor.execute(
+        if campaign_id is not None:
+            cursor.execute(
+                """
+                SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
+                JOIN searches s ON l.search_id = s.id
+                WHERE s.enabled = 1 AND s.campaign_id = ?
+            """,
+                (campaign_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
+                JOIN searches s ON l.search_id = s.id
+                WHERE s.enabled = 1
             """
-            SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
-            JOIN searches s ON l.search_id = s.id
-            WHERE s.enabled = 1
-        """
-        )
+            )
         rows = cursor.fetchall()
         logger.info(f"Found {len(rows)} listings to check for description updates")
 
@@ -851,7 +875,7 @@ def update_all_descriptions(driver):
         logger.error(f"Error in update_all_descriptions: {str(e)}")
 
 
-def update_all_descriptions_session():
+def update_all_descriptions_session(campaign_id=None):
     """Main wrapper function to launch driver and update all descriptions in one go"""
     data_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
@@ -895,7 +919,7 @@ def update_all_descriptions_session():
             logger.info("Loaded persistent session cookies for description update")
 
         # Sequential update loop
-        update_all_descriptions(driver)
+        update_all_descriptions(driver, campaign_id)
 
     except Exception as e:
         logger.error(f"Error during description update session: {str(e)}")

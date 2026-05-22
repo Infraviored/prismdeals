@@ -767,7 +767,11 @@ export default function App() {
     setLiveLogs("Initializing browser context and logging session...")
     setScrapingProgress({ phase: 'starting', current: 0, total: 100, status: 'Spawning scraper worker...' })
     try {
-      const res = await fetch('/api/scrape', { method: 'POST' })
+      const res = await fetch('/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId: currentCampaignId })
+      })
       if (!res.ok) {
         alert("Failed to start scraper.")
         setIsScraping(false)
@@ -785,7 +789,11 @@ export default function App() {
     setLiveLogs("Initializing browser context for deep listing harvesting...")
     setScrapingProgress({ phase: 'starting', current: 0, total: 100, status: 'Spawning deep update worker...' })
     try {
-      const res = await fetch('/api/scrape/update-all', { method: 'POST' })
+      const res = await fetch('/api/scrape/update-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId: currentCampaignId })
+      })
       if (!res.ok) {
         alert("Failed to start deep update.")
         setIsScraping(false)
@@ -801,7 +809,11 @@ export default function App() {
     setIsProcessing(true)
     setProcessingStatus("Launching AI Matcher checklist evaluation and deal scoring...")
     try {
-      const res = await fetch('/api/process', { method: 'POST' })
+      const res = await fetch('/api/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId: currentCampaignId })
+      })
       if (res.ok) {
         setProcessingStatus("AI matching completed! Updating Deal Matcher results...")
         setTimeout(() => {

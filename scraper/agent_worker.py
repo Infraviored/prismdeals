@@ -336,7 +336,7 @@ def log_outreach_draft(listing_id, prompt, response):
         f.write("\n")
 
 
-def process_unprocessed_listings(target_listing_id=None):
+def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
     """Finds all unprocessed listings (or a specific single listing), extracts attributes using OpenAI, and scores them"""
     conn = get_db_connection()
     conn.row_factory = sqlite3.Row
@@ -357,21 +357,39 @@ def process_unprocessed_listings(target_listing_id=None):
             (target_listing_id,),
         )
     else:
-        cursor.execute(
-            """
-            SELECT l.id, l.title, l.detailed_description, l.details, l.search_id, k.item_json, k.expert_knowledge,
-                   k.good_reference_description, k.bad_reference_description
-            FROM listings l
-            JOIN searches s ON l.search_id = s.id
-            JOIN campaigns c ON s.campaign_id = c.id
-            LEFT JOIN knowledge_sets k ON s.knowledge_set_id = k.id
-            WHERE s.enabled = 1 AND (
-                l.llm_processed = 0 OR 
-                l.last_ai_evaluated_at IS NULL OR 
-                l.last_description_changed_at > l.last_ai_evaluated_at
+        if campaign_id is not None:
+            cursor.execute(
+                """
+                SELECT l.id, l.title, l.detailed_description, l.details, l.search_id, k.item_json, k.expert_knowledge,
+                       k.good_reference_description, k.bad_reference_description
+                FROM listings l
+                JOIN searches s ON l.search_id = s.id
+                JOIN campaigns c ON s.campaign_id = c.id
+                LEFT JOIN knowledge_sets k ON s.knowledge_set_id = k.id
+                WHERE s.enabled = 1 AND c.id = ? AND (
+                    l.llm_processed = 0 OR 
+                    l.last_ai_evaluated_at IS NULL OR 
+                    l.last_description_changed_at > l.last_ai_evaluated_at
+                )
+            """,
+                (campaign_id,),
             )
-        """
-        )
+        else:
+            cursor.execute(
+                """
+                SELECT l.id, l.title, l.detailed_description, l.details, l.search_id, k.item_json, k.expert_knowledge,
+                       k.good_reference_description, k.bad_reference_description
+                FROM listings l
+                JOIN searches s ON l.search_id = s.id
+                JOIN campaigns c ON s.campaign_id = c.id
+                LEFT JOIN knowledge_sets k ON s.knowledge_set_id = k.id
+                WHERE s.enabled = 1 AND (
+                    l.llm_processed = 0 OR 
+                    l.last_ai_evaluated_at IS NULL OR 
+                    l.last_description_changed_at > l.last_ai_evaluated_at
+                )
+            """
+            )
     listings = cursor.fetchall()
 
     if not listings:
@@ -1093,17 +1111,33 @@ def analyze_conversation(listing_id):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(
-            "Usage: python3 agent_worker.py [process | draft <listing_id> | analyze <listing_id>]"
+            "Usage: python3 agent_worker.py [process [--campaign-id <id>] | draft <listing_id> | analyze <listing_id>]"
         )
         sys.exit(1)
 
     command = sys.argv[1]
 
     if command == "process":
-        if len(sys.argv) >= 3:
-            process_unprocessed_listings(sys.argv[2])
-        else:
-            process_unprocessed_listings()
+        campaign_id = None
+        target_listing_id = None
+
+        args = sys.argv[2:]
+        i = 0
+        while i < len(args):
+            if args[i] == "--campaign-id":
+                if i + 1 < len(args):
+                    try:
+                        campaign_id = int(args[i + 1])
+                    except ValueError:
+                        pass
+                    i += 2
+                else:
+                    i += 1
+            else:
+                target_listing_id = args[i]
+                i += 1
+
+        process_unprocessed_listings(target_listing_id, campaign_id=campaign_id)
     elif command == "draft":
         if len(sys.argv) < 3:
             print("Usage: python3 agent_worker.py draft <listing_id>")
