@@ -164,6 +164,10 @@ export const translations = {
       fetchError: "Failed to fetch scheduled scraper settings.",
       networkError: "Network error occurred.",
       saveError: "Failed to save scraper settings.",
+      delayBetweenPages: "Delay Between Search Pages (Seconds)",
+      delayPagesDesc: "Politeness delay added when shifting to the next search result page. Recommended: 0.25s.",
+      delayBetweenListings: "Delay Between Details Harvest (Seconds)",
+      delayListingsDesc: "Politeness delay added before requesting each specific listing's details page. Recommended: 0.25s.",
     },
     tuner: {
       title: "Interactive Criteria Tuner",
@@ -375,6 +379,10 @@ export const translations = {
       fetchError: "Fehler beim Abrufen der Scraper-Planungseinstellungen.",
       networkError: "Ein Netzwerkfehler ist aufgetreten.",
       saveError: "Fehler beim Speichern der Scraper-Einstellungen.",
+      delayBetweenPages: "Verzögerung zwischen Suchseiten (Sekunden)",
+      delayPagesDesc: "Höflichkeitsverzögerung beim Wechseln zur nächsten Suchergebnisseite. Empfohlen: 0,25s.",
+      delayBetweenListings: "Verzögerung zwischen Detailseiten-Crawl (Sekunden)",
+      delayListingsDesc: "Höflichkeitsverzögerung vor dem Abrufen jeder einzelnen Detailanzeige. Empfohlen: 0,25s.",
     },
     tuner: {
       title: "Interaktiver Kriterien-Tuner",

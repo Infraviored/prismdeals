@@ -615,7 +615,9 @@ app.get('/api/schedule', (req, res) => {
     const defaultConfig = {
       interval: 10,
       autoAiEval: true,
-      fullFetchOnStartup: false
+      fullFetchOnStartup: false,
+      delayBetweenPages: 0.25,
+      delayBetweenListings: 0.25
     };
     if (!fs.existsSync(configPath)) {
       fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
@@ -631,7 +633,7 @@ app.get('/api/schedule', (req, res) => {
 // API: Save schedule config and dynamically update timers
 app.post('/api/schedule', (req, res) => {
   try {
-    const { interval, autoAiEval, fullFetchOnStartup } = req.body;
+    const { interval, autoAiEval, fullFetchOnStartup, delayBetweenPages, delayBetweenListings } = req.body;
     if (interval === undefined) {
       return res.status(400).json({ error: 'Missing interval field' });
     }
@@ -640,7 +642,9 @@ app.post('/api/schedule', (req, res) => {
     const newConfig = {
       interval: parseInt(interval, 10),
       autoAiEval: !!autoAiEval,
-      fullFetchOnStartup: !!fullFetchOnStartup
+      fullFetchOnStartup: !!fullFetchOnStartup,
+      delayBetweenPages: parseFloat(delayBetweenPages !== undefined ? delayBetweenPages : 0.25),
+      delayBetweenListings: parseFloat(delayBetweenListings !== undefined ? delayBetweenListings : 0.25)
     };
     
     fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2));

@@ -13,6 +13,8 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
   const [interval, setIntervalVal] = useState<number>(10);
   const [autoAiEval, setAutoAiEval] = useState<boolean>(true);
   const [fullFetchOnStartup, setFullFetchOnStartup] = useState<boolean>(false);
+  const [delayBetweenPages, setDelayBetweenPages] = useState<number>(0.25);
+  const [delayBetweenListings, setDelayBetweenListings] = useState<number>(0.25);
   
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
@@ -28,6 +30,8 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
         setIntervalVal(data.interval ?? 10);
         setAutoAiEval(data.autoAiEval ?? true);
         setFullFetchOnStartup(data.fullFetchOnStartup ?? false);
+        setDelayBetweenPages(data.delayBetweenPages ?? 0.25);
+        setDelayBetweenListings(data.delayBetweenListings ?? 0.25);
       } else {
         setError(t('settings.fetchError'));
       }
@@ -60,6 +64,8 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
           interval,
           autoAiEval,
           fullFetchOnStartup,
+          delayBetweenPages,
+          delayBetweenListings,
         }),
       });
 
@@ -68,6 +74,8 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
         setIntervalVal(data.config.interval);
         setAutoAiEval(data.config.autoAiEval);
         setFullFetchOnStartup(data.config.fullFetchOnStartup);
+        setDelayBetweenPages(data.config.delayBetweenPages ?? 0.25);
+        setDelayBetweenListings(data.config.delayBetweenListings ?? 0.25);
         setSuccess(t('settings.saveSuccess'));
         setTimeout(() => setSuccess(''), 4000);
       } else {
@@ -160,6 +168,62 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
               </div>
               <span className="text-[10px] text-slate-550 block leading-normal">
                 {t('settings.frequencyDesc')}
+              </span>
+            </div>
+
+            {/* Separator */}
+            <div className="h-px bg-slate-800/80" />
+
+            {/* Delay Between Search Pages */}
+            <div className="space-y-1.5">
+              <label htmlFor="scraper-delay-pages-input" className="text-[10px] text-slate-450 font-bold uppercase tracking-wider block">
+                {t('settings.delayBetweenPages')}
+              </label>
+              <div className="relative">
+                <Input
+                  id="scraper-delay-pages-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={delayBetweenPages}
+                  onChange={(e) => setDelayBetweenPages(Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="font-mono pr-12"
+                />
+                <div className="absolute right-4 top-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest pointer-events-none select-none">
+                  sec
+                </div>
+              </div>
+              <span className="text-[10px] text-slate-550 block leading-normal">
+                {t('settings.delayPagesDesc')}
+              </span>
+            </div>
+
+            {/* Separator */}
+            <div className="h-px bg-slate-800/80" />
+
+            {/* Delay Between Listings Details */}
+            <div className="space-y-1.5">
+              <label htmlFor="scraper-delay-listings-input" className="text-[10px] text-slate-450 font-bold uppercase tracking-wider block">
+                {t('settings.delayBetweenListings')}
+              </label>
+              <div className="relative">
+                <Input
+                  id="scraper-delay-listings-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={delayBetweenListings}
+                  onChange={(e) => setDelayBetweenListings(Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="font-mono pr-12"
+                />
+                <div className="absolute right-4 top-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest pointer-events-none select-none">
+                  sec
+                </div>
+              </div>
+              <span className="text-[10px] text-slate-550 block leading-normal">
+                {t('settings.delayListingsDesc')}
               </span>
             </div>
 
