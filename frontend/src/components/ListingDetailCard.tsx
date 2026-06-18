@@ -317,17 +317,8 @@ export default function ListingDetailCard({
                   <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block font-mono">{t('listing.softDimensions')}</span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {Object.entries(l.dimensions).map(([key, dim]) => {
-                      const labels: Record<string, string> = {
-                        trustworthiness: lang === 'en' ? 'Trustworthiness' : 'Vertrauenswürdigkeit',
-                        transparency: lang === 'en' ? 'Transparency' : 'Transparenz',
-                        conditionConfidence: lang === 'en' ? 'Condition Confidence' : 'Zustandssicherheit',
-                        documentationQuality: lang === 'en' ? 'Documentation Quality' : 'Dokumentationsqualität',
-                        hiddenRiskSuspicion: lang === 'en' ? 'Hidden Risk Suspicion' : 'Versteckter Risikoverdacht',
-                        marketAboveAverageSignal: lang === 'en' ? 'Market Above Average Signal' : 'Überdurchschnittliches Marktsignal'
-                      };
-                      
-                      const label = labels[key] || key;
-                      const score = dim.score;
+                       const label = t(`listing.dimensions.${key}` as any) || key;
+                       const score = dim.score;
                       const reasoning = dim.reasoning;
                       
                       const isSuspicion = key === 'hiddenRiskSuspicion';

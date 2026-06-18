@@ -65,7 +65,7 @@ export function useTranslation() {
     let result = current;
     if (replacements) {
       Object.entries(replacements).forEach(([k, v]) => {
-        result = result.replace(new RegExp(`{{${k}}}`, 'g'), String(v));
+        result = result.replaceAll(`{{${k}}}`, String(v));
       });
     }
 

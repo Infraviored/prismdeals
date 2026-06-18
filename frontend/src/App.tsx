@@ -946,7 +946,7 @@ export default function App() {
                 </Button>
                 <span className="text-slate-750">|</span>
                 <h2 className="text-base font-bold text-slate-200">
-                  {campaigns.find(c => c.id === currentCampaignId)?.name} {lang === 'en' ? 'Dashboard' : 'Dashboard'}
+                  {campaigns.find(c => c.id === currentCampaignId)?.name} {t('listing.dashboardTitle')}
                 </h2>
 
                 <Button

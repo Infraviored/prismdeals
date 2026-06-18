@@ -76,6 +76,8 @@ def parse_listing_details_requests(url):
         schema_main_image = None
         for script in soup.find_all("script", type="application/ld+json"):
             try:
+                if not script.string:
+                    continue
                 data = json.loads(script.string)
                 if isinstance(data, dict) and data.get("@type") == "ImageObject":
                     if data.get("representativeOfPage") is True:
@@ -176,12 +178,15 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                     current_url = re.sub(r"/seite:\d+/", f"/seite:{page}/", base_url)
                 else:
                     parts = base_url.split("/")
-                    domain_part = "/".join(parts[:3])
-                    path_part = parts[3]
-                    remaining_parts = "/".join(parts[4:]) if len(parts) > 4 else ""
-                    current_url = (
-                        f"{domain_part}/{path_part}/seite:{page}/{remaining_parts}"
-                    )
+                    if len(parts) >= 4:
+                        domain_part = "/".join(parts[:3])
+                        path_part = parts[3]
+                        remaining_parts = "/".join(parts[4:]) if len(parts) > 4 else ""
+                        current_url = (
+                            f"{domain_part}/{path_part}/seite:{page}/{remaining_parts}"
+                        )
+                    else:
+                        current_url = base_url
 
             logger.info(f"Scraping page {page} of {PAGES_TO_SCRAPE}: {current_url}")
 
@@ -406,7 +411,7 @@ def harvest_descriptions(campaign_id=None):
                     parsed["detailed_description"],
                     json.dumps(parsed["details"]),
                     json.dumps(parsed["images"]),
-                    datetime.datetime.now().isoformat(),
+                    datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     listing_id,
                 ),
             )
@@ -513,7 +518,7 @@ def update_all_descriptions_session(campaign_id=None):
                         detailed_description,
                         json.dumps(parsed["details"]),
                         json.dumps(parsed["images"]),
-                        datetime.datetime.now().isoformat(),
+                        datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         listing_id,
                     ),
                 )
@@ -574,7 +579,7 @@ def save_logged_in_email(email):
     try:
         with open(status_path, "w", encoding="utf-8") as f:
             json.dump(
-                {"email": email, "timestamp": datetime.datetime.now().isoformat()},
+                {"email": email, "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
                 f,
                 indent=2,
             )

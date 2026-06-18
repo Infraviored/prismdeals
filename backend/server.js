@@ -638,13 +638,22 @@ app.post('/api/schedule', (req, res) => {
       return res.status(400).json({ error: 'Missing interval field' });
     }
     
+    let pagesDelay = parseFloat(delayBetweenPages !== undefined ? delayBetweenPages : 0.25);
+    let listingsDelay = parseFloat(delayBetweenListings !== undefined ? delayBetweenListings : 0.25);
+    if (isNaN(pagesDelay) || pagesDelay < 0) {
+      pagesDelay = 0.25;
+    }
+    if (isNaN(listingsDelay) || listingsDelay < 0) {
+      listingsDelay = 0.25;
+    }
+    
     const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
     const newConfig = {
       interval: parseInt(interval, 10),
       autoAiEval: !!autoAiEval,
       fullFetchOnStartup: !!fullFetchOnStartup,
-      delayBetweenPages: parseFloat(delayBetweenPages !== undefined ? delayBetweenPages : 0.25),
-      delayBetweenListings: parseFloat(delayBetweenListings !== undefined ? delayBetweenListings : 0.25)
+      delayBetweenPages: pagesDelay,
+      delayBetweenListings: listingsDelay
     };
     
     fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2));

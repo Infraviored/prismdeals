@@ -175,7 +175,7 @@ def harvest_missing_descriptions(driver, campaign_id=None):
                         detailed_description,
                         json.dumps(details),
                         json.dumps(images),
-                        datetime.datetime.now().isoformat(),
+                        datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         listing_id,
                     ),
                 )
@@ -239,7 +239,7 @@ def save_logged_in_email(email):
     try:
         with open(status_path, "w", encoding="utf-8") as f:
             json.dump(
-                {"email": email, "timestamp": datetime.datetime.now().isoformat()},
+                {"email": email, "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
                 f,
                 indent=2,
             )
@@ -575,16 +575,19 @@ def scrape_listings(urls, output_file, max_listings=None):
                         # Find the position to insert the page parameter
                         # Typically after the search path but before any filters
                         parts = base_url.split("/")
-                        domain_part = "/".join(
-                            parts[:3]
-                        )  # e.g., https://www.kleinanzeigen.de
-                        path_part = parts[3]  # e.g., s-notebooks
+                        if len(parts) >= 4:
+                            domain_part = "/".join(
+                                parts[:3]
+                            )  # e.g., https://www.kleinanzeigen.de
+                            path_part = parts[3]  # e.g., s-notebooks
 
-                        # Insert the page parameter after the path part
-                        remaining_parts = "/".join(parts[4:]) if len(parts) > 4 else ""
-                        current_url = (
-                            f"{domain_part}/{path_part}/seite:{page}/{remaining_parts}"
-                        )
+                            # Insert the page parameter after the path part
+                            remaining_parts = "/".join(parts[4:]) if len(parts) > 4 else ""
+                            current_url = (
+                                f"{domain_part}/{path_part}/seite:{page}/{remaining_parts}"
+                            )
+                        else:
+                            current_url = base_url
 
                 logger.info(f"Scraping page {page} of {PAGES_TO_SCRAPE}: {current_url}")
 
@@ -855,7 +858,7 @@ def update_all_descriptions(driver, campaign_id=None):
                             detailed_description,
                             json.dumps(details),
                             json.dumps(images),
-                            datetime.datetime.now().isoformat(),
+                            datetime.datetime.now(datetime.timezone.utc).isoformat(),
                             listing_id,
                         ),
                     )

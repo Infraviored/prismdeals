@@ -212,6 +212,14 @@ export const translations = {
       finalizingSession: "Finalizing session...",
       discoveringListings: "Discovering listings on index pages...",
       liveScraper: "Live Scraper",
+      dimensions: {
+        trustworthiness: "Trustworthiness",
+        transparency: "Transparency",
+        conditionConfidence: "Condition Confidence",
+        documentationQuality: "Documentation Quality",
+        hiddenRiskSuspicion: "Hidden Risk Suspicion",
+        marketAboveAverageSignal: "Market Above Average Signal"
+      }
     }
   },
   de: {
@@ -427,6 +435,14 @@ export const translations = {
       finalizingSession: "Sitzung wird abgeschlossen...",
       discoveringListings: "Suche nach Anzeigen auf Indexseiten...",
       liveScraper: "Live-Scraper",
+      dimensions: {
+        trustworthiness: "Vertrauenswürdigkeit",
+        transparency: "Transparenz",
+        conditionConfidence: "Zustandssicherheit",
+        documentationQuality: "Dokumentationsqualität",
+        hiddenRiskSuspicion: "Versteckter Risikoverdacht",
+        marketAboveAverageSignal: "Überdurchschnittliches Marktsignal"
+      }
     }
   }
 } as const;

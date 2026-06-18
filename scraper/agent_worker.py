@@ -74,7 +74,7 @@ def log_listing_analysis(
     score_contributions=None,
     final_score=None,
 ):
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",
@@ -84,7 +84,7 @@ def log_listing_analysis(
     log_path = os.path.join(log_dir, f"{listing_id}_{ts}.log")
 
     with open(log_path, "w", encoding="utf-8") as f:
-        f.write(f"=== ANALYSIS RUN: {datetime.datetime.now().isoformat()} ===\n\n")
+        f.write(f"=== ANALYSIS RUN: {datetime.datetime.now(datetime.timezone.utc).isoformat()} ===\n\n")
         f.write("=== INITIAL PROMPT ===\n")
         f.write(prompt)
         f.write("\n\n=== INITIAL RESPONSE ===\n")
@@ -123,7 +123,7 @@ def log_listing_analysis(
 
 
 def log_conversation_analysis(listing_id, prompt, response):
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",
@@ -133,7 +133,7 @@ def log_conversation_analysis(listing_id, prompt, response):
     log_path = os.path.join(log_dir, f"{listing_id}_{ts}_conversation.log")
     with open(log_path, "w", encoding="utf-8") as f:
         f.write(
-            f"=== CONVERSATION ANALYSIS RUN: {datetime.datetime.now().isoformat()} ===\n\n"
+            f"=== CONVERSATION ANALYSIS RUN: {datetime.datetime.now(datetime.timezone.utc).isoformat()} ===\n\n"
         )
         f.write("=== PROMPT ===\n")
         f.write(prompt)
@@ -143,7 +143,7 @@ def log_conversation_analysis(listing_id, prompt, response):
 
 
 def log_outreach_draft(listing_id, prompt, response):
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",
@@ -153,7 +153,7 @@ def log_outreach_draft(listing_id, prompt, response):
     log_path = os.path.join(log_dir, f"{listing_id}_{ts}_outreach.log")
     with open(log_path, "w", encoding="utf-8") as f:
         f.write(
-            f"=== OUTREACH DRAFT RUN: {datetime.datetime.now().isoformat()} ===\n\n"
+            f"=== OUTREACH DRAFT RUN: {datetime.datetime.now(datetime.timezone.utc).isoformat()} ===\n\n"
         )
         f.write("=== PROMPT ===\n")
         f.write(prompt)
@@ -298,8 +298,8 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
                 WHERE id = ?
             """,
                 (
-                    datetime.datetime.now().isoformat(),
-                    datetime.datetime.now().isoformat(),
+                    datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     json.dumps(facts_envelope),
                     listing_id,
                 ),
@@ -568,8 +568,8 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
                 WHERE id = ?
             """,
                 (
-                    datetime.datetime.now().isoformat(),
-                    datetime.datetime.now().isoformat(),
+                    datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     full_info,
                     json.dumps(facts_envelope),
                     score,
