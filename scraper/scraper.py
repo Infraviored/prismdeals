@@ -59,10 +59,11 @@ def update_progress(phase, current, total, status):
         logger.error(f"Error writing progress file: {str(e)}")
 
 
-def parse_listing_details_requests(url):
+def parse_listing_details_requests(url, session=None):
     """Retrieve and parse detailed specifications, description, and images using direct requests"""
     try:
-        response = requests.get(url, headers=HEADERS, timeout=10)
+        caller = session if session is not None else requests
+        response = caller.get(url, headers=HEADERS, timeout=10)
         if response.status_code != 200:
             logger.warning(
                 f"Failed to fetch listing details for {url}. Status: {response.status_code}"
@@ -175,7 +176,7 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                 current_url = base_url
             else:
                 if "/seite:" in base_url:
-                    current_url = re.sub(r"/seite:\d+/", f"/seite:{page}/", base_url)
+                    current_url = re.sub(r"/seite:\d+(/|$)", f"/seite:{page}\\1", base_url)
                 else:
                     parts = base_url.split("/")
                     if len(parts) >= 4:
@@ -267,15 +268,15 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                         all_scraped_listings.append(listing)
                         scraped_count += 1
 
-                        if output_file:
-                            with open(output_file, "w", encoding="utf-8") as f:
-                                json.dump(
-                                    existing_listings, f, ensure_ascii=False, indent=4
-                                )
-
                     except Exception as e:
                         logger.error(f"Error scraping single listing: {str(e)}")
                         continue
+
+                if output_file:
+                    with open(output_file, "w", encoding="utf-8") as f:
+                        json.dump(
+                            existing_listings, f, ensure_ascii=False, indent=4
+                        )
 
                 logger.info(
                     f"Scraped {scraped_count} discovered listings from {current_url}"
@@ -380,25 +381,26 @@ def harvest_descriptions(campaign_id=None):
                 f"Found {total} listings missing details to harvest.",
             )
 
-        for idx, r in enumerate(rows):
-            listing_id = r["id"]
-            url = r["url"]
-            title = r["title"]
+        with requests.Session() as session:
+            for idx, r in enumerate(rows):
+                listing_id = r["id"]
+                url = r["url"]
+                title = r["title"]
 
-            logger.info(f"Harvesting details for listing {listing_id} ({title}): {url}")
-            update_progress(
-                "harvesting",
-                idx,
-                total,
-                f"Harvesting listing {idx + 1}/{total}: {title}",
-            )
+                logger.info(f"Harvesting details for listing {listing_id} ({title}): {url}")
+                update_progress(
+                    "harvesting",
+                    idx,
+                    total,
+                    f"Harvesting listing {idx + 1}/{total}: {title}",
+                )
 
-            # Respectful delay between requests
-            time.sleep(DELAY_BETWEEN_LISTINGS)
+                # Respectful delay between requests
+                time.sleep(DELAY_BETWEEN_LISTINGS)
 
-            parsed = parse_listing_details_requests(url)
-            if parsed is None:
-                continue
+                parsed = parse_listing_details_requests(url, session=session)
+                if parsed is None:
+                    continue
 
             cursor.execute(
                 """
@@ -480,26 +482,27 @@ def update_all_descriptions_session(campaign_id=None):
                 f"Found {total} listings to check/update.",
             )
 
-        for idx, r in enumerate(rows):
-            listing_id = r["id"]
-            url = r["url"]
-            title = r["title"]
-            old_description = r["detailed_description"] or ""
+        with requests.Session() as session:
+            for idx, r in enumerate(rows):
+                listing_id = r["id"]
+                url = r["url"]
+                title = r["title"]
+                old_description = r["detailed_description"] or ""
 
-            logger.info(f"Checking updates for listing {listing_id} ({title}): {url}")
-            update_progress(
-                "updating-descriptions",
-                idx,
-                total,
-                f"Checking listing {idx + 1}/{total}: {title}",
-            )
+                logger.info(f"Checking updates for listing {listing_id} ({title}): {url}")
+                update_progress(
+                    "updating-descriptions",
+                    idx,
+                    total,
+                    f"Checking listing {idx + 1}/{total}: {title}",
+                )
 
-            # Respectful delay between requests
-            time.sleep(DELAY_BETWEEN_LISTINGS)
+                # Respectful delay between requests
+                time.sleep(DELAY_BETWEEN_LISTINGS)
 
-            parsed = parse_listing_details_requests(url)
-            if parsed is None:
-                continue
+                parsed = parse_listing_details_requests(url, session=session)
+                if parsed is None:
+                    continue
 
             detailed_description = parsed["detailed_description"] or ""
 
@@ -745,7 +748,7 @@ def scrape_listings_selenium(urls, output_file, max_listings=None):
                 else:
                     if "/seite:" in base_url:
                         current_url = re.sub(
-                            r"/seite:\d+/", f"/seite:{page}/", base_url
+                            r"/seite:\d+(/|$)", f"/seite:{page}\\1", base_url
                         )
                     else:
                         parts = base_url.split("/")

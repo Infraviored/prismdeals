@@ -18,6 +18,10 @@ const { spawn } = require('child_process');
 const sqlite3 = require('sqlite3').verbose();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  console.error("FATAL: JWT_SECRET environment variable is required in production!");
+  process.exit(1);
+}
 const JWT_SECRET = process.env.JWT_SECRET || 'dealmapper_dev_secret_key_12345';
 
 // Database setup
@@ -48,8 +52,8 @@ db.serialize(() => {
         return;
       }
       if (row.count === 0) {
-        const defaultEmail = 'admin@dealmapper.local';
-        const defaultPassword = 'password';
+        const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@dealmapper.local';
+        const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'password';
         const saltRounds = 10;
         
         bcrypt.hash(defaultPassword, saltRounds, (err, hash) => {
@@ -129,9 +133,9 @@ const authenticateToken = async (req, res, next) => {
   let token = null;
   if (req.headers.cookie) {
     const cookies = Object.fromEntries(
-      req.headers.cookie.split('; ').map(c => {
+      req.headers.cookie.split(/;\s*/).map(c => {
         const parts = c.split('=');
-        return [parts[0], parts.slice(1).join('=')];
+        return [parts[0].trim(), parts.slice(1).join('=')];
       })
     );
     token = cookies.token;
@@ -274,12 +278,7 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 });
 
 // Global API Auth Protection (applied to all subsequent /api/* routes)
-app.use('/api', (req, res, next) => {
-  if (req.path === '/auth/login' || req.path === '/auth/logout' || req.path === '/auth/me') {
-    return next();
-  }
-  authenticateToken(req, res, next);
-});
+app.use('/api', authenticateToken);
 
 // API: Serve the external research agent prompt template
 app.get('/api/external-prompt', (req, res) => {
