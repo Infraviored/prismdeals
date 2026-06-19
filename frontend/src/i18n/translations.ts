@@ -220,6 +220,17 @@ export const translations = {
         hiddenRiskSuspicion: "Hidden Risk Suspicion",
         marketAboveAverageSignal: "Market Above Average Signal"
       }
+    },
+    auth: {
+      signIn: "Sign In to DealMapper",
+      emailLabel: "Email Address",
+      emailPlaceholder: "Enter your email...",
+      passwordLabel: "Password",
+      passwordPlaceholder: "Enter your password...",
+      buttonLogin: "Log In",
+      buttonLoggingIn: "Logging In...",
+      errorInvalid: "Invalid email or password",
+      logout: "Log Out"
     }
   },
   de: {
@@ -443,6 +454,17 @@ export const translations = {
         hiddenRiskSuspicion: "Versteckter Risikoverdacht",
         marketAboveAverageSignal: "Überdurchschnittliches Marktsignal"
       }
+    },
+    auth: {
+      signIn: "Bei DealMapper anmelden",
+      emailLabel: "E-Mail-Adresse",
+      emailPlaceholder: "Geben Sie Ihre E-Mail ein...",
+      passwordLabel: "Passwort",
+      passwordPlaceholder: "Geben Sie Ihr Passwort ein...",
+      buttonLogin: "Einloggen",
+      buttonLoggingIn: "Wird eingeloggt...",
+      errorInvalid: "Ungültige E-Mail oder Passwort",
+      logout: "Ausloggen"
     }
   }
 } as const;

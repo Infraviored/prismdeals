@@ -16,6 +16,9 @@ const app = express();
 const port = 3030;
 const { spawn } = require('child_process');
 const sqlite3 = require('sqlite3').verbose();
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const JWT_SECRET = process.env.JWT_SECRET || 'dealmapper_dev_secret_key_12345';
 
 // Database setup
 const dbPath = path.join(__dirname, '..', 'data', 'scraper.db');
@@ -26,6 +29,46 @@ db.run('PRAGMA busy_timeout=5000;');
 
 // Perform database schema migration on startup (non-destructive)
 db.serialize(() => {
+  // Create users table and seed default user if empty
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL
+    )
+  `, (err) => {
+    if (err) {
+      console.error("Failed to create users table:", err);
+      return;
+    }
+    db.get("SELECT COUNT(*) as count FROM users", (err, row) => {
+      if (err) {
+        console.error("Failed to query users count:", err);
+        return;
+      }
+      if (row.count === 0) {
+        const defaultEmail = 'admin@dealmapper.local';
+        const defaultPassword = 'password';
+        const saltRounds = 10;
+        
+        bcrypt.hash(defaultPassword, saltRounds, (err, hash) => {
+          if (err) {
+            console.error("Failed to hash default password:", err);
+            return;
+          }
+          db.run("INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)", 
+            [defaultEmail, hash, 'admin'], 
+            (err) => {
+              if (err) console.error("Failed to seed default admin user:", err);
+              else console.log(`Seeded default admin user: ${defaultEmail} (password: ${defaultPassword})`);
+            }
+          );
+        });
+      }
+    });
+  });
+
   db.all("PRAGMA table_info(listings)", (err, rows) => {
     if (err) {
       console.error('Error reading table info:', err);
@@ -81,6 +124,36 @@ const get = (sql, params = []) => {
     });
   });
 };
+
+const authenticateToken = async (req, res, next) => {
+  let token = null;
+  if (req.headers.cookie) {
+    const cookies = Object.fromEntries(
+      req.headers.cookie.split('; ').map(c => {
+        const parts = c.split('=');
+        return [parts[0], parts.slice(1).join('=')];
+      })
+    );
+    token = cookies.token;
+  }
+
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required. No token provided.' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await get("SELECT id, email, role FROM users WHERE id = ?", [decoded.userId]);
+    if (!user) {
+      return res.status(401).json({ error: 'User session invalid or user deleted.' });
+    }
+    req.user = user;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired authentication token.' });
+  }
+};
+
 
 // Recalculates scores for all listings under a search item (normalized weight schema)
 async function recalculateItemScores(searchId, scoringModelStr) {
@@ -148,6 +221,65 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(path.join(__dirname, 'public')));
 }
 app.use(express.json());
+
+// Auth: Login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const user = await get("SELECT * FROM users WHERE email = ?", [email.toLowerCase().trim()]);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
+    res.json({
+      success: true,
+      user: {
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed due to a server error.' });
+  }
+});
+
+// Auth: Logout
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('token');
+  res.json({ success: true });
+});
+
+// Auth: Me
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+  res.json({ user: req.user });
+});
+
+// Global API Auth Protection (applied to all subsequent /api/* routes)
+app.use('/api', (req, res, next) => {
+  if (req.path === '/auth/login' || req.path === '/auth/logout' || req.path === '/auth/me') {
+    return next();
+  }
+  authenticateToken(req, res, next);
+});
 
 // API: Serve the external research agent prompt template
 app.get('/api/external-prompt', (req, res) => {

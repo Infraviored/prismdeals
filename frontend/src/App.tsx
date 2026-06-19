@@ -79,6 +79,12 @@ export default function App() {
 
   // Authentication session state
   const [sessionEmail, setSessionEmail] = useState<string | null>(null)
+  const [appUser, setAppUser] = useState<{ email: string, role: string } | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [loginError, setLoginError] = useState('')
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
 
   // Sidebar selections & details
   const [currentKnowledgeSetId, setCurrentKnowledgeSetId] = useState<number | null>(null)
@@ -118,6 +124,61 @@ export default function App() {
   // Compatibility names for existing views and components
   const [editKsName, setEditKsName] = useState('')
   const [editKsError, setEditKsError] = useState('')
+
+  const checkAuth = async () => {
+    try {
+      const res = await fetch('/api/auth/me')
+      if (res.ok) {
+        const data = await res.json()
+        setAppUser(data.user || null)
+        return data.user
+      } else {
+        setAppUser(null)
+      }
+    } catch (err) {
+      console.error("Auth check failed:", err)
+      setAppUser(null)
+    } finally {
+      setAuthLoading(false)
+    }
+    return null
+  }
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!loginEmail.trim() || !loginPassword.trim()) {
+      setLoginError("Please enter email and password.")
+      return
+    }
+    setIsLoggingIn(true)
+    setLoginError('')
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setAppUser(data.user)
+      } else {
+        setLoginError(data.error || t('auth.errorInvalid'))
+      }
+    } catch {
+      setLoginError("Network connection failed.")
+    } finally {
+      setIsLoggingIn(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      setAppUser(null)
+    } catch (err) {
+      console.error("Logout failed:", err)
+    }
+  }
 
   const checkSessionStatus = async () => {
     try {
@@ -316,13 +377,19 @@ export default function App() {
 
   // Initial load
   useEffect(() => {
-    refreshAll()
-    checkSessionStatus()
-
-    const interval = setInterval(checkSessionStatus, 8000)
-    return () => clearInterval(interval)
-     
+    checkAuth()
   }, [])
+
+  // Load data when authenticated
+  useEffect(() => {
+    if (appUser) {
+      refreshAll()
+      checkSessionStatus()
+
+      const interval = setInterval(checkSessionStatus, 8000)
+      return () => clearInterval(interval)
+    }
+  }, [appUser])
 
   // Auto-redirect empty campaigns to configuration view
   useEffect(() => {
@@ -740,6 +807,82 @@ export default function App() {
 
 
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center font-sans">
+        <div className="text-center space-y-4">
+          <div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full mx-auto" />
+          <p className="text-slate-400 text-sm font-semibold">{t('common.loading')}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!appUser) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans relative overflow-hidden">
+        {/* Glow Effects */}
+        <div className="absolute -right-32 -top-32 w-96 h-96 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
+        <div className="absolute -left-32 -bottom-32 w-96 h-96 rounded-full bg-indigo-500/5 blur-3xl pointer-events-none" />
+        
+        <div className="w-full max-w-md space-y-6 z-10">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 rounded-xl bg-emerald-500 flex items-center justify-center font-bold text-slate-950 text-2xl shadow-lg shadow-emerald-500/20 mx-auto">K</div>
+            <h1 className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+              {t('auth.signIn')}
+            </h1>
+            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Automated Scraper & AI Agent Portal</p>
+          </div>
+
+          <Card className="p-6 space-y-4">
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
+                  {t('auth.emailLabel')}
+                </label>
+                <Input
+                  type="email"
+                  value={loginEmail}
+                  onChange={e => setLoginEmail(e.target.value)}
+                  placeholder={t('auth.emailPlaceholder')}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
+                  {t('auth.passwordLabel')}
+                </label>
+                <Input
+                  type="password"
+                  value={loginPassword}
+                  onChange={e => setLoginPassword(e.target.value)}
+                  placeholder={t('auth.passwordPlaceholder')}
+                  required
+                />
+              </div>
+
+              {loginError && (
+                <div className="bg-rose-500/10 border border-rose-500/25 p-3 rounded-xl text-xs text-rose-400 font-bold animate-fadeIn">
+                  {loginError}
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={isLoggingIn}
+                className="w-full py-3"
+              >
+                {isLoggingIn ? t('auth.buttonLoggingIn') : t('auth.buttonLogin')}
+              </Button>
+            </form>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       {/* Header */}
@@ -802,6 +945,15 @@ export default function App() {
             className="p-2"
           >
             <GearIcon className="w-4.5 h-4.5 transition-transform duration-500 group-hover:rotate-90 text-slate-400 group-hover:text-emerald-400" />
+          </Button>
+
+          <Button
+            variant="badge"
+            size="sm"
+            onClick={handleLogout}
+            className="px-2.5 py-1.5 text-[10px] text-rose-400 border-rose-500/20 hover:bg-rose-500/10"
+          >
+            {t('auth.logout')}
           </Button>
         </div>
 
