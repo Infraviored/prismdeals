@@ -80,10 +80,21 @@ def parse_listing_details_requests(url, session=None):
                 if not script.string:
                     continue
                 data = json.loads(script.string)
-                if isinstance(data, dict) and data.get("@type") == "ImageObject":
-                    if data.get("representativeOfPage") is True:
-                        schema_description = data.get("description")
-                        schema_main_image = data.get("contentUrl")
+                # Normalize to a list of objects to handle both single objects and arrays
+                items = []
+                if isinstance(data, list):
+                    items = data
+                elif isinstance(data, dict):
+                    if "@graph" in data and isinstance(data["@graph"], list):
+                        items = data["@graph"]
+                    else:
+                        items = [data]
+
+                for item in items:
+                    if isinstance(item, dict) and item.get("@type") == "ImageObject":
+                        if item.get("representativeOfPage") is True:
+                            schema_description = item.get("description")
+                            schema_main_image = item.get("contentUrl")
             except Exception:
                 continue
 

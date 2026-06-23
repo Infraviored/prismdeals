@@ -53,7 +53,14 @@ db.serialize(() => {
       }
       if (row.count === 0) {
         const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@dealmapper.local';
-        const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'password';
+        let defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD;
+        if (process.env.NODE_ENV === 'production' && !defaultPassword) {
+          console.error("FATAL: DEFAULT_ADMIN_PASSWORD environment variable is required in production to seed the default admin user!");
+          process.exit(1);
+        }
+        if (!defaultPassword) {
+          defaultPassword = 'password';
+        }
         const saltRounds = 10;
         
         bcrypt.hash(defaultPassword, saltRounds, (err, hash) => {
@@ -65,7 +72,7 @@ db.serialize(() => {
             [defaultEmail, hash, 'admin'], 
             (err) => {
               if (err) console.error("Failed to seed default admin user:", err);
-              else console.log(`Seeded default admin user: ${defaultEmail} (password: ${defaultPassword})`);
+              else console.log(`Seeded default admin user: ${defaultEmail}`);
             }
           );
         });
@@ -235,12 +242,12 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const user = await get("SELECT * FROM users WHERE email = ?", [email.toLowerCase().trim()]);
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
+    
+    // Always run bcrypt.compare to prevent timing attacks (user enumeration)
+    const passwordHash = user ? user.password_hash : "$2b$10$invalidhashplaceholderdummyvalue";
+    const isMatch = await bcrypt.compare(password, passwordHash);
 
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) {
+    if (!user || !isMatch) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
