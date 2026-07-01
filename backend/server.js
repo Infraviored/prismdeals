@@ -136,6 +136,39 @@ const get = (sql, params = []) => {
   });
 };
 
+const isValidScrapeUrl = (urlStr) => {
+  try {
+    const parsed = new URL(urlStr);
+    return (
+      parsed.protocol === 'https:' &&
+      (parsed.hostname === 'kleinanzeigen.de' || parsed.hostname === 'www.kleinanzeigen.de')
+    );
+  } catch {
+    return false;
+  }
+};
+
+const loginAttempts = new Map();
+const loginRateLimiter = (req, res, next) => {
+  const ip = req.ip;
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000; // 15 minutes
+  const maxAttempts = 5;
+
+  if (!loginAttempts.has(ip)) {
+    loginAttempts.set(ip, []);
+  }
+
+  const attempts = loginAttempts.get(ip).filter(t => now - t < windowMs);
+  attempts.push(now);
+  loginAttempts.set(ip, attempts);
+
+  if (attempts.length > maxAttempts) {
+    return res.status(429).json({ error: 'Too many login attempts. Please try again in 15 minutes.' });
+  }
+  next();
+};
+
 const authenticateToken = async (req, res, next) => {
   let token = null;
   if (req.headers.cookie) {
@@ -145,7 +178,7 @@ const authenticateToken = async (req, res, next) => {
         return [parts[0].trim(), parts.slice(1).join('=')];
       })
     );
-    token = cookies.token;
+    token = cookies['__Host-token'];
   }
 
   if (!token) {
@@ -234,7 +267,7 @@ if (fs.existsSync(distPath)) {
 app.use(express.json());
 
 // Auth: Login
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -253,10 +286,11 @@ app.post('/api/auth/login', async (req, res) => {
 
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
-    res.cookie('token', token, {
+    res.cookie('__Host-token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'strict',
+      path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
@@ -275,7 +309,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Auth: Logout
 app.post('/api/auth/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('__Host-token', { path: '/' });
   res.json({ success: true });
 });
 
@@ -406,6 +440,10 @@ app.post('/api/searches', async (req, res) => {
     const { id, campaign_id, name, url, knowledge_set_id } = req.body;
     if (!campaign_id || !name || !url) {
       return res.status(400).json({ error: 'Missing campaign_id, name, or url' });
+    }
+
+    if (!isValidScrapeUrl(url)) {
+      return res.status(400).json({ error: 'Invalid search target URL. Only Kleinanzeigen URLs are allowed.' });
     }
     let searchId = id;
     const ksId = knowledge_set_id || null;
@@ -608,6 +646,10 @@ app.post('/api/searches/preview', (req, res) => {
   const { url } = req.body;
   if (!url) {
     return res.status(400).json({ error: 'Missing target URL' });
+  }
+
+  if (!isValidScrapeUrl(url)) {
+    return res.status(400).json({ error: 'Invalid search target URL. Only Kleinanzeigen URLs are allowed.' });
   }
 
   const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
