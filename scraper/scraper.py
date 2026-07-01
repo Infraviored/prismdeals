@@ -415,25 +415,25 @@ def harvest_descriptions(campaign_id=None):
                 if parsed is None:
                     continue
 
-            cursor.execute(
-                """
-                UPDATE listings 
-                SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
-                    last_description_changed_at = ?
-                WHERE id = ?
-            """,
-                (
-                    parsed["detailed_description"],
-                    json.dumps(parsed["details"]),
-                    json.dumps(parsed["images"]),
-                    datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    listing_id,
-                ),
-            )
-            conn.commit()
-            logger.info(
-                f"Successfully harvested detailed description, {len(parsed['details'])} details, and {len(parsed['images'])} images for ID {listing_id}"
-            )
+                cursor.execute(
+                    """
+                    UPDATE listings 
+                    SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
+                        last_description_changed_at = ?
+                    WHERE id = ?
+                """,
+                    (
+                        parsed["detailed_description"],
+                        json.dumps(parsed["details"]),
+                        json.dumps(parsed["images"]),
+                        datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        listing_id,
+                    ),
+                )
+                conn.commit()
+                logger.info(
+                    f"Successfully harvested detailed description, {len(parsed['details'])} details, and {len(parsed['images'])} images for ID {listing_id}"
+                )
 
         if total > 0:
             update_progress(

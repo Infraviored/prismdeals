@@ -192,7 +192,7 @@ const authenticateToken = async (req, res, next) => {
         return [parts[0].trim(), parts.slice(1).join('=')];
       })
     );
-    token = cookies['__Host-token'];
+    token = cookies['__Host-token'] || cookies.token;
   }
 
   if (!token) {
@@ -287,6 +287,9 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Email and password must be strings.' });
+    }
 
     const user = await get("SELECT * FROM users WHERE email = ?", [email.toLowerCase().trim()]);
     
@@ -300,9 +303,10 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
 
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
-    res.cookie('__Host-token', token, {
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie(isProd ? '__Host-token' : 'token', token, {
       httpOnly: true,
-      secure: true,
+      secure: isProd,
       sameSite: 'strict',
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
@@ -324,6 +328,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
 // Auth: Logout
 app.post('/api/auth/logout', (req, res) => {
   res.clearCookie('__Host-token', { path: '/' });
+  res.clearCookie('token', { path: '/' });
   res.json({ success: true });
 });
 
