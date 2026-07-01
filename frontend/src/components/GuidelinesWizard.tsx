@@ -469,8 +469,8 @@ export default function GuidelinesWizard({
                     )}
 
                     {parsedBadRef && (
-                      <div className="bg-slate-950/40 border border-rose-500/10 rounded-xl p-4 space-y-1.5 shadow-sm">
-                        <span className="text-[9px] bg-rose-500/10 text-rose-455 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.riskAnchor')}</span>
+                      <div className="bg-slate-955/40 border border-rose-500/10 rounded-xl p-4 space-y-1.5 shadow-sm">
+                        <span className="text-[9px] bg-rose-500/10 text-rose-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.riskAnchor')}</span>
                         <p className="text-[11px] text-slate-355 leading-relaxed font-mono whitespace-pre-wrap">{parsedBadRef}</p>
                       </div>
                     )}
@@ -551,7 +551,7 @@ export default function GuidelinesWizard({
 
                         {negativeCriteria.length > 0 && (
                           <div className="bg-slate-955/50 border border-rose-500/10 rounded-xl p-4 space-y-3 shadow-inner">
-                            <span className="text-[9px] bg-rose-500/10 text-rose-455 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.negativeSignals', { count: negativeCriteria.length })}</span>
+                            <span className="text-[9px] bg-rose-500/10 text-rose-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.negativeSignals', { count: negativeCriteria.length })}</span>
                             <div className="overflow-x-auto">
                               <table className="w-full text-left text-[11px] border-collapse">
                                 <thead>
@@ -630,7 +630,7 @@ export default function GuidelinesWizard({
       </div>
 
       {editKsError && (
-        <div className="text-xs text-rose-455 font-semibold bg-rose-500/10 p-3.5 rounded-xl border border-rose-500/20">{editKsError}</div>
+        <div className="text-xs text-rose-400 font-semibold bg-rose-500/10 p-3.5 rounded-xl border border-rose-500/20">{editKsError}</div>
       )}
     </div>
   )

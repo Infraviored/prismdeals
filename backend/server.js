@@ -169,6 +169,20 @@ const loginRateLimiter = (req, res, next) => {
   next();
 };
 
+// Periodic memory cleanup for inactive rate limiter IP records to prevent leaks
+setInterval(() => {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  for (const [ip, attempts] of loginAttempts.entries()) {
+    const active = attempts.filter(t => now - t < windowMs);
+    if (active.length === 0) {
+      loginAttempts.delete(ip);
+    } else {
+      loginAttempts.set(ip, active);
+    }
+  }
+}, 15 * 60 * 1000).unref();
+
 const authenticateToken = async (req, res, next) => {
   let token = null;
   if (req.headers.cookie) {
@@ -277,7 +291,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
     const user = await get("SELECT * FROM users WHERE email = ?", [email.toLowerCase().trim()]);
     
     // Always run bcrypt.compare to prevent timing attacks (user enumeration)
-    const passwordHash = user ? user.password_hash : "$2b$10$S9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y";
+    const passwordHash = user ? user.password_hash : "$2b$10$VEPtO9A6YfW7.g.7/S9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9";
     const isMatch = await bcrypt.compare(password, passwordHash);
 
     if (!user || !isMatch) {
@@ -817,6 +831,11 @@ app.post('/api/schedule', (req, res) => {
     if (interval === undefined) {
       return res.status(400).json({ error: 'Missing interval field' });
     }
+
+    const parsedInterval = parseInt(interval, 10);
+    if (isNaN(parsedInterval) || parsedInterval < 1) {
+      return res.status(400).json({ error: 'Interval must be a positive integer' });
+    }
     
     let pagesDelay = parseFloat(delayBetweenPages !== undefined ? delayBetweenPages : 0.25);
     let listingsDelay = parseFloat(delayBetweenListings !== undefined ? delayBetweenListings : 0.25);
@@ -829,7 +848,7 @@ app.post('/api/schedule', (req, res) => {
     
     const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
     const newConfig = {
-      interval: parseInt(interval, 10),
+      interval: parsedInterval,
       autoAiEval: !!autoAiEval,
       fullFetchOnStartup: !!fullFetchOnStartup,
       delayBetweenPages: pagesDelay,

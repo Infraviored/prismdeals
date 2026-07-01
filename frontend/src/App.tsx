@@ -1311,7 +1311,7 @@ export default function App() {
                         {isValidKleinanzeigenUrl(newTargetUrl) ? (
                           <span className="text-emerald-400 font-semibold">{t('common.validUrl')}</span>
                         ) : (
-                          <span className="text-rose-455 font-semibold">{t('common.invalidUrl')}</span>
+                          <span className="text-rose-400 font-semibold">{t('common.invalidUrl')}</span>
                         )}
                       </div>
 
@@ -1354,7 +1354,7 @@ export default function App() {
                       )}
 
                       {previewError && (
-                        <div className="text-xs bg-rose-500/10 text-rose-455 px-3.5 py-2.5 rounded-xl border border-rose-500/10 font-bold animate-fadeIn">
+                        <div className="text-xs bg-rose-500/10 text-rose-400 px-3.5 py-2.5 rounded-xl border border-rose-500/10 font-bold animate-fadeIn">
                           {previewError}
                         </div>
                       )}
