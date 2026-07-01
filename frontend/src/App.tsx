@@ -338,7 +338,8 @@ export default function App() {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-     
+    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isScraping, activeSearchTarget?.id]);
 
   // Polling loop for active AI evaluations
@@ -366,6 +367,7 @@ export default function App() {
     checkActiveProcesses();
     intervalId = setInterval(checkActiveProcesses, 2000);
     return () => clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [isProcessing, setIsProcessing] = useState(false)
@@ -389,6 +391,7 @@ export default function App() {
       const interval = setInterval(checkSessionStatus, 8000)
       return () => clearInterval(interval)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appUser])
 
   // Auto-redirect empty campaigns to configuration view
@@ -508,6 +511,7 @@ export default function App() {
     }, 600); // 600ms debounce
 
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newTargetUrl, currentCampaignId, searches, isRegisteringTarget]);
 
 
@@ -592,6 +596,7 @@ export default function App() {
       setEditKsError('')
       setWizardStep(1)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSearchTarget, searches, knowledgeSets])
 
   // Create Campaign

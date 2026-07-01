@@ -84,7 +84,9 @@ def log_listing_analysis(
     log_path = os.path.join(log_dir, f"{listing_id}_{ts}.log")
 
     with open(log_path, "w", encoding="utf-8") as f:
-        f.write(f"=== ANALYSIS RUN: {datetime.datetime.now(datetime.timezone.utc).isoformat()} ===\n\n")
+        f.write(
+            f"=== ANALYSIS RUN: {datetime.datetime.now(datetime.timezone.utc).isoformat()} ===\n\n"
+        )
         f.write("=== INITIAL PROMPT ===\n")
         f.write(prompt)
         f.write("\n\n=== INITIAL RESPONSE ===\n")

@@ -317,7 +317,7 @@ export default function ListingDetailCard({
                   <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block font-mono">{t('listing.softDimensions')}</span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {Object.entries(l.dimensions).map(([key, dim]) => {
-                       const label = t(`listing.dimensions.${key}` as any) || key;
+                       const label = t(`listing.dimensions.${key}` as string) || key;
                        const score = dim.score;
                       const reasoning = dim.reasoning;
                       

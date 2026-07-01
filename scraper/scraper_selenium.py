@@ -239,7 +239,12 @@ def save_logged_in_email(email):
     try:
         with open(status_path, "w", encoding="utf-8") as f:
             json.dump(
-                {"email": email, "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+                {
+                    "email": email,
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
+                },
                 f,
                 indent=2,
             )
@@ -582,10 +587,10 @@ def scrape_listings(urls, output_file, max_listings=None):
                             path_part = parts[3]  # e.g., s-notebooks
 
                             # Insert the page parameter after the path part
-                            remaining_parts = "/".join(parts[4:]) if len(parts) > 4 else ""
-                            current_url = (
-                                f"{domain_part}/{path_part}/seite:{page}/{remaining_parts}"
+                            remaining_parts = (
+                                "/".join(parts[4:]) if len(parts) > 4 else ""
                             )
+                            current_url = f"{domain_part}/{path_part}/seite:{page}/{remaining_parts}"
                         else:
                             current_url = base_url
 

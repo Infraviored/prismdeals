@@ -187,7 +187,9 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                 current_url = base_url
             else:
                 if "/seite:" in base_url:
-                    current_url = re.sub(r"/seite:\d+(/|$)", f"/seite:{page}\\1", base_url)
+                    current_url = re.sub(
+                        r"/seite:\d+(/|$)", f"/seite:{page}\\1", base_url
+                    )
                 else:
                     parts = base_url.split("/")
                     if len(parts) >= 4:
@@ -285,9 +287,7 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
 
                 if output_file:
                     with open(output_file, "w", encoding="utf-8") as f:
-                        json.dump(
-                            existing_listings, f, ensure_ascii=False, indent=4
-                        )
+                        json.dump(existing_listings, f, ensure_ascii=False, indent=4)
 
                 logger.info(
                     f"Scraped {scraped_count} discovered listings from {current_url}"
@@ -398,7 +398,9 @@ def harvest_descriptions(campaign_id=None):
                 url = r["url"]
                 title = r["title"]
 
-                logger.info(f"Harvesting details for listing {listing_id} ({title}): {url}")
+                logger.info(
+                    f"Harvesting details for listing {listing_id} ({title}): {url}"
+                )
                 update_progress(
                     "harvesting",
                     idx,
@@ -500,7 +502,9 @@ def update_all_descriptions_session(campaign_id=None):
                 title = r["title"]
                 old_description = r["detailed_description"] or ""
 
-                logger.info(f"Checking updates for listing {listing_id} ({title}): {url}")
+                logger.info(
+                    f"Checking updates for listing {listing_id} ({title}): {url}"
+                )
                 update_progress(
                     "updating-descriptions",
                     idx,
@@ -593,7 +597,12 @@ def save_logged_in_email(email):
     try:
         with open(status_path, "w", encoding="utf-8") as f:
             json.dump(
-                {"email": email, "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+                {
+                    "email": email,
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
+                },
                 f,
                 indent=2,
             )
