@@ -244,7 +244,7 @@ app.post('/api/auth/login', async (req, res) => {
     const user = await get("SELECT * FROM users WHERE email = ?", [email.toLowerCase().trim()]);
     
     // Always run bcrypt.compare to prevent timing attacks (user enumeration)
-    const passwordHash = user ? user.password_hash : "$2b$10$invalidhashplaceholderdummyvalue";
+    const passwordHash = user ? user.password_hash : "$2b$10$S9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y";
     const isMatch = await bcrypt.compare(password, passwordHash);
 
     if (!user || !isMatch) {
