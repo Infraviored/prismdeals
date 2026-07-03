@@ -222,7 +222,7 @@ export const translations = {
       }
     },
     auth: {
-      signIn: "Sign In to DealMapper",
+      signIn: "Sign In to prismdeals",
       emailLabel: "Email Address",
       emailPlaceholder: "Enter your email...",
       passwordLabel: "Password",
@@ -456,7 +456,7 @@ export const translations = {
       }
     },
     auth: {
-      signIn: "Bei DealMapper anmelden",
+      signIn: "Bei prismdeals anmelden",
       emailLabel: "E-Mail-Adresse",
       emailPlaceholder: "Geben Sie Ihre E-Mail ein...",
       passwordLabel: "Passwort",

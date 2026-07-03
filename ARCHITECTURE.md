@@ -1,6 +1,6 @@
-# KleinanzeigenScraper: Full System Architecture
+# prismdeals: Full System Architecture
 
-KleinanzeigenScraper is a classifieds intelligence system for German marketplace listings, built to scrape, structure, evaluate, and operationalize used motorcycle ads with a strong focus on evidence quality, risk detection, and explainable scoring. The project’s core idea is not “ask an LLM whether a listing is good,” but to split the problem into a pipeline where scraping, calibration, evidence extraction, scoring, and outreach are each handled by the right layer.
+prismdeals is a classifieds intelligence system for German marketplace listings, built to scrape, structure, evaluate, and operationalize used motorcycle ads with a strong focus on evidence quality, risk detection, and explainable scoring. The project’s core idea is not “ask an LLM whether a listing is good,” but to split the problem into a pipeline where scraping, calibration, evidence extraction, scoring, and outreach are each handled by the right layer.
 
 The system has evolved into a dual-stage AI architecture: one model or expert process designs the evaluation profile, and another low-cost worker model applies that profile to individual listings at scale. This architecture exists because generic holistic LLM judgments were too forgiving, too opaque, and too hard to debug for a market where omission, vague wording, and hidden risk matter as much as the explicit claims.
 
@@ -181,6 +181,6 @@ The ideal end state is a system where:
 
 ## Practical Summary
 
-In one sentence, KleinanzeigenScraper is a **forensic classifieds analysis pipeline** for used motorcycles, built around structured evidence extraction, deterministic scoring, and audit-friendly logging. Its architecture is intentionally split between planning, extraction, scoring, and follow-up so that each layer can be optimized independently.
+In one sentence, prismdeals is a **forensic classifieds analysis pipeline** for used motorcycles, built around structured evidence extraction, deterministic scoring, and audit-friendly logging. Its architecture is intentionally split between planning, extraction, scoring, and follow-up so that each layer can be optimized independently.
 
 The current implementation is already strong in structure and observability, but the next architectural step is to make the Python scoring layer fully consume the richer uncertainty and risk semantics that the newer prompt already produces.

@@ -1,4 +1,4 @@
-# KleinanzeigenScraper
+# prismdeals
 
 A tool for scraping laptop listings from Kleinanzeigen.de and analyzing them with ChatGPT.
 
@@ -21,8 +21,8 @@ A tool for scraping laptop listings from Kleinanzeigen.de and analyzing them wit
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/KleinanzeigenScraper.git
-   cd KleinanzeigenScraper
+   git clone https://github.com/yourusername/prismdeals.git
+   cd prismdeals
    ```
 
 2. Make the installer executable:
@@ -53,8 +53,8 @@ If you prefer to install manually:
 
 1. Create a Python virtual environment:
    ```bash
-   python3 -m venv kleinanzeigenScraper
-   source kleinanzeigenScraper/bin/activate
+   python3 -m venv prismdeals
+   source prismdeals/bin/activate
    ```
 
 2. Install Python dependencies:
@@ -80,7 +80,7 @@ If you prefer to install manually:
 ### Running the Web Interface
 
 ```bash
-source kleinanzeigenScraper/bin/activate
+source prismdeals/bin/activate
 node server.js
 ```
 
@@ -89,7 +89,7 @@ The web interface will be available at http://localhost:3030
 ### Running the Scraper Directly
 
 ```bash
-source kleinanzeigenScraper/bin/activate
+source prismdeals/bin/activate
 python main.py --mode both
 ```
 

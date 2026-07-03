@@ -1,5 +1,5 @@
 [Unit]
-Description=KleinanzeigenScraper Service
+Description=prismdeals Service
 After=network.target
 
 [Service]
@@ -7,8 +7,8 @@ Type=simple
 # Use direct UID instead of username to avoid user lookup issues
 User=0
 Group=0
-WorkingDirectory=/home/schneider/repos_private/KleinanzeigenScraper
-ExecStart=/home/schneider/repos_private/KleinanzeigenScraper/scripts/start-service.sh
+WorkingDirectory=/home/schneider/repos_private/prismdeals
+ExecStart=/home/schneider/repos_private/prismdeals/scripts/start-service.sh
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

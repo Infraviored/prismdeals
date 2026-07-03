@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# KleinanzeigenScraper Installer
-# This script sets up the entire environment for the KleinanzeigenScraper
+# prismdeals Installer
+# This script sets up the entire environment for the prismdeals
 
 set -e  # Exit on error
 
@@ -12,7 +12,7 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}Starting KleinanzeigenScraper installation...${NC}"
+echo -e "${GREEN}Starting prismdeals installation...${NC}"
 
 # Get the project root directory (one level up from this scripts/ folder)
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -62,14 +62,14 @@ if ! python3 -m venv --help &> /dev/null; then
 fi
 
 # Try to create the virtual environment
-if ! python3 -m venv kleinanzeigenScraper; then
+if ! python3 -m venv prismdeals; then
     echo -e "${RED}Failed to create virtual environment.${NC}"
     echo -e "${YELLOW}On Debian/Ubuntu systems, you might need to install:${NC}"
     echo -e "${GREEN}sudo apt install python3-venv${NC}"
     exit 1
 fi
 
-source kleinanzeigenScraper/bin/activate
+source prismdeals/bin/activate
 
 # 2. Install Python requirements
 echo -e "${YELLOW}Installing Python requirements...${NC}"
@@ -111,7 +111,7 @@ rm -f scripts/start-service.sh
 echo -e "${YELLOW}Creating startup script inside scripts/...${NC}"
 cat > scripts/start-service.sh << EOL
 #!/bin/bash
-source ${INSTALL_DIR}/kleinanzeigenScraper/bin/activate
+source ${INSTALL_DIR}/prismdeals/bin/activate
 cd ${INSTALL_DIR}
 exec node ${INSTALL_DIR}/backend/server.js
 EOL
@@ -122,7 +122,7 @@ chmod +x scripts/start-service.sh
 # Create temporary service file in deployment/
 cat > deployment/kleinanzeigen-scraper.service.tmp << EOL
 [Unit]
-Description=KleinanzeigenScraper Service
+Description=prismdeals Service
 After=network.target
 
 [Service]
@@ -147,7 +147,7 @@ echo -e "${YELLOW}Testing the server...${NC}"
 echo -e "${BLUE}Starting the server in test mode...${NC}"
 
 # Run the server in the background
-(source kleinanzeigenScraper/bin/activate && node backend/server.js > server_test.log 2>&1) &
+(source prismdeals/bin/activate && node backend/server.js > server_test.log 2>&1) &
 SERVER_PID=$!
 
 # Wait a few seconds for the server to start
@@ -215,7 +215,7 @@ echo -e "${YELLOW}The server will be available at http://localhost:3030 once sta
 deactivate
 
 echo -e "${GREEN}You can now run the service manually with:${NC}"
-echo -e "${GREEN}source kleinanzeigenScraper/bin/activate && node backend/server.js${NC}"
+echo -e "${GREEN}source prismdeals/bin/activate && node backend/server.js${NC}"
 
 # Provide troubleshooting information
 echo -e "\n${YELLOW}Troubleshooting:${NC}"

@@ -9,8 +9,8 @@ cd "$PROJECT_ROOT"
 # Determine which virtual environment to use
 if [ -d "$PROJECT_ROOT/.venv" ]; then
     VENV_PATH="$PROJECT_ROOT/.venv"
-elif [ -d "$PROJECT_ROOT/kleinanzeigenScraper" ]; then
-    VENV_PATH="$PROJECT_ROOT/kleinanzeigenScraper"
+elif [ -d "$PROJECT_ROOT/prismdeals" ]; then
+    VENV_PATH="$PROJECT_ROOT/prismdeals"
 fi
 
 # Clean cleanup on exit/interruption

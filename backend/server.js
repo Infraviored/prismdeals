@@ -22,7 +22,7 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
   console.error("FATAL: JWT_SECRET environment variable is required in production!");
   process.exit(1);
 }
-const JWT_SECRET = process.env.JWT_SECRET || 'dealmapper_dev_secret_key_12345';
+const JWT_SECRET = process.env.JWT_SECRET || 'prismdeals_dev_secret_key_12345';
 
 // Database setup
 const dbPath = path.join(__dirname, '..', 'data', 'scraper.db');
@@ -52,7 +52,7 @@ db.serialize(() => {
         return;
       }
       if (row.count === 0) {
-        const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@dealmapper.local';
+        const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@prismdeals.local';
         let defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD;
         if (process.env.NODE_ENV === 'production' && !defaultPassword) {
           console.error("FATAL: DEFAULT_ADMIN_PASSWORD environment variable is required in production to seed the default admin user!");

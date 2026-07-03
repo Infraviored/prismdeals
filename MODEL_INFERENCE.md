@@ -1,6 +1,6 @@
 # Internal Worker Model Inference Concept
 
-This document explains the structural prompting, schema validation, post-processing sanitization, and isolated logging design of the internal evaluator model ([agent_worker.py](file:///home/schneider/repos_private/KleinanzeigenScraper/scraper/agent_worker.py)).
+This document explains the structural prompting, schema validation, post-processing sanitization, and isolated logging design of the internal evaluator model ([agent_worker.py](file:///home/schneider/repos_private/prismdeals/scraper/agent_worker.py)).
 
 ---
 
@@ -8,7 +8,7 @@ This document explains the structural prompting, schema validation, post-process
 
 To ensure absolute JSON structure adherence and completely eliminate schema validation failures (common with smaller high-efficiency models like `gpt-5-nano`), the system utilizes a **Dynamic JSON Skeleton Injection** technique.
 
-The python worker [agent_worker.py](file:///home/schneider/repos_private/KleinanzeigenScraper/scraper/agent_worker.py) constructs the prompt using the template [internal_prompt.md](file:///home/schneider/repos_private/KleinanzeigenScraper/prompts/internal_prompt.md). 
+The python worker [agent_worker.py](file:///home/schneider/repos_private/prismdeals/scraper/agent_worker.py) constructs the prompt using the template [internal_prompt.md](file:///home/schneider/repos_private/prismdeals/prompts/internal_prompt.md). 
 Instead of merely asking the model to construct a complex JSON structure from scratch, the system pre-computes a blank target JSON skeleton filled with default values (`"unknown"`, empty arrays, and defaults) for every campaign-specific criterion ID.
 
 This skeleton is appended directly to the end of the prompt immediately following the `START_JSON` marker:
@@ -46,7 +46,7 @@ Rather than treating the LLM as a rigid, zero-tolerance structured parser—whic
 
 ### Highlights / Badges Sanitization
 The model is asked to extract buyer-relevant highlights/tags and assign them an arbitrary descriptive `kind` or `type` (e.g., `maintenance`, `warning`, `accessory`, `upgrade`, etc.).
-Rather than failing validation if the model outputs an unexpected category string, the sanitization layer in [agent_worker.py](file:///home/schneider/repos_private/KleinanzeigenScraper/scraper/agent_worker.py) maps the arbitrary strings to a strict, standardized set of frontend types and sentiments:
+Rather than failing validation if the model outputs an unexpected category string, the sanitization layer in [agent_worker.py](file:///home/schneider/repos_private/prismdeals/scraper/agent_worker.py) maps the arbitrary strings to a strict, standardized set of frontend types and sentiments:
 
 1. **Fuzzy Type Matching**: 
    - Maintenance-related tags (`service`, `oil change`, `wartung`, `reifen`, etc.) are mapped to `"maintenance"`.
@@ -84,7 +84,7 @@ If a catastrophic validation error occurs:
 To prevent global log files from expanding infinitely and becoming cluttered with massive LLM prompt blocks, the system leverages a dual-layer logging strategy:
 
 ### 1. Global Log Rotation
-The main application logs [scraper.log](file:///home/schneider/repos_private/KleinanzeigenScraper/data/scraper.log) are handled via `RotatingFileHandler`.
+The main application logs [scraper.log](file:///home/schneider/repos_private/prismdeals/data/scraper.log) are handled via `RotatingFileHandler`.
 - **Configuration**: `maxBytes=5*1024*1024` (5 MB limit) and `backupCount=3`.
 - **Behavior**: When `scraper.log` reaches 5 MB, it is automatically rotated to `scraper.log.1`, then `scraper.log.2`, preserving system disk health and only keeping high-level operational info.
 

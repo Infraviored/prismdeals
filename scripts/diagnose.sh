@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# KleinanzeigenScraper Diagnostic Tool
-# This script helps diagnose issues with the KleinanzeigenScraper installation
+# prismdeals Diagnostic Tool
+# This script helps diagnose issues with the prismdeals installation
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -10,7 +10,7 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}KleinanzeigenScraper Diagnostic Tool${NC}"
+echo -e "${BLUE}prismdeals Diagnostic Tool${NC}"
 echo -e "${BLUE}====================================${NC}"
 
 # Get the project root directory (one level up from this scripts/ folder)
@@ -42,14 +42,14 @@ done
 
 # Check virtual environment
 echo -e "\n${YELLOW}Checking Python Virtual Environment:${NC}"
-if [ -d "kleinanzeigenScraper" ]; then
+if [ -d "prismdeals" ]; then
     echo -e "${GREEN}✓ Virtual environment directory exists${NC}"
-    if [ -f "kleinanzeigenScraper/bin/activate" ]; then
+    if [ -f "prismdeals/bin/activate" ]; then
         echo -e "${GREEN}✓ Activation script exists${NC}"
         
         # Check Python version in venv
-        if [ -f "kleinanzeigenScraper/bin/python" ]; then
-            VENV_PYTHON_VERSION=$(kleinanzeigenScraper/bin/python --version 2>&1)
+        if [ -f "prismdeals/bin/python" ]; then
+            VENV_PYTHON_VERSION=$(prismdeals/bin/python --version 2>&1)
             echo -e "${GREEN}✓ Virtual environment Python: $VENV_PYTHON_VERSION${NC}"
         else
             echo -e "${RED}✗ Python executable not found in virtual environment${NC}"
@@ -147,7 +147,7 @@ echo -e "\n${YELLOW}Testing Server Manually:${NC}"
 echo -e "Starting server in test mode..."
 
 # Source the virtual environment and start the server in the background
-(source kleinanzeigenScraper/bin/activate 2>/dev/null; node backend/server.js > server_test.log 2>&1) &
+(source prismdeals/bin/activate 2>/dev/null; node backend/server.js > server_test.log 2>&1) &
 SERVER_PID=$!
 
 # Wait a few seconds for the server to start
@@ -183,4 +183,4 @@ rm server_test.log 2>/dev/null || true
 echo -e "\n${BLUE}Diagnostic Complete${NC}"
 echo -e "${YELLOW}If you're experiencing issues, please check the logs and error messages above.${NC}"
 echo -e "${YELLOW}You can also try running the server manually with:${NC}"
-echo -e "${GREEN}source kleinanzeigenScraper/bin/activate && node backend/server.js${NC}"
+echo -e "${GREEN}source prismdeals/bin/activate && node backend/server.js${NC}"
