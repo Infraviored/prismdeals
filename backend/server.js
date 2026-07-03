@@ -16,6 +16,13 @@ const app = express();
 const port = 3030;
 const { spawn } = require('child_process');
 const sqlite3 = require('sqlite3').verbose();
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  console.error("FATAL: JWT_SECRET environment variable is required in production!");
+  process.exit(1);
+}
+const JWT_SECRET = process.env.JWT_SECRET || 'dealmapper_dev_secret_key_12345';
 
 // Database setup
 const dbPath = path.join(__dirname, '..', 'data', 'scraper.db');
@@ -26,6 +33,53 @@ db.run('PRAGMA busy_timeout=5000;');
 
 // Perform database schema migration on startup (non-destructive)
 db.serialize(() => {
+  // Create users table and seed default user if empty
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL
+    )
+  `, (err) => {
+    if (err) {
+      console.error("Failed to create users table:", err);
+      return;
+    }
+    db.get("SELECT COUNT(*) as count FROM users", (err, row) => {
+      if (err) {
+        console.error("Failed to query users count:", err);
+        return;
+      }
+      if (row.count === 0) {
+        const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@dealmapper.local';
+        let defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD;
+        if (process.env.NODE_ENV === 'production' && !defaultPassword) {
+          console.error("FATAL: DEFAULT_ADMIN_PASSWORD environment variable is required in production to seed the default admin user!");
+          process.exit(1);
+        }
+        if (!defaultPassword) {
+          defaultPassword = 'password';
+        }
+        const saltRounds = 10;
+        
+        bcrypt.hash(defaultPassword, saltRounds, (err, hash) => {
+          if (err) {
+            console.error("Failed to hash default password:", err);
+            return;
+          }
+          db.run("INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)", 
+            [defaultEmail, hash, 'admin'], 
+            (err) => {
+              if (err) console.error("Failed to seed default admin user:", err);
+              else console.log(`Seeded default admin user: ${defaultEmail}`);
+            }
+          );
+        });
+      }
+    });
+  });
+
   db.all("PRAGMA table_info(listings)", (err, rows) => {
     if (err) {
       console.error('Error reading table info:', err);
@@ -81,6 +135,83 @@ const get = (sql, params = []) => {
     });
   });
 };
+
+const isValidScrapeUrl = (urlStr) => {
+  try {
+    const parsed = new URL(urlStr);
+    return (
+      parsed.protocol === 'https:' &&
+      (parsed.hostname === 'kleinanzeigen.de' || parsed.hostname === 'www.kleinanzeigen.de')
+    );
+  } catch {
+    return false;
+  }
+};
+
+const loginAttempts = new Map();
+const loginRateLimiter = (req, res, next) => {
+  const ip = req.ip;
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000; // 15 minutes
+  const maxAttempts = 5;
+
+  if (!loginAttempts.has(ip)) {
+    loginAttempts.set(ip, []);
+  }
+
+  const attempts = loginAttempts.get(ip).filter(t => now - t < windowMs);
+  attempts.push(now);
+  loginAttempts.set(ip, attempts);
+
+  if (attempts.length > maxAttempts) {
+    return res.status(429).json({ error: 'Too many login attempts. Please try again in 15 minutes.' });
+  }
+  next();
+};
+
+// Periodic memory cleanup for inactive rate limiter IP records to prevent leaks
+setInterval(() => {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  for (const [ip, attempts] of loginAttempts.entries()) {
+    const active = attempts.filter(t => now - t < windowMs);
+    if (active.length === 0) {
+      loginAttempts.delete(ip);
+    } else {
+      loginAttempts.set(ip, active);
+    }
+  }
+}, 15 * 60 * 1000).unref();
+
+const authenticateToken = async (req, res, next) => {
+  let token = null;
+  if (req.headers.cookie) {
+    const cookies = Object.fromEntries(
+      req.headers.cookie.split(/;\s*/).map(c => {
+        const parts = c.split('=');
+        return [parts[0].trim(), parts.slice(1).join('=')];
+      })
+    );
+    token = cookies['__Host-token'] || cookies.token;
+  }
+
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required. No token provided.' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await get("SELECT id, email, role FROM users WHERE id = ?", [decoded.userId]);
+    if (!user) {
+      return res.status(401).json({ error: 'User session invalid or user deleted.' });
+    }
+    req.user = user;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired authentication token.' });
+  }
+};
+
 
 // Recalculates scores for all listings under a search item (normalized weight schema)
 async function recalculateItemScores(searchId, scoringModelStr) {
@@ -148,6 +279,66 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(path.join(__dirname, 'public')));
 }
 app.use(express.json());
+
+// Auth: Login
+app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Email and password must be strings.' });
+    }
+
+    const user = await get("SELECT * FROM users WHERE email = ?", [email.toLowerCase().trim()]);
+    
+    // Always run bcrypt.compare to prevent timing attacks (user enumeration)
+    const passwordHash = user ? user.password_hash : "$2b$10$VEPtO9A6YfW7.g.7/S9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9y9a9";
+    const isMatch = await bcrypt.compare(password, passwordHash);
+
+    if (!user || !isMatch) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
+
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie(isProd ? '__Host-token' : 'token', token, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
+    res.json({
+      success: true,
+      user: {
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed due to a server error.' });
+  }
+});
+
+// Auth: Logout
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('__Host-token', { path: '/' });
+  res.clearCookie('token', { path: '/' });
+  res.json({ success: true });
+});
+
+// Auth: Me
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+  res.json({ user: req.user });
+});
+
+// Global API Auth Protection (applied to all subsequent /api/* routes)
+app.use('/api', authenticateToken);
 
 // API: Serve the external research agent prompt template
 app.get('/api/external-prompt', (req, res) => {
@@ -268,6 +459,10 @@ app.post('/api/searches', async (req, res) => {
     const { id, campaign_id, name, url, knowledge_set_id } = req.body;
     if (!campaign_id || !name || !url) {
       return res.status(400).json({ error: 'Missing campaign_id, name, or url' });
+    }
+
+    if (!isValidScrapeUrl(url)) {
+      return res.status(400).json({ error: 'Invalid search target URL. Only Kleinanzeigen URLs are allowed.' });
     }
     let searchId = id;
     const ksId = knowledge_set_id || null;
@@ -472,6 +667,10 @@ app.post('/api/searches/preview', (req, res) => {
     return res.status(400).json({ error: 'Missing target URL' });
   }
 
+  if (!isValidScrapeUrl(url)) {
+    return res.status(400).json({ error: 'Invalid search target URL. Only Kleinanzeigen URLs are allowed.' });
+  }
+
   const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
   const scriptPath = path.join(__dirname, '..', 'scraper', 'main.py');
   
@@ -615,7 +814,9 @@ app.get('/api/schedule', (req, res) => {
     const defaultConfig = {
       interval: 10,
       autoAiEval: true,
-      fullFetchOnStartup: false
+      fullFetchOnStartup: false,
+      delayBetweenPages: 0.25,
+      delayBetweenListings: 0.25
     };
     if (!fs.existsSync(configPath)) {
       fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
@@ -631,16 +832,32 @@ app.get('/api/schedule', (req, res) => {
 // API: Save schedule config and dynamically update timers
 app.post('/api/schedule', (req, res) => {
   try {
-    const { interval, autoAiEval, fullFetchOnStartup } = req.body;
+    const { interval, autoAiEval, fullFetchOnStartup, delayBetweenPages, delayBetweenListings } = req.body;
     if (interval === undefined) {
       return res.status(400).json({ error: 'Missing interval field' });
+    }
+
+    const parsedInterval = parseInt(interval, 10);
+    if (isNaN(parsedInterval) || parsedInterval < 1) {
+      return res.status(400).json({ error: 'Interval must be a positive integer' });
+    }
+    
+    let pagesDelay = parseFloat(delayBetweenPages !== undefined ? delayBetweenPages : 0.25);
+    let listingsDelay = parseFloat(delayBetweenListings !== undefined ? delayBetweenListings : 0.25);
+    if (isNaN(pagesDelay) || pagesDelay < 0) {
+      pagesDelay = 0.25;
+    }
+    if (isNaN(listingsDelay) || listingsDelay < 0) {
+      listingsDelay = 0.25;
     }
     
     const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
     const newConfig = {
-      interval: parseInt(interval, 10),
+      interval: parsedInterval,
       autoAiEval: !!autoAiEval,
-      fullFetchOnStartup: !!fullFetchOnStartup
+      fullFetchOnStartup: !!fullFetchOnStartup,
+      delayBetweenPages: pagesDelay,
+      delayBetweenListings: listingsDelay
     };
     
     fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2));

@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import type { SampleListing } from '../types'
+import { useTranslation } from '../hooks/useTranslation'
+import { Button } from './ui/Button'
 
 interface GuidelinesWizardProps {
   activeSearchTarget: {
@@ -85,6 +87,7 @@ export default function GuidelinesWizard({
   wizardStep,
   setWizardStep
 }: GuidelinesWizardProps) {
+  const { t } = useTranslation()
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null)
   
   // Progressive return box disclosure states
@@ -154,7 +157,7 @@ export default function GuidelinesWizard({
               : 'border-transparent text-slate-500 hover:text-slate-400 hover:bg-slate-900/20'
           }`}
         >
-          Step 1: Deep Research
+          {t('wizard.step1Tab')}
         </button>
         <button
           onClick={() => (showStep1Next || showStep2Return || marketMemo.trim()) && setWizardStep(2)}
@@ -165,7 +168,7 @@ export default function GuidelinesWizard({
               : 'border-transparent text-slate-500 hover:text-slate-400 hover:bg-slate-900/20'
           }`}
         >
-          Step 2: Market Calibration
+          {t('wizard.step2Tab')}
         </button>
         <button
           onClick={() => marketMemo.trim().length > 0 && setWizardStep(3)}
@@ -176,7 +179,7 @@ export default function GuidelinesWizard({
               : 'border-transparent text-slate-500 hover:text-slate-400 hover:bg-slate-900/20'
           }`}
         >
-          Step 3: Synthesis Checklist
+          {t('wizard.step3Tab')}
         </button>
       </div>
 
@@ -187,14 +190,14 @@ export default function GuidelinesWizard({
         {wizardStep === 1 && (
           <div className="space-y-5 animate-fadeIn">
             <div className="pb-4 border-b border-slate-800/50 space-y-1">
-              <h3 className="text-base font-bold text-slate-100">Step 1: Deep Specification & Risk Research</h3>
+              <h3 className="text-base font-bold text-slate-100">{t('wizard.step1Title')}</h3>
               <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
-                Leverage deep external research models (such as Perplexity Deep Research) to systematically analyze technical specifications, target wear points, critical revisions, and common mechanical or electrical pitfalls for this exact product category before scanning live market listings.
+                {t('wizard.step1Desc')}
               </p>
             </div>
 
             <div className="space-y-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Demo Research Prompt</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('wizard.demoResearchPrompt')}</label>
               <div className="relative">
                 <pre className="w-full bg-slate-950 border border-slate-850 rounded-xl p-4 text-[10px] text-slate-450 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
                   {getResearchPromptWithContext()}
@@ -203,9 +206,10 @@ export default function GuidelinesWizard({
             </div>
 
             <div className="flex justify-center py-2">
-              <button
+              <Button
+                variant="primary"
                 onClick={() => handleCopyPrompt(getResearchPromptWithContext(), 'prompt-research')}
-                className={`font-extrabold px-6 py-2.5 rounded-xl text-xs transition-all border flex items-center justify-center gap-2 ${
+                className={`font-extrabold px-6 py-2.5 text-xs border flex items-center justify-center gap-2 ${
                   copiedPromptId === 'prompt-research'
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
                     : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/10'
@@ -214,22 +218,23 @@ export default function GuidelinesWizard({
                 {copiedPromptId === 'prompt-research' ? (
                   <>
                     <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
-                    <span>Research Prompt Copied!</span>
+                    <span>{t('wizard.promptCopied')}</span>
                   </>
                 ) : (
-                  <span>Copy Research Prompt</span>
+                  <span>{t('wizard.copyResearchPrompt')}</span>
                 )}
-              </button>
+              </Button>
             </div>
 
             {showStep1Next && (
               <div className="pt-4 border-t border-slate-800/40 flex justify-end animate-fadeIn">
-                <button
+                <Button
+                  variant="primary"
                   onClick={() => setWizardStep(2)}
-                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold py-2.5 px-5 rounded-xl text-xs transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
+                  className="font-extrabold py-2.5 px-5 text-xs shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
                 >
-                  Proceed to Step 2: Calibrate Live Market →
-                </button>
+                  {t('wizard.proceedToStep2')}
+                </Button>
               </div>
             )}
           </div>
@@ -239,25 +244,27 @@ export default function GuidelinesWizard({
         {wizardStep === 2 && (
           <div className="space-y-5 animate-fadeIn">
             <div className="pb-4 border-b border-slate-800/50 space-y-1">
-              <h3 className="text-base font-bold text-slate-100">Step 2: Live Market Sample Calibration</h3>
+              <h3 className="text-base font-bold text-slate-100">{t('wizard.step2Title')}</h3>
 
               <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
-                Calibrate positive and negative evaluation criteria against actual live market samples crawled by our background scraper. Comparing theoretical checklists against local classified descriptions reveals real-world warning patterns and trust indicators.
+                {t('wizard.step2Desc')}
               </p>
             </div>
 
             {/* Scraper progress & listing samples context */}
             <div className="space-y-3 bg-slate-950/40 border border-slate-850 rounded-2xl p-4">
               <div className="flex justify-between items-center pb-2 border-b border-slate-900">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-mono">Live Market Samples (Additional Context)</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-mono">{t('wizard.liveMarketSamples')}</span>
                 {!sampledListingsLoading && (
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="xs"
                     disabled={isScraping}
                     onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
-                    className="text-[9px] font-bold px-2 py-1 rounded-lg transition-all border bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-350 disabled:opacity-50"
+                    className="font-bold border bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-350 text-[9px] px-2 py-1 rounded-lg"
                   >
-                    Refresh Samples
-                  </button>
+                    {t('wizard.refreshSamples')}
+                  </Button>
                 )}
               </div>
 
@@ -267,8 +274,8 @@ export default function GuidelinesWizard({
                     <div className="w-3 h-3 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
                     <span>
                       {scrapingProgress
-                        ? `Crawling Market Listings (${scrapingProgress.current}/${scrapingProgress.total})`
-                        : scrapingStatus || 'Crawling fresh listings...'}
+                        ? t('wizard.crawlingMarketListings', { current: scrapingProgress.current, total: scrapingProgress.total })
+                        : scrapingStatus || t('wizard.crawlingFresh')}
                     </span>
                   </div>
                   {scrapingProgress && (
@@ -285,7 +292,7 @@ export default function GuidelinesWizard({
               {sampledListingsLoading ? (
                 <div className="flex items-center justify-center gap-3 py-6 border border-dashed border-slate-900 rounded-xl">
                   <div className="w-3.5 h-3.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-                  <span className="text-[11px] text-slate-500 font-semibold">Loading real classified listings...</span>
+                  <span className="text-[11px] text-slate-500 font-semibold">{t('wizard.loadingClassifieds')}</span>
                 </div>
               ) : sampledListings.length > 0 ? (
                 <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
@@ -324,7 +331,7 @@ export default function GuidelinesWizard({
             </div>
 
             <div className="space-y-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Demo Calibration Prompt</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('wizard.demoCalibrationPrompt')}</label>
               <div className="relative">
                 <pre className="w-full bg-slate-950 border border-slate-850 rounded-xl p-4 text-[10px] text-slate-450 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
                   {getMarketPromptWithContext()}
@@ -333,9 +340,10 @@ export default function GuidelinesWizard({
             </div>
 
             <div className="flex justify-center py-2">
-              <button
+              <Button
+                variant="primary"
                 onClick={() => handleCopyPrompt(getMarketPromptWithContext(), 'prompt-market')}
-                className={`font-extrabold px-6 py-2.5 rounded-xl text-xs transition-all border flex items-center justify-center gap-2 ${
+                className={`font-extrabold px-6 py-2.5 text-xs border flex items-center justify-center gap-2 ${
                   copiedPromptId === 'prompt-market'
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
                     : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/10'
@@ -344,42 +352,44 @@ export default function GuidelinesWizard({
                 {copiedPromptId === 'prompt-market' ? (
                   <>
                     <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
-                    <span>Calibration Prompt Copied!</span>
+                    <span>{t('wizard.calibrationCopied')}</span>
                   </>
                 ) : (
-                  <span>Copy Calibration Prompt</span>
+                  <span>{t('wizard.copyCalibrationPrompt')}</span>
                 )}
-              </button>
+              </Button>
             </div>
 
             {/* Disclosed Return Box */}
             {showStep2Return && (
               <div className="space-y-2 animate-fadeIn border-t border-slate-800/40 pt-4">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Paste &lt;market_memo&gt; block response</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('wizard.pasteMarketMemo')}</label>
                 <textarea
                   value={marketMemo}
                   onChange={e => setMarketMemo(e.target.value)}
-                  placeholder="Paste <market_memo>...</market_memo> block response here..."
+                  placeholder={t('wizard.pasteMarketMemoPlaceholder')}
                   rows={8}
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-3.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed shadow-inner placeholder-slate-805"
+                  className="w-full bg-slate-955 border border-slate-850 rounded-xl p-3.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed shadow-inner placeholder-slate-805"
                 />
               </div>
             )}
 
             <div className="pt-4 border-t border-slate-800/40 flex justify-between">
-              <button
+              <Button
+                variant="secondary"
                 onClick={() => setWizardStep(1)}
-                className="bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 text-xs font-bold py-2.5 px-4 rounded-xl transition-all"
+                className="text-xs font-bold py-2.5 px-4"
               >
-                Back to Step 1
-              </button>
+                {t('wizard.backToStep1')}
+              </Button>
               {marketMemo.trim().length > 0 && (
-                <button
+                <Button
+                  variant="primary"
                   onClick={() => setWizardStep(3)}
-                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold py-2.5 px-5 rounded-xl text-xs transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98 animate-fadeIn"
+                  className="font-extrabold py-2.5 px-5 text-xs shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98 animate-fadeIn"
                 >
-                  Proceed to Step 3: Synthesis Checklist →
-                </button>
+                  {t('wizard.proceedToStep3')}
+                </Button>
               )}
             </div>
           </div>
@@ -389,14 +399,14 @@ export default function GuidelinesWizard({
         {wizardStep === 3 && (
           <div className="space-y-5 animate-fadeIn">
             <div className="pb-4 border-b border-slate-800/50 space-y-1">
-              <h3 className="text-base font-bold text-slate-100">Step 3: Synthesis Matching Checklist & Verification</h3>
+              <h3 className="text-base font-bold text-slate-100">{t('wizard.step3Title')}</h3>
               <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
-                Synthesize the calibrated market memo into structured deal scoring guidelines. Paste the final structured memo below to dynamically parse the matching rules, extract deal scoring weights, draft outreach templates, and activate live listing scoring.
+                {t('wizard.step3Desc')}
               </p>
             </div>
 
             <div className="space-y-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Demo Synthesis Prompt</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('wizard.demoSynthesisPrompt')}</label>
               <div className="relative">
                 <pre className="w-full bg-slate-950 border border-slate-850 rounded-xl p-4 text-[10px] text-slate-450 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
                   {getProfilePromptWithContext()}
@@ -405,10 +415,11 @@ export default function GuidelinesWizard({
             </div>
 
             <div className="flex justify-center py-2">
-              <button
+              <Button
+                variant="primary"
                 disabled={!marketMemo.trim()}
                 onClick={() => handleCopyPrompt(getProfilePromptWithContext(), 'prompt-profile')}
-                className={`font-extrabold px-6 py-2.5 rounded-xl text-xs transition-all border flex items-center justify-center gap-2 ${
+                className={`font-extrabold px-6 py-2.5 text-xs border flex items-center justify-center gap-2 ${
                   copiedPromptId === 'prompt-profile'
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
                     : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/10'
@@ -417,22 +428,22 @@ export default function GuidelinesWizard({
                 {copiedPromptId === 'prompt-profile' ? (
                   <>
                     <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
-                    <span>Synthesis Prompt Copied!</span>
+                    <span>{t('wizard.synthesisCopied')}</span>
                   </>
                 ) : (
-                  <span>Copy Synthesis Prompt</span>
+                  <span>{t('wizard.copySynthesisPrompt')}</span>
                 )}
-              </button>
+              </Button>
             </div>
 
             {/* Disclosed Return Box */}
             {showStep3Return && (
               <div className="space-y-2 animate-fadeIn border-t border-slate-800/40 pt-4">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Paste &lt;researcher_output&gt; block response</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('wizard.pasteResearcherOutput')}</label>
                 <textarea
                   value={researcherOutput}
                   onChange={e => setResearcherOutput(e.target.value)}
-                  placeholder="Paste <researcher_output>...</researcher_output> block here..."
+                  placeholder={t('wizard.pasteResearcherOutputPlaceholder')}
                   rows={8}
                   className="w-full bg-slate-950 border border-slate-855 rounded-xl p-3.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed shadow-inner placeholder-slate-805"
                 />
@@ -443,8 +454,8 @@ export default function GuidelinesWizard({
             {(parsedExpertKnowledge || parsedGoodRef || parsedBadRef || parsedDemoMsg || parsedItemJson) && (
               <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-5 space-y-4 mt-6 shadow-2xl animate-fadeIn">
                 <div className="border-b border-slate-800 pb-2 flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest block font-mono">Reactive Checklist Preview</span>
-                  <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/10 px-2 py-0.5 rounded uppercase tracking-wider">Live Parsed</span>
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest block font-mono">{t('wizard.reactivePreview')}</span>
+                  <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/10 px-2 py-0.5 rounded uppercase tracking-wider">{t('wizard.liveParsed')}</span>
                 </div>
 
                 {/* Target & Risk Reference Anchors */}
@@ -452,15 +463,15 @@ export default function GuidelinesWizard({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {parsedGoodRef && (
                       <div className="bg-slate-950/40 border border-emerald-500/10 rounded-xl p-4 space-y-1.5 shadow-sm">
-                        <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Target Deal Reference Anchor</span>
-                        <p className="text-[11px] text-slate-350 leading-relaxed font-mono whitespace-pre-wrap">{parsedGoodRef}</p>
+                        <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.targetAnchor')}</span>
+                        <p className="text-[11px] text-slate-355 leading-relaxed font-mono whitespace-pre-wrap">{parsedGoodRef}</p>
                       </div>
                     )}
 
                     {parsedBadRef && (
-                      <div className="bg-slate-950/40 border border-rose-500/10 rounded-xl p-4 space-y-1.5 shadow-sm">
-                        <span className="text-[9px] bg-rose-500/10 text-rose-450 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Risk Listing Reference Anchor</span>
-                        <p className="text-[11px] text-slate-350 leading-relaxed font-mono whitespace-pre-wrap">{parsedBadRef}</p>
+                      <div className="bg-slate-955/40 border border-rose-500/10 rounded-xl p-4 space-y-1.5 shadow-sm">
+                        <span className="text-[9px] bg-rose-500/10 text-rose-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.riskAnchor')}</span>
+                        <p className="text-[11px] text-slate-355 leading-relaxed font-mono whitespace-pre-wrap">{parsedBadRef}</p>
                       </div>
                     )}
                   </div>
@@ -470,7 +481,7 @@ export default function GuidelinesWizard({
                 {parsedDemoMsg && (
                   <div className="bg-slate-950/40 border border-indigo-500/10 rounded-xl p-4 relative overflow-hidden shadow-sm">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
-                    <span className="text-[9px] bg-indigo-500/10 text-indigo-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit mb-1.5">Outreach Starter Message Draft</span>
+                    <span className="text-[9px] bg-indigo-500/10 text-indigo-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit mb-1.5">{t('wizard.outreachStarter')}</span>
                     <p className="text-[11px] text-slate-250 leading-relaxed italic font-medium">"{parsedDemoMsg}"</p>
                   </div>
                 )}
@@ -509,15 +520,15 @@ export default function GuidelinesWizard({
                       <div className="space-y-4">
                         {positiveCriteria.length > 0 && (
                           <div className="bg-slate-950/50 border border-slate-900 rounded-xl p-4 space-y-3 shadow-inner">
-                            <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Positive Target Signals ({positiveCriteria.length})</span>
+                            <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.positiveSignals', { count: positiveCriteria.length })}</span>
                             <div className="overflow-x-auto">
                               <table className="w-full text-left text-[11px] border-collapse">
                                 <thead>
                                   <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[8px]">
-                                    <th className="py-2 pr-4">ID</th>
-                                    <th className="py-2 pr-4">Signal Description</th>
-                                    <th className="py-2 pr-4">Importance</th>
-                                    <th className="py-2">Frequency</th>
+                                    <th className="py-2 pr-4">{t('wizard.id')}</th>
+                                    <th className="py-2 pr-4">{t('wizard.signalDescription')}</th>
+                                    <th className="py-2 pr-4">{t('wizard.importance')}</th>
+                                    <th className="py-2">{t('wizard.frequency')}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -540,15 +551,15 @@ export default function GuidelinesWizard({
 
                         {negativeCriteria.length > 0 && (
                           <div className="bg-slate-955/50 border border-rose-500/10 rounded-xl p-4 space-y-3 shadow-inner">
-                            <span className="text-[9px] bg-rose-500/10 text-rose-450 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">Negative Risk Signals ({negativeCriteria.length})</span>
+                            <span className="text-[9px] bg-rose-500/10 text-rose-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.negativeSignals', { count: negativeCriteria.length })}</span>
                             <div className="overflow-x-auto">
                               <table className="w-full text-left text-[11px] border-collapse">
                                 <thead>
                                   <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[8px]">
-                                    <th className="py-2 pr-4">ID</th>
-                                    <th className="py-2 pr-4">Risk Factor Description</th>
-                                    <th className="py-2 pr-4">Importance</th>
-                                    <th className="py-2">Frequency</th>
+                                    <th className="py-2 pr-4">{t('wizard.id')}</th>
+                                    <th className="py-2 pr-4">{t('wizard.riskDescription')}</th>
+                                    <th className="py-2 pr-4">{t('wizard.importance')}</th>
+                                    <th className="py-2">{t('wizard.frequency')}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -571,7 +582,7 @@ export default function GuidelinesWizard({
 
                         {highValueUnknowns.length > 0 && (
                           <div className="bg-slate-950/50 border border-amber-500/10 rounded-xl p-4 space-y-3 shadow-inner">
-                            <span className="text-[9px] bg-amber-500/10 text-amber-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">High-Value Unknown Fields ({highValueUnknowns.length})</span>
+                            <span className="text-[9px] bg-amber-500/10 text-amber-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.highValueUnknowns', { count: highValueUnknowns.length })}</span>
                             <div className="space-y-2">
                               {highValueUnknowns.map((u, idx) => (
                                 <div key={idx} className="text-[11px] text-slate-450 leading-relaxed border-b border-slate-900/40 pb-2">
@@ -588,7 +599,7 @@ export default function GuidelinesWizard({
                   } catch {
                     return (
                       <div className="bg-amber-500/5 border border-amber-500/20 text-amber-500/70 p-4 rounded-xl text-[10px] font-mono">
-                        Waiting for valid &lt;item_json&gt; block from synthesis output...
+                        {t('wizard.waitingSynthesis')}
                       </div>
                     )
                   }
@@ -597,27 +608,29 @@ export default function GuidelinesWizard({
             )}
 
             <div className="pt-4 border-t border-slate-800/40 flex justify-between">
-              <button
+              <Button
+                variant="secondary"
                 onClick={() => setWizardStep(2)}
-                className="bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 text-xs font-bold py-2.5 px-4 rounded-xl transition-all"
+                className="text-xs font-bold py-2.5 px-4"
               >
-                Back to Step 2
-              </button>
+                {t('wizard.backToStep2')}
+              </Button>
               
-              <button
+              <Button
+                variant="primary"
                 onClick={handleSaveKnowledgeSet}
                 disabled={!researcherOutput.trim()}
-                className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-extrabold py-3 px-6 rounded-xl text-xs transition-all shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
+                className="font-extrabold py-3 px-6 text-xs shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
               >
-                Save Checklist & Link Guidelines
-              </button>
+                {t('wizard.saveChecklist')}
+              </Button>
             </div>
           </div>
         )}
       </div>
 
       {editKsError && (
-        <div className="text-xs text-rose-450 font-semibold bg-rose-500/10 p-3.5 rounded-xl border border-rose-500/20">{editKsError}</div>
+        <div className="text-xs text-rose-400 font-semibold bg-rose-500/10 p-3.5 rounded-xl border border-rose-500/20">{editKsError}</div>
       )}
     </div>
   )

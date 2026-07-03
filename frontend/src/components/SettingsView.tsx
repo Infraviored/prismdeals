@@ -1,22 +1,25 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect } from 'react';
+import { useTranslation } from '../hooks/useTranslation';
+import { Button } from './ui/Button';
+import { Input } from './ui/Input';
 
 interface SettingsViewProps {
   onBack: () => void;
 }
 
 export default function SettingsView({ onBack }: SettingsViewProps) {
+  const { t } = useTranslation();
   const [interval, setIntervalVal] = useState<number>(10);
   const [autoAiEval, setAutoAiEval] = useState<boolean>(true);
   const [fullFetchOnStartup, setFullFetchOnStartup] = useState<boolean>(false);
+  const [delayBetweenPages, setDelayBetweenPages] = useState<number>(0.25);
+  const [delayBetweenListings, setDelayBetweenListings] = useState<number>(0.25);
   
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
-
-  useEffect(() => {
-    fetchConfig();
-  }, []);
 
   const fetchConfig = async () => {
     setLoading(true);
@@ -27,16 +30,23 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
         setIntervalVal(data.interval ?? 10);
         setAutoAiEval(data.autoAiEval ?? true);
         setFullFetchOnStartup(data.fullFetchOnStartup ?? false);
+        setDelayBetweenPages(data.delayBetweenPages ?? 0.25);
+        setDelayBetweenListings(data.delayBetweenListings ?? 0.25);
       } else {
-        setError('Failed to fetch scheduled scraper settings.');
+        setError(t('settings.fetchError'));
       }
     } catch (err) {
       console.error(err);
-      setError('Network error fetching scraper settings.');
+      setError(`${t('settings.networkError')} (${t('settings.fetchError')})`);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +64,8 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
           interval,
           autoAiEval,
           fullFetchOnStartup,
+          delayBetweenPages,
+          delayBetweenListings,
         }),
       });
 
@@ -62,15 +74,17 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
         setIntervalVal(data.config.interval);
         setAutoAiEval(data.config.autoAiEval);
         setFullFetchOnStartup(data.config.fullFetchOnStartup);
-        setSuccess('Global configuration saved successfully and schedule updated!');
+        setDelayBetweenPages(data.config.delayBetweenPages ?? 0.25);
+        setDelayBetweenListings(data.config.delayBetweenListings ?? 0.25);
+        setSuccess(t('settings.saveSuccess'));
         setTimeout(() => setSuccess(''), 4000);
       } else {
         const errData = await res.json();
-        setError(errData.error || 'Failed to save scraper settings.');
+        setError(errData.error || t('settings.saveError'));
       }
     } catch (err) {
       console.error(err);
-      setError('Network error saving scraper settings.');
+      setError(`${t('settings.networkError')} (${t('settings.saveError')})`);
     } finally {
       setSaving(false);
     }
@@ -80,21 +94,23 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
     <div className="space-y-6 max-w-2xl mx-auto w-full animate-fadeIn py-4">
       {/* Header Bar */}
       <div className="flex items-center space-x-3 pb-4 border-b border-slate-800">
-        <button
+        <Button
+          type="button"
+          variant="badge"
+          size="sm"
           onClick={onBack}
-          className="text-xs text-slate-400 hover:text-slate-200 font-bold flex items-center space-x-1 bg-slate-850 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-800 transition-all shadow-sm"
         >
-          <span>←</span>
-          <span>Back to Campaigns</span>
-        </button>
+          <span className="mr-1">←</span>
+          <span>{t('common.backToCampaigns')}</span>
+        </Button>
         <span className="text-slate-750 font-semibold select-none">|</span>
-        <h2 className="text-base font-bold text-slate-200 tracking-tight">Global Scraper Settings</h2>
+        <h2 className="text-base font-bold text-slate-200 tracking-tight">{t('settings.title')}</h2>
       </div>
 
       {loading ? (
         <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-12 text-center shadow-lg">
           <div className="animate-spin w-8 h-8 border-3 border-emerald-400 border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-xs text-slate-400 font-medium">Loading background scraper schedule configurations...</p>
+          <p className="text-xs text-slate-400 font-medium">{t('common.loading')}</p>
         </div>
       ) : (
         <form onSubmit={handleSave} className="bg-slate-900/50 backdrop-blur-xl border border-slate-800/85 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden">
@@ -103,11 +119,11 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
 
           <div className="space-y-1">
             <span className="text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2.5 py-0.5 rounded uppercase tracking-wider w-fit block mb-1">
-              Scheduler Configuration
+              {t('settings.schedulerConfig')}
             </span>
-            <h3 className="text-lg font-bold text-slate-200 font-sans tracking-tight">Configure Scraper Rules</h3>
+            <h3 className="text-lg font-bold text-slate-200 font-sans tracking-tight">{t('settings.scraperRules')}</h3>
             <p className="text-xs text-slate-450 leading-relaxed font-semibold">
-              These settings generalize across all campaigns and determine the background crawl behaviors.
+              {t('settings.rulesDesc')}
             </p>
           </div>
 
@@ -133,10 +149,10 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
             {/* Scraping Frequency */}
             <div className="space-y-1.5">
               <label htmlFor="scraper-interval-input" className="text-[10px] text-slate-450 font-bold uppercase tracking-wider block">
-                Crawl Frequency (Minutes)
+                {t('settings.crawlFrequency')}
               </label>
               <div className="relative">
-                <input
+                <Input
                   id="scraper-interval-input"
                   type="number"
                   min="1"
@@ -144,14 +160,70 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
                   required
                   value={interval}
                   onChange={(e) => setIntervalVal(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 font-medium placeholder-slate-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+                  className="font-mono pr-12"
                 />
                 <div className="absolute right-4 top-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest pointer-events-none select-none">
                   min
                 </div>
               </div>
               <span className="text-[10px] text-slate-550 block leading-normal">
-                How often the scraper wakes up in the background to fetch new matches. Default is 10 minutes.
+                {t('settings.frequencyDesc')}
+              </span>
+            </div>
+
+            {/* Separator */}
+            <div className="h-px bg-slate-800/80" />
+
+            {/* Delay Between Search Pages */}
+            <div className="space-y-1.5">
+              <label htmlFor="scraper-delay-pages-input" className="text-[10px] text-slate-450 font-bold uppercase tracking-wider block">
+                {t('settings.delayBetweenPages')}
+              </label>
+              <div className="relative">
+                <Input
+                  id="scraper-delay-pages-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={delayBetweenPages}
+                  onChange={(e) => setDelayBetweenPages(Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="font-mono pr-12"
+                />
+                <div className="absolute right-4 top-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest pointer-events-none select-none">
+                  sec
+                </div>
+              </div>
+              <span className="text-[10px] text-slate-550 block leading-normal">
+                {t('settings.delayPagesDesc')}
+              </span>
+            </div>
+
+            {/* Separator */}
+            <div className="h-px bg-slate-800/80" />
+
+            {/* Delay Between Listings Details */}
+            <div className="space-y-1.5">
+              <label htmlFor="scraper-delay-listings-input" className="text-[10px] text-slate-450 font-bold uppercase tracking-wider block">
+                {t('settings.delayBetweenListings')}
+              </label>
+              <div className="relative">
+                <Input
+                  id="scraper-delay-listings-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={delayBetweenListings}
+                  onChange={(e) => setDelayBetweenListings(Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="font-mono pr-12"
+                />
+                <div className="absolute right-4 top-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest pointer-events-none select-none">
+                  sec
+                </div>
+              </div>
+              <span className="text-[10px] text-slate-550 block leading-normal">
+                {t('settings.delayListingsDesc')}
               </span>
             </div>
 
@@ -162,10 +234,10 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
             <div className="flex items-start justify-between space-x-4 py-1">
               <div className="space-y-0.5">
                 <label htmlFor="scraper-auto-ai-toggle" className="text-xs font-bold text-slate-200 block cursor-pointer">
-                  Auto AI Evaluation
+                  {t('settings.autoAiLabel')}
                 </label>
                 <span className="text-[10px] text-slate-500 block leading-normal max-w-md">
-                  Automatically process new crawled listings using our AI model rules right after crawling.
+                  {t('settings.autoAiDesc')}
                 </span>
               </div>
               <button
@@ -193,10 +265,10 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
             <div className="flex items-start justify-between space-x-4 py-1">
               <div className="space-y-0.5">
                 <label htmlFor="scraper-startup-fetch-toggle" className="text-xs font-bold text-slate-200 block cursor-pointer">
-                  Full Crawl on Boot
+                  {t('settings.fullCrawlLabel')}
                 </label>
                 <span className="text-[10px] text-slate-550 block leading-normal max-w-md">
-                  Trigger an immediate search index crawl for all active searches when the backend starts up.
+                  {t('settings.fullCrawlDesc')}
                 </span>
               </div>
               <button
@@ -219,27 +291,22 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
           </div>
 
           <div className="pt-4 flex space-x-3">
-            <button
+            <Button
               type="submit"
-              disabled={saving}
-              className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-lg shadow-emerald-500/10 hover:shadow-emerald-400/20 hover:-translate-y-0.5"
+              variant="primary"
+              loading={saving}
+              className="flex-1 uppercase tracking-wider text-xs py-3"
             >
-              {saving ? (
-                <>
-                  <div className="animate-spin w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full" />
-                  <span>Saving configuration...</span>
-                </>
-              ) : (
-                <span>Save Scraper Settings</span>
-              )}
-            </button>
-            <button
+              {t('settings.scraperRules')}
+            </Button>
+            <Button
               type="button"
+              variant="secondary"
               onClick={onBack}
-              className="px-5 py-3 bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-slate-200 font-bold rounded-xl text-xs uppercase tracking-wider transition-all border border-slate-800"
+              className="px-5 py-3 uppercase tracking-wider text-xs"
             >
-              Cancel
-            </button>
+              {t('common.cancel')}
+            </Button>
           </div>
         </form>
       )}

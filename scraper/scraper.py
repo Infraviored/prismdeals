@@ -5,19 +5,34 @@ import pickle
 import logging
 import re
 import sqlite3
-from selenium import webdriver
 import datetime
+from urllib.parse import urljoin
+import requests
+from bs4 import BeautifulSoup
+
+# For the legacy interactive Selenium login route:
+from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-from bs4 import BeautifulSoup
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+
 from config import DELAY_BETWEEN_PAGES, DELAY_BETWEEN_LISTINGS, PAGES_TO_SCRAPE
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+# Modern browser request headers to safely bypass Akamai bot protection filters
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+}
 
 
 def update_progress(phase, current, total, status):
@@ -44,8 +59,281 @@ def update_progress(phase, current, total, status):
         logger.error(f"Error writing progress file: {str(e)}")
 
 
-def harvest_missing_descriptions(driver, campaign_id=None):
-    """Query SQLite database for listings missing detailed descriptions, and visit them sequentially"""
+def parse_listing_details_requests(url, session=None):
+    """Retrieve and parse detailed specifications, description, and images using direct requests"""
+    try:
+        caller = session if session is not None else requests
+        response = caller.get(url, headers=HEADERS, timeout=10)
+        if response.status_code != 200:
+            logger.warning(
+                f"Failed to fetch listing details for {url}. Status: {response.status_code}"
+            )
+            return None
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # 1. Schema.org JSON-LD parsing
+        schema_description = None
+        schema_main_image = None
+        for script in soup.find_all("script", type="application/ld+json"):
+            try:
+                if not script.string:
+                    continue
+                data = json.loads(script.string)
+                # Normalize to a list of objects to handle both single objects and arrays
+                items = []
+                if isinstance(data, list):
+                    items = data
+                elif isinstance(data, dict):
+                    if "@graph" in data and isinstance(data["@graph"], list):
+                        items = data["@graph"]
+                    else:
+                        items = [data]
+
+                for item in items:
+                    if isinstance(item, dict) and item.get("@type") == "ImageObject":
+                        if item.get("representativeOfPage") is True:
+                            schema_description = item.get("description")
+                            schema_main_image = item.get("contentUrl")
+            except Exception:
+                continue
+
+        # 2. HTML fallback
+        html_description = ""
+        desc_elem = soup.select_one("#viewad-description-text")
+        if desc_elem:
+            html_description = desc_elem.get_text(separator="\n", strip=False)
+
+        # 3. Parse details key-value pairs
+        details = {}
+        details_list = soup.select("#viewad-details .addetailslist--detail")
+        for detail in details_list:
+            val_elem = detail.select_one(".addetailslist--detail--value")
+            if val_elem:
+                val_text = val_elem.get_text(strip=True)
+                key_text = detail.get_text(strip=True)
+                if key_text.endswith(val_text):
+                    key_text = key_text[: -len(val_text)].strip()
+                key_text = key_text.rstrip(":").strip()
+                details[key_text] = val_text
+
+        # 4. Parse images
+        images = []
+        if schema_main_image:
+            images.append(schema_main_image)
+        image_elems = soup.select(".galleryimage-element img")
+        for img in image_elems:
+            src = img.get("src") or img.get("data-imgsrc")
+            if src and src not in images:
+                images.append(src)
+
+        detailed_description = schema_description or html_description
+
+        return {
+            "detailed_description": detailed_description,
+            "details": details,
+            "images": images,
+        }
+    except Exception as e:
+        logger.error(f"Error parsing listing details for {url}: {str(e)}")
+        return None
+
+
+def scrape_listings(urls, output_file, max_listings=None):
+    """Main function to scrape listings. Routes to Selenium if interactive login is requested."""
+    is_interactive = os.environ.get("INTERACTIVE_LOGIN") == "1"
+    if is_interactive:
+        logger.info("INTERACTIVE_LOGIN requested. Routing to legacy Selenium scraper.")
+        return scrape_listings_selenium(urls, output_file, max_listings)
+    else:
+        logger.info("Executing optimized fast requests-based scraper.")
+        return scrape_listings_requests(urls, output_file, max_listings)
+
+
+def scrape_listings_requests(urls, output_file, max_listings=None):
+    """Main function to scrape listings from multiple URLs using fast requests GET"""
+    all_scraped_listings = []
+    total_pages = len(urls) * PAGES_TO_SCRAPE
+    current_page_idx = 0
+
+    # Load existing listings to check for duplicates
+    existing_listings = []
+    existing_ids = set()
+    if output_file and os.path.exists(output_file):
+        try:
+            with open(output_file, "r", encoding="utf-8") as f:
+                existing_listings = json.load(f)
+                existing_ids = {item.get("id", "") for item in existing_listings}
+                logger.info(
+                    f"Loaded {len(existing_ids)} existing listing IDs to check for duplicates"
+                )
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Error loading existing listings: {str(e)}")
+            existing_listings = []
+            existing_ids = set()
+
+    for base_url in urls:
+        for page in range(1, PAGES_TO_SCRAPE + 1):
+            current_page_idx += 1
+            update_progress(
+                "discovery",
+                current_page_idx - 1,
+                total_pages,
+                f"Discovering listings on page {page} of {PAGES_TO_SCRAPE}...",
+            )
+
+            # Insert pagination parameter into URL if page > 1
+            if page == 1:
+                current_url = base_url
+            else:
+                if "/seite:" in base_url:
+                    current_url = re.sub(
+                        r"/seite:\d+(/|$)", f"/seite:{page}\\1", base_url
+                    )
+                else:
+                    parts = base_url.split("/")
+                    if len(parts) >= 4:
+                        domain_part = "/".join(parts[:3])
+                        path_part = parts[3]
+                        remaining_parts = "/".join(parts[4:]) if len(parts) > 4 else ""
+                        current_url = (
+                            f"{domain_part}/{path_part}/seite:{page}/{remaining_parts}"
+                        )
+                    else:
+                        current_url = base_url
+
+            logger.info(f"Scraping page {page} of {PAGES_TO_SCRAPE}: {current_url}")
+
+            # Check if we've reached the maximum listings limit
+            if max_listings is not None and len(all_scraped_listings) >= max_listings:
+                logger.info("Reached maximum listings limit, stopping scrape early.")
+                break
+
+            try:
+                response = requests.get(current_url, headers=HEADERS, timeout=10)
+                if response.status_code != 200:
+                    logger.error(
+                        f"Failed to fetch page {current_url}. Status: {response.status_code}"
+                    )
+                    continue
+
+                soup = BeautifulSoup(response.text, "html.parser")
+                scraped_count = 0
+
+                for item in soup.select("ul#srchrslt-adtable li.ad-listitem"):
+                    # Check limit inside loop too
+                    if (
+                        max_listings is not None
+                        and len(all_scraped_listings) >= max_listings
+                    ):
+                        break
+
+                    try:
+                        article_elem = item.select_one("article.aditem")
+                        if not article_elem or not article_elem.has_attr("data-adid"):
+                            continue
+                        listing_id = article_elem["data-adid"]
+
+                        # Skip if this listing ID already exists
+                        if listing_id in existing_ids:
+                            continue
+
+                        title_elem = item.select_one("h2 a")
+                        if not title_elem or not title_elem.has_attr("href"):
+                            continue
+
+                        title = title_elem.get_text(strip=True)
+                        listing_url = urljoin(
+                            "https://www.kleinanzeigen.de", title_elem["href"]
+                        )
+
+                        price_elem = item.select_one(
+                            "p.aditem-main--middle--price-shipping--price"
+                        )
+                        price = price_elem.get_text(strip=True) if price_elem else ""
+
+                        desc_elem = item.select_one(
+                            "p.aditem-main--middle--description"
+                        )
+                        short_description = (
+                            desc_elem.get_text(strip=True) if desc_elem else ""
+                        )
+
+                        location_elem = item.select_one(".aditem-main--top--left")
+                        location = (
+                            location_elem.get_text(strip=True) if location_elem else ""
+                        )
+
+                        listing = {
+                            "id": listing_id,
+                            "title": title,
+                            "price": price,
+                            "short_description": short_description,
+                            "location": location,
+                            "url": listing_url,
+                            "detailed_description": "",
+                            "llm_processed": False,
+                        }
+
+                        # Append and save intermediate
+                        existing_listings.append(listing)
+                        existing_ids.add(listing_id)
+                        all_scraped_listings.append(listing)
+                        scraped_count += 1
+
+                    except Exception as e:
+                        logger.error(f"Error scraping single listing: {str(e)}")
+                        continue
+
+                if output_file:
+                    with open(output_file, "w", encoding="utf-8") as f:
+                        json.dump(existing_listings, f, ensure_ascii=False, indent=4)
+
+                logger.info(
+                    f"Scraped {scraped_count} discovered listings from {current_url}"
+                )
+
+            except Exception as e:
+                logger.error(f"Error scraping page {current_url}: {str(e)}")
+
+            if page < PAGES_TO_SCRAPE:
+                time.sleep(DELAY_BETWEEN_PAGES)
+
+    if total_pages > 0:
+        update_progress(
+            "discovery",
+            total_pages,
+            total_pages,
+            "Rapid listing discovery completed.",
+        )
+    logger.info(
+        f"Successfully scraped {len(all_scraped_listings)} listings across all pages"
+    )
+    return all_scraped_listings
+
+
+def preview_url_listings_count(url):
+    """Fetch first page result count quickly using fast requests GET"""
+    try:
+        response = requests.get(url, headers=HEADERS, timeout=10)
+        if response.status_code != 200:
+            print(
+                f"__PREVIEW_ERROR__:Failed to fetch search page, status: {response.status_code}"
+            )
+            return 0
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        items = soup.select("ul#srchrslt-adtable li.ad-listitem")
+        count = len(items)
+        print(f"__PREVIEW_COUNT__:{count}")
+        return count
+    except Exception as e:
+        print(f"__PREVIEW_ERROR__:{str(e)}")
+        return 0
+
+
+def harvest_descriptions(campaign_id=None):
+    """Main wrapper function to harvest missing descriptions using direct requests GET"""
     db_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",
@@ -90,7 +378,7 @@ def harvest_missing_descriptions(driver, campaign_id=None):
             )
         rows = cursor.fetchall()
         logger.info(
-            f"Found {len(rows)} listings missing detailed descriptions to harvest"
+            f"Found {len(rows)} listings missing detailed descriptions to harvest using requests"
         )
 
         total = len(rows)
@@ -104,60 +392,28 @@ def harvest_missing_descriptions(driver, campaign_id=None):
                 f"Found {total} listings missing details to harvest.",
             )
 
-        for idx, r in enumerate(rows):
-            listing_id = r["id"]
-            url = r["url"]
-            title = r["title"]
+        with requests.Session() as session:
+            for idx, r in enumerate(rows):
+                listing_id = r["id"]
+                url = r["url"]
+                title = r["title"]
 
-            logger.info(f"Harvesting details for listing {listing_id} ({title}): {url}")
-            update_progress(
-                "harvesting",
-                idx,
-                total,
-                f"Harvesting listing {idx + 1}/{total}: {title}",
-            )
-            try:
-                # Open listing detail URL directly
-                driver.get(url)
+                logger.info(
+                    f"Harvesting details for listing {listing_id} ({title}): {url}"
+                )
+                update_progress(
+                    "harvesting",
+                    idx,
+                    total,
+                    f"Harvesting listing {idx + 1}/{total}: {title}",
+                )
 
-                # Wait for the description element to load
-                try:
-                    WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.ID, "viewad-description"))
-                    )
-                except TimeoutException:
-                    logger.warning(
-                        f"Timeout waiting for description element for listing {listing_id}"
-                    )
+                # Respectful delay between requests
+                time.sleep(DELAY_BETWEEN_LISTINGS)
+
+                parsed = parse_listing_details_requests(url, session=session)
+                if parsed is None:
                     continue
-
-                soup = BeautifulSoup(driver.page_source, "html.parser")
-                desc_elem = soup.select_one("#viewad-description-text")
-                detailed_description = ""
-                if desc_elem:
-                    detailed_description = desc_elem.get_text(
-                        separator="\n", strip=False
-                    )
-
-                # 1. Parse details key-value pairs
-                details = {}
-                details_list = soup.select("#viewad-details .addetailslist--detail")
-                for detail in details_list:
-                    val_elem = detail.select_one(".addetailslist--detail--value")
-                    if val_elem:
-                        val_text = val_elem.get_text(strip=True)
-                        key_text = detail.get_text(strip=True)
-                        if key_text.endswith(val_text):
-                            key_text = key_text[: -len(val_text)].strip()
-                        details[key_text] = val_text
-
-                # 2. Parse images
-                images = []
-                image_elems = soup.select(".galleryimage-element img")
-                for img in image_elems:
-                    src = img.get("src") or img.get("data-imgsrc")
-                    if src:
-                        images.append(src)
 
                 cursor.execute(
                     """
@@ -167,25 +423,17 @@ def harvest_missing_descriptions(driver, campaign_id=None):
                     WHERE id = ?
                 """,
                     (
-                        detailed_description,
-                        json.dumps(details),
-                        json.dumps(images),
-                        datetime.datetime.now().isoformat(),
+                        parsed["detailed_description"],
+                        json.dumps(parsed["details"]),
+                        json.dumps(parsed["images"]),
+                        datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         listing_id,
                     ),
                 )
                 conn.commit()
                 logger.info(
-                    f"Successfully harvested detailed description, {len(details)} details, and {len(images)} images for ID {listing_id}"
+                    f"Successfully harvested detailed description, {len(parsed['details'])} details, and {len(parsed['images'])} images for ID {listing_id}"
                 )
-
-            except Exception as e:
-                logger.error(
-                    f"Error harvesting details for listing {listing_id}: {str(e)}"
-                )
-
-            # Delay to mimic human behavior
-            time.sleep(DELAY_BETWEEN_LISTINGS)
 
         if total > 0:
             update_progress(
@@ -193,543 +441,11 @@ def harvest_missing_descriptions(driver, campaign_id=None):
             )
         conn.close()
     except Exception as e:
-        logger.error(f"Error in harvest_missing_descriptions: {str(e)}")
+        logger.error(f"Error in requests-based harvest_descriptions: {str(e)}")
 
 
-def save_cookies(driver, path):
-    """Save browser cookies to a file"""
-    if not os.path.exists(os.path.dirname(path)):
-        os.makedirs(os.path.dirname(path))
-    with open(path, "wb") as file:
-        pickle.dump(driver.get_cookies(), file)
-    logger.info(f"Cookies saved to {path}")
-
-
-def load_cookies(driver, path):
-    """Load cookies from file into browser session"""
-    if not os.path.exists(path):
-        logger.warning(f"Cookie file not found: {path}")
-        return False
-
-    with open(path, "rb") as file:
-        cookies = pickle.load(file)
-        for cookie in cookies:
-            # Some cookies might cause issues, so we handle exceptions
-            try:
-                driver.add_cookie(cookie)
-            except Exception as e:
-                logger.warning(f"Error loading cookie: {str(e)}")
-
-    logger.info("Cookies loaded successfully")
-    return True
-
-
-def save_logged_in_email(email):
-    """Persist the active session user email for backend/frontend notifications"""
-    data_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
-    )
-    os.makedirs(data_dir, exist_ok=True)
-    status_path = os.path.join(data_dir, "session_status.json")
-    try:
-        with open(status_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {"email": email, "timestamp": datetime.datetime.now().isoformat()},
-                f,
-                indent=2,
-            )
-        logger.info(f"Saved session status: {email}")
-    except Exception as e:
-        logger.error(f"Failed to write session status: {str(e)}")
-
-
-def check_login_status(driver):
-    """Check if the user is logged in and return their email address if found"""
-    try:
-        # Navigate to my-advertisements to trigger login check
-        current_url = driver.current_url
-        if "meine-anzeigen" not in current_url:
-            driver.get(
-                "https://www.kleinanzeigen.de/m-meine-anzeigen.html?tab=PROJECTS"
-            )
-            time.sleep(3)
-
-        # Look for [data-testid="logged-in-user"] matching the user's signature
-        indicators = driver.find_elements(
-            By.CSS_SELECTOR, '[data-testid="logged-in-user"]'
-        )
-        if indicators:
-            text = indicators[0].text
-            # Extract email from e.g. "angemeldet als: floo.schneider@gmx.de"
-            email_match = re.search(r"angemeldet als:\s*(.+)", text, re.IGNORECASE)
-            if email_match:
-                email = email_match.group(1).strip()
-                save_logged_in_email(email)
-                return email
-            save_logged_in_email("Active Session")
-            return "Active Session"
-
-        # Fallback check for logout buttons
-        logout_buttons = driver.find_elements(
-            By.CSS_SELECTOR, '[data-testid="logout-button"], a[href*="abmelden.html"]'
-        )
-        if logout_buttons:
-            save_logged_in_email("Active Session")
-            return "Active Session"
-    except Exception as e:
-        logger.warning(f"Error checking login state: {str(e)}")
-    return None
-
-
-def manual_login(driver, cookies_path):
-    """Handle login process with cookie persistence, waiting automatically for browser-based user logins"""
-    # 1. First try to load existing cookies
-    if os.path.exists(cookies_path):
-        driver.get("https://www.kleinanzeigen.de/")
-        load_cookies(driver, cookies_path)
-        driver.refresh()
-        time.sleep(3)
-
-        email = check_login_status(driver)
-        if email:
-            logger.info(f"Successfully logged in using saved cookies: {email}")
-            return
-
-    # 2. Watch browser interactively for user manual login
-    logger.info(
-        "Saved login session invalid or missing. Commencing dynamic interactive login watcher..."
-    )
-    driver.get("https://www.kleinanzeigen.de/m-einloggen.html")
-
-    # Watch browser location and indicators for up to 300 seconds (5 minutes)
-    max_wait = 300
-    check_interval = 3
-    elapsed = 0
-
-    while elapsed < max_wait:
-        try:
-            current_url = driver.current_url
-            # If the user reaches the advertisements/projects board, check for login signature
-            if "meine-anzeigen" in current_url or "tab=PROJECTS" in current_url:
-                email = check_login_status(driver)
-                if email:
-                    logger.info(
-                        f"User manual login succeeded! Authenticated as: {email}"
-                    )
-                    save_cookies(driver, cookies_path)
-                    return
-            else:
-                # Also do a quick query check in case they are still on the homepage but logged in
-                indicators = driver.find_elements(
-                    By.CSS_SELECTOR, '[data-testid="logged-in-user"]'
-                )
-                if indicators:
-                    email = check_login_status(driver)
-                    if email:
-                        logger.info(
-                            f"User manual login succeeded! Authenticated as: {email}"
-                        )
-                        save_cookies(driver, cookies_path)
-                        return
-        except Exception as e:
-            logger.warning(f"Error during interactive login check: {str(e)}")
-
-        time.sleep(check_interval)
-        elapsed += check_interval
-
-    logger.error("Interactive user login watcher timed out after 5 minutes.")
-    save_logged_in_email(None)
-    raise TimeoutError(
-        "Interactive manual login timed out. Please trigger authentication again."
-    )
-
-
-def get_detailed_description(driver, url):
-    """Get detailed description from a listing's detail page"""
-    try:
-        # Store current URL to return to later
-        current_url = driver.current_url
-
-        # Navigate to the listing detail page
-        logger.info(f"Getting detailed description from: {url}")
-        driver.get(url)
-
-        # Wait for the description to load
-        try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "viewad-description"))
-            )
-        except TimeoutException:
-            logger.warning(f"Timeout waiting for detailed description to load: {url}")
-            driver.get(current_url)  # Go back to the search results
-            return ""
-
-        # Parse the page with BeautifulSoup
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-
-        # Extract detailed description
-        detailed_description = ""
-        desc_elem = soup.select_one("#viewad-description-text")
-        if desc_elem:
-            detailed_description = desc_elem.get_text(separator="\n", strip=False)
-
-        # Go back to the search results
-        driver.get(current_url)
-
-        return detailed_description
-
-    except Exception as e:
-        logger.error(f"Error getting detailed description: {str(e)}")
-        # Try to go back to the search results
-        try:
-            driver.get(current_url)
-        except Exception:
-            pass
-        return ""
-
-
-def scrape_page(driver, url, output_file=None, max_listings=None):
-    """Scrape a page and get detailed descriptions without LLM processing"""
-
-    # Open the target URL and wait for the content to load
-    logger.info(f"Scraping page: {url}")
-    driver.get(url)
-
-    # Wait for the main content to load
-    try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "srchrslt-adtable"))
-        )
-    except TimeoutException:
-        logger.error("Timeout waiting for page to load")
-        return []
-
-    # Parse the page with BeautifulSoup
-    soup = BeautifulSoup(driver.page_source, "html.parser")
-
-    # Load existing listings to check for duplicates
-    existing_listings = []
-    existing_ids = set()
-    if output_file and os.path.exists(output_file):
-        try:
-            with open(output_file, "r", encoding="utf-8") as f:
-                existing_listings = json.load(f)
-                existing_ids = {item.get("id", "") for item in existing_listings}
-                logger.info(
-                    f"Loaded {len(existing_ids)} existing listing IDs to check for duplicates"
-                )
-        except (json.JSONDecodeError, IOError) as e:
-            logger.warning(f"Error loading existing listings: {str(e)}")
-            existing_listings = []
-            existing_ids = set()
-
-    # Loop through each listing in the search results
-    scraped_listings = []
-    listing_count = 0
-
-    for item in soup.select("ul#srchrslt-adtable li.ad-listitem"):
-        # Check if we've reached the maximum number of listings to process
-        if max_listings is not None and listing_count >= max_listings:
-            logger.info(f"Reached maximum number of listings to scrape: {max_listings}")
-            break
-
-        try:
-            # Extract listing ID from data attributes first to check for duplicates
-            listing_id = ""
-            article_elem = item.select_one("article.aditem")
-            if article_elem and article_elem.has_attr("data-adid"):
-                listing_id = article_elem["data-adid"]
-
-            # Skip if this listing ID already exists in our data
-            if listing_id in existing_ids:
-                logger.info(f"Skipping already scraped listing ID: {listing_id}")
-                continue
-
-            # Extract basic listing information
-            title_elem = item.select_one("h2 a")
-            title = title_elem.get_text(strip=True) if title_elem else ""
-
-            # Extract the listing URL for detailed view
-            listing_url = ""
-            if title_elem and title_elem.has_attr("href"):
-                listing_url = "https://www.kleinanzeigen.de" + title_elem["href"]
-
-            price_elem = item.select_one("p.aditem-main--middle--price-shipping--price")
-            price = price_elem.get_text(strip=True) if price_elem else ""
-
-            desc_elem = item.select_one("p.aditem-main--middle--description")
-            short_description = desc_elem.get_text(strip=True) if desc_elem else ""
-
-            location_elem = item.select_one(".aditem-main--top--left")
-            location = location_elem.get_text(strip=True) if location_elem else ""
-
-            # Create listing object with basic info
-            listing = {
-                "id": listing_id,
-                "title": title,
-                "price": price,
-                "short_description": short_description,
-                "location": location,
-                "url": listing_url,
-                "detailed_description": "",
-                "llm_processed": False,
-            }
-
-            # Save after each discovery if output_file is provided
-            if listing_url:
-                if output_file:
-                    # Add current listing to existing listings and save
-                    existing_listings.append(listing)
-                    with open(output_file, "w", encoding="utf-8") as f:
-                        json.dump(existing_listings, f, ensure_ascii=False, indent=4)
-                    logger.info(f"Saved discovered listing to {output_file}: {title}")
-
-                listing_count += 1
-                scraped_listings.append(listing)
-
-        except Exception as e:
-            logger.error(f"Error scraping listing: {str(e)}")
-            continue
-
-    logger.info(f"Scraped {len(scraped_listings)} discovered listings from {url}")
-    return scraped_listings
-
-
-def scrape_listings(urls, output_file, max_listings=None):
-    """Main function to scrape listings from multiple URLs"""
-    # Define paths for persistent data
-    data_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
-    )
-    cookies_path = os.path.join(data_dir, "cookies.pkl")
-    user_data_dir = os.path.join(data_dir, "chrome_profile")
-
-    # Create directories if they don't exist
-    os.makedirs(data_dir, exist_ok=True)
-    os.makedirs(user_data_dir, exist_ok=True)
-
-    # Initialize your Selenium driver with persistent profile
-    options = webdriver.ChromeOptions()
-    options.add_argument(f"user-data-dir={user_data_dir}")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.binary_location = "/opt/google/chrome/chrome"
-
-    # Headless optimization:
-    is_interactive = os.environ.get("INTERACTIVE_LOGIN") == "1"
-    if not is_interactive and os.path.exists(cookies_path):
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()), options=options
-    )
-    # Execute CDP commands to make the browser less detectable
-    driver.execute_cdp_cmd(
-        "Page.addScriptToEvaluateOnNewDocument",
-        {
-            "source": """
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined
-        })
-        """
-        },
-    )
-
-    try:
-        # Handle login with cookie persistence
-        manual_login(driver, cookies_path)
-
-        all_scraped_listings = []
-        total_pages = len(urls) * PAGES_TO_SCRAPE
-        current_page_idx = 0
-
-        for base_url in urls:
-            # Process multiple pages for each base URL
-            for page in range(1, PAGES_TO_SCRAPE + 1):
-                current_page_idx += 1
-                update_progress(
-                    "discovery",
-                    current_page_idx - 1,
-                    total_pages,
-                    f"Discovering listings on page {page} of {PAGES_TO_SCRAPE}...",
-                )
-                if page == 1:
-                    # First page uses the original URL
-                    current_url = base_url
-                else:
-                    # For subsequent pages, insert the page number into the URL
-                    # Check if the URL already contains a page parameter
-                    if "/seite:" in base_url:
-                        # Replace existing page parameter
-                        current_url = re.sub(
-                            r"/seite:\d+/", f"/seite:{page}/", base_url
-                        )
-                    else:
-                        # Find the position to insert the page parameter
-                        # Typically after the search path but before any filters
-                        parts = base_url.split("/")
-                        domain_part = "/".join(
-                            parts[:3]
-                        )  # e.g., https://www.kleinanzeigen.de
-                        path_part = parts[3]  # e.g., s-notebooks
-
-                        # Insert the page parameter after the path part
-                        remaining_parts = "/".join(parts[4:]) if len(parts) > 4 else ""
-                        current_url = (
-                            f"{domain_part}/{path_part}/seite:{page}/{remaining_parts}"
-                        )
-
-                logger.info(f"Scraping page {page} of {PAGES_TO_SCRAPE}: {current_url}")
-
-                # Calculate remaining listings to scrape
-                remaining = None
-                if max_listings is not None:
-                    remaining = max_listings - len(all_scraped_listings)
-                    if remaining <= 0:
-                        logger.info(
-                            "Reached maximum listings limit, stopping scrape early."
-                        )
-                        break
-
-                # Scrape the current page
-                scraped_listings = scrape_page(
-                    driver,
-                    current_url,
-                    output_file=output_file,
-                    max_listings=remaining,
-                )
-                all_scraped_listings.extend(scraped_listings)
-
-                # Add a delay between pages to avoid being flagged as a bot
-                if page < PAGES_TO_SCRAPE:
-                    time.sleep(DELAY_BETWEEN_PAGES)
-
-        if total_pages > 0:
-            update_progress(
-                "discovery",
-                total_pages,
-                total_pages,
-                "Rapid listing discovery completed.",
-            )
-        logger.info(
-            f"Successfully scraped {len(all_scraped_listings)} listings across all pages"
-        )
-
-    except Exception as e:
-        logger.error(f"Error in scraping process: {str(e)}")
-    finally:
-        driver.quit()
-
-
-def preview_url_listings_count(url):
-    """Headless driver preview to fetch first page result count quickly"""
-    data_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
-    )
-    cookies_path = os.path.join(data_dir, "cookies.pkl")
-    user_data_dir = os.path.join(data_dir, "chrome_profile")
-
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-    options.add_argument(f"user-data-dir={user_data_dir}")
-    options.binary_location = "/opt/google/chrome/chrome"
-
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()), options=options
-    )
-    driver.execute_cdp_cmd(
-        "Page.addScriptToEvaluateOnNewDocument",
-        {
-            "source": """
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined
-        })
-        """
-        },
-    )
-    try:
-        # Load the cookies if present to bypass GDPR/captchas instantly
-        if os.path.exists(cookies_path):
-            driver.get("https://www.kleinanzeigen.de/")
-            load_cookies(driver, cookies_path)
-
-        driver.get(url)
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "srchrslt-adtable"))
-        )
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        items = soup.select("ul#srchrslt-adtable li.ad-listitem")
-        count = len(items)
-        print(f"__PREVIEW_COUNT__:{count}")
-        return count
-    except Exception as e:
-        print(f"__PREVIEW_ERROR__:{str(e)}")
-        return 0
-    finally:
-        driver.quit()
-
-
-def harvest_descriptions(campaign_id=None):
-    """Main wrapper function to launch driver and harvest all missing descriptions in one go"""
-    data_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
-    )
-    cookies_path = os.path.join(data_dir, "cookies.pkl")
-    user_data_dir = os.path.join(data_dir, "chrome_profile")
-
-    options = webdriver.ChromeOptions()
-    options.add_argument(f"user-data-dir={user_data_dir}")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.binary_location = "/opt/google/chrome/chrome"
-
-    # Always headless for harvesting since session is already logged in
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()), options=options
-    )
-    driver.execute_cdp_cmd(
-        "Page.addScriptToEvaluateOnNewDocument",
-        {
-            "source": """
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined
-        })
-        """
-        },
-    )
-
-    try:
-        # Load persistent login session cookies
-        if os.path.exists(cookies_path):
-            driver.get("https://www.kleinanzeigen.de")
-            with open(cookies_path, "rb") as f:
-                cookies = pickle.load(f)
-                for cookie in cookies:
-                    driver.add_cookie(cookie)
-            logger.info("Loaded persistent session cookies for description harvesting")
-
-        # Sequential harvest loop
-        harvest_missing_descriptions(driver, campaign_id)
-
-    except Exception as e:
-        logger.error(f"Error during description harvesting session: {str(e)}")
-    finally:
-        driver.quit()
-
-
-def update_all_descriptions(driver, campaign_id=None):
-    """Query SQLite database for all listings under active searches, visit them, and update if description changed"""
+def update_all_descriptions_session(campaign_id=None):
+    """Query SQLite database for all active listings, check and update using direct requests GET"""
     db_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",
@@ -764,7 +480,7 @@ def update_all_descriptions(driver, campaign_id=None):
             """
             )
         rows = cursor.fetchall()
-        logger.info(f"Found {len(rows)} listings to check for description updates")
+        logger.info(f"Found {len(rows)} listings to check for updates using requests")
 
         total = len(rows)
         if total == 0:
@@ -779,92 +495,54 @@ def update_all_descriptions(driver, campaign_id=None):
                 f"Found {total} listings to check/update.",
             )
 
-        for idx, r in enumerate(rows):
-            listing_id = r["id"]
-            url = r["url"]
-            title = r["title"]
-            old_description = r["detailed_description"] or ""
+        with requests.Session() as session:
+            for idx, r in enumerate(rows):
+                listing_id = r["id"]
+                url = r["url"]
+                title = r["title"]
+                old_description = r["detailed_description"] or ""
 
-            logger.info(f"Checking updates for listing {listing_id} ({title}): {url}")
-            update_progress(
-                "updating-descriptions",
-                idx,
-                total,
-                f"Checking listing {idx + 1}/{total}: {title}",
-            )
-            try:
-                driver.get(url)
-
-                # Wait for the description element to load
-                try:
-                    WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.ID, "viewad-description"))
-                    )
-                except TimeoutException:
-                    logger.warning(
-                        f"Timeout waiting for description element for listing {listing_id}"
-                    )
-                    continue
-
-                soup = BeautifulSoup(driver.page_source, "html.parser")
-                desc_elem = soup.select_one("#viewad-description-text")
-                detailed_description = ""
-                if desc_elem:
-                    detailed_description = desc_elem.get_text(
-                        separator="\n", strip=False
-                    )
-
-                # Parse details key-value pairs
-                details = {}
-                details_list = soup.select("#viewad-details .addetailslist--detail")
-                for detail in details_list:
-                    val_elem = detail.select_one(".addetailslist--detail--value")
-                    if val_elem:
-                        val_text = val_elem.get_text(strip=True)
-                        key_text = detail.get_text(strip=True)
-                        if key_text.endswith(val_text):
-                            key_text = key_text[: -len(val_text)].strip()
-                        details[key_text] = val_text
-
-                # Parse images
-                images = []
-                image_elems = soup.select(".galleryimage-element img")
-                for img in image_elems:
-                    src = img.get("src") or img.get("data-imgsrc")
-                    if src:
-                        images.append(src)
-
-                # Compare: Only update database and timestamp if description has changed
-                if detailed_description.strip() != old_description.strip():
-                    logger.info(
-                        f"Description changed for listing {listing_id}! Updating in DB."
-                    )
-                    cursor.execute(
-                        """
-                        UPDATE listings 
-                        SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
-                            last_description_changed_at = ?
-                        WHERE id = ?
-                    """,
-                        (
-                            detailed_description,
-                            json.dumps(details),
-                            json.dumps(images),
-                            datetime.datetime.now().isoformat(),
-                            listing_id,
-                        ),
-                    )
-                    conn.commit()
-                else:
-                    logger.info(f"No description changes for listing {listing_id}.")
-
-            except Exception as e:
-                logger.error(
-                    f"Error updating details for listing {listing_id}: {str(e)}"
+                logger.info(
+                    f"Checking updates for listing {listing_id} ({title}): {url}"
+                )
+                update_progress(
+                    "updating-descriptions",
+                    idx,
+                    total,
+                    f"Checking listing {idx + 1}/{total}: {title}",
                 )
 
-            # Delay to mimic human behavior
-            time.sleep(DELAY_BETWEEN_LISTINGS)
+                # Respectful delay between requests
+                time.sleep(DELAY_BETWEEN_LISTINGS)
+
+                parsed = parse_listing_details_requests(url, session=session)
+                if parsed is None:
+                    continue
+
+            detailed_description = parsed["detailed_description"] or ""
+
+            if detailed_description.strip() != old_description.strip():
+                logger.info(
+                    f"Description changed for listing {listing_id}! Updating in DB."
+                )
+                cursor.execute(
+                    """
+                    UPDATE listings 
+                    SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
+                        last_description_changed_at = ?
+                    WHERE id = ?
+                """,
+                    (
+                        detailed_description,
+                        json.dumps(parsed["details"]),
+                        json.dumps(parsed["images"]),
+                        datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        listing_id,
+                    ),
+                )
+                conn.commit()
+            else:
+                logger.info(f"No description changes for listing {listing_id}.")
 
         if total > 0:
             update_progress(
@@ -872,16 +550,169 @@ def update_all_descriptions(driver, campaign_id=None):
             )
         conn.close()
     except Exception as e:
-        logger.error(f"Error in update_all_descriptions: {str(e)}")
+        logger.error(
+            f"Error in requests-based update_all_descriptions_session: {str(e)}"
+        )
 
 
-def update_all_descriptions_session(campaign_id=None):
-    """Main wrapper function to launch driver and update all descriptions in one go"""
+# =========================================================================
+# LEGACY SELENIUM CODE PATHS (PRESERVED FOR FUTURE USER ACCOUNT OUTREACH / MESSAGING)
+# =========================================================================
+
+
+def save_cookies(driver, path):
+    """Save browser cookies to a file"""
+    if not os.path.exists(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    with open(path, "wb") as file:
+        pickle.dump(driver.get_cookies(), file)
+    logger.info(f"Cookies saved to {path}")
+
+
+def load_cookies(driver, path):
+    """Load cookies from file into browser session"""
+    if not os.path.exists(path):
+        logger.warning(f"Cookie file not found: {path}")
+        return False
+
+    with open(path, "rb") as file:
+        cookies = pickle.load(file)
+        for cookie in cookies:
+            try:
+                driver.add_cookie(cookie)
+            except Exception as e:
+                logger.warning(f"Error loading cookie: {str(e)}")
+
+    logger.info("Cookies loaded successfully")
+    return True
+
+
+def save_logged_in_email(email):
+    """Persist the active session user email for backend/frontend notifications"""
+    data_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
+    )
+    os.makedirs(data_dir, exist_ok=True)
+    status_path = os.path.join(data_dir, "session_status.json")
+    try:
+        with open(status_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "email": email,
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
+                },
+                f,
+                indent=2,
+            )
+        logger.info(f"Saved session status: {email}")
+    except Exception as e:
+        logger.error(f"Failed to write session status: {str(e)}")
+
+
+def check_login_status(driver):
+    """Check if the user is logged in and return their email address if found"""
+    try:
+        current_url = driver.current_url
+        if "meine-anzeigen" not in current_url:
+            driver.get(
+                "https://www.kleinanzeigen.de/m-meine-anzeigen.html?tab=PROJECTS"
+            )
+            time.sleep(3)
+
+        indicators = driver.find_elements(
+            By.CSS_SELECTOR, '[data-testid="logged-in-user"]'
+        )
+        if indicators:
+            text = indicators[0].text
+            email_match = re.search(r"angemeldet als:\s*(.+)", text, re.IGNORECASE)
+            if email_match:
+                email = email_match.group(1).strip()
+                save_logged_in_email(email)
+                return email
+            save_logged_in_email("Active Session")
+            return "Active Session"
+
+        logout_buttons = driver.find_elements(
+            By.CSS_SELECTOR, '[data-testid="logout-button"], a[href*="abmelden.html"]'
+        )
+        if logout_buttons:
+            save_logged_in_email("Active Session")
+            return "Active Session"
+    except Exception as e:
+        logger.warning(f"Error checking login state: {str(e)}")
+    return None
+
+
+def manual_login(driver, cookies_path):
+    """Handle login process with cookie persistence, waiting automatically for browser-based user logins"""
+    if os.path.exists(cookies_path):
+        driver.get("https://www.kleinanzeigen.de/")
+        load_cookies(driver, cookies_path)
+        driver.refresh()
+        time.sleep(3)
+
+        email = check_login_status(driver)
+        if email:
+            logger.info(f"Successfully logged in using saved cookies: {email}")
+            return
+
+    logger.info(
+        "Saved login session invalid or missing. Commencing dynamic interactive login watcher..."
+    )
+    driver.get("https://www.kleinanzeigen.de/m-einloggen.html")
+
+    max_wait = 300
+    check_interval = 3
+    elapsed = 0
+
+    while elapsed < max_wait:
+        try:
+            current_url = driver.current_url
+            if "meine-anzeigen" in current_url or "tab=PROJECTS" in current_url:
+                email = check_login_status(driver)
+                if email:
+                    logger.info(
+                        f"User manual login succeeded! Authenticated as: {email}"
+                    )
+                    save_cookies(driver, cookies_path)
+                    return
+            else:
+                indicators = driver.find_elements(
+                    By.CSS_SELECTOR, '[data-testid="logged-in-user"]'
+                )
+                if indicators:
+                    email = check_login_status(driver)
+                    if email:
+                        logger.info(
+                            f"User manual login succeeded! Authenticated as: {email}"
+                        )
+                        save_cookies(driver, cookies_path)
+                        return
+        except Exception as e:
+            logger.warning(f"Error during interactive login check: {str(e)}")
+
+        time.sleep(check_interval)
+        elapsed += check_interval
+
+    logger.error("Interactive user login watcher timed out after 5 minutes.")
+    save_logged_in_email(None)
+    raise TimeoutError(
+        "Interactive manual login timed out. Please trigger authentication again."
+    )
+
+
+def scrape_listings_selenium(urls, output_file, max_listings=None):
+    """Fallback interactive login / Selenium-based scraper. Preserved intentionally."""
     data_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
     )
     cookies_path = os.path.join(data_dir, "cookies.pkl")
     user_data_dir = os.path.join(data_dir, "chrome_profile")
+
+    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(user_data_dir, exist_ok=True)
 
     options = webdriver.ChromeOptions()
     options.add_argument(f"user-data-dir={user_data_dir}")
@@ -889,10 +720,12 @@ def update_all_descriptions_session(campaign_id=None):
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.binary_location = "/opt/google/chrome/chrome"
 
-    # Always headless for harvesting/updating since session is already logged in
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
+    # In case we only run interactive login, run full chrome UI
+    is_interactive = os.environ.get("INTERACTIVE_LOGIN") == "1"
+    if not is_interactive and os.path.exists(cookies_path):
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
 
     driver = webdriver.Chrome(
         service=Service(ChromeDriverManager().install()), options=options
@@ -909,19 +742,139 @@ def update_all_descriptions_session(campaign_id=None):
     )
 
     try:
-        # Load persistent login session cookies
-        if os.path.exists(cookies_path):
-            driver.get("https://www.kleinanzeigen.de")
-            with open(cookies_path, "rb") as f:
-                cookies = pickle.load(f)
-                for cookie in cookies:
-                    driver.add_cookie(cookie)
-            logger.info("Loaded persistent session cookies for description update")
+        manual_login(driver, cookies_path)
 
-        # Sequential update loop
-        update_all_descriptions(driver, campaign_id)
+        # If it was triggered purely to authenticate the user session, stop here:
+        if is_interactive and urls and "m-meine-anzeigen.html" in urls[0]:
+            logger.info("Interactive manual login session validated successfully.")
+            return []
 
-    except Exception as e:
-        logger.error(f"Error during description update session: {str(e)}")
+        # Otherwise perform Selenium index scraping:
+        all_scraped_listings = []
+        total_pages = len(urls) * PAGES_TO_SCRAPE
+        current_page_idx = 0
+
+        for base_url in urls:
+            for page in range(1, PAGES_TO_SCRAPE + 1):
+                current_page_idx += 1
+                update_progress(
+                    "discovery",
+                    current_page_idx - 1,
+                    total_pages,
+                    f"Discovering listings on page {page} of {PAGES_TO_SCRAPE}...",
+                )
+                if page == 1:
+                    current_url = base_url
+                else:
+                    if "/seite:" in base_url:
+                        current_url = re.sub(
+                            r"/seite:\d+(/|$)", f"/seite:{page}\\1", base_url
+                        )
+                    else:
+                        parts = base_url.split("/")
+                        domain_part = "/".join(parts[:3])
+                        path_part = parts[3]
+                        remaining_parts = "/".join(parts[4:]) if len(parts) > 4 else ""
+                        current_url = (
+                            f"{domain_part}/{path_part}/seite:{page}/{remaining_parts}"
+                        )
+
+                logger.info(
+                    f"[Selenium] Scraping page {page} of {PAGES_TO_SCRAPE}: {current_url}"
+                )
+                driver.get(current_url)
+
+                try:
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "srchrslt-adtable"))
+                    )
+                except TimeoutException:
+                    logger.error("[Selenium] Timeout waiting for page to load")
+                    continue
+
+                soup = BeautifulSoup(driver.page_source, "html.parser")
+                existing_listings = []
+                existing_ids = set()
+                if output_file and os.path.exists(output_file):
+                    try:
+                        with open(output_file, "r", encoding="utf-8") as f:
+                            existing_listings = json.load(f)
+                            existing_ids = {
+                                item.get("id", "") for item in existing_listings
+                            }
+                    except Exception:
+                        pass
+
+                scraped_count = 0
+                for item in soup.select("ul#srchrslt-adtable li.ad-listitem"):
+                    if (
+                        max_listings is not None
+                        and len(all_scraped_listings) >= max_listings
+                    ):
+                        break
+                    try:
+                        article_elem = item.select_one("article.aditem")
+                        if not article_elem or not article_elem.has_attr("data-adid"):
+                            continue
+                        listing_id = article_elem["data-adid"]
+
+                        if listing_id in existing_ids:
+                            continue
+
+                        title_elem = item.select_one("h2 a")
+                        title = title_elem.get_text(strip=True) if title_elem else ""
+                        listing_url = (
+                            "https://www.kleinanzeigen.de" + title_elem["href"]
+                            if title_elem
+                            else ""
+                        )
+
+                        price_elem = item.select_one(
+                            "p.aditem-main--middle--price-shipping--price"
+                        )
+                        price = price_elem.get_text(strip=True) if price_elem else ""
+
+                        desc_elem = item.select_one(
+                            "p.aditem-main--middle--description"
+                        )
+                        short_description = (
+                            desc_elem.get_text(strip=True) if desc_elem else ""
+                        )
+
+                        location_elem = item.select_one(".aditem-main--top--left")
+                        location = (
+                            location_elem.get_text(strip=True) if location_elem else ""
+                        )
+
+                        listing = {
+                            "id": listing_id,
+                            "title": title,
+                            "price": price,
+                            "short_description": short_description,
+                            "location": location,
+                            "url": listing_url,
+                            "detailed_description": "",
+                            "llm_processed": False,
+                        }
+
+                        existing_listings.append(listing)
+                        all_scraped_listings.append(listing)
+                        scraped_count += 1
+
+                        if output_file:
+                            with open(output_file, "w", encoding="utf-8") as f:
+                                json.dump(
+                                    existing_listings, f, ensure_ascii=False, indent=4
+                                )
+                    except Exception:
+                        continue
+
+                logger.info(
+                    f"[Selenium] Scraped {scraped_count} listings from {current_url}"
+                )
+                if page < PAGES_TO_SCRAPE:
+                    time.sleep(DELAY_BETWEEN_PAGES)
+
+        return all_scraped_listings
     finally:
         driver.quit()
