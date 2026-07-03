@@ -891,18 +891,18 @@ export default function App() {
   return (
     <div className="min-h-screen bg-brand-primary text-slate-100 flex flex-col font-sans">
       {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-border-subtle bg-bg-surface/60 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center space-x-6">
           <div className="flex items-center space-x-3">
             <img src={`${import.meta.env.BASE_URL}logo-icon.svg`} alt="prismdeals Icon" className="w-8 h-8 rounded-lg shadow shadow-black/30" />
             <span className="font-semibold text-lg tracking-wide text-white font-sans">prismdeals</span>
           </div>
-
+ 
           {/* Authentication session state widget */}
-          <div className="flex items-center space-x-3 bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-1.5 shadow-inner">
+          <div className="flex items-center space-x-3 bg-bg-input/80 border border-border-subtle rounded-xl px-3 py-1.5 shadow-inner">
             <div className="flex items-center space-x-1.5">
               <span className={`w-2 h-2 rounded-full ${sessionEmail ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-              <span className="text-[10px] font-semibold text-slate-400">
+              <span className="text-[10px] font-semibold text-text-muted">
                 {sessionEmail ? t('common.sessionActive', { email: sessionEmail }) : t('common.sessionUnauth')}
               </span>
             </div>

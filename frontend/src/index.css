@@ -5,6 +5,16 @@
   --font-body: "Inter", sans-serif;
   --color-brand-primary: #034A4A;
   --color-brand-accent: #E87967;
+  
+  --color-bg-base: #034A4A;
+  --color-bg-surface: #023636;
+  --color-bg-surface-hover: #034141;
+  --color-bg-input: #011E1E;
+  --color-border-subtle: rgba(255, 255, 255, 0.1);
+  --color-border-brand: rgba(232, 121, 103, 0.2);
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #E2EAEA;
+  --color-text-muted: #9BB1B1;
 }
 
 body {
