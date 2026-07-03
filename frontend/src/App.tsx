@@ -832,8 +832,8 @@ export default function App() {
         
         <div className="w-full max-w-md space-y-6 z-10">
           <div className="text-center space-y-2">
-            <div className="w-12 h-12 rounded-xl bg-emerald-500 flex items-center justify-center font-bold text-slate-950 text-2xl shadow-lg shadow-emerald-500/20 mx-auto">K</div>
-            <h1 className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+            <img src="/logo-default.svg" alt="prismdeals Logo" className="w-28 h-28 rounded-2xl shadow-lg shadow-black/40 mx-auto border border-slate-800" />
+            <h1 className="text-2xl font-extrabold tracking-tight text-white">
               {t('auth.signIn')}
             </h1>
             <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Automated Scraper & AI Agent Portal</p>
@@ -894,8 +894,8 @@ export default function App() {
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center space-x-6">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-slate-950 text-lg shadow-lg shadow-emerald-500/20">K</div>
-            <span className="font-semibold text-lg tracking-wide bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent font-sans">Kleinanzeigen Agent</span>
+            <img src="/logo-icon.svg" alt="prismdeals Icon" className="w-8 h-8 rounded-lg shadow shadow-black/30" />
+            <span className="font-semibold text-lg tracking-wide text-white font-sans">prismdeals</span>
           </div>
 
           {/* Authentication session state widget */}
