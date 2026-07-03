@@ -814,7 +814,7 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center font-sans">
+      <div className="min-h-screen bg-brand-primary flex items-center justify-center font-sans">
         <div className="text-center space-y-4">
           <div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full mx-auto" />
           <p className="text-slate-400 text-sm font-semibold">{t('common.loading')}</p>
@@ -825,14 +825,14 @@ export default function App() {
 
   if (!appUser) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans relative overflow-hidden">
+      <div className="min-h-screen bg-brand-primary flex items-center justify-center p-6 font-sans relative overflow-hidden">
         {/* Glow Effects */}
         <div className="absolute -right-32 -top-32 w-96 h-96 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
         <div className="absolute -left-32 -bottom-32 w-96 h-96 rounded-full bg-indigo-500/5 blur-3xl pointer-events-none" />
         
         <div className="w-full max-w-md space-y-6 z-10">
           <div className="text-center space-y-2">
-            <img src="/logo-default.svg" alt="prismdeals Logo" className="w-28 h-28 rounded-2xl shadow-lg shadow-black/40 mx-auto border border-slate-800" />
+            <img src={`${import.meta.env.BASE_URL}logo-default.svg`} alt="prismdeals Logo" className="w-28 h-28 rounded-2xl shadow-lg shadow-black/40 mx-auto border border-slate-800" />
             <h1 className="text-2xl font-extrabold tracking-tight text-white">
               {t('auth.signIn')}
             </h1>
@@ -889,12 +889,12 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-brand-primary text-slate-100 flex flex-col font-sans">
       {/* Header */}
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center space-x-6">
           <div className="flex items-center space-x-3">
-            <img src="/logo-icon.svg" alt="prismdeals Icon" className="w-8 h-8 rounded-lg shadow shadow-black/30" />
+            <img src={`${import.meta.env.BASE_URL}logo-icon.svg`} alt="prismdeals Icon" className="w-8 h-8 rounded-lg shadow shadow-black/30" />
             <span className="font-semibold text-lg tracking-wide text-white font-sans">prismdeals</span>
           </div>
 
