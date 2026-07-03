@@ -3,13 +3,13 @@
 @theme {
   --font-heading: "Outfit", sans-serif;
   --font-body: "Inter", sans-serif;
-  --color-brand-primary: #034A4A;
+  --color-brand-primary: #011F1F;
   --color-brand-accent: #E87967;
   
-  --color-bg-base: #034A4A;
-  --color-bg-surface: #023636;
-  --color-bg-surface-hover: #034141;
-  --color-bg-input: #011E1E;
+  --color-bg-base: #011F1F;
+  --color-bg-surface: #012828;
+  --color-bg-surface-hover: #013333;
+  --color-bg-input: #001414;
   --color-border-subtle: rgba(255, 255, 255, 0.1);
   --color-border-brand: rgba(232, 121, 103, 0.2);
   --color-text-primary: #FFFFFF;
