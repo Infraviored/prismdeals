@@ -3,10 +3,22 @@
 @theme {
   --font-heading: "Outfit", sans-serif;
   --font-body: "Inter", sans-serif;
+  --color-brand-primary: #011F1F;
+  --color-brand-accent: #E87967;
+  
+  --color-bg-base: #011F1F;
+  --color-bg-surface: #012828;
+  --color-bg-surface-hover: #013333;
+  --color-bg-input: #001414;
+  --color-border-subtle: rgba(255, 255, 255, 0.1);
+  --color-border-brand: rgba(232, 121, 103, 0.2);
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #E2EAEA;
+  --color-text-muted: #9BB1B1;
 }
 
 body {
-  background-color: #090D1A;
+  background-color: var(--color-brand-primary);
   color: #F1F5F9;
   font-family: var(--font-body);
   margin: 0;

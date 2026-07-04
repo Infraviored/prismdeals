@@ -18,15 +18,15 @@ export const Button: React.FC<ButtonProps> = ({
   const baseStyle = 'inline-flex items-center justify-center font-bold transition-all duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed active:scale-98';
 
   const variants = {
-    primary: 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl shadow-lg shadow-emerald-500/10 hover:shadow-emerald-400/20',
-    secondary: 'bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-455 hover:text-slate-200 rounded-xl',
-    'action-emerald': 'bg-slate-900 hover:bg-slate-850 text-slate-350 hover:text-emerald-400 border border-slate-800 rounded-xl shadow-sm',
-    'action-sky': 'bg-slate-900 hover:bg-slate-850 text-slate-350 hover:text-sky-400 border border-slate-800 rounded-xl shadow-sm',
-    'action-indigo': 'bg-slate-900 hover:bg-slate-850 text-slate-350 hover:text-indigo-400 border border-slate-800 rounded-xl shadow-sm',
-    badge: 'text-slate-400 hover:text-slate-200 bg-slate-850 hover:bg-slate-755 border border-slate-800 rounded-xl',
-    'mini-emerald': 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded font-bold transition-colors',
-    'mini-slate': 'bg-slate-800 hover:bg-slate-700 text-slate-400 rounded transition-colors',
-    icon: 'rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-400 hover:text-emerald-400 border border-slate-700/50 hover:border-emerald-500/30 shadow-md group',
+    primary: 'bg-brand-accent hover:bg-[#f09587] text-white rounded-xl shadow-lg shadow-brand-accent/10 hover:shadow-[#f09587]/20',
+    secondary: 'bg-bg-input hover:bg-bg-surface border border-border-subtle text-text-muted hover:text-text-primary rounded-xl',
+    'action-emerald': 'bg-bg-surface hover:bg-bg-surface-hover text-text-muted hover:text-brand-accent border border-border-subtle rounded-xl shadow-sm',
+    'action-sky': 'bg-bg-surface hover:bg-bg-surface-hover text-text-muted hover:text-sky-400 border border-border-subtle rounded-xl shadow-sm',
+    'action-indigo': 'bg-bg-surface hover:bg-bg-surface-hover text-text-muted hover:text-indigo-400 border border-border-subtle rounded-xl shadow-sm',
+    badge: 'text-text-muted hover:text-text-primary bg-bg-surface hover:bg-bg-surface-hover border border-border-subtle rounded-xl',
+    'mini-emerald': 'bg-brand-accent hover:bg-[#f09587] text-white rounded font-bold transition-colors',
+    'mini-slate': 'bg-bg-surface hover:bg-bg-surface-hover text-text-muted rounded transition-colors',
+    icon: 'rounded-xl bg-bg-surface/80 hover:bg-bg-surface-hover/80 text-text-muted hover:text-brand-accent border border-border-subtle hover:border-brand-accent/30 shadow-md group',
   };
 
   const sizes = {
