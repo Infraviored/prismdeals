@@ -836,13 +836,10 @@ export default function App() {
         <div className="absolute -left-32 -bottom-32 w-96 h-96 rounded-full bg-indigo-500/5 blur-3xl pointer-events-none" />
         
         <div className="w-full max-w-md space-y-6 z-10">
-          <div className="text-center space-y-2">
-            <img src={`${import.meta.env.BASE_URL}logo-default.svg`} alt="prismdeals Logo" className="w-28 h-28 rounded-2xl shadow-lg shadow-black/40 mx-auto border border-slate-800" />
-            <h1 className="text-2xl font-extrabold tracking-tight text-white">
-              {t('auth.signIn')}
-            </h1>
-            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Automated Scraper & AI Agent Portal</p>
+          <div className="text-center">
+            <img src={`${import.meta.env.BASE_URL}logo-default.svg`} alt="prismdeals Logo" className="w-64 h-auto mx-auto" />
           </div>
+
 
           <Card className="p-6 space-y-4">
             <form onSubmit={handleLoginSubmit} className="space-y-4">
