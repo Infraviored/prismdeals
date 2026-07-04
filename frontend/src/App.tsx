@@ -975,6 +975,7 @@ export default function App() {
 
             <Button
               variant="icon"
+              size="sm"
               onClick={() => {
                 if (view !== 'settings') {
                   setView('settings');
