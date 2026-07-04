@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { SampleListing } from '../types'
 import { useTranslation } from '../hooks/useTranslation'
 import { Button } from './ui/Button'
+import { Clipboard, Check, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface GuidelinesWizardProps {
   activeSearchTarget: {
@@ -217,11 +218,14 @@ export default function GuidelinesWizard({
               >
                 {copiedPromptId === 'prompt-research' ? (
                   <>
-                    <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                    <Check className="w-3.5 h-3.5 animate-pulse" />
                     <span>{t('wizard.promptCopied')}</span>
                   </>
                 ) : (
-                  <span>{t('wizard.copyResearchPrompt')}</span>
+                  <>
+                    <Clipboard className="w-3.5 h-3.5" />
+                    <span>{t('wizard.copyResearchPrompt')}</span>
+                  </>
                 )}
               </Button>
             </div>
@@ -261,9 +265,10 @@ export default function GuidelinesWizard({
                     size="xs"
                     disabled={isScraping}
                     onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
-                    className="font-bold border bg-bg-surface hover:bg-bg-surface-hover border-border-subtle text-text-secondary text-[9px] px-2 py-1 rounded-lg"
+                    className="font-bold border bg-bg-surface hover:bg-bg-surface-hover border-border-subtle text-text-secondary text-[9px] px-2 py-1 rounded-lg flex items-center gap-1"
                   >
-                    {t('wizard.refreshSamples')}
+                    <RefreshCw className="w-3 h-3" />
+                    <span>{t('wizard.refreshSamples')}</span>
                   </Button>
                 )}
               </div>
@@ -312,9 +317,9 @@ export default function GuidelinesWizard({
                           </div>
                           <span className="text-text-muted transition-transform">
                             {isExpanded ? (
-                              <svg className="w-3 h-3 transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" /></svg>
+                              <ChevronUp className="w-4 h-4 text-text-muted" />
                             ) : (
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" /></svg>
+                              <ChevronDown className="w-4 h-4 text-text-muted" />
                             )}
                           </span>
                         </div>
@@ -351,11 +356,14 @@ export default function GuidelinesWizard({
               >
                 {copiedPromptId === 'prompt-market' ? (
                   <>
-                    <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                    <Check className="w-3.5 h-3.5 animate-pulse" />
                     <span>{t('wizard.calibrationCopied')}</span>
                   </>
                 ) : (
-                  <span>{t('wizard.copyCalibrationPrompt')}</span>
+                  <>
+                    <Clipboard className="w-3.5 h-3.5" />
+                    <span>{t('wizard.copyCalibrationPrompt')}</span>
+                  </>
                 )}
               </Button>
             </div>
@@ -427,11 +435,14 @@ export default function GuidelinesWizard({
               >
                 {copiedPromptId === 'prompt-profile' ? (
                   <>
-                    <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                    <Check className="w-3.5 h-3.5 animate-pulse" />
                     <span>{t('wizard.synthesisCopied')}</span>
                   </>
                 ) : (
-                  <span>{t('wizard.copySynthesisPrompt')}</span>
+                  <>
+                    <Clipboard className="w-3.5 h-3.5" />
+                    <span>{t('wizard.copySynthesisPrompt')}</span>
+                  </>
                 )}
               </Button>
             </div>
@@ -620,7 +631,7 @@ export default function GuidelinesWizard({
                 variant="primary"
                 onClick={handleSaveKnowledgeSet}
                 disabled={!researcherOutput.trim()}
-                className="font-extrabold py-3 px-6 text-xs shadow-lg shadow-brand-accent/10 hover:shadow-brand-accent/20 active:scale-98"
+                className="font-extrabold py-3 px-6 text-xs shadow-lg shadow-brand-accent/10 hover:shadow-brand-accent/20 active:scale-98 animate-fadeIn"
               >
                 {t('wizard.saveChecklist')}
               </Button>

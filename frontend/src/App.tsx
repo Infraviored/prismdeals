@@ -7,7 +7,7 @@ import GuidelinesWizard from './components/GuidelinesWizard'
 import SettingsView from './components/SettingsView'
 import { transformListing } from './utils/listingTransformer'
 import { useHashRouter } from './hooks/useHashRouter'
-import { GearIcon } from './components/GearIcon'
+import { Menu, X, Settings, Globe, LogOut, Key, Search, RefreshCw, Sparkles, ChevronDown } from 'lucide-react'
 import { useTranslation } from './hooks/useTranslation'
 import { Button } from './components/ui/Button'
 import { Input } from './components/ui/Input'
@@ -71,6 +71,7 @@ export default function App() {
 
   const [isRegisteringTarget, setIsRegisteringTarget] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false)
 
   // Database lists
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -892,35 +893,34 @@ export default function App() {
   return (
     <div className="min-h-screen bg-brand-primary text-slate-100 flex flex-col font-sans">
       {/* Header */}
-      <header className="border-b border-border-subtle bg-bg-surface/60 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center justify-between w-full md:w-auto">
-          <div className="flex items-center space-x-3">
-            <img src={`${import.meta.env.BASE_URL}logo-icon.svg`} alt="prismdeals Icon" className="w-8 h-8 rounded-lg shadow shadow-black/30" />
-            <span className="font-semibold text-lg tracking-wide text-white font-sans">prismdeals</span>
-          </div>
-
-          {/* Hamburger Menu Toggle for Mobile */}
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-2 text-text-muted hover:text-white focus:outline-none"
-            aria-label="Toggle menu"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-              {isMobileMenuOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-              )}
-            </svg>
-          </button>
+      {/* Header */}
+      <header className="border-b border-border-subtle bg-bg-surface/60 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <img src={`${import.meta.env.BASE_URL}logo-icon.svg`} alt="prismdeals Icon" className="w-8 h-8 rounded-lg shadow shadow-black/30" />
+          <span className="font-semibold text-lg tracking-wide text-white font-sans">prismdeals</span>
         </div>
 
-        {/* Navigation & Controls Wrapper */}
-        <div className={`${isMobileMenuOpen ? 'flex' : 'hidden'} md:flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full md:w-auto transition-all duration-300`}>
+        {/* Hamburger Menu Toggle for Mobile */}
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="md:hidden p-2 text-text-muted hover:text-white transition-colors focus:outline-none"
+          aria-label="Toggle menu"
+        >
+          {isMobileMenuOpen ? <X className="w-6 h-6 animate-fadeIn" /> : <Menu className="w-6 h-6 animate-fadeIn" />}
+        </button>
+
+        {/* Navigation & Controls Wrapper - Slide-out drawer on Mobile, Inline row on Desktop */}
+        <div className={`
+          fixed md:relative top-[65px] md:top-0 right-0 h-[calc(100vh-65px)] md:h-auto w-64 md:w-auto
+          bg-bg-surface/95 backdrop-blur-xl md:backdrop-blur-none border-l border-border-subtle md:border-l-0
+          flex flex-col md:flex-row items-stretch md:items-center gap-4 p-6 md:p-0 z-50
+          transition-all duration-300 shadow-2xl md:shadow-none
+          ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
+        `}>
           {/* Authentication session state widget */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-bg-input/80 border border-border-subtle rounded-xl p-3 md:py-1.5 md:px-3 shadow-inner">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-bg-input border border-border-subtle rounded-xl p-3 md:py-1.5 md:px-3 shadow-inner">
             <div className="flex items-center space-x-1.5">
-              <span className={`w-2 h-2 rounded-full ${sessionEmail ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+              <span className={`w-2.5 h-2.5 rounded-full ${sessionEmail ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
               <span className="text-[10px] font-semibold text-text-muted">
                 {sessionEmail ? t('common.sessionActive', { email: sessionEmail }) : t('common.sessionUnauth')}
               </span>
@@ -932,32 +932,53 @@ export default function App() {
                 size="xs"
                 onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }}
                 disabled={isScraping || isProcessing}
-                className="w-full sm:w-auto"
+                className="w-full sm:w-auto flex items-center justify-center gap-1"
               >
-                {t('common.login')}
+                <Key className="w-3 h-3" />
+                <span>{t('common.login')}</span>
               </Button>
             ) : (
               <Button
-                variant="mini-slate"
+                variant="secondary"
                 size="xs"
                 onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }}
                 disabled={isScraping || isProcessing}
-                className="w-full sm:w-auto"
+                className="w-full sm:w-auto flex items-center justify-center gap-1 border-border-subtle"
               >
-                {t('common.reauth')}
+                <Key className="w-3 h-3 text-brand-accent" />
+                <span>{t('common.reauth')}</span>
               </Button>
             )}
           </div>
 
-          <div className="flex items-center gap-2 justify-end">
-            <Button
-              variant="badge"
-              size="sm"
-              onClick={toggleLanguage}
-              className="px-2.5 py-1.5 text-[10px] flex-1 md:flex-none text-center"
-            >
-              {lang.toUpperCase()}
-            </Button>
+          <div className="flex items-center gap-3 justify-end mt-4 md:mt-0">
+            {/* Custom language selector dropdown */}
+            <div className="relative flex-1 md:flex-none">
+              <Button
+                variant="badge"
+                size="sm"
+                onClick={() => setIsLangDropdownOpen(!isLangDropdownOpen)}
+                className="w-full px-3 py-1.5 text-[10px] flex items-center justify-center gap-1.5 border-border-subtle"
+              >
+                <Globe className="w-3.5 h-3.5 text-text-muted" />
+                <span>{lang.toUpperCase()}</span>
+                <ChevronDown className="w-3 h-3 text-text-muted" />
+              </Button>
+
+              {isLangDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setIsLangDropdownOpen(false)} />
+                  <div className="absolute right-0 mt-1.5 w-24 bg-bg-surface border border-border-subtle rounded-xl shadow-xl z-20 py-1 overflow-hidden animate-fadeIn">
+                    <button
+                      onClick={() => { toggleLanguage(); setIsLangDropdownOpen(false); }}
+                      className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-surface-hover font-semibold transition-colors"
+                    >
+                      {lang === 'en' ? 'DEUTSCH' : 'ENGLISH'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
 
             <Button
               variant="icon"
@@ -968,18 +989,19 @@ export default function App() {
                 }
               }}
               title={t('common.globalSettings')}
-              className="p-2 flex-1 md:flex-none flex justify-center animate-fadeIn"
+              className="p-2 flex-1 md:flex-none flex justify-center border-border-subtle hover:border-brand-accent/30"
             >
-              <GearIcon className="w-4.5 h-4.5 transition-transform duration-500 group-hover:rotate-90 text-text-muted group-hover:text-brand-accent" />
+              <Settings className="w-4.5 h-4.5 text-text-muted hover:text-brand-accent transition-all duration-300" />
             </Button>
 
             <Button
               variant="badge"
               size="sm"
               onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
-              className="px-2.5 py-1.5 text-[10px] text-rose-400 border-rose-500/20 hover:bg-rose-500/10 flex-1 md:flex-none text-center"
+              className="px-3 py-1.5 text-[10px] text-rose-400 border-rose-500/20 hover:bg-rose-500/10 flex-1 md:flex-none flex items-center justify-center gap-1.5 text-center"
             >
-              {t('auth.logout')}
+              <LogOut className="w-3.5 h-3.5" />
+              <span>{t('auth.logout')}</span>
             </Button>
           </div>
         </div>
@@ -1057,7 +1079,7 @@ export default function App() {
                             title={t('landing.configureTooltip')}
                             className="p-1.5"
                           >
-                            <GearIcon className="w-4 h-4 transition-transform duration-500 hover:rotate-90" />
+                            <Settings className="w-4 h-4 transition-transform duration-500 hover:rotate-90 text-text-muted hover:text-brand-accent" />
                           </Button>
                         </div>
 
@@ -1137,9 +1159,9 @@ export default function App() {
                       navigate('edit', currentCampaignId, firstTarget?.id || null);
                     }}
                     title={t('landing.configureTooltip')}
-                    className="p-1.5"
+                    className="p-1.5 border-border-subtle hover:border-brand-accent/30"
                   >
-                    <GearIcon className="w-4 h-4 transition-transform duration-500 hover:rotate-90" />
+                    <Settings className="w-4 h-4 transition-transform duration-500 hover:rotate-90 text-text-muted hover:text-brand-accent" />
                   </Button>
                 </div>
               </div>
@@ -1152,27 +1174,30 @@ export default function App() {
                     size="sm"
                     onClick={handleStartScrape}
                     disabled={isScraping || isProcessing}
-                    className="py-2.5 px-2 text-center"
+                    className="py-2.5 px-2 text-center flex items-center justify-center gap-1.5"
                   >
-                    <span>🔍 {t('dashboard.fetchFresh')}</span>
+                    <Search className="w-3.5 h-3.5" />
+                    <span>{t('dashboard.fetchFresh')}</span>
                   </Button>
                   <Button
                     variant="action-sky"
                     size="sm"
                     onClick={handleStartDeepUpdate}
                     disabled={isScraping || isProcessing}
-                    className="py-2.5 px-2 text-center"
+                    className="py-2.5 px-2 text-center flex items-center justify-center gap-1.5"
                   >
-                    <span>🔄 {t('dashboard.updateDesc')}</span>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>{t('dashboard.updateDesc')}</span>
                   </Button>
                   <Button
                     variant="action-indigo"
                     size="sm"
                     onClick={handleStartProcess}
                     disabled={isScraping || isProcessing}
-                    className="py-2.5 px-2 text-center"
+                    className="py-2.5 px-2 text-center flex items-center justify-center gap-1.5"
                   >
-                    <span>🤖 {t('dashboard.autoAi')}</span>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{t('dashboard.autoAi')}</span>
                   </Button>
                 </div>
 

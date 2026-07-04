@@ -3,6 +3,7 @@ import type { Listing } from '../types';
 import { useTranslation } from '../hooks/useTranslation';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
+import { ChevronLeft, ChevronRight, Sparkles, AlertTriangle, CheckCircle2, RefreshCw, Calendar, MapPin, Copy, Check, ExternalLink } from 'lucide-react';
 
 interface ListingDetailCardProps {
   l: Listing;
@@ -53,15 +54,15 @@ export default function ListingDetailCard({
               <>
                 <button
                   onClick={(e) => { e.stopPropagation(); handlePrevImage(l.images!.length); }}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-bg-input/85 hover:bg-bg-surface border border-border-subtle text-text-muted w-7 h-7 rounded-full flex items-center justify-center text-xs opacity-0 group-hover/gallery:opacity-100 transition-opacity focus:outline-none"
+                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-bg-input/85 hover:bg-bg-surface border border-border-subtle text-text-muted w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none"
                 >
-                  &larr;
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); handleNextImage(l.images!.length); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-bg-input/85 hover:bg-bg-surface border border-border-subtle text-text-muted w-7 h-7 rounded-full flex items-center justify-center text-xs opacity-0 group-hover/gallery:opacity-100 transition-opacity focus:outline-none"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-bg-input/85 hover:bg-bg-surface border border-border-subtle text-text-muted w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none"
                 >
-                  &rarr;
+                  <ChevronRight className="w-4 h-4" />
                 </button>
               </>
             )}
@@ -140,7 +141,10 @@ export default function ListingDetailCard({
                   {activeProcessingListingIds.includes(l.id) ? (
                     <div className="animate-spin w-3 h-3 border border-current border-t-transparent rounded-full" />
                   ) : (
-                    <span>{l.llm_processed ? '↺' : '🤖'} {t('listing.aiEval')}</span>
+                    <span className="flex items-center gap-1">
+                      {l.llm_processed ? <RefreshCw className="w-3 h-3 animate-spin-slow" /> : <Sparkles className="w-3 h-3" />}
+                      <span>{t('listing.aiEval')}</span>
+                    </span>
                   )}
                 </Button>
               );
@@ -150,12 +154,18 @@ export default function ListingDetailCard({
 
         <div>
           <h3 className="text-sm font-bold text-text-primary line-clamp-1 group-hover:text-brand-accent transition-colors">{l.title}</h3>
-          <div className="flex space-x-2 text-xs font-semibold text-text-muted mt-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-text-muted mt-1">
             <span className="text-brand-accent font-bold">{l.price}</span>
             <span>•</span>
-            <span>{l.location}</span>
+            <span className="flex items-center gap-1">
+              <MapPin className="w-3.5 h-3.5 text-text-muted" />
+              <span>{l.location}</span>
+            </span>
             <span>•</span>
-            <span>{l.date_string}</span>
+            <span className="flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 text-text-muted" />
+              <span>{l.date_string}</span>
+            </span>
           </div>
         </div>
 
@@ -181,15 +191,17 @@ export default function ListingDetailCard({
           {l.llm_processed && l.criteria_evaluations && l.criteria_evaluations.map((evalItem, idx) => {
             if (evalItem.status === 'satisfied') {
               return (
-                <span key={`sat-${idx}`} className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-md font-semibold flex items-center gap-0.5">
-                  <span className="text-emerald-500 font-bold">✓</span> {evalItem.name}
+                <span key={`sat-${idx}`} className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-md font-semibold flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <span>{evalItem.name}</span>
                 </span>
               );
             }
             if (evalItem.status === 'violated') {
               return (
-                <span key={`viol-${idx}`} className="text-[9px] bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded-md font-semibold flex items-center gap-0.5">
-                  <span className="text-rose-400 font-bold">⚠️</span> {evalItem.name}
+                <span key={`viol-${idx}`} className="text-[9px] bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded-md font-semibold flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 text-rose-400" />
+                  <span>{evalItem.name}</span>
                 </span>
               );
             }
@@ -198,8 +210,9 @@ export default function ListingDetailCard({
 
           {/* AI checklist Needs Re-Evaluation status */}
           {l.llm_processed && l.criteria_evaluations?.some(e => e.status === 'Needs Re-Evaluation') && (
-            <span className="text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-md font-semibold flex items-center gap-0.5 animate-pulse">
-              <span>⚠️</span> {t('listing.needsReEval')}
+            <span className="text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-md font-semibold flex items-center gap-1 animate-pulse">
+              <AlertTriangle className="w-3 h-3 text-amber-450" />
+              <span>{t('listing.needsReEval')}</span>
             </span>
           )}
 
@@ -248,9 +261,10 @@ export default function ListingDetailCard({
           href={l.url}
           target="_blank"
           rel="noreferrer"
-          className="text-xs text-brand-accent hover:text-brand-accent/80 font-bold transition-colors"
+          className="text-xs text-brand-accent hover:text-brand-accent/80 font-bold transition-colors flex items-center gap-1"
         >
-          {t('listing.viewOriginal')} &rarr;
+          <span>{t('listing.viewOriginal')}</span>
+          <ExternalLink className="w-3.5 h-3.5" />
         </a>
       </div>
 
@@ -401,13 +415,12 @@ export default function ListingDetailCard({
                       variant="mini-slate"
                       size="xs"
                       onClick={() => handleCopyOutreach(l.draft_message || '')}
-                      className={`font-bold px-2.5 py-0.5 transition-all ${
-                        copiedOutreach
-                          ? 'bg-emerald-950 hover:bg-emerald-900 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/20 hover:text-emerald-300'
-                      }`}
+                      className="font-bold px-2.5 py-0.5 transition-all"
                     >
-                      {copiedOutreach ? t('listing.copiedToClipboard') : t('listing.copyDraft')}
+                      <span className="flex items-center gap-1.5">
+                        {copiedOutreach ? <Check className="w-3.5 h-3.5 text-emerald-450" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedOutreach ? t('listing.copiedToClipboard') : t('listing.copyDraft')}</span>
+                      </span>
                     </Button>
                   </div>
                   <p className="text-text-secondary leading-relaxed font-sans italic text-[11px] bg-bg-input/60 p-3 rounded-lg border border-border-subtle select-all whitespace-pre-wrap">
