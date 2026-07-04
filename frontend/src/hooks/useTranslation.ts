@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { translations } from '../i18n/translations';
-import type { Language } from '../i18n/translations';
+import type { Language, TranslationPath } from '../i18n/translations';
 
 // Keep a list of active listeners to sync state across all components simultaneously
 const listeners = new Set<(lang: Language) => void>();
@@ -34,7 +34,7 @@ export function useTranslation() {
   };
 
   const t = (
-    path: string,
+    path: TranslationPath,
     replacements?: Record<string, string | number>
   ): string => {
     const keys = path.split('.');

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Listing } from '../types';
 import { useTranslation } from '../hooks/useTranslation';
+import type { TranslationPath } from '../i18n/translations';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
 import { 
@@ -384,7 +385,7 @@ export default function ListingDetailCard({
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {Object.entries(l.dimensions).map(([key, dim]) => {
-                  const label = t(`listing.dimensions.${key}` as string) || key;
+                  const label = t(`listing.dimensions.${key}` as TranslationPath) || key;
                   const score = dim.score;
                   const reasoning = dim.reasoning;
                   

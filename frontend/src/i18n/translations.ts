@@ -34,6 +34,7 @@ export const translations = {
       foundCount: "Found {{count}} live listings! Target registered successfully.",
       targetRegistrationFailed: "Failed to register search target.",
       connectionIssueFailed: "Failed to auto-register search query due to connection issues.",
+      copy: "Copy",
     },
     landing: {
       title: "Hunt Campaigns",
@@ -212,6 +213,7 @@ export const translations = {
       finalizingSession: "Finalizing session...",
       discoveringListings: "Discovering listings on index pages...",
       liveScraper: "Live Scraper",
+      selectListingPrompt: "Select a listing from the list to view its full AI evaluation, specs, and outreach drafts.",
       dimensions: {
         trustworthiness: "Trustworthiness",
         transparency: "Transparency",
@@ -268,6 +270,7 @@ export const translations = {
       foundCount: "✓ {{count}} Live-Anzeigen gefunden! Ziel erfolgreich registriert.",
       targetRegistrationFailed: "Fehler beim Registrieren des Suchziels.",
       connectionIssueFailed: "Auto-Registrierung des Suchziels wegen Verbindungsproblemen fehlgeschlagen.",
+      copy: "Kopieren",
     },
     landing: {
       title: "Suchkampagnen",
@@ -446,6 +449,7 @@ export const translations = {
       finalizingSession: "Sitzung wird abgeschlossen...",
       discoveringListings: "Suche nach Anzeigen auf Indexseiten...",
       liveScraper: "Live-Scraper",
+      selectListingPrompt: "Wählen Sie ein Angebot aus der Liste aus, um die vollständige KI-Bewertung, Details und Anschreiben-Entwürfe anzuzeigen.",
       dimensions: {
         trustworthiness: "Vertrauenswürdigkeit",
         transparency: "Transparenz",
@@ -471,3 +475,12 @@ export const translations = {
 
 export type Language = "en" | "de";
 export type TranslationKeys = typeof translations.en;
+
+type PathKeys<T> = T extends string
+  ? ""
+  : {
+      [K in keyof T & string]: `${K}${PathKeys<T[K]> extends "" ? "" : "."}${PathKeys<T[K]>}`;
+    }[keyof T & string];
+
+export type TranslationPath = PathKeys<TranslationKeys>;
+

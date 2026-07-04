@@ -1311,7 +1311,7 @@ export default function App() {
 
                   <Select
                     value={selectedStatusFilter}
-                    onChange={val => setSelectedStatusFilter(val as any)}
+                    onChange={val => setSelectedStatusFilter(val as 'All' | 'High Niceness' | 'New' | 'Evaluate with AI')}
                     options={[
                       { value: 'All', label: t('dashboard.statusAll') },
                       { value: 'High Niceness', label: `${t('dashboard.statusMatches')} (70+)` },

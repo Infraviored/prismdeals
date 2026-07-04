@@ -20,4 +20,19 @@ repos:
         files: ^frontend/src/.*\.[jt]sx?$
         types: [file]
 
+      - id: check-translations
+        name: i18n Translation Check
+        entry: node scripts/check_translations.js
+        language: system
+        pass_filenames: false
+        files: ^(frontend/src/.*|scripts/check_translations\.js)$
+
+      - id: tsc-build
+        name: TypeScript Compile Check
+        entry: bash -c 'cd frontend && npm run build'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+
 
