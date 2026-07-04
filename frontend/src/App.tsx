@@ -12,6 +12,9 @@ import { useTranslation } from './hooks/useTranslation'
 import { Button } from './components/ui/Button'
 import { Input } from './components/ui/Input'
 import { Card } from './components/ui/Card'
+import { Select } from './components/ui/Select'
+import { cn } from './utils/cn'
+
 
 
 const isValidKleinanzeigenUrl = (urlStr: string): boolean => {
@@ -893,9 +896,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-brand-primary text-slate-100 flex flex-col font-sans">
       {/* Header */}
-      {/* Header */}
-      <header className="border-b border-border-subtle bg-bg-surface/60 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
+      <header className="h-16 border-b border-border-subtle bg-bg-surface/60 backdrop-blur-md sticky top-0 z-40 px-6 flex items-center justify-between">
+        <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setView('landing')}>
           <img src={`${import.meta.env.BASE_URL}logo-icon.svg`} alt="prismdeals Icon" className="w-8 h-8 rounded-lg shadow shadow-black/30" />
           <span className="font-semibold text-lg tracking-wide text-white font-sans">prismdeals</span>
         </div>
@@ -906,21 +908,15 @@ export default function App() {
           className="md:hidden p-2 text-text-muted hover:text-white transition-colors focus:outline-none"
           aria-label="Toggle menu"
         >
-          {isMobileMenuOpen ? <X className="w-6 h-6 animate-fadeIn" /> : <Menu className="w-6 h-6 animate-fadeIn" />}
+          {isMobileMenuOpen ? <X className="w-6 h-6 animate-fade-in" /> : <Menu className="w-6 h-6 animate-fade-in" />}
         </button>
 
-        {/* Navigation & Controls Wrapper - Slide-out drawer on Mobile, Inline row on Desktop */}
-        <div className={`
-          fixed md:relative top-[65px] md:top-0 right-0 h-[calc(100vh-65px)] md:h-auto w-64 md:w-auto
-          bg-bg-surface/95 backdrop-blur-xl md:backdrop-blur-none border-l border-border-subtle md:border-l-0
-          flex flex-col md:flex-row items-stretch md:items-center gap-4 p-6 md:p-0 z-50
-          transition-all duration-300 shadow-2xl md:shadow-none
-          ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
-        `}>
+        {/* Desktop Controls (Inline row) */}
+        <div className="hidden md:flex items-center gap-4">
           {/* Authentication session state widget */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-bg-input border border-border-subtle rounded-xl p-3 md:py-1.5 md:px-3 shadow-inner">
+          <div className="flex items-center gap-3 bg-bg-input border border-border-subtle rounded-xl py-1.5 px-3 shadow-inner">
             <div className="flex items-center space-x-1.5">
-              <span className={`w-2.5 h-2.5 rounded-full ${sessionEmail ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+              <span className={cn("w-2 h-2 rounded-full", sessionEmail ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500')} />
               <span className="text-[10px] font-semibold text-text-muted">
                 {sessionEmail ? t('common.sessionActive', { email: sessionEmail }) : t('common.sessionUnauth')}
               </span>
@@ -930,9 +926,9 @@ export default function App() {
               <Button
                 variant="mini-emerald"
                 size="xs"
-                onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }}
+                onClick={handleTriggerLogin}
                 disabled={isScraping || isProcessing}
-                className="w-full sm:w-auto flex items-center justify-center gap-1"
+                className="flex items-center justify-center gap-1"
               >
                 <Key className="w-3 h-3" />
                 <span>{t('common.login')}</span>
@@ -941,9 +937,9 @@ export default function App() {
               <Button
                 variant="secondary"
                 size="xs"
-                onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }}
+                onClick={handleTriggerLogin}
                 disabled={isScraping || isProcessing}
-                className="w-full sm:w-auto flex items-center justify-center gap-1 border-border-subtle"
+                className="flex items-center justify-center gap-1 border-border-subtle"
               >
                 <Key className="w-3 h-3 text-brand-accent" />
                 <span>{t('common.reauth')}</span>
@@ -951,14 +947,14 @@ export default function App() {
             )}
           </div>
 
-          <div className="flex items-center gap-3 justify-end mt-4 md:mt-0">
-            {/* Custom language selector dropdown */}
-            <div className="relative flex-1 md:flex-none">
+          <div className="flex items-center gap-3">
+            {/* Language Selector Dropdown */}
+            <div className="relative">
               <Button
                 variant="badge"
                 size="sm"
                 onClick={() => setIsLangDropdownOpen(!isLangDropdownOpen)}
-                className="w-full px-3 py-1.5 text-[10px] flex items-center justify-center gap-1.5 border-border-subtle"
+                className="px-3 py-1.5 text-[10px] flex items-center justify-center gap-1.5 border-border-subtle"
               >
                 <Globe className="w-3.5 h-3.5 text-text-muted" />
                 <span>{lang.toUpperCase()}</span>
@@ -968,7 +964,7 @@ export default function App() {
               {isLangDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsLangDropdownOpen(false)} />
-                  <div className="absolute right-0 mt-1.5 w-24 bg-bg-surface border border-border-subtle rounded-xl shadow-xl z-20 py-1 overflow-hidden animate-fadeIn">
+                  <div className="absolute right-0 mt-1.5 w-24 bg-bg-surface border border-border-subtle rounded-xl shadow-xl z-20 py-1 overflow-hidden animate-fade-in">
                     <button
                       onClick={() => { toggleLanguage(); setIsLangDropdownOpen(false); }}
                       className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-surface-hover font-semibold transition-colors"
@@ -983,22 +979,20 @@ export default function App() {
             <Button
               variant="icon"
               onClick={() => {
-                setIsMobileMenuOpen(false);
                 if (view !== 'settings') {
                   setView('settings');
                 }
               }}
               title={t('common.globalSettings')}
-              className="p-2 flex-1 md:flex-none flex justify-center border-border-subtle hover:border-brand-accent/30"
+              className="p-2 border-border-subtle hover:border-brand-accent/30"
             >
               <Settings className="w-4.5 h-4.5 text-text-muted hover:text-brand-accent transition-all duration-300" />
             </Button>
-
             <Button
               variant="badge"
               size="sm"
-              onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
-              className="px-3 py-1.5 text-[10px] text-rose-400 border-rose-500/20 hover:bg-rose-500/10 flex-1 md:flex-none flex items-center justify-center gap-1.5 text-center"
+              onClick={handleLogout}
+              className="px-3 py-1.5 text-[10px] text-rose-400 border-rose-500/20 hover:bg-rose-500/10 flex items-center justify-center gap-1.5 text-center"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>{t('auth.logout')}</span>
@@ -1006,6 +1000,107 @@ export default function App() {
           </div>
         </div>
       </header>
+
+
+
+      {/* Mobile Navigation Drawer Sheet (slide-out overlay) */}
+      {isMobileMenuOpen && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden animate-fade-in" 
+            onClick={() => setIsMobileMenuOpen(false)} 
+          />
+          <div className="fixed top-0 right-0 bottom-0 w-72 bg-bg-surface border-l border-border-subtle p-6 z-50 flex flex-col gap-6 md:hidden animate-slide-left shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border-subtle pb-4">
+              <span className="font-bold text-sm text-white tracking-wide uppercase">Navigation</span>
+              <button 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="p-1 rounded-lg border border-border-subtle text-text-muted hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Authentication session state widget */}
+            <div className="flex flex-col gap-3 bg-bg-input border border-border-subtle rounded-xl p-3 shadow-inner">
+              <div className="flex items-center space-x-1.5">
+                <span className={cn("w-2 h-2 rounded-full", sessionEmail ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500')} />
+                <span className="text-[10px] font-semibold text-text-muted">
+                  {sessionEmail ? t('common.sessionActive', { email: sessionEmail }) : t('common.sessionUnauth')}
+                </span>
+              </div>
+
+              {!sessionEmail ? (
+                <Button
+                  variant="mini-emerald"
+                  size="sm"
+                  onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }}
+                  disabled={isScraping || isProcessing}
+                  className="w-full flex items-center justify-center gap-1.5"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  <span>{t('common.login')}</span>
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }}
+                  disabled={isScraping || isProcessing}
+                  className="w-full flex items-center justify-center gap-1.5 border-border-subtle"
+                >
+                  <Key className="w-3.5 h-3.5 text-brand-accent" />
+                  <span>{t('common.reauth')}</span>
+                </Button>
+              )}
+            </div>
+
+            {/* Language toggle button for Mobile */}
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block font-mono">Language</span>
+              <Button
+                variant="badge"
+                size="sm"
+                onClick={toggleLanguage}
+                className="w-full justify-between px-3 border-border-subtle"
+              >
+                <span className="flex items-center gap-2">
+                  <Globe className="w-4.5 h-4.5 text-text-muted" />
+                  <span>{lang === 'en' ? 'ENGLISH' : 'DEUTSCH'}</span>
+                </span>
+                <span className="text-[10px] text-brand-accent font-bold">Switch to {lang === 'en' ? 'DE' : 'EN'}</span>
+              </Button>
+            </div>
+
+            {/* Actions list */}
+            <div className="space-y-3 mt-auto">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setView('settings');
+                  setIsMobileMenuOpen(false);
+                }}
+                className="w-full justify-start gap-2.5"
+              >
+                <Settings className="w-4.5 h-4.5 text-text-muted" />
+                <span>{t('common.globalSettings')}</span>
+              </Button>
+
+              <Button
+                variant="badge"
+                size="sm"
+                onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
+                className="w-full justify-start gap-2.5 text-rose-450 border-rose-500/20 hover:bg-rose-500/10"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>{t('auth.logout')}</span>
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col justify-start">
@@ -1204,28 +1299,31 @@ export default function App() {
                 {/* Filter dropdowns */}
                 <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
                   {/* Target search filter */}
-                  <select
+                  <Select
                     value={selectedSearchId}
-                    onChange={e => setSelectedSearchId(e.target.value)}
-                    className="bg-bg-input text-xs font-semibold text-text-secondary border border-border-subtle rounded-lg px-3 py-2.5 focus:outline-none focus:border-brand-accent w-full sm:w-44"
-                  >
-                    <option value="All">{t('dashboard.filterAllSearches')}</option>
-                    {searches.filter(s => s.campaign_id === currentCampaignId).map(s => (
-                      <option key={s.id} value={String(s.id)}>{s.name}</option>
-                    ))}
-                  </select>
+                    onChange={setSelectedSearchId}
+                    options={[
+                      { value: 'All', label: t('dashboard.filterAllSearches') },
+                      ...searches
+                        .filter(s => s.campaign_id === currentCampaignId)
+                        .map(s => ({ value: String(s.id), label: s.name }))
+                    ]}
+                    className="w-full sm:w-44"
+                  />
 
-                  <select
+                  <Select
                     value={selectedStatusFilter}
-                    onChange={e => setSelectedStatusFilter(e.target.value as typeof selectedStatusFilter)}
-                    className="bg-bg-input text-xs font-semibold text-text-secondary border border-border-subtle rounded-lg px-3 py-2.5 focus:outline-none focus:border-brand-accent w-full sm:w-44"
-                  >
-                    <option value="All">{t('dashboard.statusAll')}</option>
-                    <option value="High Niceness">{t('dashboard.statusMatches')} (70+)</option>
-                    <option value="Evaluate with AI">{t('dashboard.statusPending')}</option>
-                    <option value="New">{t('dashboard.statusEvaluated')}</option>
-                  </select>
+                    onChange={val => setSelectedStatusFilter(val as any)}
+                    options={[
+                      { value: 'All', label: t('dashboard.statusAll') },
+                      { value: 'High Niceness', label: `${t('dashboard.statusMatches')} (70+)` },
+                      { value: 'Evaluate with AI', label: t('dashboard.statusPending') },
+                      { value: 'New', label: t('dashboard.statusEvaluated') }
+                    ]}
+                    className="w-full sm:w-44"
+                  />
                 </div>
+
               </div>
             </Card>
 
@@ -1245,24 +1343,94 @@ export default function App() {
               </div>
             )}
 
-            {/* Grid of Matched Listings */}
+            {/* Grid/Split of Matched Listings */}
             {filteredListings.length === 0 ? (
-              <div className="bg-slate-900/20 border border-dashed border-slate-855 rounded-2xl p-16 text-center shadow-inner">
+              <div className="bg-slate-900/20 border border-dashed border-border-subtle rounded-2xl p-16 text-center shadow-inner">
                 <span className="text-sm text-slate-500 font-semibold block mb-1">No matching listings found</span>
-                <span className="text-xs text-slate-650 block">Configure search targets, link guidelines checklists, and trigger scraper discovery crawls to harvest deals.</span>
+                <span className="text-xs text-slate-600 block">Configure search targets, link guidelines checklists, and trigger scraper discovery crawls to harvest deals.</span>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredListings.map(l => (
-                  <ListingDetailCard
-                    key={l.id}
-                    l={l}
-                    activeProcessingListingIds={activeProcessingListingIds}
-                    handleProcessSingleListing={handleProcessSingleListing}
-                    selectedListingId={selectedListingId}
-                    setSelectedListingId={setSelectedListingId}
-                  />
-                ))}
+              <div className="flex flex-col lg:flex-row gap-6 items-start w-full relative">
+                
+                {/* Left Master List / Mobile Grid */}
+                <div className={cn(
+                  "w-full flex-1 flex flex-col gap-4",
+                  "lg:w-[380px] lg:max-w-[380px] lg:flex-initial lg:max-h-[calc(100vh-220px)] lg:overflow-y-auto lg:pr-2 scrollbar-thin"
+                )}>
+                  {/* Grid on mobile, vertical list on desktop */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
+                    {filteredListings.map(l => (
+                      <ListingDetailCard
+                        key={l.id}
+                        l={l}
+                        activeProcessingListingIds={activeProcessingListingIds}
+                        handleProcessSingleListing={handleProcessSingleListing}
+                        selectedListingId={selectedListingId}
+                        setSelectedListingId={setSelectedListingId}
+                        mode="list"
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right Detail Inspector (Desktop) */}
+                <div className="hidden lg:block lg:flex-1 lg:sticky lg:top-24 bg-bg-surface border border-border-subtle rounded-2xl p-6 shadow-xl max-h-[calc(100vh-220px)] overflow-y-auto scrollbar-thin w-full">
+                  {selectedListingId ? (
+                    (() => {
+                      const selectedListing = filteredListings.find(l => l.id === selectedListingId);
+                      return selectedListing ? (
+                        <ListingDetailCard
+                          l={selectedListing}
+                          activeProcessingListingIds={activeProcessingListingIds}
+                          handleProcessSingleListing={handleProcessSingleListing}
+                          selectedListingId={selectedListingId}
+                          setSelectedListingId={setSelectedListingId}
+                          mode="detail"
+                        />
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-center p-8 text-text-muted">
+                          <p className="text-xs font-semibold">Listing not found</p>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="h-[350px] flex flex-col items-center justify-center text-center p-8 text-text-muted border border-dashed border-border-subtle rounded-xl bg-bg-input/20">
+                      <Sparkles className="w-8 h-8 text-brand-accent/40 mb-3 animate-pulse" />
+                      <p className="text-xs font-semibold">{t('listing.selectListingPrompt') || 'Select a listing from the list to view its full AI evaluation, specs, and outreach drafts.'}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile Drawer Overlay / Dialog Modal for Details (lg:hidden) */}
+                {selectedListingId && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:hidden animate-fade-in">
+                    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedListingId(null)} />
+                    <div className="bg-bg-surface border border-border-subtle w-full max-w-lg max-h-[85vh] rounded-2xl overflow-y-auto p-5 relative z-10 shadow-2xl animate-slide-up">
+                      <button
+                        onClick={() => setSelectedListingId(null)}
+                        className="absolute right-4 top-4 text-text-muted hover:text-white p-1 rounded-lg border border-border-subtle bg-bg-input"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                      {(() => {
+                        const selectedListing = filteredListings.find(l => l.id === selectedListingId);
+                        return selectedListing ? (
+                          <div className="mt-4">
+                            <ListingDetailCard
+                              l={selectedListing}
+                              activeProcessingListingIds={activeProcessingListingIds}
+                              handleProcessSingleListing={handleProcessSingleListing}
+                              selectedListingId={selectedListingId}
+                              setSelectedListingId={setSelectedListingId}
+                              mode="detail"
+                            />
+                          </div>
+                        ) : null;
+                      })()}
+                    </div>
+                  </div>
+                )}
+
               </div>
             )}
           </div>

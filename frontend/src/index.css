@@ -15,6 +15,27 @@
   --color-text-primary: #FFFFFF;
   --color-text-secondary: #E2EAEA;
   --color-text-muted: #9BB1B1;
+
+  --animate-slide-left: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: fadeIn 0.2s ease-out;
+
+  @keyframes slideLeft {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 }
 
 body {
@@ -24,3 +45,14 @@ body {
   margin: 0;
   min-height: 100vh;
 }
+
+.bg-spotlight {
+  background-image: radial-gradient(circle at top left, rgba(232, 121, 103, 0.05) 0%, transparent 70%);
+}
+
+.bg-glass {
+  background-color: rgba(1, 40, 40, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+

@@ -199,36 +199,33 @@ export default function GuidelinesWizard({
 
             <div className="space-y-2">
               <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider">{t('wizard.demoResearchPrompt')}</label>
-              <div className="relative">
-                <pre className="w-full bg-bg-input border border-border-subtle rounded-xl p-4 text-[10px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
-                  {getResearchPromptWithContext()}
-                </pre>
+              <div className="bg-[#000e0e] border border-border-subtle rounded-xl overflow-hidden shadow-2xl">
+                <div className="flex justify-between items-center bg-bg-input/60 px-4 py-2 border-b border-border-subtle/60">
+                  <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider font-mono">Prompt 1: Deep Research</span>
+                  <Button
+                    variant="mini-slate"
+                    size="xs"
+                    onClick={() => handleCopyPrompt(getResearchPromptWithContext(), 'prompt-research')}
+                    className={`font-bold transition-all h-7 px-3 text-[10px] ${
+                      copiedPromptId === 'prompt-research'
+                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                        : 'border-border-subtle'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {copiedPromptId === 'prompt-research' ? <Check className="w-3.5 h-3.5" /> : <Clipboard className="w-3.5 h-3.5" />}
+                      <span>{copiedPromptId === 'prompt-research' ? t('wizard.promptCopied') : t('common.copy')}</span>
+                    </span>
+                  </Button>
+                </div>
+                <div className="relative">
+                  <pre className="w-full p-4 text-[10px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto scrollbar-thin select-all">
+                    {getResearchPromptWithContext()}
+                  </pre>
+                </div>
               </div>
             </div>
 
-            <div className="flex justify-center py-2">
-              <Button
-                variant="primary"
-                onClick={() => handleCopyPrompt(getResearchPromptWithContext(), 'prompt-research')}
-                className={`font-extrabold px-6 py-2.5 text-xs border flex items-center justify-center gap-2 ${
-                  copiedPromptId === 'prompt-research'
-                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                    : 'bg-brand-accent hover:bg-brand-accent/90 text-white border-brand-accent shadow-md shadow-brand-accent/10'
-                }`}
-              >
-                {copiedPromptId === 'prompt-research' ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 animate-pulse" />
-                    <span>{t('wizard.promptCopied')}</span>
-                  </>
-                ) : (
-                  <>
-                    <Clipboard className="w-3.5 h-3.5" />
-                    <span>{t('wizard.copyResearchPrompt')}</span>
-                  </>
-                )}
-              </Button>
-            </div>
 
             {showStep1Next && (
               <div className="pt-4 border-t border-border-subtle flex justify-end animate-fadeIn">
@@ -337,36 +334,33 @@ export default function GuidelinesWizard({
 
             <div className="space-y-2">
               <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider">{t('wizard.demoCalibrationPrompt')}</label>
-              <div className="relative">
-                <pre className="w-full bg-bg-input border border-border-subtle rounded-xl p-4 text-[10px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
-                  {getMarketPromptWithContext()}
-                </pre>
+              <div className="bg-[#000e0e] border border-border-subtle rounded-xl overflow-hidden shadow-2xl">
+                <div className="flex justify-between items-center bg-bg-input/60 px-4 py-2 border-b border-border-subtle/60">
+                  <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider font-mono">Prompt 2: Calibration</span>
+                  <Button
+                    variant="mini-slate"
+                    size="xs"
+                    onClick={() => handleCopyPrompt(getMarketPromptWithContext(), 'prompt-market')}
+                    className={`font-bold transition-all h-7 px-3 text-[10px] ${
+                      copiedPromptId === 'prompt-market'
+                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                        : 'border-border-subtle'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {copiedPromptId === 'prompt-market' ? <Check className="w-3.5 h-3.5" /> : <Clipboard className="w-3.5 h-3.5" />}
+                      <span>{copiedPromptId === 'prompt-market' ? t('wizard.calibrationCopied') : t('common.copy')}</span>
+                    </span>
+                  </Button>
+                </div>
+                <div className="relative">
+                  <pre className="w-full p-4 text-[10px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto scrollbar-thin select-all">
+                    {getMarketPromptWithContext()}
+                  </pre>
+                </div>
               </div>
             </div>
 
-            <div className="flex justify-center py-2">
-              <Button
-                variant="primary"
-                onClick={() => handleCopyPrompt(getMarketPromptWithContext(), 'prompt-market')}
-                className={`font-extrabold px-6 py-2.5 text-xs border flex items-center justify-center gap-2 ${
-                  copiedPromptId === 'prompt-market'
-                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                    : 'bg-brand-accent hover:bg-brand-accent/90 text-white border-brand-accent shadow-md shadow-brand-accent/10'
-                }`}
-              >
-                {copiedPromptId === 'prompt-market' ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 animate-pulse" />
-                    <span>{t('wizard.calibrationCopied')}</span>
-                  </>
-                ) : (
-                  <>
-                    <Clipboard className="w-3.5 h-3.5" />
-                    <span>{t('wizard.copyCalibrationPrompt')}</span>
-                  </>
-                )}
-              </Button>
-            </div>
 
             {/* Disclosed Return Box */}
             {showStep2Return && (
@@ -415,37 +409,34 @@ export default function GuidelinesWizard({
 
             <div className="space-y-2">
               <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider">{t('wizard.demoSynthesisPrompt')}</label>
-              <div className="relative">
-                <pre className="w-full bg-bg-input border border-border-subtle rounded-xl p-4 text-[10px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
-                  {getProfilePromptWithContext()}
-                </pre>
+              <div className="bg-[#000e0e] border border-border-subtle rounded-xl overflow-hidden shadow-2xl">
+                <div className="flex justify-between items-center bg-bg-input/60 px-4 py-2 border-b border-border-subtle/60">
+                  <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider font-mono">Prompt 3: Synthesis</span>
+                  <Button
+                    variant="mini-slate"
+                    size="xs"
+                    disabled={!marketMemo.trim()}
+                    onClick={() => handleCopyPrompt(getProfilePromptWithContext(), 'prompt-profile')}
+                    className={`font-bold transition-all h-7 px-3 text-[10px] ${
+                      copiedPromptId === 'prompt-profile'
+                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                        : 'border-border-subtle'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {copiedPromptId === 'prompt-profile' ? <Check className="w-3.5 h-3.5" /> : <Clipboard className="w-3.5 h-3.5" />}
+                      <span>{copiedPromptId === 'prompt-profile' ? t('wizard.synthesisCopied') : t('common.copy')}</span>
+                    </span>
+                  </Button>
+                </div>
+                <div className="relative">
+                  <pre className="w-full p-4 text-[10px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto scrollbar-thin select-all">
+                    {getProfilePromptWithContext()}
+                  </pre>
+                </div>
               </div>
             </div>
 
-            <div className="flex justify-center py-2">
-              <Button
-                variant="primary"
-                disabled={!marketMemo.trim()}
-                onClick={() => handleCopyPrompt(getProfilePromptWithContext(), 'prompt-profile')}
-                className={`font-extrabold px-6 py-2.5 text-xs border flex items-center justify-center gap-2 ${
-                  copiedPromptId === 'prompt-profile'
-                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                    : 'bg-brand-accent hover:bg-brand-accent/90 text-white border-brand-accent shadow-md shadow-brand-accent/10'
-                }`}
-              >
-                {copiedPromptId === 'prompt-profile' ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 animate-pulse" />
-                    <span>{t('wizard.synthesisCopied')}</span>
-                  </>
-                ) : (
-                  <>
-                    <Clipboard className="w-3.5 h-3.5" />
-                    <span>{t('wizard.copySynthesisPrompt')}</span>
-                  </>
-                )}
-              </Button>
-            </div>
 
             {/* Disclosed Return Box */}
             {showStep3Return && (
