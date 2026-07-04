@@ -894,7 +894,7 @@ export default function App() {
     <div className="min-h-screen bg-brand-primary text-slate-100 flex flex-col font-sans">
       {/* Header */}
       <header className="h-16 border-b border-border-subtle bg-bg-surface/60 backdrop-blur-md sticky top-0 z-40 px-6 flex items-center justify-between">
-        <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setView('landing')}>
+        <div className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate('landing', null, null)}>
           <img src={`${import.meta.env.BASE_URL}logo-icon.svg`} alt="prismdeals Icon" className="w-8 h-8 rounded-lg shadow shadow-black/30" />
           <span className="font-semibold text-lg tracking-wide text-white font-sans">prismdeals</span>
         </div>
@@ -1089,7 +1089,7 @@ export default function App() {
                 variant="badge"
                 size="sm"
                 onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
-                className="w-full justify-start gap-2.5 text-rose-450 border-rose-500/20 hover:bg-rose-500/10"
+                className="w-full justify-start gap-2.5 text-rose-400 border-rose-500/20 hover:bg-rose-500/10"
               >
                 <LogOut className="w-4 h-4" />
                 <span>{t('auth.logout')}</span>
@@ -1191,7 +1191,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="border-t border-slate-855 mt-4 pt-3 flex justify-between items-center text-[11px] text-slate-450 font-bold">
+                      <div className="border-t border-slate-855 mt-4 pt-3 flex justify-between items-center text-[11px] text-slate-400 font-bold">
                         <span className="group-hover:text-emerald-400 transition-colors flex items-center space-x-1">
                           <span>{t('landing.openDashboard')}</span>
                           <span className="transform group-hover:translate-x-1 transition-transform">&rarr;</span>
@@ -1375,7 +1375,7 @@ export default function App() {
                 <div className="hidden lg:block lg:flex-1 lg:sticky lg:top-24 bg-bg-surface border border-border-subtle rounded-2xl p-6 shadow-xl max-h-[calc(100vh-220px)] overflow-y-auto scrollbar-thin w-full">
                   {selectedListingId ? (
                     (() => {
-                      const selectedListing = filteredListings.find(l => l.id === selectedListingId);
+                      const selectedListing = listings.find(l => l.id === selectedListingId);
                       return selectedListing ? (
                         <ListingDetailCard
                           l={selectedListing}
@@ -1411,7 +1411,7 @@ export default function App() {
                         <X className="w-4 h-4" />
                       </button>
                       {(() => {
-                        const selectedListing = filteredListings.find(l => l.id === selectedListingId);
+                        const selectedListing = listings.find(l => l.id === selectedListingId);
                         return selectedListing ? (
                           <div className="mt-4">
                             <ListingDetailCard
@@ -1503,7 +1503,7 @@ export default function App() {
                 <div className="space-y-1.5 text-center">
                   <span className="mx-auto text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2.5 py-0.5 rounded uppercase tracking-wider w-fit block">{t('common.campaignTargetConfig')}</span>
                   <h2 className="text-lg font-bold text-slate-200 font-sans tracking-tight">{t('common.pasteSearchUrl')}</h2>
-                  <p className="text-xs text-slate-450 leading-relaxed font-semibold">{t('wizard.targetsDescription')}</p>
+                  <p className="text-xs text-slate-400 leading-relaxed font-semibold">{t('wizard.targetsDescription')}</p>
                 </div>
 
                 <div className="space-y-4 pt-2">
@@ -1553,7 +1553,7 @@ export default function App() {
 
                       {/* Diagnostic Logs */}
                       {previewLoading && (
-                        <div className="text-[11px] text-slate-450 space-y-1 font-mono pt-1">
+                        <div className="text-[11px] text-slate-400 space-y-1 font-mono pt-1">
                           <div className="flex items-center space-x-1.5">
                             <span className="text-emerald-400">&gt;</span>
                             <span>{t('common.diagnosticLog1')}</span>
@@ -1642,7 +1642,7 @@ export default function App() {
                   </Button>
                 </div>
                 <h2 className="text-xl font-extrabold text-slate-200 font-sans tracking-tight">{t('wizard.createCampaignTitle')}</h2>
-                <p className="text-xs text-slate-450 leading-relaxed font-medium">{t('wizard.createCampaignDesc')}</p>
+                <p className="text-xs text-slate-400 leading-relaxed font-medium">{t('wizard.createCampaignDesc')}</p>
               </div>
 
               <div className="space-y-4 pt-2">

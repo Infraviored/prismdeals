@@ -122,7 +122,7 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
               {t('settings.schedulerConfig')}
             </span>
             <h3 className="text-lg font-bold text-slate-200 font-sans tracking-tight">{t('settings.scraperRules')}</h3>
-            <p className="text-xs text-slate-450 leading-relaxed font-semibold">
+            <p className="text-xs text-slate-400 leading-relaxed font-semibold">
               {t('settings.rulesDesc')}
             </p>
           </div>
@@ -137,7 +137,7 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
           )}
 
           {success && (
-            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-450 font-semibold flex items-center space-x-2 animate-fadeIn">
+            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-400 font-semibold flex items-center space-x-2 animate-fadeIn">
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -148,7 +148,7 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
           <div className="space-y-5 pt-2">
             {/* Scraping Frequency */}
             <div className="space-y-1.5">
-              <label htmlFor="scraper-interval-input" className="text-[10px] text-slate-450 font-bold uppercase tracking-wider block">
+              <label htmlFor="scraper-interval-input" className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
                 {t('settings.crawlFrequency')}
               </label>
               <div className="relative">
@@ -176,7 +176,7 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
 
             {/* Delay Between Search Pages */}
             <div className="space-y-1.5">
-              <label htmlFor="scraper-delay-pages-input" className="text-[10px] text-slate-450 font-bold uppercase tracking-wider block">
+              <label htmlFor="scraper-delay-pages-input" className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
                 {t('settings.delayBetweenPages')}
               </label>
               <div className="relative">
@@ -204,7 +204,7 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
 
             {/* Delay Between Listings Details */}
             <div className="space-y-1.5">
-              <label htmlFor="scraper-delay-listings-input" className="text-[10px] text-slate-450 font-bold uppercase tracking-wider block">
+              <label htmlFor="scraper-delay-listings-input" className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
                 {t('settings.delayBetweenListings')}
               </label>
               <div className="relative">

@@ -71,11 +71,11 @@ export default function ScraperProgressCard({
               <span>Estimated time remaining: <strong className="text-slate-300 font-semibold">{secondsLeft}s</strong></span>
             </span>
           ) : phase === 'harvesting' ? (
-            <span className="text-emerald-450 font-bold">Finalizing session...</span>
+            <span className="text-emerald-400 font-bold">Finalizing session...</span>
           ) : phase === 'discovery' ? (
             <span className="text-sky-400">Discovering listings on index pages...</span>
           ) : (
-            <span className="text-slate-450">Connecting to scraper worker...</span>
+            <span className="text-slate-400">Connecting to scraper worker...</span>
           )}
         </div>
         <div className="text-[9px] text-slate-600 font-bold uppercase tracking-wider select-none">

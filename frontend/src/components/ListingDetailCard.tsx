@@ -296,7 +296,7 @@ export default function ListingDetailCard({
           {/* Needs Re-Eval tag */}
           {l.llm_processed && l.criteria_evaluations?.some(e => e.status === 'Needs Re-Evaluation') && (
             <span className="text-[10px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1 animate-pulse">
-              <AlertTriangle className="w-3 h-3 text-amber-450" />
+              <AlertTriangle className="w-3 h-3 text-amber-500" />
               <span>{t('listing.needsReEval')}</span>
             </span>
           )}
@@ -323,7 +323,7 @@ export default function ListingDetailCard({
               </span>
               <div className="flex flex-wrap gap-2">
                 {l.highlights.filter(h => h.sentiment === 'negative').map((h, idx) => (
-                  <span key={idx} title={`Evidence: "${h.evidence_quote}"`} className="text-[10px] bg-rose-500/20 text-rose-350 px-2.5 py-1 rounded-lg font-semibold border border-rose-500/20">
+                  <span key={idx} title={`Evidence: "${h.evidence_quote}"`} className="text-[10px] bg-rose-500/20 text-rose-300 px-2.5 py-1 rounded-lg font-semibold border border-rose-500/20">
                     {h.label}
                   </span>
                 ))}
@@ -446,7 +446,7 @@ export default function ListingDetailCard({
 
           {/* Checklist Table */}
           <div className="bg-bg-input/60 p-4 rounded-xl border border-border-subtle space-y-2">
-            <span className="text-[10px] font-bold text-teal-450 uppercase tracking-wider block font-mono">
+            <span className="text-[10px] font-bold text-teal-500 uppercase tracking-wider block font-mono">
               {t('dashboard.checklist')}
             </span>
             <div className="divide-y divide-border-subtle">
@@ -490,7 +490,7 @@ export default function ListingDetailCard({
                   className="font-bold h-7 px-3 text-[10px]"
                 >
                   <span className="flex items-center gap-1.5">
-                    {copiedOutreach ? <Check className="w-3.5 h-3.5 text-emerald-450" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedOutreach ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                     <span>{copiedOutreach ? t('listing.copiedToClipboard') : t('listing.copyDraft')}</span>
                   </span>
                 </Button>

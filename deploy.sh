@@ -46,7 +46,7 @@ else
 fi
 
 echo "Checking frontend web response ('front')..."
-HTTP_STATUS=$(curl -k -s -o /dev/null -w "%{http_code}" https://prismdeals.net || echo "000")
+HTTP_STATUS=$(curl -k -s -o /dev/null -w "%{http_code}" "${DEPLOY_DOMAIN:-https://prismdeals.net}" || echo "000")
 if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 301 ] || [ "$HTTP_STATUS" -eq 302 ]; then
     echo "  ✓ Frontend is responsive (HTTP $HTTP_STATUS)"
 else
