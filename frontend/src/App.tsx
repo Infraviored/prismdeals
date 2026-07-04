@@ -70,6 +70,7 @@ export default function App() {
   const { t, lang, toggleLanguage } = useTranslation()
 
   const [isRegisteringTarget, setIsRegisteringTarget] = useState(false)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   // Database lists
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -891,15 +892,33 @@ export default function App() {
   return (
     <div className="min-h-screen bg-brand-primary text-slate-100 flex flex-col font-sans">
       {/* Header */}
-      <header className="border-b border-border-subtle bg-bg-surface/60 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center space-x-6">
+      <header className="border-b border-border-subtle bg-bg-surface/60 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center justify-between w-full md:w-auto">
           <div className="flex items-center space-x-3">
             <img src={`${import.meta.env.BASE_URL}logo-icon.svg`} alt="prismdeals Icon" className="w-8 h-8 rounded-lg shadow shadow-black/30" />
             <span className="font-semibold text-lg tracking-wide text-white font-sans">prismdeals</span>
           </div>
- 
+
+          {/* Hamburger Menu Toggle for Mobile */}
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="md:hidden p-2 text-text-muted hover:text-white focus:outline-none"
+            aria-label="Toggle menu"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+              {isMobileMenuOpen ? (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              )}
+            </svg>
+          </button>
+        </div>
+
+        {/* Navigation & Controls Wrapper */}
+        <div className={`${isMobileMenuOpen ? 'flex' : 'hidden'} md:flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full md:w-auto transition-all duration-300`}>
           {/* Authentication session state widget */}
-          <div className="flex items-center space-x-3 bg-bg-input/80 border border-border-subtle rounded-xl px-3 py-1.5 shadow-inner">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-bg-input/80 border border-border-subtle rounded-xl p-3 md:py-1.5 md:px-3 shadow-inner">
             <div className="flex items-center space-x-1.5">
               <span className={`w-2 h-2 rounded-full ${sessionEmail ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
               <span className="text-[10px] font-semibold text-text-muted">
@@ -911,8 +930,9 @@ export default function App() {
               <Button
                 variant="mini-emerald"
                 size="xs"
-                onClick={handleTriggerLogin}
+                onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }}
                 disabled={isScraping || isProcessing}
+                className="w-full sm:w-auto"
               >
                 {t('common.login')}
               </Button>
@@ -920,48 +940,49 @@ export default function App() {
               <Button
                 variant="mini-slate"
                 size="xs"
-                onClick={handleTriggerLogin}
+                onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }}
                 disabled={isScraping || isProcessing}
+                className="w-full sm:w-auto"
               >
                 {t('common.reauth')}
               </Button>
             )}
           </div>
+
+          <div className="flex items-center gap-2 justify-end">
+            <Button
+              variant="badge"
+              size="sm"
+              onClick={toggleLanguage}
+              className="px-2.5 py-1.5 text-[10px] flex-1 md:flex-none text-center"
+            >
+              {lang.toUpperCase()}
+            </Button>
+
+            <Button
+              variant="icon"
+              onClick={() => {
+                setIsMobileMenuOpen(false);
+                if (view !== 'settings') {
+                  setView('settings');
+                }
+              }}
+              title={t('common.globalSettings')}
+              className="p-2 flex-1 md:flex-none flex justify-center animate-fadeIn"
+            >
+              <GearIcon className="w-4.5 h-4.5 transition-transform duration-500 group-hover:rotate-90 text-text-muted group-hover:text-brand-accent" />
+            </Button>
+
+            <Button
+              variant="badge"
+              size="sm"
+              onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
+              className="px-2.5 py-1.5 text-[10px] text-rose-400 border-rose-500/20 hover:bg-rose-500/10 flex-1 md:flex-none text-center"
+            >
+              {t('auth.logout')}
+            </Button>
+          </div>
         </div>
-
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="badge"
-            size="sm"
-            onClick={toggleLanguage}
-            className="px-2.5 py-1.5 text-[10px]"
-          >
-            {lang.toUpperCase()}
-          </Button>
-
-          <Button
-            variant="icon"
-            onClick={() => {
-              if (view !== 'settings') {
-                setView('settings');
-              }
-            }}
-            title={t('common.globalSettings')}
-            className="p-2"
-          >
-            <GearIcon className="w-4.5 h-4.5 transition-transform duration-500 group-hover:rotate-90 text-slate-400 group-hover:text-emerald-400" />
-          </Button>
-
-          <Button
-            variant="badge"
-            size="sm"
-            onClick={handleLogout}
-            className="px-2.5 py-1.5 text-[10px] text-rose-400 border-rose-500/20 hover:bg-rose-500/10"
-          >
-            {t('auth.logout')}
-          </Button>
-        </div>
-
       </header>
 
       {/* Main Container */}
@@ -1089,45 +1110,49 @@ export default function App() {
           <div className="flex flex-col space-y-6 animate-fadeIn w-full">
 
             {/* Campaign Breadcrumb Headers & Filters */}
-            <Card className="flex-row flex-wrap gap-4 items-center justify-between p-5">
-              <div className="flex items-center space-x-3">
+            <Card className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 md:p-5">
+              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                 <Button
                   variant="badge"
                   size="sm"
                   onClick={() => {
                     navigate('landing', null, null);
                   }}
+                  className="px-3 py-1.5"
                 >
                   <span className="mr-1">←</span>
                   <span>{t('common.backToCampaigns')}</span>
                 </Button>
-                <span className="text-slate-750">|</span>
-                <h2 className="text-base font-bold text-slate-200">
-                  {campaigns.find(c => c.id === currentCampaignId)?.name} {t('listing.dashboardTitle')}
-                </h2>
+                <span className="text-text-muted hidden sm:inline">|</span>
+                <div className="flex items-center space-x-2">
+                  <h2 className="text-base font-bold text-white">
+                    {campaigns.find(c => c.id === currentCampaignId)?.name} {t('listing.dashboardTitle')}
+                  </h2>
 
-                <Button
-                  variant="icon"
-                  size="xs"
-                  onClick={() => {
-                    const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
-                    navigate('edit', currentCampaignId, firstTarget?.id || null);
-                  }}
-                  title={t('landing.configureTooltip')}
-                  className="p-1.5"
-                >
-                  <GearIcon className="w-4 h-4 transition-transform duration-500 hover:rotate-90" />
-                </Button>
+                  <Button
+                    variant="icon"
+                    size="xs"
+                    onClick={() => {
+                      const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
+                      navigate('edit', currentCampaignId, firstTarget?.id || null);
+                    }}
+                    title={t('landing.configureTooltip')}
+                    className="p-1.5"
+                  >
+                    <GearIcon className="w-4 h-4 transition-transform duration-500 hover:rotate-90" />
+                  </Button>
+                </div>
               </div>
 
-              <div className="flex items-center space-x-3">
+              <div className="flex flex-col lg:flex-row lg:items-center gap-4 w-full md:w-auto">
                 {/* Crawler and AI control actions */}
-                <div className="flex items-center space-x-2">
+                <div className="grid grid-cols-3 gap-2 w-full lg:w-auto">
                   <Button
                     variant="action-emerald"
                     size="sm"
                     onClick={handleStartScrape}
                     disabled={isScraping || isProcessing}
+                    className="py-2.5 px-2 text-center"
                   >
                     <span>🔍 {t('dashboard.fetchFresh')}</span>
                   </Button>
@@ -1136,6 +1161,7 @@ export default function App() {
                     size="sm"
                     onClick={handleStartDeepUpdate}
                     disabled={isScraping || isProcessing}
+                    className="py-2.5 px-2 text-center"
                   >
                     <span>🔄 {t('dashboard.updateDesc')}</span>
                   </Button>
@@ -1144,33 +1170,37 @@ export default function App() {
                     size="sm"
                     onClick={handleStartProcess}
                     disabled={isScraping || isProcessing}
+                    className="py-2.5 px-2 text-center"
                   >
                     <span>🤖 {t('dashboard.autoAi')}</span>
                   </Button>
                 </div>
 
-                {/* Target search filter */}
-                <select
-                  value={selectedSearchId}
-                  onChange={e => setSelectedSearchId(e.target.value)}
-                  className="bg-slate-950 text-xs font-semibold text-slate-300 border border-slate-800 rounded-lg px-2.5 py-2.5 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="All">{t('dashboard.filterAllSearches')}</option>
-                  {searches.filter(s => s.campaign_id === currentCampaignId).map(s => (
-                    <option key={s.id} value={String(s.id)}>{s.name}</option>
-                  ))}
-                </select>
+                {/* Filter dropdowns */}
+                <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+                  {/* Target search filter */}
+                  <select
+                    value={selectedSearchId}
+                    onChange={e => setSelectedSearchId(e.target.value)}
+                    className="bg-bg-input text-xs font-semibold text-text-secondary border border-border-subtle rounded-lg px-3 py-2.5 focus:outline-none focus:border-brand-accent w-full sm:w-44"
+                  >
+                    <option value="All">{t('dashboard.filterAllSearches')}</option>
+                    {searches.filter(s => s.campaign_id === currentCampaignId).map(s => (
+                      <option key={s.id} value={String(s.id)}>{s.name}</option>
+                    ))}
+                  </select>
 
-                <select
-                  value={selectedStatusFilter}
-                  onChange={e => setSelectedStatusFilter(e.target.value as typeof selectedStatusFilter)}
-                  className="bg-slate-950 text-xs font-semibold text-slate-300 border border-slate-800 rounded-lg px-2.5 py-2.5 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="All">{t('dashboard.statusAll')}</option>
-                  <option value="High Niceness">{t('dashboard.statusMatches')} (70+)</option>
-                  <option value="Evaluate with AI">{t('dashboard.statusPending')}</option>
-                  <option value="New">{t('dashboard.statusEvaluated')}</option>
-                </select>
+                  <select
+                    value={selectedStatusFilter}
+                    onChange={e => setSelectedStatusFilter(e.target.value as typeof selectedStatusFilter)}
+                    className="bg-bg-input text-xs font-semibold text-text-secondary border border-border-subtle rounded-lg px-3 py-2.5 focus:outline-none focus:border-brand-accent w-full sm:w-44"
+                  >
+                    <option value="All">{t('dashboard.statusAll')}</option>
+                    <option value="High Niceness">{t('dashboard.statusMatches')} (70+)</option>
+                    <option value="Evaluate with AI">{t('dashboard.statusPending')}</option>
+                    <option value="New">{t('dashboard.statusEvaluated')}</option>
+                  </select>
+                </div>
               </div>
             </Card>
 

@@ -148,13 +148,13 @@ export default function GuidelinesWizard({
   return (
     <div className="space-y-6 w-full">
       {/* Step Indicator Header */}
-      <div className="grid grid-cols-3 w-full border border-slate-800 rounded-xl overflow-hidden bg-slate-950/60">
+      <div className="grid grid-cols-3 w-full border border-border-subtle rounded-xl overflow-hidden bg-bg-input/60">
         <button
           onClick={() => setWizardStep(1)}
           className={`py-3.5 text-xs sm:text-sm font-bold transition-all text-center border-b-2 ${
             wizardStep === 1
-              ? 'border-emerald-500 text-emerald-400 bg-slate-900/40'
-              : 'border-transparent text-slate-500 hover:text-slate-400 hover:bg-slate-900/20'
+              ? 'border-brand-accent text-brand-accent bg-bg-surface/40'
+              : 'border-transparent text-text-muted hover:text-text-secondary hover:bg-bg-surface/20'
           }`}
         >
           {t('wizard.step1Tab')}
@@ -164,8 +164,8 @@ export default function GuidelinesWizard({
           disabled={!(showStep1Next || showStep2Return || marketMemo.trim())}
           className={`py-3.5 text-xs sm:text-sm font-bold transition-all text-center border-b-2 disabled:opacity-30 disabled:cursor-not-allowed ${
             wizardStep === 2
-              ? 'border-emerald-500 text-emerald-400 bg-slate-900/40'
-              : 'border-transparent text-slate-500 hover:text-slate-400 hover:bg-slate-900/20'
+              ? 'border-brand-accent text-brand-accent bg-bg-surface/40'
+              : 'border-transparent text-text-muted hover:text-text-secondary hover:bg-bg-surface/20'
           }`}
         >
           {t('wizard.step2Tab')}
@@ -175,8 +175,8 @@ export default function GuidelinesWizard({
           disabled={!marketMemo.trim()}
           className={`py-3.5 text-xs sm:text-sm font-bold transition-all text-center border-b-2 disabled:opacity-30 disabled:cursor-not-allowed ${
             wizardStep === 3
-              ? 'border-emerald-500 text-emerald-400 bg-slate-900/40'
-              : 'border-transparent text-slate-500 hover:text-slate-400 hover:bg-slate-900/20'
+              ? 'border-brand-accent text-brand-accent bg-bg-surface/40'
+              : 'border-transparent text-text-muted hover:text-text-secondary hover:bg-bg-surface/20'
           }`}
         >
           {t('wizard.step3Tab')}
@@ -184,22 +184,22 @@ export default function GuidelinesWizard({
       </div>
 
       {/* SINGLE COLUMN STEP CONTENT WORKSPACE */}
-      <div className="bg-slate-900/20 border border-slate-800/80 rounded-2xl p-5 min-h-[300px]">
+      <div className="bg-bg-surface/20 border border-border-subtle rounded-2xl p-5 min-h-[300px]">
         
         {/* STEP 1: DEEP RESEARCH */}
         {wizardStep === 1 && (
           <div className="space-y-5 animate-fadeIn">
-            <div className="pb-4 border-b border-slate-800/50 space-y-1">
-              <h3 className="text-base font-bold text-slate-100">{t('wizard.step1Title')}</h3>
-              <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
+            <div className="pb-4 border-b border-border-subtle space-y-1">
+              <h3 className="text-base font-bold text-text-primary">{t('wizard.step1Title')}</h3>
+              <p className="text-xs text-text-secondary leading-relaxed pt-0.5">
                 {t('wizard.step1Desc')}
               </p>
             </div>
 
             <div className="space-y-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('wizard.demoResearchPrompt')}</label>
+              <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider">{t('wizard.demoResearchPrompt')}</label>
               <div className="relative">
-                <pre className="w-full bg-slate-950 border border-slate-850 rounded-xl p-4 text-[10px] text-slate-450 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
+                <pre className="w-full bg-bg-input border border-border-subtle rounded-xl p-4 text-[10px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
                   {getResearchPromptWithContext()}
                 </pre>
               </div>
@@ -212,7 +212,7 @@ export default function GuidelinesWizard({
                 className={`font-extrabold px-6 py-2.5 text-xs border flex items-center justify-center gap-2 ${
                   copiedPromptId === 'prompt-research'
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                    : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/10'
+                    : 'bg-brand-accent hover:bg-brand-accent/90 text-white border-brand-accent shadow-md shadow-brand-accent/10'
                 }`}
               >
                 {copiedPromptId === 'prompt-research' ? (
@@ -227,11 +227,11 @@ export default function GuidelinesWizard({
             </div>
 
             {showStep1Next && (
-              <div className="pt-4 border-t border-slate-800/40 flex justify-end animate-fadeIn">
+              <div className="pt-4 border-t border-border-subtle flex justify-end animate-fadeIn">
                 <Button
                   variant="primary"
                   onClick={() => setWizardStep(2)}
-                  className="font-extrabold py-2.5 px-5 text-xs shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
+                  className="font-extrabold py-2.5 px-5 text-xs shadow-md shadow-brand-accent/10 hover:shadow-brand-accent/20 active:scale-98"
                 >
                   {t('wizard.proceedToStep2')}
                 </Button>
@@ -243,25 +243,25 @@ export default function GuidelinesWizard({
         {/* STEP 2: MARKET CALIBRATION */}
         {wizardStep === 2 && (
           <div className="space-y-5 animate-fadeIn">
-            <div className="pb-4 border-b border-slate-800/50 space-y-1">
-              <h3 className="text-base font-bold text-slate-100">{t('wizard.step2Title')}</h3>
+            <div className="pb-4 border-b border-border-subtle space-y-1">
+              <h3 className="text-base font-bold text-text-primary">{t('wizard.step2Title')}</h3>
 
-              <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
+              <p className="text-xs text-text-secondary leading-relaxed pt-0.5">
                 {t('wizard.step2Desc')}
               </p>
             </div>
 
             {/* Scraper progress & listing samples context */}
-            <div className="space-y-3 bg-slate-950/40 border border-slate-850 rounded-2xl p-4">
-              <div className="flex justify-between items-center pb-2 border-b border-slate-900">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-mono">{t('wizard.liveMarketSamples')}</span>
+            <div className="space-y-3 bg-bg-input/40 border border-border-subtle rounded-2xl p-4">
+              <div className="flex justify-between items-center pb-2 border-b border-border-subtle">
+                <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block font-mono">{t('wizard.liveMarketSamples')}</span>
                 {!sampledListingsLoading && (
                   <Button
                     variant="secondary"
                     size="xs"
                     disabled={isScraping}
                     onClick={() => activeSearchTarget?.id && fetchSampleListings(activeSearchTarget.id)}
-                    className="font-bold border bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-350 text-[9px] px-2 py-1 rounded-lg"
+                    className="font-bold border bg-bg-surface hover:bg-bg-surface-hover border-border-subtle text-text-secondary text-[9px] px-2 py-1 rounded-lg"
                   >
                     {t('wizard.refreshSamples')}
                   </Button>
@@ -279,7 +279,7 @@ export default function GuidelinesWizard({
                     </span>
                   </div>
                   {scrapingProgress && (
-                    <div className="w-full bg-slate-950 rounded-full h-1 overflow-hidden">
+                    <div className="w-full bg-bg-input rounded-full h-1 overflow-hidden">
                       <div 
                         className="bg-emerald-500 h-1 transition-all duration-300" 
                         style={{ width: `${(scrapingProgress.current / scrapingProgress.total) * 100}%` }}
@@ -290,27 +290,27 @@ export default function GuidelinesWizard({
               )}
 
               {sampledListingsLoading ? (
-                <div className="flex items-center justify-center gap-3 py-6 border border-dashed border-slate-900 rounded-xl">
+                <div className="flex items-center justify-center gap-3 py-6 border border-dashed border-border-subtle rounded-xl">
                   <div className="w-3.5 h-3.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-                  <span className="text-[11px] text-slate-500 font-semibold">{t('wizard.loadingClassifieds')}</span>
+                  <span className="text-[11px] text-text-muted font-semibold">{t('wizard.loadingClassifieds')}</span>
                 </div>
               ) : sampledListings.length > 0 ? (
                 <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
                   {sampledListings.map((s, idx) => {
                     const isExpanded = expandedIndex === idx;
                     return (
-                      <div key={s.id || idx} className="bg-slate-950/20 border border-slate-900 rounded-xl p-2.5 space-y-1.5 hover:border-slate-800/80 transition-colors">
+                      <div key={s.id || idx} className="bg-bg-input/20 border border-border-subtle rounded-xl p-2.5 space-y-1.5 hover:border-brand-accent/30 transition-colors">
                         <div 
                           onClick={() => setExpandedIndex(isExpanded ? null : idx)}
                           className="flex justify-between items-center cursor-pointer select-none"
                         >
                           <div className="flex-1 pr-3">
-                            <span className="font-bold text-[11px] text-slate-300 block">#{idx + 1}: {s.title}</span>
+                            <span className="font-bold text-[11px] text-text-secondary block">#{idx + 1}: {s.title}</span>
                             {s.details && (
-                              <span className="text-[9px] text-slate-500 font-mono block mt-0.5">{s.details}</span>
+                              <span className="text-[9px] text-text-muted font-mono block mt-0.5">{s.details}</span>
                             )}
                           </div>
-                          <span className="text-slate-500 transition-transform">
+                          <span className="text-text-muted transition-transform">
                             {isExpanded ? (
                               <svg className="w-3 h-3 transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" /></svg>
                             ) : (
@@ -319,7 +319,7 @@ export default function GuidelinesWizard({
                           </span>
                         </div>
                         {isExpanded && (
-                          <div className="text-[10px] text-slate-450 mt-1 border-t border-slate-900/60 pt-1.5 leading-relaxed whitespace-pre-wrap font-mono bg-slate-950/50 p-2 rounded border border-slate-900 max-h-[100px] overflow-y-auto">
+                          <div className="text-[10px] text-text-secondary mt-1 border-t border-border-subtle pt-1.5 leading-relaxed whitespace-pre-wrap font-mono bg-bg-input/50 p-2 rounded border border-border-subtle max-h-[100px] overflow-y-auto">
                             {s.description}
                           </div>
                         )}
@@ -331,9 +331,9 @@ export default function GuidelinesWizard({
             </div>
 
             <div className="space-y-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('wizard.demoCalibrationPrompt')}</label>
+              <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider">{t('wizard.demoCalibrationPrompt')}</label>
               <div className="relative">
-                <pre className="w-full bg-slate-950 border border-slate-850 rounded-xl p-4 text-[10px] text-slate-450 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
+                <pre className="w-full bg-bg-input border border-border-subtle rounded-xl p-4 text-[10px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
                   {getMarketPromptWithContext()}
                 </pre>
               </div>
@@ -346,7 +346,7 @@ export default function GuidelinesWizard({
                 className={`font-extrabold px-6 py-2.5 text-xs border flex items-center justify-center gap-2 ${
                   copiedPromptId === 'prompt-market'
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                    : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/10'
+                    : 'bg-brand-accent hover:bg-brand-accent/90 text-white border-brand-accent shadow-md shadow-brand-accent/10'
                 }`}
               >
                 {copiedPromptId === 'prompt-market' ? (
@@ -362,19 +362,19 @@ export default function GuidelinesWizard({
 
             {/* Disclosed Return Box */}
             {showStep2Return && (
-              <div className="space-y-2 animate-fadeIn border-t border-slate-800/40 pt-4">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('wizard.pasteMarketMemo')}</label>
+              <div className="space-y-2 animate-fadeIn border-t border-border-subtle pt-4">
+                <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider">{t('wizard.pasteMarketMemo')}</label>
                 <textarea
                   value={marketMemo}
                   onChange={e => setMarketMemo(e.target.value)}
                   placeholder={t('wizard.pasteMarketMemoPlaceholder')}
                   rows={8}
-                  className="w-full bg-slate-955 border border-slate-850 rounded-xl p-3.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed shadow-inner placeholder-slate-805"
+                  className="w-full bg-bg-input border border-border-subtle rounded-xl p-3.5 text-xs text-text-secondary font-mono focus:outline-none focus:border-brand-accent whitespace-pre-wrap leading-relaxed shadow-inner placeholder-text-muted/40"
                 />
               </div>
             )}
 
-            <div className="pt-4 border-t border-slate-800/40 flex justify-between">
+            <div className="pt-4 border-t border-border-subtle flex justify-between">
               <Button
                 variant="secondary"
                 onClick={() => setWizardStep(1)}
@@ -386,7 +386,7 @@ export default function GuidelinesWizard({
                 <Button
                   variant="primary"
                   onClick={() => setWizardStep(3)}
-                  className="font-extrabold py-2.5 px-5 text-xs shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98 animate-fadeIn"
+                  className="font-extrabold py-2.5 px-5 text-xs shadow-md shadow-brand-accent/10 hover:shadow-brand-accent/20 active:scale-98 animate-fadeIn"
                 >
                   {t('wizard.proceedToStep3')}
                 </Button>
@@ -398,17 +398,17 @@ export default function GuidelinesWizard({
         {/* STEP 3: CHECKLIST SYNTHESIS & REACTIVE PREVIEW */}
         {wizardStep === 3 && (
           <div className="space-y-5 animate-fadeIn">
-            <div className="pb-4 border-b border-slate-800/50 space-y-1">
-              <h3 className="text-base font-bold text-slate-100">{t('wizard.step3Title')}</h3>
-              <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
+            <div className="pb-4 border-b border-border-subtle space-y-1">
+              <h3 className="text-base font-bold text-text-primary">{t('wizard.step3Title')}</h3>
+              <p className="text-xs text-text-secondary leading-relaxed pt-0.5">
                 {t('wizard.step3Desc')}
               </p>
             </div>
 
             <div className="space-y-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('wizard.demoSynthesisPrompt')}</label>
+              <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider">{t('wizard.demoSynthesisPrompt')}</label>
               <div className="relative">
-                <pre className="w-full bg-slate-950 border border-slate-850 rounded-xl p-4 text-[10px] text-slate-450 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
+                <pre className="w-full bg-bg-input border border-border-subtle rounded-xl p-4 text-[10px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[220px] overflow-y-auto shadow-inner">
                   {getProfilePromptWithContext()}
                 </pre>
               </div>
@@ -422,7 +422,7 @@ export default function GuidelinesWizard({
                 className={`font-extrabold px-6 py-2.5 text-xs border flex items-center justify-center gap-2 ${
                   copiedPromptId === 'prompt-profile'
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                    : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-500 shadow-md shadow-emerald-500/10'
+                    : 'bg-brand-accent hover:bg-brand-accent/90 text-white border-brand-accent shadow-md shadow-brand-accent/10'
                 }`}
               >
                 {copiedPromptId === 'prompt-profile' ? (
@@ -438,22 +438,22 @@ export default function GuidelinesWizard({
 
             {/* Disclosed Return Box */}
             {showStep3Return && (
-              <div className="space-y-2 animate-fadeIn border-t border-slate-800/40 pt-4">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('wizard.pasteResearcherOutput')}</label>
+              <div className="space-y-2 animate-fadeIn border-t border-border-subtle pt-4">
+                <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider">{t('wizard.pasteResearcherOutput')}</label>
                 <textarea
                   value={researcherOutput}
                   onChange={e => setResearcherOutput(e.target.value)}
                   placeholder={t('wizard.pasteResearcherOutputPlaceholder')}
                   rows={8}
-                  className="w-full bg-slate-950 border border-slate-855 rounded-xl p-3.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 whitespace-pre-wrap leading-relaxed shadow-inner placeholder-slate-805"
+                  className="w-full bg-bg-input border border-border-subtle rounded-xl p-3.5 text-xs text-text-secondary font-mono focus:outline-none focus:border-brand-accent whitespace-pre-wrap leading-relaxed shadow-inner placeholder-text-muted/40"
                 />
               </div>
             )}
 
             {/* REACTIVE LIVE PREVIEW BLOCK */}
             {(parsedExpertKnowledge || parsedGoodRef || parsedBadRef || parsedDemoMsg || parsedItemJson) && (
-              <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-5 space-y-4 mt-6 shadow-2xl animate-fadeIn">
-                <div className="border-b border-slate-800 pb-2 flex justify-between items-center">
+              <div className="bg-bg-input/60 border border-border-subtle rounded-2xl p-5 space-y-4 mt-6 shadow-2xl animate-fadeIn">
+                <div className="border-b border-border-subtle pb-2 flex justify-between items-center">
                   <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest block font-mono">{t('wizard.reactivePreview')}</span>
                   <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/10 px-2 py-0.5 rounded uppercase tracking-wider">{t('wizard.liveParsed')}</span>
                 </div>
@@ -462,16 +462,16 @@ export default function GuidelinesWizard({
                 {(parsedGoodRef || parsedBadRef) && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {parsedGoodRef && (
-                      <div className="bg-slate-950/40 border border-emerald-500/10 rounded-xl p-4 space-y-1.5 shadow-sm">
+                      <div className="bg-bg-input/40 border border-emerald-500/10 rounded-xl p-4 space-y-1.5 shadow-sm">
                         <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.targetAnchor')}</span>
-                        <p className="text-[11px] text-slate-355 leading-relaxed font-mono whitespace-pre-wrap">{parsedGoodRef}</p>
+                        <p className="text-[11px] text-text-secondary leading-relaxed font-mono whitespace-pre-wrap">{parsedGoodRef}</p>
                       </div>
                     )}
 
                     {parsedBadRef && (
-                      <div className="bg-slate-955/40 border border-rose-500/10 rounded-xl p-4 space-y-1.5 shadow-sm">
+                      <div className="bg-bg-input/40 border border-rose-500/10 rounded-xl p-4 space-y-1.5 shadow-sm">
                         <span className="text-[9px] bg-rose-500/10 text-rose-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.riskAnchor')}</span>
-                        <p className="text-[11px] text-slate-355 leading-relaxed font-mono whitespace-pre-wrap">{parsedBadRef}</p>
+                        <p className="text-[11px] text-text-secondary leading-relaxed font-mono whitespace-pre-wrap">{parsedBadRef}</p>
                       </div>
                     )}
                   </div>
@@ -479,10 +479,10 @@ export default function GuidelinesWizard({
 
                 {/* Outreach Message Starter */}
                 {parsedDemoMsg && (
-                  <div className="bg-slate-950/40 border border-indigo-500/10 rounded-xl p-4 relative overflow-hidden shadow-sm">
+                  <div className="bg-bg-input/40 border border-indigo-500/10 rounded-xl p-4 relative overflow-hidden shadow-sm">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
                     <span className="text-[9px] bg-indigo-500/10 text-indigo-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider block w-fit mb-1.5">{t('wizard.outreachStarter')}</span>
-                    <p className="text-[11px] text-slate-250 leading-relaxed italic font-medium">"{parsedDemoMsg}"</p>
+                    <p className="text-[11px] text-text-secondary leading-relaxed italic font-medium">"{parsedDemoMsg}"</p>
                   </div>
                 )}
 
@@ -512,19 +512,19 @@ export default function GuidelinesWizard({
 
                     const importanceBadge = (hint: string) => {
                       if (hint === 'high') return 'text-emerald-400'
-                      if (hint === 'low') return 'text-slate-600'
-                      return 'text-slate-450'
+                      if (hint === 'low') return 'text-text-muted/40'
+                      return 'text-text-muted/80'
                     }
 
                     return (
                       <div className="space-y-4">
                         {positiveCriteria.length > 0 && (
-                          <div className="bg-slate-950/50 border border-slate-900 rounded-xl p-4 space-y-3 shadow-inner">
+                          <div className="bg-bg-input/50 border border-border-subtle rounded-xl p-4 space-y-3 shadow-inner">
                             <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.positiveSignals', { count: positiveCriteria.length })}</span>
                             <div className="overflow-x-auto">
                               <table className="w-full text-left text-[11px] border-collapse">
                                 <thead>
-                                  <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[8px]">
+                                  <tr className="border-b border-border-subtle text-text-muted font-bold uppercase tracking-wider text-[8px]">
                                     <th className="py-2 pr-4">{t('wizard.id')}</th>
                                     <th className="py-2 pr-4">{t('wizard.signalDescription')}</th>
                                     <th className="py-2 pr-4">{t('wizard.importance')}</th>
@@ -535,11 +535,11 @@ export default function GuidelinesWizard({
                                   {positiveCriteria.map((c, idx) => {
                                     const hint = importanceLabel(c)
                                     return (
-                                      <tr key={idx} className="border-b border-slate-900/40 hover:bg-slate-900/10 text-slate-350">
+                                      <tr key={idx} className="border-b border-border-subtle/40 hover:bg-bg-surface/10 text-text-secondary">
                                         <td className="py-2 pr-4 font-bold font-mono text-[9px] text-emerald-500/70">{c.id}</td>
                                         <td className="py-2 pr-4 leading-normal">{c.description || c.question}</td>
                                         <td className={`py-2 pr-4 font-bold text-[9px] uppercase ${importanceBadge(hint)}`}>{hint}</td>
-                                        <td className="py-2 font-semibold text-[9px] uppercase text-slate-500">{c.market_frequency || 'mixed'}</td>
+                                        <td className="py-2 font-semibold text-[9px] uppercase text-text-muted">{c.market_frequency || 'mixed'}</td>
                                       </tr>
                                     )
                                   })}
@@ -550,12 +550,12 @@ export default function GuidelinesWizard({
                         )}
 
                         {negativeCriteria.length > 0 && (
-                          <div className="bg-slate-955/50 border border-rose-500/10 rounded-xl p-4 space-y-3 shadow-inner">
+                          <div className="bg-bg-input/50 border border-rose-500/10 rounded-xl p-4 space-y-3 shadow-inner">
                             <span className="text-[9px] bg-rose-500/10 text-rose-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.negativeSignals', { count: negativeCriteria.length })}</span>
                             <div className="overflow-x-auto">
                               <table className="w-full text-left text-[11px] border-collapse">
                                 <thead>
-                                  <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-[8px]">
+                                  <tr className="border-b border-border-subtle text-text-muted font-bold uppercase tracking-wider text-[8px]">
                                     <th className="py-2 pr-4">{t('wizard.id')}</th>
                                     <th className="py-2 pr-4">{t('wizard.riskDescription')}</th>
                                     <th className="py-2 pr-4">{t('wizard.importance')}</th>
@@ -566,11 +566,11 @@ export default function GuidelinesWizard({
                                   {negativeCriteria.map((c, idx) => {
                                     const hint = importanceLabel(c)
                                     return (
-                                      <tr key={idx} className="border-b border-slate-900/40 hover:bg-slate-900/10 text-slate-350">
+                                      <tr key={idx} className="border-b border-border-subtle/40 hover:bg-bg-surface/10 text-text-secondary">
                                         <td className="py-2 pr-4 font-bold font-mono text-[9px] text-rose-500/70">{c.id}</td>
                                         <td className="py-2 pr-4 leading-normal">{c.description || c.question}</td>
                                         <td className={`py-2 pr-4 font-bold text-[9px] uppercase ${importanceBadge(hint)}`}>{hint}</td>
-                                        <td className="py-2 font-semibold text-[9px] uppercase text-slate-500">{c.market_frequency || 'mixed'}</td>
+                                        <td className="py-2 font-semibold text-[9px] uppercase text-text-muted">{c.market_frequency || 'mixed'}</td>
                                       </tr>
                                     )
                                   })}
@@ -581,14 +581,14 @@ export default function GuidelinesWizard({
                         )}
 
                         {highValueUnknowns.length > 0 && (
-                          <div className="bg-slate-950/50 border border-amber-500/10 rounded-xl p-4 space-y-3 shadow-inner">
+                          <div className="bg-bg-input/50 border border-amber-500/10 rounded-xl p-4 space-y-3 shadow-inner">
                             <span className="text-[9px] bg-amber-500/10 text-amber-400 font-extrabold px-2 py-0.5 rounded uppercase tracking-wider block w-fit">{t('wizard.highValueUnknowns', { count: highValueUnknowns.length })}</span>
                             <div className="space-y-2">
                               {highValueUnknowns.map((u, idx) => (
-                                <div key={idx} className="text-[11px] text-slate-450 leading-relaxed border-b border-slate-900/40 pb-2">
+                                <div key={idx} className="text-[11px] text-text-secondary leading-relaxed border-b border-border-subtle/40 pb-2">
                                   <span className="font-bold font-mono text-[9px] text-amber-500/70 mr-2">{u.id}</span>
                                   <span>{u.description}</span>
-                                  {u.applies_when && <span className="block text-[10px] text-slate-650 mt-0.5 italic">{u.applies_when}</span>}
+                                  {u.applies_when && <span className="block text-[10px] text-text-muted/40 mt-0.5 italic">{u.applies_when}</span>}
                                 </div>
                               ))}
                             </div>
@@ -607,7 +607,7 @@ export default function GuidelinesWizard({
               </div>
             )}
 
-            <div className="pt-4 border-t border-slate-800/40 flex justify-between">
+            <div className="pt-4 border-t border-border-subtle flex justify-between">
               <Button
                 variant="secondary"
                 onClick={() => setWizardStep(2)}
@@ -620,7 +620,7 @@ export default function GuidelinesWizard({
                 variant="primary"
                 onClick={handleSaveKnowledgeSet}
                 disabled={!researcherOutput.trim()}
-                className="font-extrabold py-3 px-6 text-xs shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98"
+                className="font-extrabold py-3 px-6 text-xs shadow-lg shadow-brand-accent/10 hover:shadow-brand-accent/20 active:scale-98"
               >
                 {t('wizard.saveChecklist')}
               </Button>
