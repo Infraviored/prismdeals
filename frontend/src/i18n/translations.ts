@@ -37,7 +37,7 @@ export const translations = {
     },
     landing: {
       title: "Hunt Campaigns",
-      subtitle: "Automated Scraper & AI Agent Portal",
+      subtitle: "AI-driven deal intelligence",
       createCampaign: "Create Hunt Campaign",
       createSubtitle: "Launch a new automated agent search category",
       noListings: "No listings scraped yet",
@@ -271,7 +271,7 @@ export const translations = {
     },
     landing: {
       title: "Suchkampagnen",
-      subtitle: "Automatisiertes Scraper & KI-Agenten Portal",
+      subtitle: "KI-gestützte Deal-Intelligence",
       createCampaign: "Suchkampagne erstellen",
       createSubtitle: "Starten Sie eine neue automatisierte Agenten-Suchkategorie",
       noListings: "Noch keine Anzeigen gescrapt",

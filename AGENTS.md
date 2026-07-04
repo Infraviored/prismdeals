@@ -12,7 +12,7 @@ The system is split into two components:
 
 * **Web Server**: Nginx runs in a Docker container (located in `/home/flo/docker-projects/nginx`).
 * **Frontend Webroot**: Nginx serves the frontend statically from `/home/flo/docker-projects/nginx/webroot/prismdeals`.
-* **Database / Backend service**: Backend API runs as a systemd service (`kleinanzeigen-scraper-api`).
+* **Database / Backend service**: Backend API runs as a systemd service (`prismdeals-api`).
 
 ## Build & Deployment Process
 
