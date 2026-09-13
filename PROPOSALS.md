@@ -173,13 +173,23 @@ Architectural ceilings that function with 1,200 rows but collapse at 10x or 100x
 **Shape of the fix:** Integrate `@tanstack/react-virtual` or `react-window` for virtualized list rendering.
 **Cost:** ~40 lines across `App.tsx` and `RouteResultsView.tsx`.
 
-### B-9 — Map marker clustering absent; re-projects every marker on every pan and zoom
-**Where:** `frontend/src/components/RouteCorridorMap.tsx:231-286`
-**What:** Every listing with geographic coordinates is rendered as an individual Leaflet DOM `<Marker>` with an HTML `divIcon` and `<Popup>` subtree. Leaflet recomputes 2D pixel projections for every marker on every frame of a pan or zoom gesture.
-**Evidence:** Code check: `listings.map((l) => <Marker ... />)` directly inside `<MapContainer>`. No marker cluster plugin imported.
-**Bites:** Today: frame drops with >100 markers; at 10x: map freezes completely; at 100x: WebGL/browser tab crash.
-**Shape of the fix:** Integrate `leaflet.markercluster` or `supercluster` to cluster markers at low zoom levels.
-**Cost:** New dependency + ~40 lines in `RouteCorridorMap.tsx`.
+### B-9 — Map markers are DOM nodes, so clustering only postpones the ceiling
+**Where:** `frontend/src/components/RouteCorridorMap.tsx:91-103, 127-150`
+**What:** Clustering was added on this branch (`createClusterIcon`, `ListingClusterMarkers`), so overlapping listings collapse into one marker with a count and the O(n²) projection pass is gone. What remains is the underlying limit: every cluster and every unclustered listing is still a Leaflet `divIcon`, i.e. a real DOM node with Tailwind classes. Leaflet's DOM marker path tops out somewhere around 1–2k simultaneous markers regardless of how they are grouped.
+**Evidence:** `grep -n "cluster" RouteCorridorMap.tsx` shows the clustering subcomponent on this branch; the icons are still built with `L.divIcon({ html: ... })` rather than a canvas renderer.
+**Bites:** At 10x (a corridor of a few thousand listings zoomed in far enough to uncluster them).
+**Shape of the fix:** `L.canvas()` as the renderer for unselected markers, keeping DOM only for the selected one.
+**Cost:** ~30 lines, and it changes how markers are styled — canvas takes no CSS.
+
+*(This entry originally claimed clustering was absent. It was true against `main` and false by the time the catalogue was read; corrected rather than deleted, because the ceiling underneath it is real.)*
+
+### B-9b — A deleted listing is re-fetched every cycle, forever
+**Where:** `scraper/scraper.py:381-384`
+**What:** When a listing is removed from Kleinanzeigen the fetch returns 404, `parse_listing_details_requests` returns `None`, and the loop does `continue` — without touching the row. It keeps `full_info_obtained = 0`, so the next crawl selects it again. There is no attempt counter and no tombstone, so a dead ad costs one request per cycle for as long as the search stays enabled.
+**Evidence:** `scraper.py:381-384` — `parsed = parse_listing_details_requests(url, session=session)` / `if parsed is None: continue`, with no `UPDATE` on that path. Found by the review of PR #11; not fixed there because it needs a column.
+**Bites:** Today, quietly — and it grows, because listings expire continuously while the set only ever gets larger.
+**Shape of the fix:** A `harvest_attempts` counter or a `gone_at` timestamp; stop selecting a row after N consecutive failures, and say so in the interface rather than hiding it.
+**Cost:** One column, one migration, and a decision about what the interface shows for an ad that no longer exists.
 
 ### B-10 — Price stored as unparsed `TEXT` prevents SQL numerical sorting and range filtering
 **Where:** `db/schema.sql:80`, `listings.price` column
@@ -323,9 +333,9 @@ Questions the application's domain model cannot answer consistently.
 **Cost:** ~25 lines in `frontend/src/App.tsx`.
 
 ### D-4 — AI evaluation state is a single boolean with no representation of failed, queued, or stale
-**Where:** `db/schema.sql:28`, `listings.llm_processed`
+**Where:** `db/schema.sql:85`, `listings.llm_processed`
 **What:** Column `llm_processed` is defined as `INTEGER DEFAULT 0`. There is no state representation for `queued`, `in_progress`, `failed`, or `stale`. The frontend cannot distinguish between a listing awaiting evaluation, a listing that timed out, and a listing that permanently failed schema validation.
-**Evidence:** `PRAGMA table_info(listings)` shows only `llm_processed` (0 or 1).
+**Evidence:** `db/schema.sql:85` reads `llm_processed INTEGER DEFAULT 0`; `PRAGMA table_info(listings)` confirms there is no other evaluation-state column. (The line number was wrong in the first draft — line 28 is blank.)
 **Bites:** Today (no visibility into pipeline bottlenecks or evaluation failures).
 **Shape of the fix:** Replace boolean with an evaluation status enum (`pending`, `processing`, `completed`, `failed`, `stale`).
 **Cost:** Schema migration + enum handling in backend/frontend.
@@ -505,7 +515,7 @@ The long tail: hardcoded hosts, unversioned constants, untracked artifacts, and 
 ### F-12 — `Button.tsx` variant names contradict assigned brand colors
 **Where:** `frontend/src/components/ui/Button.tsx:24`, `frontend/src/components/ui/Button.tsx:28`
 **What:** Button variants are named `action-emerald` and `mini-emerald`, but their CSS definitions use `brand-accent` (coral) and hardcoded `#f09587`. Meanwhile `action-sky` and `action-indigo` use obsolete palette colors that clash with the brand dark-teal design system.
-**Evidence:** Code check in `Button.tsx:24, 28`.
+**Evidence:** `Button.tsx:12-15` still declares `action-emerald`, `action-sky`, `action-indigo` and `mini-emerald`; `:40` gives `action-emerald` a body made entirely of brand tokens (`bg-bg-surface`, `hover:text-brand-accent`). The palette sweep on this branch restyled the variants and left their names — so the contradiction is now between a name and a token set rather than between a name and a hex code. Re-checked on `integration/everything`: still true.
 **Bites:** Today (developer confusion and visual design inconsistency).
 **Shape of the fix:** Rename variants to semantic names (`accent`, `subtle`, `outline`) and remove dead color variants.
 **Cost:** ~15 lines in `frontend/src/components/ui/Button.tsx`.

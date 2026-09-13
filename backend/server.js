@@ -1434,8 +1434,12 @@ app.post('/api/scrape', (req, res) => {
     }
 
     const { interval, campaignId } = req.body;
-    
-    if (interval) {
+
+    // Not `if (interval)`: zero is falsy, and zero is the value that turns
+    // scheduled scraping off. Written that way, the one request that asks for
+    // the scraper to stop was the one request that did nothing — no config
+    // written, timers left running.
+    if (interval !== undefined && interval !== null && interval !== '') {
       const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
       let currentConfig = {};
       try {
@@ -1774,6 +1778,14 @@ function runScraper() {
     '--mode', mode
   ], {
     env: { ...process.env }
+  });
+  // An unhandled 'error' on a ChildProcess ends the Node process. This file
+  // already says so at the route-planner spawn, in a comment written when it
+  // was fixed there — and this is the one spawn that fires unattended, so a
+  // missing venv during a deploy would take the API down every interval and
+  // systemd would restart it straight back into the same failure.
+  python.on('error', err => {
+    console.error('Scheduled scrape could not start:', err.message);
   });
   python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
   python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));

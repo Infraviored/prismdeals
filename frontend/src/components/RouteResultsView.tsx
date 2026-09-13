@@ -718,8 +718,13 @@ export default function RouteResultsView({
                             </span>
                           )}
 
+                          {/* 19 of 1,266 live listings carry no price — a
+                              seller who wrote "VB" into the title, or nothing at
+                              all. Rendering the empty string left a blank cell
+                              that reads as a loading failure rather than as the
+                              absence it is. */}
                           <span className="text-sm font-semibold text-text-secondary font-mono mt-1 leading-none">
-                            {l.price}
+                            {l.price?.trim() || t('routeResults.noPrice')}
                           </span>
                         </div>
                       </a>
