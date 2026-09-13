@@ -344,16 +344,6 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 // Global API Auth Protection (applied to all subsequent /api/* routes)
 app.use('/api', authenticateToken);
 
-// API: Serve the external research agent prompt template
-app.get('/api/external-prompt', (req, res) => {
-  try {
-    const promptPath = path.join(__dirname, '..', 'prompts', 'external_prompt.md');
-    const content = fs.readFileSync(promptPath, 'utf8');
-    res.type('text/plain').send(content);
-  } catch (e) {
-    res.status(500).json({ error: 'external_prompt.md not found' });
-  }
-});
 
 // API: Get all listings
 app.get('/api/listings', async (req, res) => {
