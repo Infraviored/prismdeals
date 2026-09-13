@@ -1291,18 +1291,15 @@ app.get('/api/chats/:listing_id', async (req, res) => {
 app.post('/api/listings/draft', async (req, res) => {
   try {
     const { listing_id } = req.body;
+    if (!listing_id) {
+      return res.status(400).json({ error: 'Missing listing_id' });
+    }
     
-    // Fetch listing & profile data
+    // Fetch listing data
     const listing = await get('SELECT * FROM listings WHERE id = ?', [listing_id]);
     if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
     }
-    
-    if (!listing.profile_id) {
-      return res.status(400).json({ error: 'No profile associated with this listing' });
-    }
-    
-    const profile = await get('SELECT * FROM profiles WHERE id = ?', [listing.profile_id]);
     
     // Spawn Python AI Worker to generate the tailored draft outreach
     const result = await runPythonWorker(['draft', listing_id]);
