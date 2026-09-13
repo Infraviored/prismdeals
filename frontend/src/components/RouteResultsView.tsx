@@ -289,7 +289,7 @@ export default function RouteResultsView({
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 shrink-0">
             <Button
               id="btn-corridor-scrape"
-              variant="action-emerald"
+              variant="accent"
               size="sm"
               onClick={onStartScrape}
               disabled={isScraping}
@@ -325,7 +325,7 @@ export default function RouteResultsView({
 
             <Button
               id="btn-evaluate-ai"
-              variant="action-indigo"
+              variant="accent"
               size="sm"
               onClick={onEvaluateWithAi}
               className="col-span-2 sm:col-span-1 py-2.5 px-3 font-bold flex items-center justify-center gap-1.5 min-h-[44px] whitespace-normal text-center leading-tight"

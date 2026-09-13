@@ -1483,7 +1483,7 @@ export default function App() {
                     overflowed and printed on top of each other. */}
                 <div className="flex flex-wrap gap-2 w-full lg:w-auto">
                   <Button
-                    variant="action-emerald"
+                    variant="accent"
                     size="sm"
                     onClick={handleStartScrape}
                     disabled={isScraping || isProcessing}
@@ -1493,7 +1493,7 @@ export default function App() {
                     <span>{t('dashboard.fetchFresh')}</span>
                   </Button>
                   <Button
-                    variant="action-sky"
+                    variant="subtle"
                     size="sm"
                     onClick={handleStartDeepUpdate}
                     disabled={isScraping || isProcessing}
@@ -1503,7 +1503,7 @@ export default function App() {
                     <span>{t('dashboard.updateDesc')}</span>
                   </Button>
                   <Button
-                    variant="action-indigo"
+                    variant="accent"
                     size="sm"
                     onClick={handleStartProcess}
                     disabled={isScraping || isProcessing}
