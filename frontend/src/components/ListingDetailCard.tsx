@@ -75,6 +75,8 @@ export default function ListingDetailCard({
               src={l.images[0]}
               alt={l.title}
               className="w-full h-full object-cover"
+              loading="lazy"
+              decoding="async"
             />
           </div>
         ) : (
@@ -139,6 +141,8 @@ export default function ListingDetailCard({
               src={l.images[activeImageIndex]}
               alt={`Listing visual ${activeImageIndex}`}
               className="w-full h-full object-cover transition-all duration-300 transform group-hover/gallery:scale-102"
+              loading="lazy"
+              decoding="async"
             />
             {l.images.length > 1 && (
               <>

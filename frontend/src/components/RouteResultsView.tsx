@@ -1,5 +1,5 @@
-/* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useTranslation } from '../hooks/useTranslation';
 import RouteCorridorMap from './RouteCorridorMap';
 import type { RouteCircle, RouteListingGeo } from './RouteCorridorMap';
@@ -220,6 +220,15 @@ export default function RouteResultsView({
     return filteredListings.find((l) => l.id === selectedListingId) ?? null;
   }, [filteredListings, selectedListingId]);
 
+  const listParentRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filteredListings.length,
+    getScrollElement: () => listParentRef.current,
+    estimateSize: () => 88,
+    overscan: 5,
+    getItemKey: useCallback((index: number) => filteredListings[index]?.id ?? index, [filteredListings]),
+  });
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-text-muted space-y-3">
@@ -289,7 +298,7 @@ export default function RouteResultsView({
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 shrink-0">
             <Button
               id="btn-corridor-scrape"
-              variant="action-emerald"
+              variant="accent"
               size="sm"
               onClick={onStartScrape}
               disabled={isScraping}
@@ -325,7 +334,7 @@ export default function RouteResultsView({
 
             <Button
               id="btn-evaluate-ai"
-              variant="action-indigo"
+              variant="accent"
               size="sm"
               onClick={onEvaluateWithAi}
               className="col-span-2 sm:col-span-1 py-2.5 px-3 font-bold flex items-center justify-center gap-1.5 min-h-[44px] whitespace-normal text-center leading-tight"
@@ -566,6 +575,8 @@ export default function RouteResultsView({
                           src={selectedListing.images[0]}
                           alt={selectedListing.title}
                           className="w-14 h-14 rounded-xl object-cover shrink-0 border border-border-subtle bg-bg-input"
+                          loading="lazy"
+                          decoding="async"
                         />
                       ) : (
                         <div className="w-14 h-14 rounded-xl shrink-0 border border-border-subtle bg-bg-input flex items-center justify-center text-text-muted text-2xs">
@@ -624,7 +635,10 @@ export default function RouteResultsView({
 
             {/* Listings Column: Mounted on desktop OR when mobileTab === 'list' */}
             {(isDesktop || mobileTab === 'list') && (
-              <div className="lg:col-span-6 xl:col-span-5 space-y-2.5 max-h-[calc(100vh-250px)] lg:overflow-y-auto lg:pr-1 scrollbar-thin">
+              <div
+                ref={listParentRef}
+                className="lg:col-span-6 xl:col-span-5 max-h-[calc(100vh-250px)] overflow-y-auto pr-1 scrollbar-thin"
+              >
                 {filteredListings.length === 0 ? (
                   <div className="bg-bg-surface border border-dashed border-border-subtle rounded-2xl p-10 text-center space-y-2">
                     <p className="text-xs font-semibold text-text-muted">
@@ -642,94 +656,118 @@ export default function RouteResultsView({
                     </Button>
                   </div>
                 ) : (
-                  filteredListings.map((l) => {
-                    const isSelected = selectedListingId === l.id;
-                    const firstImg = l.images && l.images.length > 0 ? l.images[0] : null;
+                  <div
+                    style={{
+                      height: `${rowVirtualizer.getTotalSize()}px`,
+                      width: '100%',
+                      position: 'relative',
+                    }}
+                  >
+                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const l = filteredListings[virtualRow.index];
+                      if (!l) return null;
+                      const isSelected = selectedListingId === l.id;
+                      const firstImg = l.images && l.images.length > 0 ? l.images[0] : null;
 
-                    return (
-                      <a
-                        key={l.id}
-                        href={l.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => setSelectedListingId(l.id)}
-                        className={`group min-h-[76px] p-2.5 sm:p-3 rounded-2xl border transition-all flex items-center gap-3 cursor-pointer no-underline ${
-                          isSelected
-                            ? 'bg-bg-surface-hover border-border-brand ring-1 ring-border-brand shadow-lg'
-                            : 'bg-bg-surface border-border-subtle hover:bg-bg-surface-hover hover:border-border-brand'
-                        }`}
-                      >
-                        {/* 56px Thumbnail */}
-                        {firstImg ? (
-                          <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 border border-border-subtle bg-bg-input">
-                            <img
-                              src={firstImg}
-                              alt={l.title}
-                              className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                              loading="lazy"
-                            />
-                          </div>
-                        ) : (
-                          <div className="w-14 h-14 rounded-xl shrink-0 border border-border-subtle bg-bg-input flex items-center justify-center text-text-muted font-mono text-2xs">
-                            {t('common.noImage')}
-                          </div>
-                        )}
-
-                        {/* Details: Title & Location */}
-                        <div className="flex-1 min-w-0 flex flex-col justify-center py-0.5">
-                          <h3 className="text-sm font-semibold text-text-primary line-clamp-2 group-hover:text-brand-accent transition-colors leading-snug break-words">
-                            {l.title}
-                          </h3>
-
-                          <div className="flex items-center gap-1.5 text-2xs text-text-muted truncate mt-1">
-                            <span className="truncate">{formatLocation(l.location)}</span>
-                            {l.offroute_km !== null && (
-                              <span className="font-mono text-text-muted shrink-0">
-                                · {l.offroute_km.toFixed(1)} km
-                              </span>
-                            )}
-                            {l.llm_processed && l.niceness_score !== null && (
-                              <span className="font-mono font-bold text-text-secondary bg-bg-input border border-border-subtle px-1.5 py-0.5 rounded text-2xs shrink-0 ml-1">
-                                ★ {l.niceness_score}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Cost Column: Detour above Price */}
-                        <div className="shrink-0 flex flex-col items-end justify-center text-right pl-1 min-w-[52px]">
-                          {l.detour_min !== null ? (
-                            l.detour_min < 1 ? (
-                              <span className="text-xs font-bold text-brand-accent font-mono leading-none">
-                                {t('routeResults.onRouteShort')}
-                              </span>
+                      return (
+                        <div
+                          key={virtualRow.key}
+                          ref={rowVirtualizer.measureElement}
+                          data-index={virtualRow.index}
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            transform: `translateY(${virtualRow.start}px)`,
+                            paddingBottom: '10px',
+                          }}
+                        >
+                          <a
+                            href={l.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setSelectedListingId(l.id)}
+                            className={`group min-h-[76px] p-2.5 sm:p-3 rounded-2xl border transition-all flex items-center gap-3 cursor-pointer no-underline ${
+                              isSelected
+                                ? 'bg-bg-surface-hover border-border-brand ring-1 ring-border-brand shadow-lg'
+                                : 'bg-bg-surface border-border-subtle hover:bg-bg-surface-hover hover:border-border-brand'
+                            }`}
+                          >
+                            {/* 56px Thumbnail */}
+                            {firstImg ? (
+                              <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 border border-border-subtle bg-bg-input">
+                                <img
+                                  src={firstImg}
+                                  alt={l.title}
+                                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                  loading="lazy"
+                                  decoding="async"
+                                />
+                              </div>
                             ) : (
-                              <span className="text-base font-extrabold text-brand-accent font-mono tracking-tight leading-none">
-                                +{Math.round(l.detour_min)}m
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-2xs text-text-muted font-mono leading-none">
-                              {l.geo_status === 'too_far'
-                                ? t('routeResults.offCorridor')
-                                : l.geo_status === 'failed'
-                                  ? t('routeResults.detourUnknown')
-                                  : t('routeResults.noCoordinates')}
-                            </span>
-                          )}
+                              <div className="w-14 h-14 rounded-xl shrink-0 border border-border-subtle bg-bg-input flex items-center justify-center text-text-muted font-mono text-2xs">
+                                {t('common.noImage')}
+                              </div>
+                            )}
 
-                          {/* 19 of 1,266 live listings carry no price — a
-                              seller who wrote "VB" into the title, or nothing at
-                              all. Rendering the empty string left a blank cell
-                              that reads as a loading failure rather than as the
-                              absence it is. */}
-                          <span className="text-sm font-semibold text-text-secondary font-mono mt-1 leading-none">
-                            {l.price?.trim() || t('routeResults.noPrice')}
-                          </span>
+                            {/* Details: Title & Location */}
+                            <div className="flex-1 min-w-0 flex flex-col justify-center py-0.5">
+                              <h3 className="text-sm font-semibold text-text-primary line-clamp-2 group-hover:text-brand-accent transition-colors leading-snug break-words">
+                                {l.title}
+                              </h3>
+
+                              <div className="flex items-center gap-1.5 text-2xs text-text-muted truncate mt-1">
+                                <span className="truncate">{formatLocation(l.location)}</span>
+                                {l.offroute_km !== null && (
+                                  <span className="font-mono text-text-muted shrink-0">
+                                    · {l.offroute_km.toFixed(1)} km
+                                  </span>
+                                )}
+                                {l.llm_processed && l.niceness_score !== null && (
+                                  <span className="font-mono font-bold text-text-secondary bg-bg-input border border-border-subtle px-1.5 py-0.5 rounded text-2xs shrink-0 ml-1">
+                                    ★ {l.niceness_score}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Cost Column: Detour above Price */}
+                            <div className="shrink-0 flex flex-col items-end justify-center text-right pl-1 min-w-[52px]">
+                              {l.detour_min !== null ? (
+                                l.detour_min < 1 ? (
+                                  <span className="text-xs font-bold text-brand-accent font-mono leading-none">
+                                    {t('routeResults.onRouteShort')}
+                                  </span>
+                                ) : (
+                                  <span className="text-base font-extrabold text-brand-accent font-mono tracking-tight leading-none">
+                                    +{Math.round(l.detour_min)}m
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-2xs text-text-muted font-mono leading-none">
+                                  {l.geo_status === 'too_far'
+                                    ? t('routeResults.offCorridor')
+                                    : l.geo_status === 'failed'
+                                      ? t('routeResults.detourUnknown')
+                                      : t('routeResults.noCoordinates')}
+                                </span>
+                              )}
+
+                              {/* 19 of 1,266 live listings carry no price — a
+                                  seller who wrote "VB" into the title, or nothing at
+                                  all. Rendering the empty string left a blank cell
+                                  that reads as a loading failure rather than as the
+                                  absence it is. */}
+                              <span className="text-sm font-semibold text-text-secondary font-mono mt-1 leading-none">
+                                {l.price?.trim() || t('routeResults.noPrice')}
+                              </span>
+                            </div>
+                          </a>
                         </div>
-                      </a>
-                    );
-                  })
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             )}

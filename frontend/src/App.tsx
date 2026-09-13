@@ -1,14 +1,10 @@
-/* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type { Campaign, KnowledgeSet, SearchTarget, Listing, SampleListing } from './types'
 import ScraperProgressCard from './components/ScraperProgressCard'
-import CorridorPlanner from './components/CorridorPlanner'
 import PlaceInput from './components/PlaceInput'
 import type { Place } from './components/PlaceInput'
 import ListingDetailCard from './components/ListingDetailCard'
-import GuidelinesWizard from './components/GuidelinesWizard'
-import RouteResultsView from './components/RouteResultsView'
-import SettingsView from './components/SettingsView'
 import { transformListing } from './utils/listingTransformer'
 import { useHashRouter } from './hooks/useHashRouter'
 import { Menu, X, Settings, Globe, LogOut, Key, Search, RefreshCw, Sparkles, ChevronDown } from 'lucide-react'
@@ -18,6 +14,17 @@ import { Input } from './components/ui/Input'
 import { Card } from './components/ui/Card'
 import { Select } from './components/ui/Select'
 import { cn } from './utils/cn'
+
+const CorridorPlanner = lazy(() => import('./components/CorridorPlanner'))
+const RouteResultsView = lazy(() => import('./components/RouteResultsView'))
+const SettingsView = lazy(() => import('./components/SettingsView'))
+const GuidelinesWizard = lazy(() => import('./components/GuidelinesWizard'))
+
+const ViewFallback = () => (
+  <div className="flex items-center justify-center p-12 w-full">
+    <div className="animate-spin w-8 h-8 border-2 border-brand-accent border-t-transparent rounded-full" />
+  </div>
+)
 
 
 
@@ -104,7 +111,7 @@ export default function App() {
 
   // Filtering states for Deal Matcher
   const [selectedSearchId, setSelectedSearchId] = useState<string>('All')
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'New' | 'Evaluate with AI'>('All')
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'Evaluated' | 'Evaluate with AI'>('All')
   const [activeProcessingListingIds, setActiveProcessingListingIds] = useState<string[]>([])
 
   // Inline forms
@@ -135,6 +142,20 @@ export default function App() {
   const [sampledListingsLoading, setSampledListingsLoading] = useState(false)
   const [marketMemo, setMarketMemo] = useState<string>('')
   const [researcherOutput, setResearcherOutput] = useState<string>('')
+  const [, setWizardDirty] = useState(false)
+  const wizardDirtyRef = useRef(false)
+
+  const handleSetMarketMemo = useCallback((memo: string) => {
+    wizardDirtyRef.current = true
+    setWizardDirty(true)
+    setMarketMemo(memo)
+  }, [])
+
+  const handleSetResearcherOutput = useCallback((output: string) => {
+    wizardDirtyRef.current = true
+    setWizardDirty(true)
+    setResearcherOutput(output)
+  }, [])
 
   // Prompt templates from backend
   const [researchPromptTemplate, setResearchPromptTemplate] = useState<string>('')
@@ -251,19 +272,27 @@ export default function App() {
       setSearches(searchesData)
       setKnowledgeSets(ksData)
 
+      // Support both legacy array payload and paginated { listings: [...] } response
+      const rawListings: Listing[] = Array.isArray(listingsData)
+        ? listingsData
+        : (Array.isArray(listingsData?.listings) ? listingsData.listings : []);
+
       // Map raw listings to include React UI helper properties
-      const mappedListings = listingsData.map((l: Listing) => transformListing(l, searchesData, ksData));
+      const mappedListings = rawListings.map((l: Listing) => transformListing(l, searchesData, ksData));
 
       setListings(mappedListings)
 
-      // Set default campaign selection if none set
-      if (campaignsData.length > 0 && currentCampaignId === null) {
-        setCurrentCampaignId(campaignsData[0].id);
+      // Set default campaign selection if none set (functional updater prevents resetting active selection)
+      if (campaignsData.length > 0) {
+        setCurrentCampaignId((prev: number | null) => prev ?? campaignsData[0].id);
       }
     }).catch(err => {
       console.error("Error refreshing dashboard state:", err)
     })
   }
+
+  const refreshAllRef = useRef(refreshAll);
+  refreshAllRef.current = refreshAll;
 
   // Load Prompt templates
   useEffect(() => {
@@ -347,7 +376,7 @@ export default function App() {
               setIsScraping(false);
               setScrapingProgress(null);
               setScrapingStatus("Scraping completed!");
-              refreshAll();
+              refreshAllRef.current();
               if (activeSearchTarget?.id) {
                 fetchSampleListings(activeSearchTarget.id);
               }
@@ -369,7 +398,7 @@ export default function App() {
       if (intervalId) clearInterval(intervalId);
     };
     
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isScraping, activeSearchTarget?.id]);
 
   // Polling loop for active AI evaluations
@@ -383,11 +412,16 @@ export default function App() {
           // If the list of active IDs changed, we might want to refresh listings
           // to get the new scores for those that just finished.
           setActiveProcessingListingIds(prev => {
-            const finished = prev.filter(id => !data.active.includes(id));
+            const next: string[] = Array.isArray(data.active) ? data.active : [];
+            const finished = prev.filter(id => !next.includes(id));
             if (finished.length > 0) {
-              refreshAll();
+              refreshAllRef.current();
             }
-            return data.active;
+            // Return prev if the set of active IDs is unchanged to eliminate permanent 2-second re-renders
+            if (prev.length === next.length && prev.every(id => next.includes(id))) {
+              return prev;
+            }
+            return next;
           });
         }
       } catch {
@@ -397,7 +431,7 @@ export default function App() {
     checkActiveProcesses();
     intervalId = setInterval(checkActiveProcesses, 2000);
     return () => clearInterval(intervalId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   const [isProcessing, setIsProcessing] = useState(false)
@@ -687,8 +721,29 @@ export default function App() {
 
 
 
+  const loadedSearchTargetIdRef = useRef<number | null | undefined>(undefined)
+  const loadedKnowledgeSetIdRef = useRef<number | null | undefined>(undefined)
+
   // Auto load active guidelines when active search target changes
   useEffect(() => {
+    const targetId = activeSearchTarget?.id
+    const ksId = activeSearchTarget?.knowledge_set_id
+
+    // Do not overwrite user draft when background data refreshes without changing the active target
+    if (loadedSearchTargetIdRef.current === targetId && loadedKnowledgeSetIdRef.current === ksId) {
+      return
+    }
+
+    // If user has unsaved edits on this target, don't clobber them on background poll
+    if (wizardDirtyRef.current && loadedSearchTargetIdRef.current === targetId) {
+      return
+    }
+
+    loadedSearchTargetIdRef.current = targetId
+    loadedKnowledgeSetIdRef.current = ksId
+    setWizardDirty(false)
+    wizardDirtyRef.current = false
+
     if (activeSearchTarget && activeSearchTarget.knowledge_set_id) {
       const boundSet = knowledgeSets.find(ks => ks.id === activeSearchTarget.knowledge_set_id)
       if (boundSet) {
@@ -742,7 +797,7 @@ export default function App() {
       setWizardStep(1)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSearchTarget, searches, knowledgeSets])
+  }, [activeSearchTarget?.id, activeSearchTarget?.knowledge_set_id, knowledgeSets, setWizardStep])
 
   // Create Campaign
   const handleCreateCampaign = async (): Promise<number | null> => {
@@ -863,6 +918,8 @@ export default function App() {
         })
       })
       if (res.ok) {
+        setWizardDirty(false)
+        wizardDirtyRef.current = false
         setEditKsError('')
         refreshAll()
         setView('dashboard')
@@ -930,11 +987,37 @@ export default function App() {
         body: JSON.stringify({ campaignId: currentCampaignId })
       })
       if (res.ok) {
-        setProcessingStatus("AI matching completed! Updating Deal Matcher results...")
-        setTimeout(() => {
-          refreshAll()
-          setIsProcessing(false)
-        }, 4000)
+        setProcessingStatus("AI matching evaluation in progress...")
+        let pollCount = 0
+        let sawActive = false
+        const pollInterval = setInterval(async () => {
+          pollCount++
+          try {
+            const activeRes = await fetch('/api/process/active')
+            if (activeRes.ok) {
+              const activeData = await activeRes.json()
+              const activeList = Array.isArray(activeData.active) ? activeData.active : []
+              if (activeList.length > 0) {
+                sawActive = true
+                setProcessingStatus(`AI matching in progress (${activeList.length} remaining)...`)
+              } else if (sawActive || pollCount >= 3) {
+                clearInterval(pollInterval)
+                setProcessingStatus("AI matching completed! Updating Deal Matcher results...")
+                refreshAllRef.current()
+                setTimeout(() => {
+                  setIsProcessing(false)
+                }, 1500)
+              }
+            }
+          } catch {
+            // Keep polling
+          }
+          if (pollCount > 180) {
+            clearInterval(pollInterval)
+            refreshAllRef.current()
+            setIsProcessing(false)
+          }
+        }, 2000)
       } else {
         alert("Failed to launch AI Matcher.")
         setIsProcessing(false)
@@ -960,13 +1043,22 @@ export default function App() {
     if (selectedStatusFilter === 'High Niceness') {
       return isMatched && l.llm_processed && l.niceness_score !== null && l.niceness_score !== undefined && l.niceness_score >= 70
     }
-    if (selectedStatusFilter === 'New') {
-      return isMatched && l.status === 'New'
+    if (selectedStatusFilter === 'Evaluated') {
+      return isMatched && Boolean(l.llm_processed)
     }
     if (selectedStatusFilter === 'Evaluate with AI') {
       return isMatched && !l.llm_processed
     }
     return isMatched
+  })
+
+  const mainListParentRef = useRef<HTMLDivElement>(null)
+  const rowVirtualizer = useVirtualizer({
+    count: filteredListings.length,
+    getScrollElement: () => mainListParentRef.current,
+    estimateSize: () => 140,
+    overscan: 5,
+    getItemKey: useCallback((index: number) => filteredListings[index]?.id ?? index, [filteredListings]),
   })
 
 
@@ -1295,6 +1387,8 @@ export default function App() {
                           src={firstImg}
                           alt={c.name}
                           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          loading="lazy"
+                          decoding="async"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-bg-base via-bg-base/20 to-transparent" />
                       </div>
@@ -1420,22 +1514,24 @@ export default function App() {
                 </Button>
               </div>
 
-              <RouteResultsView
-                campaignId={currentCampaignId || 0}
-                campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
-                onEvaluateWithAi={() => {
-                  const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
-                  setShowAiWizard(true);
-                  navigate('edit', currentCampaignId, firstTarget?.id || null);
-                }}
-                isScraping={isScraping}
-                onStartScrape={handleStartScrape}
-                scrapingStatus={scrapingStatus}
-                scrapingProgress={scrapingProgress}
-                liveLogs={liveLogs}
-                showLogConsole={showLogConsole}
-                setShowLogConsole={setShowLogConsole}
-              />
+              <Suspense fallback={<ViewFallback />}>
+                <RouteResultsView
+                  campaignId={currentCampaignId || 0}
+                  campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
+                  onEvaluateWithAi={() => {
+                    const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
+                    setShowAiWizard(true);
+                    navigate('edit', currentCampaignId, firstTarget?.id || null);
+                  }}
+                  isScraping={isScraping}
+                  onStartScrape={handleStartScrape}
+                  scrapingStatus={scrapingStatus}
+                  scrapingProgress={scrapingProgress}
+                  liveLogs={liveLogs}
+                  showLogConsole={showLogConsole}
+                  setShowLogConsole={setShowLogConsole}
+                />
+              </Suspense>
             </div>
           ) : (
           <div className="flex flex-col space-y-6 animate-fadeIn w-full">
@@ -1483,7 +1579,7 @@ export default function App() {
                     overflowed and printed on top of each other. */}
                 <div className="flex flex-wrap gap-2 w-full lg:w-auto">
                   <Button
-                    variant="action-emerald"
+                    variant="accent"
                     size="sm"
                     onClick={handleStartScrape}
                     disabled={isScraping || isProcessing}
@@ -1493,7 +1589,7 @@ export default function App() {
                     <span>{t('dashboard.fetchFresh')}</span>
                   </Button>
                   <Button
-                    variant="action-sky"
+                    variant="subtle"
                     size="sm"
                     onClick={handleStartDeepUpdate}
                     disabled={isScraping || isProcessing}
@@ -1503,7 +1599,7 @@ export default function App() {
                     <span>{t('dashboard.updateDesc')}</span>
                   </Button>
                   <Button
-                    variant="action-indigo"
+                    variant="accent"
                     size="sm"
                     onClick={handleStartProcess}
                     disabled={isScraping || isProcessing}
@@ -1531,12 +1627,12 @@ export default function App() {
 
                   <Select
                     value={selectedStatusFilter}
-                    onChange={val => setSelectedStatusFilter(val as 'All' | 'High Niceness' | 'New' | 'Evaluate with AI')}
+                    onChange={val => setSelectedStatusFilter(val as 'All' | 'High Niceness' | 'Evaluated' | 'Evaluate with AI')}
                     options={[
                       { value: 'All', label: t('dashboard.statusAll') },
                       { value: 'High Niceness', label: `${t('dashboard.statusMatches')} (70+)` },
                       { value: 'Evaluate with AI', label: t('dashboard.statusPending') },
-                      { value: 'New', label: t('dashboard.statusEvaluated') }
+                      { value: 'Evaluated', label: t('dashboard.statusEvaluated') }
                     ]}
                     className="w-full sm:w-44"
                   />
@@ -1571,23 +1667,48 @@ export default function App() {
               <div className="flex flex-col lg:flex-row gap-6 items-start w-full relative">
                 
                 {/* Left Master List / Mobile Grid */}
-                <div className={cn(
-                  "w-full flex-1 flex flex-col gap-4",
-                  "lg:w-[380px] lg:max-w-[380px] lg:flex-initial lg:max-h-[calc(100vh-220px)] lg:overflow-y-auto lg:pr-2 scrollbar-thin"
-                )}>
-                  {/* Grid on mobile, vertical list on desktop */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
-                    {filteredListings.map(l => (
-                      <ListingDetailCard
-                        key={l.id}
-                        l={l}
-                        activeProcessingListingIds={activeProcessingListingIds}
-                        handleProcessSingleListing={handleProcessSingleListing}
-                        selectedListingId={selectedListingId}
-                        setSelectedListingId={setSelectedListingId}
-                        mode="list"
-                      />
-                    ))}
+                <div
+                  ref={mainListParentRef}
+                  className={cn(
+                    "w-full flex-1 flex flex-col gap-4",
+                    "lg:w-[380px] lg:max-w-[380px] lg:flex-initial max-h-[calc(100vh-220px)] overflow-y-auto pr-2 scrollbar-thin"
+                  )}
+                >
+                  <div
+                    style={{
+                      height: `${rowVirtualizer.getTotalSize()}px`,
+                      width: '100%',
+                      position: 'relative',
+                    }}
+                  >
+                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const l = filteredListings[virtualRow.index]
+                      if (!l) return null
+                      return (
+                        <div
+                          key={virtualRow.key}
+                          ref={rowVirtualizer.measureElement}
+                          data-index={virtualRow.index}
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            transform: `translateY(${virtualRow.start}px)`,
+                            paddingBottom: '16px',
+                          }}
+                        >
+                          <ListingDetailCard
+                            l={l}
+                            activeProcessingListingIds={activeProcessingListingIds}
+                            handleProcessSingleListing={handleProcessSingleListing}
+                            selectedListingId={selectedListingId}
+                            setSelectedListingId={setSelectedListingId}
+                            mode="list"
+                          />
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
 
@@ -1792,20 +1913,22 @@ export default function App() {
                           you set off" to someone who already had, while the
                           message that names the real blocker was unreachable. */}
                       {routeFrom && routeTo && newTargetUrl && isValidKleinanzeigenUrl(newTargetUrl) ? (
-                        <CorridorPlanner
-                          baseUrl={newTargetUrl}
-                          origin={routeFrom.postal_code}
-                          destination={routeTo.postal_code}
-                          originName={routeFrom.name}
-                          destinationName={routeTo.name}
-                          radiusKm={routeRadiusKm}
-                          corridorKm={routeCorridorKm}
-                          onRadiusChange={setRouteRadiusKm}
-                          onCorridorChange={setRouteCorridorKm}
-                          onCommit={handlePlanCorridor}
-                          committing={routePlanning}
-                          commitLabel={t('corridor.commitNew')}
-                        />
+                        <Suspense fallback={<ViewFallback />}>
+                          <CorridorPlanner
+                            baseUrl={newTargetUrl}
+                            origin={routeFrom.postal_code}
+                            destination={routeTo.postal_code}
+                            originName={routeFrom.name}
+                            destinationName={routeTo.name}
+                            radiusKm={routeRadiusKm}
+                            corridorKm={routeCorridorKm}
+                            onRadiusChange={setRouteRadiusKm}
+                            onCorridorChange={setRouteCorridorKm}
+                            onCommit={handlePlanCorridor}
+                            committing={routePlanning}
+                            commitLabel={t('corridor.commitNew')}
+                          />
+                        </Suspense>
                       ) : (
                         <p className="text-sm text-text-muted text-center py-2">
                           {!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl)
@@ -1904,21 +2027,23 @@ export default function App() {
             ) : (campaigns.find(c => c.id === currentCampaignId)?.route_id && !showAiWizard) ? (
               /* CORRIDOR RESULTS VIEW */
               <div className="w-full animate-fadeIn">
-                <RouteResultsView
-                  campaignId={currentCampaignId || 0}
-                  campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
-                  onEvaluateWithAi={() => {
-                    setShowAiWizard(true);
-                    setWizardStep(1);
-                  }}
-                  isScraping={isScraping}
-                  onStartScrape={handleStartScrape}
-                  scrapingStatus={scrapingStatus}
-                  scrapingProgress={scrapingProgress}
-                  liveLogs={liveLogs}
-                  showLogConsole={showLogConsole}
-                  setShowLogConsole={setShowLogConsole}
-                />
+                <Suspense fallback={<ViewFallback />}>
+                  <RouteResultsView
+                    campaignId={currentCampaignId || 0}
+                    campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
+                    onEvaluateWithAi={() => {
+                      setShowAiWizard(true);
+                      setWizardStep(1);
+                    }}
+                    isScraping={isScraping}
+                    onStartScrape={handleStartScrape}
+                    scrapingStatus={scrapingStatus}
+                    scrapingProgress={scrapingProgress}
+                    liveLogs={liveLogs}
+                    showLogConsole={showLogConsole}
+                    setShowLogConsole={setShowLogConsole}
+                  />
+                </Suspense>
               </div>
             ) : (
               /* DIRECT 3-STEP GUIDELINES WIZARD WORKSPACE */
@@ -1938,31 +2063,33 @@ export default function App() {
                   </div>
                 )}
                 {activeSearchTarget && (
-                  <GuidelinesWizard
-                    activeSearchTarget={activeSearchTarget}
-                    marketMemo={marketMemo}
-                    setMarketMemo={setMarketMemo}
-                    sampledListings={sampledListings}
-                    sampledListingsLoading={sampledListingsLoading}
-                    fetchSampleListings={fetchSampleListings}
-                    researcherOutput={researcherOutput}
-                    setResearcherOutput={setResearcherOutput}
-                    researchPromptTemplate={researchPromptTemplate}
-                    marketPromptTemplate={marketPromptTemplate}
-                    profilePromptTemplate={profilePromptTemplate}
-                    editKsError={editKsError}
-                    wizardStep={wizardStep}
-                    setWizardStep={setWizardStep}
-                    handleSaveKnowledgeSet={handleSaveKnowledgeSet}
-                    parsedExpertKnowledge={parsedExpertKnowledge}
-                    parsedGoodRef={parsedGoodRef}
-                    parsedBadRef={parsedBadRef}
-                    parsedDemoMsg={parsedDemoMsg}
-                    parsedItemJson={parsedItemJson}
-                    isScraping={isScraping}
-                    scrapingStatus={scrapingStatus}
-                    scrapingProgress={scrapingProgress}
-                  />
+                  <Suspense fallback={<ViewFallback />}>
+                    <GuidelinesWizard
+                      activeSearchTarget={activeSearchTarget}
+                      marketMemo={marketMemo}
+                      setMarketMemo={handleSetMarketMemo}
+                      sampledListings={sampledListings}
+                      sampledListingsLoading={sampledListingsLoading}
+                      fetchSampleListings={fetchSampleListings}
+                      researcherOutput={researcherOutput}
+                      setResearcherOutput={handleSetResearcherOutput}
+                      researchPromptTemplate={researchPromptTemplate}
+                      marketPromptTemplate={marketPromptTemplate}
+                      profilePromptTemplate={profilePromptTemplate}
+                      editKsError={editKsError}
+                      wizardStep={wizardStep}
+                      setWizardStep={setWizardStep}
+                      handleSaveKnowledgeSet={handleSaveKnowledgeSet}
+                      parsedExpertKnowledge={parsedExpertKnowledge}
+                      parsedGoodRef={parsedGoodRef}
+                      parsedBadRef={parsedBadRef}
+                      parsedDemoMsg={parsedDemoMsg}
+                      parsedItemJson={parsedItemJson}
+                      isScraping={isScraping}
+                      scrapingStatus={scrapingStatus}
+                      scrapingProgress={scrapingProgress}
+                    />
+                  </Suspense>
                 )}
               </div>
             )}
@@ -2034,7 +2161,9 @@ export default function App() {
         )}
 
         {view === 'settings' && (
-          <SettingsView onBack={() => setView(previousView)} />
+          <Suspense fallback={<ViewFallback />}>
+            <SettingsView onBack={() => setView(previousView)} />
+          </Suspense>
         )}
       </main>
     </div>

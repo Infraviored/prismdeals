@@ -123,9 +123,20 @@ export function useHashRouter() {
     navigate(v);
   }, [navigate]);
 
-  const setCurrentCampaignId = useCallback((cid: number | null) => {
-    navigate(route.view, cid);
-  }, [navigate, route.view]);
+  const setCurrentCampaignId = useCallback((cid: number | null | ((prev: number | null) => number | null)) => {
+    setRoute((prev) => {
+      const nextCid = typeof cid === 'function' ? cid(prev.campaignId) : cid;
+      const nextRoute = {
+        view: prev.view,
+        campaignId: nextCid,
+        searchId: prev.searchId,
+        listingId: prev.listingId,
+        step: prev.step,
+      };
+      updateHash(prev.view, nextCid, prev.searchId, prev.listingId, prev.step);
+      return nextRoute;
+    });
+  }, [updateHash]);
 
   const setCurrentSearchId = useCallback((sid: number | null) => {
     navigate(route.view, route.campaignId, sid);

@@ -5,6 +5,9 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?:
     | 'primary'
     | 'secondary'
+    | 'accent'
+    | 'subtle'
+    | 'outline'
     | 'danger'
     | 'quiet'
     | 'badge'
@@ -32,6 +35,9 @@ export const Button: React.FC<ButtonProps> = ({
   const variants: Record<string, string> = {
     primary: 'bg-brand-accent hover:bg-[#f09587] text-white rounded-xl shadow-lg shadow-brand-accent/10 hover:shadow-[#f09587]/20 border border-transparent',
     secondary: 'bg-bg-surface hover:bg-bg-surface-hover border border-border-subtle text-text-secondary hover:text-text-primary rounded-xl',
+    accent: 'bg-bg-surface hover:bg-bg-surface-hover text-text-muted hover:text-brand-accent border border-border-subtle rounded-xl shadow-sm',
+    subtle: 'bg-bg-surface hover:bg-bg-surface-hover text-text-muted hover:text-text-primary border border-border-subtle rounded-xl shadow-sm',
+    outline: 'bg-transparent hover:bg-bg-surface border border-border-subtle text-text-muted hover:text-text-primary rounded-xl',
     danger: 'bg-status-danger/10 hover:bg-status-danger/20 text-status-danger border border-status-danger/30 rounded-xl',
     quiet: 'bg-transparent hover:bg-bg-surface border border-transparent hover:border-border-subtle text-text-muted hover:text-text-primary rounded-xl',
     badge: 'text-text-muted hover:text-text-primary bg-bg-surface hover:bg-bg-surface-hover border border-border-subtle rounded-xl',
