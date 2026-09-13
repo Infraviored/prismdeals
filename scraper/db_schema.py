@@ -15,6 +15,9 @@ import sqlite3
 SCHEMA_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "db", "schema.sql"
 )
+MIGRATIONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "db", "migrations"
+)
 
 # Applying the schema per connection is cheap but not free, and some callers
 # open a connection per listing. One pass per database file per process is
@@ -52,8 +55,60 @@ def apply_schema(connection, force=False):
                 ) from error
     connection.commit()
 
+    # Apply incremental migrations if db/migrations exists
+    apply_migrations(connection)
+
     if key is not None:
         _APPLIED.add(key)
+
+
+def get_applied_migrations(connection) -> set:
+    """Return set of migration version names that have been recorded in schema_migrations."""
+    try:
+        cursor = connection.execute("SELECT version FROM schema_migrations")
+        return {row[0] for row in cursor.fetchall()}
+    except sqlite3.OperationalError:
+        # Table does not exist yet
+        return set()
+
+
+def record_migration(connection, version: str):
+    """Record that a migration version has been applied."""
+    connection.execute(
+        "INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)",
+        (version,),
+    )
+    connection.commit()
+
+
+def apply_migrations(connection, migrations_dir=MIGRATIONS_DIR) -> list:
+    """Apply any pending .sql migrations from migrations_dir in sorted order."""
+    if not os.path.isdir(migrations_dir):
+        return []
+
+    applied = get_applied_migrations(connection)
+    applied_now = []
+
+    migration_files = sorted(
+        f for f in os.listdir(migrations_dir) if f.endswith(".sql")
+    )
+    for filename in migration_files:
+        version = os.path.splitext(filename)[0]
+        if version in applied:
+            continue
+        filepath = os.path.join(migrations_dir, filename)
+        with open(filepath, encoding="utf-8") as handle:
+            script = handle.read()
+        with connection:
+            for statement in _statements(script):
+                connection.execute(statement)
+            connection.execute(
+                "INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)",
+                (version,),
+            )
+        applied_now.append(version)
+
+    return applied_now
 
 
 def _statements(script):
