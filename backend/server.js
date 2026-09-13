@@ -275,6 +275,11 @@ function runPythonWorker(args) {
     python.stdout.on('data', (data) => stdout += data);
     python.stderr.on('data', (data) => stderr += data);
     
+    python.on('error', (err) => {
+      console.error('Python worker spawn error:', err);
+      reject(err);
+    });
+
     python.on('close', (code) => {
       if (code === 0) {
         resolve(stdout.trim());
@@ -1175,11 +1180,21 @@ app.post('/api/searches/preview', (req, res) => {
   
   let stdout = '';
   let stderr = '';
+  let replied = false;
   
   python.stdout.on('data', (data) => stdout += data);
   python.stderr.on('data', (data) => stderr += data);
   
+  python.on('error', (err) => {
+    console.error('Preview spawn error:', err);
+    if (replied) return;
+    replied = true;
+    res.status(500).json({ error: 'Headless browser check failed to start.' });
+  });
+
   python.on('close', (code) => {
+    if (replied) return;
+    replied = true;
     if (code === 0) {
       const match = stdout.match(/__PREVIEW_COUNT__:(\d+)/);
       if (match) {
@@ -1486,6 +1501,11 @@ app.post('/api/scrape', (req, res) => {
     python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
     python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
     
+    python.on('error', (err) => {
+      console.error('Background scraper spawn error:', err);
+      activeScraperProcess = null;
+    });
+
     python.on('close', (code) => {
       console.log(`Python scraper exited with code ${code}`);
       activeScraperProcess = null;
@@ -1533,6 +1553,11 @@ app.post('/api/scrape/update-all', (req, res) => {
     python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
     python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
     
+    python.on('error', (err) => {
+      console.error('Background deep update spawn error:', err);
+      activeScraperProcess = null;
+    });
+
     python.on('close', (code) => {
       console.log(`Python scraper exited with code ${code}`);
       activeScraperProcess = null;
@@ -1582,6 +1607,11 @@ app.post('/api/searches/:search_id/scrape', async (req, res) => {
     python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
     python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
 
+    python.on('error', (err) => {
+      console.error('Targeted scraper spawn error:', err);
+      activeScraperProcess = null;
+    });
+
     python.on('close', (code) => {
       console.log(`Python targeted scraper exited with code ${code}`);
       activeScraperProcess = null;
@@ -1626,12 +1656,23 @@ app.post('/api/process', (req, res) => {
     const python = spawn(pythonExecutable, args, { env: { ...process.env } });
     activeWorkerProcesses.set(key, python);
 
+    let replied = false;
     python.stdout.on('data', (data) => console.log(`AI worker stdout: ${data}`));
     python.stderr.on('data', (data) => console.error(`AI worker stderr: ${data}`));
+
+    python.on('error', (err) => {
+      console.error('AI worker spawn error:', err);
+      activeWorkerProcesses.delete(key);
+      if (replied) return;
+      replied = true;
+      res.status(500).json({ error: 'Failed to start AI process' });
+    });
 
     python.on('close', (code) => {
       console.log(`AI worker exited with code ${code}`);
       activeWorkerProcesses.delete(key);
+      if (replied) return;
+      replied = true;
       res.json({ success: code === 0, message: 'AI processing completed' });
     });
 
@@ -1671,11 +1712,21 @@ app.post('/api/login-session', (req, res) => {
       }
     });
 
+    let replied = false;
     python.stdout.on('data', (data) => console.log(`Login process: ${data}`));
     python.stderr.on('data', (data) => console.error(`Login error: ${data}`));
 
+    python.on('error', (err) => {
+      console.error('Interactive login process spawn error:', err);
+      if (replied) return;
+      replied = true;
+      res.status(500).json({ error: 'Failed to start login process' });
+    });
+
     python.on('close', (code) => {
       console.log(`Interactive login process exited with code ${code}`);
+      if (replied) return;
+      replied = true;
       res.json({ success: code === 0 });
     });
   } catch (error) {
