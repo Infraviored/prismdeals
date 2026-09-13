@@ -185,10 +185,15 @@ def annotate(
     places=None,
     limit=None,
 ):
-    """Computes detours for listings on this route that lack one.
+    """Computes detours for listings on this route whose position is pending.
 
     Returns a summary rather than the rows: the numbers are in the database, and
     what a caller wants to know is how much was done and what could not be.
+
+    Only listings with status in RETRYABLE (failed) or with no stored geo row are
+    evaluated. Settled listings (routed, too_far, unplaceable) are skipped to avoid
+    redundant routing requests. To re-evaluate listings marked too_far after redrawing
+    a corridor, call `requeue` first to return them to the pending queue.
 
     The cutoff follows the corridor the buyer asked for. It used to be a flat
     forty kilometres regardless, which meant the corridor width decided how many
@@ -339,20 +344,22 @@ def replan(conn, route_search_id, radius_km, half_width_km, client=None, resolve
     )
 
     before = route_store.circle_urls(conn, route_search_id)
-    plan.conflicts = route_store.replace_circles(
-        conn,
-        route_search_id,
-        plan,
-        name=asked["name"],
-        destination=asked["destination"],
-        campaign_id=asked["campaign_id"],
-        knowledge_set_id=asked["set_id"],
-    )
-    after = {circle.url for circle in plan.circles}
+    with conn:
+        plan.conflicts = route_store.replace_circles(
+            conn,
+            route_search_id,
+            plan,
+            name=asked["name"],
+            destination=asked["destination"],
+            campaign_id=asked["campaign_id"],
+            knowledge_set_id=asked["set_id"],
+            commit=False,
+        )
+        after = {circle.url for circle in plan.circles}
 
-    # A circle that fell out of the corridor must stop being fetched, or
-    # narrowing one reduces nothing.
-    route_store.retire_searches(conn, before - after)
-    route_store.requeue(conn, route_search_id)
+        # A circle that fell out of the corridor must stop being fetched, or
+        # narrowing one reduces nothing.
+        route_store.retire_searches(conn, before - after, commit=False)
+        route_store.requeue(conn, route_search_id, commit=False)
 
     return len(before & after), len(after - before), len(before - after), plan
