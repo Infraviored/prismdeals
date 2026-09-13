@@ -25,14 +25,23 @@ them, and on a there-and-back trip that is not the way the driver is going.
 """
 
 import logging
+import os
 import time
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_OSRM_URL = "https://router.project-osrm.org"
+DEFAULT_OSRM_URL = os.environ.get("OSRM_URL", "https://router.project-osrm.org")
 
 # The public demo server is a courtesy. One request every this many seconds.
-MIN_REQUEST_INTERVAL_S = 1.0
+# When a local/container OSRM is pointed to via OSRM_URL, rate limiting is disabled
+# (0.0s) unless explicitly set via OSRM_MIN_INTERVAL_S.
+_env_interval = os.environ.get("OSRM_MIN_INTERVAL_S")
+if _env_interval is not None:
+    MIN_REQUEST_INTERVAL_S = float(_env_interval)
+elif os.environ.get("OSRM_URL"):
+    MIN_REQUEST_INTERVAL_S = 0.0
+else:
+    MIN_REQUEST_INTERVAL_S = 1.0
 
 
 class RoutingError(RuntimeError):
@@ -83,9 +92,20 @@ class OsrmClient:
     one request rather than one per listing.
     """
 
-    def __init__(self, base_url=DEFAULT_OSRM_URL, fetch_json=None, profile="driving"):
-        self.base_url = base_url.rstrip("/")
+    def __init__(
+        self,
+        base_url=None,
+        fetch_json=None,
+        profile="driving",
+        min_request_interval_s=None,
+    ):
+        self.base_url = (base_url or DEFAULT_OSRM_URL).rstrip("/")
         self.profile = profile
+        self.min_request_interval_s = (
+            min_request_interval_s
+            if min_request_interval_s is not None
+            else MIN_REQUEST_INTERVAL_S
+        )
         self._fetch_json = fetch_json or self._default_fetch
         self._cache = {}
         self._last_request_at = 0.0
@@ -93,7 +113,7 @@ class OsrmClient:
     def _default_fetch(self, url):
         import requests
 
-        wait = MIN_REQUEST_INTERVAL_S - (time.monotonic() - self._last_request_at)
+        wait = self.min_request_interval_s - (time.monotonic() - self._last_request_at)
         if wait > 0:
             time.sleep(wait)
         self._last_request_at = time.monotonic()
