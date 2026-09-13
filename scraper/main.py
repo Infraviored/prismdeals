@@ -6,6 +6,7 @@ import sqlite3
 import logging
 from logging.handlers import RotatingFileHandler
 import argparse
+import tempfile
 from scraper import (
     scrape_listings,
     preview_url_listings_count,
@@ -259,6 +260,12 @@ def main():
         default=None,
         help="Campaign ID to filter searches, description updates, and AI matching",
     )
+    parser.add_argument(
+        "--pages",
+        type=int,
+        default=None,
+        help="Number of pages to scrape per search target (overrides default/search configuration)",
+    )
 
     # --- route search --------------------------------------------------
     route = parser.add_argument_group(
@@ -338,8 +345,6 @@ def main():
     data_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
     )
-    temp_output_file = os.path.join(data_dir, "temp_scraped.json")
-
     # Create data directory if it doesn't exist
     os.makedirs(data_dir, exist_ok=True)
 
@@ -356,19 +361,41 @@ def main():
         if args.urls is not None:
             # Overridden via command line arguments
             for url in args.urls:
-                search_targets.append({"url": url, "search_id": args.search_id})
+                search_targets.append(
+                    {
+                        "url": url,
+                        "search_id": args.search_id,
+                        "pages_to_scrape": args.pages,
+                    }
+                )
         else:
             try:
+                columns = {
+                    r[1]
+                    for r in cursor.execute("PRAGMA table_info(searches)").fetchall()
+                }
+                has_pages_col = "pages_to_scrape" in columns
+                query_cols = "id, url, pages_to_scrape" if has_pages_col else "id, url"
+
                 if args.campaign_id is not None:
                     cursor.execute(
-                        "SELECT id, url FROM searches WHERE enabled = 1 AND campaign_id = ?",
+                        f"SELECT {query_cols} FROM searches WHERE enabled = 1 AND campaign_id = ?",
                         (args.campaign_id,),
                     )
                 else:
-                    cursor.execute("SELECT id, url FROM searches WHERE enabled = 1")
+                    cursor.execute(
+                        f"SELECT {query_cols} FROM searches WHERE enabled = 1"
+                    )
                 rows = cursor.fetchall()
                 for r in rows:
-                    search_targets.append({"url": r["url"], "search_id": r["id"]})
+                    target_pages = r["pages_to_scrape"] if has_pages_col else None
+                    search_targets.append(
+                        {
+                            "url": r["url"],
+                            "search_id": r["id"],
+                            "pages_to_scrape": target_pages,
+                        }
+                    )
                 logger.info(
                     f"Loaded {len(search_targets)} active search URLs from SQLite"
                 )
@@ -380,16 +407,25 @@ def main():
             default_url = (
                 "https://www.kleinanzeigen.de/s-notebooks/preis::1400/rtx4060/k0c278"
             )
-            search_targets.append({"url": default_url, "profile_id": None})
+            search_targets.append(
+                {"url": default_url, "search_id": None, "pages_to_scrape": None}
+            )
             logger.info(f"Using default search URL: {default_url}")
 
         for target in search_targets:
             url = target["url"]
             search_id = target.get("search_id")
+            pages_to_scrape = args.pages or target.get("pages_to_scrape")
 
-            logger.info(f"Scraping search target: {url}")
+            logger.info(
+                f"Scraping search target: {url} (pages: {pages_to_scrape or 'default'})"
+            )
 
-            # Clean up temp file before scraping this target
+            # Unique temp file per scrape target to prevent collisions across concurrent processes
+            temp_fd, temp_output_file = tempfile.mkstemp(
+                prefix=f"scraped_{os.getpid()}_", suffix=".json", dir=data_dir
+            )
+            os.close(temp_fd)
             if os.path.exists(temp_output_file):
                 try:
                     os.remove(temp_output_file)
@@ -402,6 +438,7 @@ def main():
                     [url],
                     temp_output_file,
                     max_listings=args.max_listings,
+                    pages_to_scrape=pages_to_scrape,
                 )
 
                 # Import scraped items into SQLite
@@ -439,6 +476,12 @@ def main():
                     conn.commit()
             except Exception as e:
                 logger.error(f"Error scraping or importing URL {url}: {str(e)}")
+            finally:
+                if os.path.exists(temp_output_file):
+                    try:
+                        os.remove(temp_output_file)
+                    except OSError:
+                        pass
 
         # 1.5. Sequential detailed description harvesting phase
         logger.info("Executing optimized sequential detailed description harvesting...")
@@ -507,13 +550,6 @@ def main():
             logger.info("Successfully executed agent_worker processing.")
         except subprocess.CalledProcessError as e:
             logger.error(f"Error running agent_worker process: {str(e)}")
-
-    # Cleanup temp file
-    if os.path.exists(temp_output_file):
-        try:
-            os.remove(temp_output_file)
-        except OSError:
-            pass
 
     logger.info("All operations completed.")
 

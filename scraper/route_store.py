@@ -138,11 +138,22 @@ def attach_circles(
 
         if existing is None:
             try:
-                cursor.execute(
-                    "INSERT INTO searches (campaign_id, name, url, enabled, "
-                    "knowledge_set_id) VALUES (?, ?, ?, 1, ?)",
-                    (campaign_id, label, circle.url, knowledge_set_id),
-                )
+                columns = {
+                    r[1]
+                    for r in cursor.execute("PRAGMA table_info(searches)").fetchall()
+                }
+                if "is_corridor" in columns:
+                    cursor.execute(
+                        "INSERT INTO searches (campaign_id, name, url, enabled, "
+                        "knowledge_set_id, is_corridor) VALUES (?, ?, ?, 1, ?, 1)",
+                        (campaign_id, label, circle.url, knowledge_set_id),
+                    )
+                else:
+                    cursor.execute(
+                        "INSERT INTO searches (campaign_id, name, url, enabled, "
+                        "knowledge_set_id) VALUES (?, ?, ?, 1, ?)",
+                        (campaign_id, label, circle.url, knowledge_set_id),
+                    )
                 search_id = cursor.lastrowid
             except sqlite3.IntegrityError:
                 # Someone inserted this url between the SELECT above and here.
@@ -380,6 +391,7 @@ def replace_circles(
     destination=None,
     campaign_id=None,
     knowledge_set_id=None,
+    commit=True,
 ):
     """Swaps a route's circles for a freshly drawn plan's, in one step.
 
@@ -419,11 +431,12 @@ def replace_circles(
         campaign_id=campaign_id,
         knowledge_set_id=knowledge_set_id,
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return conflicts
 
 
-def retire_searches(conn, urls, keep_route_id=None):
+def retire_searches(conn, urls, keep_route_id=None, commit=True):
     """Switches off searches that no route covers any more.
 
     Deleting the circle rows was not enough: the search behind a dropped circle
@@ -433,15 +446,25 @@ def retire_searches(conn, urls, keep_route_id=None):
     piled up searches nobody had asked for.
 
     Disabled rather than deleted: the listings already found through it are real
-    and stay reachable in the campaign. Only searches no other route still uses
-    are touched.
+    and stay reachable in the campaign. Only corridor searches no other route
+    still uses are touched; manual searches sharing a URL are preserved.
     """
     retired = 0
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(searches)").fetchall()}
+    has_is_corridor = "is_corridor" in columns
+
     for url in urls:
         row = conn.execute("SELECT id FROM searches WHERE url = ?", (url,)).fetchone()
         if row is None:
             continue
         search_id = row[0]
+        if has_is_corridor:
+            is_corr = conn.execute(
+                "SELECT is_corridor FROM searches WHERE id = ?", (search_id,)
+            ).fetchone()
+            if not is_corr or not is_corr[0]:
+                continue
+
         still_used = conn.execute(
             "SELECT 1 FROM route_search_circles WHERE search_id = ? LIMIT 1",
             (search_id,),
@@ -450,7 +473,8 @@ def retire_searches(conn, urls, keep_route_id=None):
             continue
         conn.execute("UPDATE searches SET enabled = 0 WHERE id = ?", (search_id,))
         retired += 1
-    conn.commit()
+    if commit:
+        conn.commit()
     return retired
 
 
@@ -466,7 +490,7 @@ def circle_urls(conn, route_search_id):
     }
 
 
-def requeue(conn, route_search_id, from_status=TOO_FAR):
+def requeue(conn, route_search_id, from_status=TOO_FAR, commit=True):
     """Puts settled rows back in the queue, for when the question changed.
 
     A listing marked too_far was judged against the corridor as it was; redraw
@@ -478,5 +502,6 @@ def requeue(conn, route_search_id, from_status=TOO_FAR):
         "WHERE route_search_id = ? AND status = ?",
         (FAILED, route_search_id, from_status),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return cursor.rowcount

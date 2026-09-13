@@ -133,19 +133,15 @@ def default_url_checker(timeout=8):
     return check
 
 
+import browser_headers
+
 # Only an explicit "this resource does not exist" counts as dead. Measured
 # against motor-talk.de, whose real homepage answers 403 to a plain client: bot
 # protection, a rate limit or an outage would otherwise strip legitimate forum
 # sources, which are exactly where used-vehicle knowledge lives.
 DEAD_STATUSES = frozenset({404, 410})
 
-BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
-}
+BROWSER_HEADERS = browser_headers.DOSSIER_HEADERS
 
 
 def classify_status(status_code):
@@ -258,6 +254,8 @@ def get(conn, key, require_approved=False):
     except (ValueError, TypeError):
         logger.warning("Corrupt dossier payload for %s", key)
         return None
+    if isinstance(payload, dict) and "claims" in payload and row[2]:
+        payload = dict(payload, claims=fresh_claims(payload, row[2]))
     return {
         "payload": payload,
         "version": row[1],

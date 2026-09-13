@@ -23,18 +23,13 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 from config import DELAY_BETWEEN_PAGES, DELAY_BETWEEN_LISTINGS, PAGES_TO_SCRAPE
 
+import browser_headers
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
 # Modern browser request headers to safely bypass Akamai bot protection filters
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-}
+HEADERS = browser_headers.DEFAULT_BROWSER_HEADERS
 
 
 def fetch(url, caller=None, timeout=10):
@@ -158,21 +153,35 @@ def parse_listing_details_requests(url, session=None):
         return None
 
 
-def scrape_listings(urls, output_file, max_listings=None):
+def scrape_listings(urls, output_file, max_listings=None, pages_to_scrape=None):
     """Main function to scrape listings. Routes to Selenium if interactive login is requested."""
     is_interactive = os.environ.get("INTERACTIVE_LOGIN") == "1"
     if is_interactive:
         logger.info("INTERACTIVE_LOGIN requested. Routing to legacy Selenium scraper.")
-        return scrape_listings_selenium(urls, output_file, max_listings)
+        return scrape_listings_selenium(
+            urls,
+            output_file,
+            max_listings=max_listings,
+            pages_to_scrape=pages_to_scrape,
+        )
     else:
         logger.info("Executing optimized fast requests-based scraper.")
-        return scrape_listings_requests(urls, output_file, max_listings)
+        return scrape_listings_requests(
+            urls,
+            output_file,
+            max_listings=max_listings,
+            pages_to_scrape=pages_to_scrape,
+        )
 
 
-def scrape_listings_requests(urls, output_file, max_listings=None):
+def scrape_listings_requests(
+    urls, output_file, max_listings=None, pages_to_scrape=None
+):
     """Main function to scrape listings from multiple URLs using fast requests GET"""
+    if pages_to_scrape is None:
+        pages_to_scrape = PAGES_TO_SCRAPE
     all_scraped_listings = []
-    total_pages = len(urls) * PAGES_TO_SCRAPE
+    total_pages = len(urls) * pages_to_scrape
     current_page_idx = 0
 
     # Load existing listings to check for duplicates
@@ -192,13 +201,13 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
             existing_ids = set()
 
     for base_url in urls:
-        for page in range(1, PAGES_TO_SCRAPE + 1):
+        for page in range(1, pages_to_scrape + 1):
             current_page_idx += 1
             update_progress(
                 "discovery",
                 current_page_idx - 1,
                 total_pages,
-                f"Discovering listings on page {page} of {PAGES_TO_SCRAPE}...",
+                f"Discovering listings on page {page} of {pages_to_scrape}...",
             )
 
             # Insert pagination parameter into URL if page > 1
@@ -269,7 +278,7 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
             except Exception as e:
                 logger.error(f"Error scraping page {current_url}: {str(e)}")
 
-            if page < PAGES_TO_SCRAPE:
+            if page < pages_to_scrape:
                 time.sleep(DELAY_BETWEEN_PAGES)
 
     if total_pages > 0:
@@ -511,30 +520,30 @@ def update_all_descriptions_session(campaign_id=None):
                 if parsed is None:
                     continue
 
-            detailed_description = parsed["detailed_description"] or ""
+                detailed_description = parsed["detailed_description"] or ""
 
-            if detailed_description.strip() != old_description.strip():
-                logger.info(
-                    f"Description changed for listing {listing_id}! Updating in DB."
-                )
-                cursor.execute(
-                    """
-                    UPDATE listings 
-                    SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
-                        last_description_changed_at = ?
-                    WHERE id = ?
-                """,
-                    (
-                        detailed_description,
-                        json.dumps(parsed["details"]),
-                        json.dumps(parsed["images"]),
-                        datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        listing_id,
-                    ),
-                )
-                conn.commit()
-            else:
-                logger.info(f"No description changes for listing {listing_id}.")
+                if detailed_description.strip() != old_description.strip():
+                    logger.info(
+                        f"Description changed for listing {listing_id}! Updating in DB."
+                    )
+                    cursor.execute(
+                        """
+                        UPDATE listings 
+                        SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
+                            last_description_changed_at = ?
+                        WHERE id = ?
+                    """,
+                        (
+                            detailed_description,
+                            json.dumps(parsed["details"]),
+                            json.dumps(parsed["images"]),
+                            datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            listing_id,
+                        ),
+                    )
+                    conn.commit()
+                else:
+                    logger.info(f"No description changes for listing {listing_id}.")
 
         if total > 0:
             update_progress(
@@ -695,8 +704,12 @@ def manual_login(driver, cookies_path):
     )
 
 
-def scrape_listings_selenium(urls, output_file, max_listings=None):
+def scrape_listings_selenium(
+    urls, output_file, max_listings=None, pages_to_scrape=None
+):
     """Fallback interactive login / Selenium-based scraper. Preserved intentionally."""
+    if pages_to_scrape is None:
+        pages_to_scrape = PAGES_TO_SCRAPE
     data_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
     )
@@ -743,17 +756,17 @@ def scrape_listings_selenium(urls, output_file, max_listings=None):
 
         # Otherwise perform Selenium index scraping:
         all_scraped_listings = []
-        total_pages = len(urls) * PAGES_TO_SCRAPE
+        total_pages = len(urls) * pages_to_scrape
         current_page_idx = 0
 
         for base_url in urls:
-            for page in range(1, PAGES_TO_SCRAPE + 1):
+            for page in range(1, pages_to_scrape + 1):
                 current_page_idx += 1
                 update_progress(
                     "discovery",
                     current_page_idx - 1,
                     total_pages,
-                    f"Discovering listings on page {page} of {PAGES_TO_SCRAPE}...",
+                    f"Discovering listings on page {page} of {pages_to_scrape}...",
                 )
                 if page == 1:
                     current_url = base_url
@@ -772,7 +785,7 @@ def scrape_listings_selenium(urls, output_file, max_listings=None):
                         )
 
                 logger.info(
-                    f"[Selenium] Scraping page {page} of {PAGES_TO_SCRAPE}: {current_url}"
+                    f"[Selenium] Scraping page {page} of {pages_to_scrape}: {current_url}"
                 )
                 driver.get(current_url)
 
@@ -823,7 +836,7 @@ def scrape_listings_selenium(urls, output_file, max_listings=None):
                 logger.info(
                     f"[Selenium] Scraped {scraped_count} listings from {current_url}"
                 )
-                if page < PAGES_TO_SCRAPE:
+                if page < pages_to_scrape:
                     time.sleep(DELAY_BETWEEN_PAGES)
 
         return all_scraped_listings
