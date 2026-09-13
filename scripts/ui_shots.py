@@ -19,8 +19,8 @@ nothing to proxy.
 
 import argparse
 import os
-import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -264,21 +264,6 @@ def main():
     server = None
 
     src_db = db_schema.default_path()
-    # Derived from the database actually in use, not from the default. With
-    # PRISMDEALS_DB set, the old form copied the *default* database's WAL next
-    # to the override's copy — a write-ahead log belonging to a different file.
-    wal_file = src_db + "-wal"
-    if os.path.exists(wal_file):
-        try:
-            subprocess.run(
-                ["sqlite3", src_db, "PRAGMA wal_checkpoint(TRUNCATE);"],
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            pass
-
     try:
         if not os.path.exists(src_db):
             raise SystemExit(
@@ -286,14 +271,29 @@ def main():
                 f"interface, so it needs one to copy; run the backend once to "
                 f"create it, or point PRISMDEALS_DB at an existing database."
             )
-        shutil.copy(src_db, db_path)
-        if os.path.exists(wal_file) and os.path.getsize(wal_file) > 0:
-            shutil.copy(wal_file, f"{db_path}-wal")
+
+        # Safely clone via SQLite online backup API with mode=ro to avoid
+        # modifying or checkpointing the live production database.
+        src_uri = f"file:{os.path.abspath(src_db)}?mode=ro"
+        src_conn = sqlite3.connect(src_uri, uri=True)
+        dst_conn = sqlite3.connect(db_path)
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            src_conn.close()
+            dst_conn.close()
+
         make_test_user(db_path)
 
         server = subprocess.Popen(
             ["node", os.path.join(ROOT, "backend", "server.js")],
-            env=dict(os.environ, PRISMDEALS_DB=db_path, PRISMDEALS_PORT=str(port)),
+            env=dict(
+                os.environ,
+                PRISMDEALS_DB=db_path,
+                PRISMDEALS_PORT=str(port),
+                DISABLE_SCHEDULER="1",
+                PRISMDEALS_DISABLE_SCHEDULER="1",
+            ),
             cwd=os.path.join(ROOT, "backend"),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
