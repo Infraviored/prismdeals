@@ -373,38 +373,52 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 app.use('/api', authenticateToken);
 
 
-// API: Get all listings
+// API: Get listings (with backwards-compatible pagination support)
 app.get('/api/listings', async (req, res) => {
   try {
-    const { campaign_id, search_id } = req.query;
-    let rows;
+    const { campaign_id, search_id, limit, offset } = req.query;
+    const hasPagination = limit !== undefined;
+    const limitNum = hasPagination ? Math.max(1, parseInt(limit, 10)) : null;
+    const offsetNum = hasPagination ? Math.max(0, parseInt(offset, 10) || 0) : 0;
+
+    let whereClause = '';
+    const params = [];
     if (search_id) {
-      rows = await query(`
-        SELECT l.*, s.name as item_name, c.name as campaign_name 
-        FROM listings l 
-        LEFT JOIN searches s ON l.search_id = s.id 
-        LEFT JOIN campaigns c ON s.campaign_id = c.id
-        WHERE l.search_id = ? 
-        ORDER BY l.niceness_score DESC
-      `, [search_id]);
+      whereClause = 'WHERE l.search_id = ?';
+      params.push(search_id);
     } else if (campaign_id) {
-      rows = await query(`
-        SELECT l.*, s.name as item_name, c.name as campaign_name 
-        FROM listings l 
-        LEFT JOIN searches s ON l.search_id = s.id 
-        LEFT JOIN campaigns c ON s.campaign_id = c.id
-        WHERE s.campaign_id = ? 
-        ORDER BY l.niceness_score DESC
-      `, [campaign_id]);
-    } else {
-      rows = await query(`
-        SELECT l.*, s.name as item_name, c.name as campaign_name 
-        FROM listings l 
-        LEFT JOIN searches s ON l.search_id = s.id 
-        LEFT JOIN campaigns c ON s.campaign_id = c.id
-        ORDER BY l.niceness_score DESC
-      `);
+      whereClause = 'WHERE s.campaign_id = ?';
+      params.push(campaign_id);
     }
+
+    let total = null;
+    if (hasPagination) {
+      const countResult = await get(`
+        SELECT COUNT(*) as count
+        FROM listings l
+        LEFT JOIN searches s ON l.search_id = s.id
+        ${whereClause}
+      `, params);
+      total = countResult ? countResult.count : 0;
+      res.set('X-Total-Count', String(total));
+    }
+
+    let queryStr = `
+      SELECT l.*, s.name as item_name, c.name as campaign_name 
+      FROM listings l 
+      LEFT JOIN searches s ON l.search_id = s.id 
+      LEFT JOIN campaigns c ON s.campaign_id = c.id
+      ${whereClause}
+      ORDER BY l.niceness_score DESC
+    `;
+
+    const queryParams = [...params];
+    if (hasPagination) {
+      queryStr += ' LIMIT ? OFFSET ?';
+      queryParams.push(limitNum, offsetNum);
+    }
+
+    const rows = await query(queryStr, queryParams);
     
     // Parse JSON string fields back to objects
     const listings = rows.map(r => ({
@@ -416,10 +430,48 @@ app.get('/api/listings', async (req, res) => {
       images: JSON.parse(r.images || '[]')
     }));
     
-    res.json(listings);
+    if (hasPagination) {
+      res.json({
+        listings,
+        total,
+        limit: limitNum,
+        offset: offsetNum
+      });
+    } else {
+      res.json(listings);
+    }
   } catch (error) {
     console.error('Error fetching listings:', error);
     res.status(500).json({ error: 'Failed to load listings data' });
+  }
+});
+
+// API: Get a single listing by ID
+app.get('/api/listings/:id', async (req, res) => {
+  try {
+    const row = await get(`
+      SELECT l.*, s.name as item_name, c.name as campaign_name 
+      FROM listings l 
+      LEFT JOIN searches s ON l.search_id = s.id 
+      LEFT JOIN campaigns c ON s.campaign_id = c.id
+      WHERE l.id = ?
+    `, [req.params.id]);
+
+    if (!row) {
+      return res.status(404).json({ error: 'Listing not found' });
+    }
+
+    res.json({
+      ...row,
+      llm_processed: !!row.llm_processed,
+      full_info_obtained: !!row.full_info_obtained,
+      extracted_facts: JSON.parse(row.extracted_facts || '{}'),
+      details: JSON.parse(row.details || '{}'),
+      images: JSON.parse(row.images || '[]')
+    });
+  } catch (error) {
+    console.error('Error fetching single listing:', error);
+    res.status(500).json({ error: 'Failed to load listing' });
   }
 });
 
