@@ -1,5 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Campaign, KnowledgeSet, SearchTarget, Listing, SampleListing } from './types'
 import ScraperProgressCard from './components/ScraperProgressCard'
 import CorridorPlanner from './components/CorridorPlanner'
@@ -251,19 +250,27 @@ export default function App() {
       setSearches(searchesData)
       setKnowledgeSets(ksData)
 
+      // Support both legacy array payload and paginated { listings: [...] } response
+      const rawListings: Listing[] = Array.isArray(listingsData)
+        ? listingsData
+        : (Array.isArray(listingsData?.listings) ? listingsData.listings : []);
+
       // Map raw listings to include React UI helper properties
-      const mappedListings = listingsData.map((l: Listing) => transformListing(l, searchesData, ksData));
+      const mappedListings = rawListings.map((l: Listing) => transformListing(l, searchesData, ksData));
 
       setListings(mappedListings)
 
-      // Set default campaign selection if none set
-      if (campaignsData.length > 0 && currentCampaignId === null) {
-        setCurrentCampaignId(campaignsData[0].id);
+      // Set default campaign selection if none set (functional updater prevents resetting active selection)
+      if (campaignsData.length > 0) {
+        setCurrentCampaignId((prev: number | null) => prev ?? campaignsData[0].id);
       }
     }).catch(err => {
       console.error("Error refreshing dashboard state:", err)
     })
   }
+
+  const refreshAllRef = useRef(refreshAll);
+  refreshAllRef.current = refreshAll;
 
   // Load Prompt templates
   useEffect(() => {
@@ -347,7 +354,7 @@ export default function App() {
               setIsScraping(false);
               setScrapingProgress(null);
               setScrapingStatus("Scraping completed!");
-              refreshAll();
+              refreshAllRef.current();
               if (activeSearchTarget?.id) {
                 fetchSampleListings(activeSearchTarget.id);
               }
@@ -369,7 +376,7 @@ export default function App() {
       if (intervalId) clearInterval(intervalId);
     };
     
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isScraping, activeSearchTarget?.id]);
 
   // Polling loop for active AI evaluations
@@ -383,11 +390,16 @@ export default function App() {
           // If the list of active IDs changed, we might want to refresh listings
           // to get the new scores for those that just finished.
           setActiveProcessingListingIds(prev => {
-            const finished = prev.filter(id => !data.active.includes(id));
+            const next: string[] = Array.isArray(data.active) ? data.active : [];
+            const finished = prev.filter(id => !next.includes(id));
             if (finished.length > 0) {
-              refreshAll();
+              refreshAllRef.current();
             }
-            return data.active;
+            // Return prev if the set of active IDs is unchanged to eliminate permanent 2-second re-renders
+            if (prev.length === next.length && prev.every(id => next.includes(id))) {
+              return prev;
+            }
+            return next;
           });
         }
       } catch {
@@ -397,7 +409,7 @@ export default function App() {
     checkActiveProcesses();
     intervalId = setInterval(checkActiveProcesses, 2000);
     return () => clearInterval(intervalId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   const [isProcessing, setIsProcessing] = useState(false)
