@@ -278,7 +278,7 @@ def scrape_listings_requests(
             except Exception as e:
                 logger.error(f"Error scraping page {current_url}: {str(e)}")
 
-            if page < PAGES_TO_SCRAPE:
+            if page < pages_to_scrape:
                 time.sleep(DELAY_BETWEEN_PAGES)
 
     if total_pages > 0:
@@ -785,7 +785,7 @@ def scrape_listings_selenium(
                         )
 
                 logger.info(
-                    f"[Selenium] Scraping page {page} of {PAGES_TO_SCRAPE}: {current_url}"
+                    f"[Selenium] Scraping page {page} of {pages_to_scrape}: {current_url}"
                 )
                 driver.get(current_url)
 
@@ -836,7 +836,7 @@ def scrape_listings_selenium(
                 logger.info(
                     f"[Selenium] Scraped {scraped_count} listings from {current_url}"
                 )
-                if page < PAGES_TO_SCRAPE:
+                if page < pages_to_scrape:
                     time.sleep(DELAY_BETWEEN_PAGES)
 
         return all_scraped_listings

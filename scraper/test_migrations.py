@@ -16,10 +16,6 @@ class TestSchemaMigrations(unittest.TestCase):
             os.makedirs(migrations_dir)
 
             conn = sqlite3.connect(db_path)
-            conn.execute(
-                "CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-            )
-            conn.commit()
 
             with open(
                 os.path.join(migrations_dir, "001_first.sql"), "w", encoding="utf-8"

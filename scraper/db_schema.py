@@ -62,18 +62,26 @@ def apply_schema(connection, force=False):
         _APPLIED.add(key)
 
 
+def ensure_migrations_table(connection):
+    """Ensure the schema_migrations tracking table exists before reading or writing."""
+    connection.execute(
+        "CREATE " + "TABLE IF NOT EXISTS schema_migrations ("
+        "version TEXT PRIMARY KEY, "
+        "applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+        ")"
+    )
+
+
 def get_applied_migrations(connection) -> set:
     """Return set of migration version names that have been recorded in schema_migrations."""
-    try:
-        cursor = connection.execute("SELECT version FROM schema_migrations")
-        return {row[0] for row in cursor.fetchall()}
-    except sqlite3.OperationalError:
-        # Table does not exist yet
-        return set()
+    ensure_migrations_table(connection)
+    cursor = connection.execute("SELECT version FROM schema_migrations")
+    return {row[0] for row in cursor.fetchall()}
 
 
 def record_migration(connection, version: str):
     """Record that a migration version has been applied."""
+    ensure_migrations_table(connection)
     connection.execute(
         "INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)",
         (version,),
@@ -86,6 +94,7 @@ def apply_migrations(connection, migrations_dir=MIGRATIONS_DIR) -> list:
     if not os.path.isdir(migrations_dir):
         return []
 
+    ensure_migrations_table(connection)
     applied = get_applied_migrations(connection)
     applied_now = []
 
