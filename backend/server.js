@@ -230,28 +230,37 @@ async function recalculateItemScores(searchId, scoringModelStr) {
   const weights = scoringModel.weights || {};
   const listings = await query('SELECT id, extracted_facts FROM listings WHERE search_id = ?', [searchId]);
 
-  for (const listing of listings) {
-    let envelope = {};
-    try {
-      envelope = JSON.parse(listing.extracted_facts || '{}');
-    } catch (e) {
-      continue;
-    }
+  if (!listings.length) return;
 
-    // Support nested envelope from AI analysis
-    const facts = (envelope && envelope.criteria) ? envelope.criteria : envelope;
-
-    let score = 0;
-    for (const [criterionId, cfg] of Object.entries(weights)) {
-      const factValue = facts[criterionId];
-      if (factValue === undefined || factValue === null || factValue === 'unknown') continue;
-      if (factValue === cfg.satisfied_if) {
-        score += cfg.importance;
+  await run('BEGIN TRANSACTION');
+  try {
+    for (const listing of listings) {
+      let envelope = {};
+      try {
+        envelope = JSON.parse(listing.extracted_facts || '{}');
+      } catch (e) {
+        continue;
       }
-    }
 
-    score = Math.max(0, Math.min(100, score));
-    await run('UPDATE listings SET niceness_score = ?, status = ? WHERE id = ?', [score, 'New', listing.id]);
+      // Support nested envelope from AI analysis
+      const facts = (envelope && envelope.criteria) ? envelope.criteria : envelope;
+
+      let score = 0;
+      for (const [criterionId, cfg] of Object.entries(weights)) {
+        const factValue = facts[criterionId];
+        if (factValue === undefined || factValue === null || factValue === 'unknown') continue;
+        if (factValue === cfg.satisfied_if) {
+          score += cfg.importance;
+        }
+      }
+
+      score = Math.max(0, Math.min(100, score));
+      await run('UPDATE listings SET niceness_score = ? WHERE id = ?', [score, listing.id]);
+    }
+    await run('COMMIT');
+  } catch (err) {
+    await run('ROLLBACK');
+    throw err;
   }
 }
 
