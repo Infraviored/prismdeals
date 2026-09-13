@@ -1,13 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import type { Campaign, KnowledgeSet, SearchTarget, Listing, SampleListing } from './types'
 import ScraperProgressCard from './components/ScraperProgressCard'
-import CorridorPlanner from './components/CorridorPlanner'
 import PlaceInput from './components/PlaceInput'
 import type { Place } from './components/PlaceInput'
 import ListingDetailCard from './components/ListingDetailCard'
-import GuidelinesWizard from './components/GuidelinesWizard'
-import RouteResultsView from './components/RouteResultsView'
-import SettingsView from './components/SettingsView'
 import { transformListing } from './utils/listingTransformer'
 import { useHashRouter } from './hooks/useHashRouter'
 import { Menu, X, Settings, Globe, LogOut, Key, Search, RefreshCw, Sparkles, ChevronDown } from 'lucide-react'
@@ -17,6 +13,17 @@ import { Input } from './components/ui/Input'
 import { Card } from './components/ui/Card'
 import { Select } from './components/ui/Select'
 import { cn } from './utils/cn'
+
+const CorridorPlanner = lazy(() => import('./components/CorridorPlanner'))
+const RouteResultsView = lazy(() => import('./components/RouteResultsView'))
+const SettingsView = lazy(() => import('./components/SettingsView'))
+const GuidelinesWizard = lazy(() => import('./components/GuidelinesWizard'))
+
+const ViewFallback = () => (
+  <div className="flex items-center justify-center p-12 w-full">
+    <div className="animate-spin w-8 h-8 border-2 border-brand-accent border-t-transparent rounded-full" />
+  </div>
+)
 
 
 
@@ -1497,22 +1504,24 @@ export default function App() {
                 </Button>
               </div>
 
-              <RouteResultsView
-                campaignId={currentCampaignId || 0}
-                campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
-                onEvaluateWithAi={() => {
-                  const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
-                  setShowAiWizard(true);
-                  navigate('edit', currentCampaignId, firstTarget?.id || null);
-                }}
-                isScraping={isScraping}
-                onStartScrape={handleStartScrape}
-                scrapingStatus={scrapingStatus}
-                scrapingProgress={scrapingProgress}
-                liveLogs={liveLogs}
-                showLogConsole={showLogConsole}
-                setShowLogConsole={setShowLogConsole}
-              />
+              <Suspense fallback={<ViewFallback />}>
+                <RouteResultsView
+                  campaignId={currentCampaignId || 0}
+                  campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
+                  onEvaluateWithAi={() => {
+                    const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
+                    setShowAiWizard(true);
+                    navigate('edit', currentCampaignId, firstTarget?.id || null);
+                  }}
+                  isScraping={isScraping}
+                  onStartScrape={handleStartScrape}
+                  scrapingStatus={scrapingStatus}
+                  scrapingProgress={scrapingProgress}
+                  liveLogs={liveLogs}
+                  showLogConsole={showLogConsole}
+                  setShowLogConsole={setShowLogConsole}
+                />
+              </Suspense>
             </div>
           ) : (
           <div className="flex flex-col space-y-6 animate-fadeIn w-full">
@@ -1869,20 +1878,22 @@ export default function App() {
                           you set off" to someone who already had, while the
                           message that names the real blocker was unreachable. */}
                       {routeFrom && routeTo && newTargetUrl && isValidKleinanzeigenUrl(newTargetUrl) ? (
-                        <CorridorPlanner
-                          baseUrl={newTargetUrl}
-                          origin={routeFrom.postal_code}
-                          destination={routeTo.postal_code}
-                          originName={routeFrom.name}
-                          destinationName={routeTo.name}
-                          radiusKm={routeRadiusKm}
-                          corridorKm={routeCorridorKm}
-                          onRadiusChange={setRouteRadiusKm}
-                          onCorridorChange={setRouteCorridorKm}
-                          onCommit={handlePlanCorridor}
-                          committing={routePlanning}
-                          commitLabel={t('corridor.commitNew')}
-                        />
+                        <Suspense fallback={<ViewFallback />}>
+                          <CorridorPlanner
+                            baseUrl={newTargetUrl}
+                            origin={routeFrom.postal_code}
+                            destination={routeTo.postal_code}
+                            originName={routeFrom.name}
+                            destinationName={routeTo.name}
+                            radiusKm={routeRadiusKm}
+                            corridorKm={routeCorridorKm}
+                            onRadiusChange={setRouteRadiusKm}
+                            onCorridorChange={setRouteCorridorKm}
+                            onCommit={handlePlanCorridor}
+                            committing={routePlanning}
+                            commitLabel={t('corridor.commitNew')}
+                          />
+                        </Suspense>
                       ) : (
                         <p className="text-sm text-text-muted text-center py-2">
                           {!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl)
@@ -1981,21 +1992,23 @@ export default function App() {
             ) : (campaigns.find(c => c.id === currentCampaignId)?.route_id && !showAiWizard) ? (
               /* CORRIDOR RESULTS VIEW */
               <div className="w-full animate-fadeIn">
-                <RouteResultsView
-                  campaignId={currentCampaignId || 0}
-                  campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
-                  onEvaluateWithAi={() => {
-                    setShowAiWizard(true);
-                    setWizardStep(1);
-                  }}
-                  isScraping={isScraping}
-                  onStartScrape={handleStartScrape}
-                  scrapingStatus={scrapingStatus}
-                  scrapingProgress={scrapingProgress}
-                  liveLogs={liveLogs}
-                  showLogConsole={showLogConsole}
-                  setShowLogConsole={setShowLogConsole}
-                />
+                <Suspense fallback={<ViewFallback />}>
+                  <RouteResultsView
+                    campaignId={currentCampaignId || 0}
+                    campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
+                    onEvaluateWithAi={() => {
+                      setShowAiWizard(true);
+                      setWizardStep(1);
+                    }}
+                    isScraping={isScraping}
+                    onStartScrape={handleStartScrape}
+                    scrapingStatus={scrapingStatus}
+                    scrapingProgress={scrapingProgress}
+                    liveLogs={liveLogs}
+                    showLogConsole={showLogConsole}
+                    setShowLogConsole={setShowLogConsole}
+                  />
+                </Suspense>
               </div>
             ) : (
               /* DIRECT 3-STEP GUIDELINES WIZARD WORKSPACE */
@@ -2015,31 +2028,33 @@ export default function App() {
                   </div>
                 )}
                 {activeSearchTarget && (
-                  <GuidelinesWizard
-                    activeSearchTarget={activeSearchTarget}
-                    marketMemo={marketMemo}
-                    setMarketMemo={handleSetMarketMemo}
-                    sampledListings={sampledListings}
-                    sampledListingsLoading={sampledListingsLoading}
-                    fetchSampleListings={fetchSampleListings}
-                    researcherOutput={researcherOutput}
-                    setResearcherOutput={handleSetResearcherOutput}
-                    researchPromptTemplate={researchPromptTemplate}
-                    marketPromptTemplate={marketPromptTemplate}
-                    profilePromptTemplate={profilePromptTemplate}
-                    editKsError={editKsError}
-                    wizardStep={wizardStep}
-                    setWizardStep={setWizardStep}
-                    handleSaveKnowledgeSet={handleSaveKnowledgeSet}
-                    parsedExpertKnowledge={parsedExpertKnowledge}
-                    parsedGoodRef={parsedGoodRef}
-                    parsedBadRef={parsedBadRef}
-                    parsedDemoMsg={parsedDemoMsg}
-                    parsedItemJson={parsedItemJson}
-                    isScraping={isScraping}
-                    scrapingStatus={scrapingStatus}
-                    scrapingProgress={scrapingProgress}
-                  />
+                  <Suspense fallback={<ViewFallback />}>
+                    <GuidelinesWizard
+                      activeSearchTarget={activeSearchTarget}
+                      marketMemo={marketMemo}
+                      setMarketMemo={handleSetMarketMemo}
+                      sampledListings={sampledListings}
+                      sampledListingsLoading={sampledListingsLoading}
+                      fetchSampleListings={fetchSampleListings}
+                      researcherOutput={researcherOutput}
+                      setResearcherOutput={handleSetResearcherOutput}
+                      researchPromptTemplate={researchPromptTemplate}
+                      marketPromptTemplate={marketPromptTemplate}
+                      profilePromptTemplate={profilePromptTemplate}
+                      editKsError={editKsError}
+                      wizardStep={wizardStep}
+                      setWizardStep={setWizardStep}
+                      handleSaveKnowledgeSet={handleSaveKnowledgeSet}
+                      parsedExpertKnowledge={parsedExpertKnowledge}
+                      parsedGoodRef={parsedGoodRef}
+                      parsedBadRef={parsedBadRef}
+                      parsedDemoMsg={parsedDemoMsg}
+                      parsedItemJson={parsedItemJson}
+                      isScraping={isScraping}
+                      scrapingStatus={scrapingStatus}
+                      scrapingProgress={scrapingProgress}
+                    />
+                  </Suspense>
                 )}
               </div>
             )}
@@ -2111,7 +2126,9 @@ export default function App() {
         )}
 
         {view === 'settings' && (
-          <SettingsView onBack={() => setView(previousView)} />
+          <Suspense fallback={<ViewFallback />}>
+            <SettingsView onBack={() => setView(previousView)} />
+          </Suspense>
         )}
       </main>
     </div>
