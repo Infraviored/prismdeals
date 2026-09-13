@@ -6,6 +6,7 @@ import sqlite3
 import logging
 from logging.handlers import RotatingFileHandler
 import argparse
+import tempfile
 from scraper import (
     scrape_listings,
     preview_url_listings_count,
@@ -338,8 +339,6 @@ def main():
     data_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
     )
-    temp_output_file = os.path.join(data_dir, "temp_scraped.json")
-
     # Create data directory if it doesn't exist
     os.makedirs(data_dir, exist_ok=True)
 
@@ -389,7 +388,11 @@ def main():
 
             logger.info(f"Scraping search target: {url}")
 
-            # Clean up temp file before scraping this target
+            # Unique temp file per scrape target to prevent collisions across concurrent processes
+            temp_fd, temp_output_file = tempfile.mkstemp(
+                prefix=f"scraped_{os.getpid()}_", suffix=".json", dir=data_dir
+            )
+            os.close(temp_fd)
             if os.path.exists(temp_output_file):
                 try:
                     os.remove(temp_output_file)
@@ -439,6 +442,12 @@ def main():
                     conn.commit()
             except Exception as e:
                 logger.error(f"Error scraping or importing URL {url}: {str(e)}")
+            finally:
+                if os.path.exists(temp_output_file):
+                    try:
+                        os.remove(temp_output_file)
+                    except OSError:
+                        pass
 
         # 1.5. Sequential detailed description harvesting phase
         logger.info("Executing optimized sequential detailed description harvesting...")
@@ -507,13 +516,6 @@ def main():
             logger.info("Successfully executed agent_worker processing.")
         except subprocess.CalledProcessError as e:
             logger.error(f"Error running agent_worker process: {str(e)}")
-
-    # Cleanup temp file
-    if os.path.exists(temp_output_file):
-        try:
-            os.remove(temp_output_file)
-        except OSError:
-            pass
 
     logger.info("All operations completed.")
 
