@@ -1836,6 +1836,7 @@ function runScraper() {
   ], {
     env: { ...process.env }
   });
+  activeScraperProcess = python;
   // An unhandled 'error' on a ChildProcess ends the Node process. This file
   // already says so at the route-planner spawn, in a comment written when it
   // was fixed there — and this is the one spawn that fires unattended, so a
@@ -1843,9 +1844,14 @@ function runScraper() {
   // systemd would restart it straight back into the same failure.
   python.on('error', err => {
     console.error('Scheduled scrape could not start:', err.message);
+    activeScraperProcess = null;
   });
   python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
   python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
+  python.on('close', (code) => {
+    console.log(`Scheduled scrape exited with code ${code}`);
+    activeScraperProcess = null;
+  });
 }
 
 app.listen(port, () => {
