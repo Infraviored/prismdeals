@@ -23,18 +23,13 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 from config import DELAY_BETWEEN_PAGES, DELAY_BETWEEN_LISTINGS, PAGES_TO_SCRAPE
 
+import browser_headers
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
 # Modern browser request headers to safely bypass Akamai bot protection filters
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-}
+HEADERS = browser_headers.DEFAULT_BROWSER_HEADERS
 
 
 def fetch(url, caller=None, timeout=10):

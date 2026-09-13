@@ -32,6 +32,7 @@ import math
 import re
 import urllib.parse
 
+import browser_headers
 import corridor
 import geo
 
@@ -39,13 +40,7 @@ logger = logging.getLogger(__name__)
 
 SUGGEST_URL = "https://www.kleinanzeigen.de/s-ort-empfehlungen.json"
 
-BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0"
-    ),
-    "Accept": "application/json,text/javascript,*/*;q=0.8",
-    "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
-}
+BROWSER_HEADERS = browser_headers.JSON_HEADERS
 
 # How many nearby postal codes to try before giving up on a corridor centre.
 # Three, because the failure it guards against is one unrecognised village, not a
