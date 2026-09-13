@@ -979,11 +979,37 @@ export default function App() {
         body: JSON.stringify({ campaignId: currentCampaignId })
       })
       if (res.ok) {
-        setProcessingStatus("AI matching completed! Updating Deal Matcher results...")
-        setTimeout(() => {
-          refreshAll()
-          setIsProcessing(false)
-        }, 4000)
+        setProcessingStatus("AI matching evaluation in progress...")
+        let pollCount = 0
+        let sawActive = false
+        const pollInterval = setInterval(async () => {
+          pollCount++
+          try {
+            const activeRes = await fetch('/api/process/active')
+            if (activeRes.ok) {
+              const activeData = await activeRes.json()
+              const activeList = Array.isArray(activeData.active) ? activeData.active : []
+              if (activeList.length > 0) {
+                sawActive = true
+                setProcessingStatus(`AI matching in progress (${activeList.length} remaining)...`)
+              } else if (sawActive || pollCount >= 3) {
+                clearInterval(pollInterval)
+                setProcessingStatus("AI matching completed! Updating Deal Matcher results...")
+                refreshAllRef.current()
+                setTimeout(() => {
+                  setIsProcessing(false)
+                }, 1500)
+              }
+            }
+          } catch {
+            // Keep polling
+          }
+          if (pollCount > 180) {
+            clearInterval(pollInterval)
+            refreshAllRef.current()
+            setIsProcessing(false)
+          }
+        }, 2000)
       } else {
         alert("Failed to launch AI Matcher.")
         setIsProcessing(false)
