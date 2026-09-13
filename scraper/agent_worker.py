@@ -449,7 +449,20 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
                     )
 
             if not extracted_data or not isinstance(extracted_data, dict):
-                extracted_data = {}
+                logger.error(
+                    f"Extraction failed completely for listing {listing_id}. Recording error status."
+                )
+                cursor.execute(
+                    """
+                    UPDATE listings
+                    SET status = 'Error',
+                        llm_processed = 0
+                    WHERE id = ?
+                """,
+                    (listing_id,),
+                )
+                conn.commit()
+                continue
 
             criteria_part = extracted_data.get("criteria", {})
             if not isinstance(criteria_part, dict):
@@ -637,6 +650,14 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
 
         except Exception as e:
             logger.error(f"Error processing listing {listing_id} with OpenAI: {str(e)}")
+            try:
+                cursor.execute(
+                    "UPDATE listings SET status = 'Error', llm_processed = 0 WHERE id = ?",
+                    (listing_id,),
+                )
+                conn.commit()
+            except Exception:
+                pass
 
     conn.close()
 
