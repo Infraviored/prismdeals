@@ -134,6 +134,20 @@ export default function App() {
   const [sampledListingsLoading, setSampledListingsLoading] = useState(false)
   const [marketMemo, setMarketMemo] = useState<string>('')
   const [researcherOutput, setResearcherOutput] = useState<string>('')
+  const [, setWizardDirty] = useState(false)
+  const wizardDirtyRef = useRef(false)
+
+  const handleSetMarketMemo = useCallback((memo: string) => {
+    wizardDirtyRef.current = true
+    setWizardDirty(true)
+    setMarketMemo(memo)
+  }, [])
+
+  const handleSetResearcherOutput = useCallback((output: string) => {
+    wizardDirtyRef.current = true
+    setWizardDirty(true)
+    setResearcherOutput(output)
+  }, [])
 
   // Prompt templates from backend
   const [researchPromptTemplate, setResearchPromptTemplate] = useState<string>('')
@@ -699,8 +713,29 @@ export default function App() {
 
 
 
+  const loadedSearchTargetIdRef = useRef<number | null | undefined>(undefined)
+  const loadedKnowledgeSetIdRef = useRef<number | null | undefined>(undefined)
+
   // Auto load active guidelines when active search target changes
   useEffect(() => {
+    const targetId = activeSearchTarget?.id
+    const ksId = activeSearchTarget?.knowledge_set_id
+
+    // Do not overwrite user draft when background data refreshes without changing the active target
+    if (loadedSearchTargetIdRef.current === targetId && loadedKnowledgeSetIdRef.current === ksId) {
+      return
+    }
+
+    // If user has unsaved edits on this target, don't clobber them on background poll
+    if (wizardDirtyRef.current && loadedSearchTargetIdRef.current === targetId) {
+      return
+    }
+
+    loadedSearchTargetIdRef.current = targetId
+    loadedKnowledgeSetIdRef.current = ksId
+    setWizardDirty(false)
+    wizardDirtyRef.current = false
+
     if (activeSearchTarget && activeSearchTarget.knowledge_set_id) {
       const boundSet = knowledgeSets.find(ks => ks.id === activeSearchTarget.knowledge_set_id)
       if (boundSet) {
@@ -754,7 +789,7 @@ export default function App() {
       setWizardStep(1)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSearchTarget, searches, knowledgeSets])
+  }, [activeSearchTarget?.id, activeSearchTarget?.knowledge_set_id, knowledgeSets, setWizardStep])
 
   // Create Campaign
   const handleCreateCampaign = async (): Promise<number | null> => {
@@ -875,6 +910,8 @@ export default function App() {
         })
       })
       if (res.ok) {
+        setWizardDirty(false)
+        wizardDirtyRef.current = false
         setEditKsError('')
         refreshAll()
         setView('dashboard')
@@ -1953,12 +1990,12 @@ export default function App() {
                   <GuidelinesWizard
                     activeSearchTarget={activeSearchTarget}
                     marketMemo={marketMemo}
-                    setMarketMemo={setMarketMemo}
+                    setMarketMemo={handleSetMarketMemo}
                     sampledListings={sampledListings}
                     sampledListingsLoading={sampledListingsLoading}
                     fetchSampleListings={fetchSampleListings}
                     researcherOutput={researcherOutput}
-                    setResearcherOutput={setResearcherOutput}
+                    setResearcherOutput={handleSetResearcherOutput}
                     researchPromptTemplate={researchPromptTemplate}
                     marketPromptTemplate={marketPromptTemplate}
                     profilePromptTemplate={profilePromptTemplate}
