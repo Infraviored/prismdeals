@@ -325,7 +325,7 @@ def harvest_descriptions(campaign_id=None):
         if campaign_id is not None:
             cursor.execute(
                 """
-                SELECT l.id, l.url, l.title FROM listings l
+                SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
                 JOIN searches s ON l.search_id = s.id
                 WHERE s.enabled = 1 AND s.campaign_id = ? AND (
                     l.full_info_obtained = 0 OR l.full_info_obtained IS NULL
@@ -336,7 +336,7 @@ def harvest_descriptions(campaign_id=None):
         else:
             cursor.execute(
                 """
-                SELECT l.id, l.url, l.title FROM listings l
+                SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
                 JOIN searches s ON l.search_id = s.id
                 WHERE s.enabled = 1 AND (
                     l.full_info_obtained = 0 OR l.full_info_obtained IS NULL
@@ -382,21 +382,50 @@ def harvest_descriptions(campaign_id=None):
                 if parsed is None:
                     continue
 
-                cursor.execute(
-                    """
-                    UPDATE listings 
-                    SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
-                        last_description_changed_at = ?
-                    WHERE id = ?
-                """,
-                    (
-                        parsed["detailed_description"],
-                        json.dumps(parsed["details"]),
-                        json.dumps(parsed["images"]),
-                        datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        listing_id,
-                    ),
-                )
+                # Only stamp last_description_changed_at when the description
+                # actually changed. The column is named for a change, and the AI
+                # work queue reads it that way -- it re-evaluates anything whose
+                # description is newer than its last evaluation. Stamping it on
+                # every fetch meant re-running the model over text that had not
+                # moved, and it was one half of a loop: the worker marked a
+                # listing incomplete, the harvester re-fetched it, the stamp put
+                # it back in the worker's queue, forever.
+                old_description = (r["detailed_description"] or "").strip()
+                new_description = (parsed["detailed_description"] or "").strip()
+                description_changed = new_description != old_description
+
+                if description_changed:
+                    cursor.execute(
+                        """
+                        UPDATE listings
+                        SET detailed_description = ?, details = ?, images = ?,
+                            full_info_obtained = 1, last_description_changed_at = ?
+                        WHERE id = ?
+                    """,
+                        (
+                            parsed["detailed_description"],
+                            json.dumps(parsed["details"]),
+                            json.dumps(parsed["images"]),
+                            datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            listing_id,
+                        ),
+                    )
+                else:
+                    # Still record that the page was fetched -- that is what
+                    # full_info_obtained means, and it is what stops this listing
+                    # being harvested again next cycle.
+                    cursor.execute(
+                        """
+                        UPDATE listings
+                        SET details = ?, images = ?, full_info_obtained = 1
+                        WHERE id = ?
+                    """,
+                        (
+                            json.dumps(parsed["details"]),
+                            json.dumps(parsed["images"]),
+                            listing_id,
+                        ),
+                    )
                 conn.commit()
                 logger.info(
                     f"Successfully harvested detailed description, {len(parsed['details'])} details, and {len(parsed['images'])} images for ID {listing_id}"
