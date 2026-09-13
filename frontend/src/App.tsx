@@ -104,7 +104,7 @@ export default function App() {
 
   // Filtering states for Deal Matcher
   const [selectedSearchId, setSelectedSearchId] = useState<string>('All')
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'New' | 'Evaluate with AI'>('All')
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'Evaluated' | 'Evaluate with AI'>('All')
   const [activeProcessingListingIds, setActiveProcessingListingIds] = useState<string[]>([])
 
   // Inline forms
@@ -960,8 +960,8 @@ export default function App() {
     if (selectedStatusFilter === 'High Niceness') {
       return isMatched && l.llm_processed && l.niceness_score !== null && l.niceness_score !== undefined && l.niceness_score >= 70
     }
-    if (selectedStatusFilter === 'New') {
-      return isMatched && l.status === 'New'
+    if (selectedStatusFilter === 'Evaluated') {
+      return isMatched && Boolean(l.llm_processed)
     }
     if (selectedStatusFilter === 'Evaluate with AI') {
       return isMatched && !l.llm_processed
@@ -1531,12 +1531,12 @@ export default function App() {
 
                   <Select
                     value={selectedStatusFilter}
-                    onChange={val => setSelectedStatusFilter(val as 'All' | 'High Niceness' | 'New' | 'Evaluate with AI')}
+                    onChange={val => setSelectedStatusFilter(val as 'All' | 'High Niceness' | 'Evaluated' | 'Evaluate with AI')}
                     options={[
                       { value: 'All', label: t('dashboard.statusAll') },
                       { value: 'High Niceness', label: `${t('dashboard.statusMatches')} (70+)` },
                       { value: 'Evaluate with AI', label: t('dashboard.statusPending') },
-                      { value: 'New', label: t('dashboard.statusEvaluated') }
+                      { value: 'Evaluated', label: t('dashboard.statusEvaluated') }
                     ]}
                     className="w-full sm:w-44"
                   />
