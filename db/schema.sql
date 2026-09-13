@@ -157,3 +157,8 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE listings ADD COLUMN last_description_changed_at TEXT;
 
 ALTER TABLE listings ADD COLUMN last_ai_evaluated_at TEXT;
+
+-- User-defined indexes for scale (B-1, B-3)
+CREATE INDEX IF NOT EXISTS idx_listings_search_id ON listings(search_id);
+
+CREATE INDEX IF NOT EXISTS idx_messages_listing_id ON messages(listing_id);
