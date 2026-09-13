@@ -380,7 +380,7 @@ def main():
             default_url = (
                 "https://www.kleinanzeigen.de/s-notebooks/preis::1400/rtx4060/k0c278"
             )
-            search_targets.append({"url": default_url, "profile_id": None})
+            search_targets.append({"url": default_url, "search_id": None})
             logger.info(f"Using default search URL: {default_url}")
 
         for target in search_targets:
