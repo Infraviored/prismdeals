@@ -226,6 +226,7 @@ export default function RouteResultsView({
     getScrollElement: () => listParentRef.current,
     estimateSize: () => 88,
     overscan: 5,
+    getItemKey: useCallback((index: number) => filteredListings[index]?.id ?? index, [filteredListings]),
   });
 
   if (loading) {
@@ -664,12 +665,13 @@ export default function RouteResultsView({
                   >
                     {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                       const l = filteredListings[virtualRow.index];
+                      if (!l) return null;
                       const isSelected = selectedListingId === l.id;
                       const firstImg = l.images && l.images.length > 0 ? l.images[0] : null;
 
                       return (
                         <div
-                          key={l.id}
+                          key={virtualRow.key}
                           ref={rowVirtualizer.measureElement}
                           data-index={virtualRow.index}
                           style={{

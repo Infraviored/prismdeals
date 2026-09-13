@@ -1058,6 +1058,7 @@ export default function App() {
     getScrollElement: () => mainListParentRef.current,
     estimateSize: () => 140,
     overscan: 5,
+    getItemKey: useCallback((index: number) => filteredListings[index]?.id ?? index, [filteredListings]),
   })
 
 
@@ -1682,9 +1683,10 @@ export default function App() {
                   >
                     {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                       const l = filteredListings[virtualRow.index]
+                      if (!l) return null
                       return (
                         <div
-                          key={l.id}
+                          key={virtualRow.key}
                           ref={rowVirtualizer.measureElement}
                           data-index={virtualRow.index}
                           style={{
