@@ -1310,7 +1310,7 @@ app.get('/api/schedule', (req, res) => {
   try {
     const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
     const defaultConfig = {
-      interval: 10,
+      interval: 0,
       autoAiEval: true,
       fullFetchOnStartup: false,
       delayBetweenPages: 0.25,
@@ -1336,8 +1336,8 @@ app.post('/api/schedule', (req, res) => {
     }
 
     const parsedInterval = parseInt(interval, 10);
-    if (isNaN(parsedInterval) || parsedInterval < 1) {
-      return res.status(400).json({ error: 'Interval must be a positive integer' });
+    if (isNaN(parsedInterval) || parsedInterval < 0) {
+      return res.status(400).json({ error: 'Interval must be a non-negative integer' });
     }
     
     let pagesDelay = parseFloat(delayBetweenPages !== undefined ? delayBetweenPages : 0.25);
@@ -1434,8 +1434,12 @@ app.post('/api/scrape', (req, res) => {
     }
 
     const { interval, campaignId } = req.body;
-    
-    if (interval) {
+
+    // Not `if (interval)`: zero is falsy, and zero is the value that turns
+    // scheduled scraping off. Written that way, the one request that asks for
+    // the scraper to stop was the one request that did nothing — no config
+    // written, timers left running.
+    if (interval !== undefined && interval !== null && interval !== '') {
       const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
       let currentConfig = {};
       try {
@@ -1692,7 +1696,7 @@ function setupScheduledScraping() {
   try {
     const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
     const defaultConfig = {
-      interval: 10,
+      interval: 0,
       autoAiEval: true,
       fullFetchOnStartup: false
     };
@@ -1710,10 +1714,9 @@ function setupScheduledScraping() {
       fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
     }
 
-    const intervalMinutes = parseInt(config.interval, 10) || 10;
+    const rawInterval = config && config.interval !== undefined && config.interval !== null ? parseInt(config.interval, 10) : 0;
+    const intervalMinutes = isNaN(rawInterval) || rawInterval <= 0 ? 0 : rawInterval;
     const fullFetchOnStartup = !!config.fullFetchOnStartup;
-    
-    console.log(`Scheduled scraping setup: every ${intervalMinutes} minutes.`);
     
     // Clear any existing timers
     if (startupScrapeTimeout) {
@@ -1724,6 +1727,13 @@ function setupScheduledScraping() {
       clearInterval(scheduledScrapeInterval);
       scheduledScrapeInterval = null;
     }
+
+    if (intervalMinutes === 0) {
+      console.log('Scheduled scraping is off (interval is 0 or absent). Timers disarmed.');
+      return;
+    }
+
+    console.log(`Scheduled scraping setup: every ${intervalMinutes} minutes.`);
     
     if (fullFetchOnStartup) {
       console.log('Immediate startup crawl scheduled in 10s');
@@ -1768,6 +1778,14 @@ function runScraper() {
     '--mode', mode
   ], {
     env: { ...process.env }
+  });
+  // An unhandled 'error' on a ChildProcess ends the Node process. This file
+  // already says so at the route-planner spawn, in a comment written when it
+  // was fixed there — and this is the one spawn that fires unattended, so a
+  // missing venv during a deploy would take the API down every interval and
+  // systemd would restart it straight back into the same failure.
+  python.on('error', err => {
+    console.error('Scheduled scrape could not start:', err.message);
   });
   python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
   python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));

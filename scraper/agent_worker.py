@@ -342,13 +342,22 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
                 "_legacy_error_details": f"Unsupported legacy profile: {err_msg}",
             }
 
+            # `full_info_obtained` is deliberately not written here. It means
+            # "we fetched the detail page", and it belongs to the harvester.
+            # This side was using it for "the extraction was complete", and two
+            # meanings in one column closed a loop: the AI set it to 0 whenever a
+            # seller had left a criterion unstated, harvest_descriptions then
+            # re-fetched the page, that stamped last_description_changed_at,
+            # which put the listing back in this worker's queue — forever, at the
+            # cost of an HTTP request and a model call per cycle.
+            # Extraction completeness already has a home in the facts envelope
+            # as `_full_info_obtained`.
             cursor.execute(
                 """
                 UPDATE listings 
                 SET llm_processed = 1,
                     llm_processed_time = ?,
                     last_ai_evaluated_at = ?,
-                    full_info_obtained = 0,
                     extracted_facts = ?,
                     niceness_score = 0,
                     status = 'Error'
@@ -594,7 +603,6 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
                 SET llm_processed = 1,
                     llm_processed_time = ?,
                     last_ai_evaluated_at = ?,
-                    full_info_obtained = ?,
                     extracted_facts = ?,
                     niceness_score = ?,
                     status = ?
@@ -603,7 +611,6 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
                 (
                     datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    full_info,
                     json.dumps(facts_envelope),
                     score,
                     status,
@@ -917,15 +924,13 @@ def analyze_conversation(listing_id):
                 UPDATE listings 
                 SET extracted_facts = ?,
                     niceness_score = ?,
-                    status = ?,
-                    full_info_obtained = ?
+                    status = ?
                 WHERE id = ?
             """,
                 (
                     json.dumps(facts_envelope),
                     score,
                     status,
-                    1 if full_info else 0,
                     listing_id,
                 ),
             )

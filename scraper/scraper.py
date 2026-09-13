@@ -321,16 +321,14 @@ def harvest_descriptions(campaign_id=None):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # Query all listings that have no detailed description, details, or images and belong to enabled searches
+        # Query all listings that have not yet had full info obtained and belong to enabled searches
         if campaign_id is not None:
             cursor.execute(
                 """
-                SELECT l.id, l.url, l.title FROM listings l
+                SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
                 JOIN searches s ON l.search_id = s.id
                 WHERE s.enabled = 1 AND s.campaign_id = ? AND (
-                    l.detailed_description IS NULL OR l.detailed_description = '' OR
-                    l.details IS NULL OR l.details = '' OR l.details = '{}' OR
-                    l.images IS NULL OR l.images = '' OR l.images = '[]'
+                    l.full_info_obtained = 0 OR l.full_info_obtained IS NULL
                 )
             """,
                 (campaign_id,),
@@ -338,12 +336,10 @@ def harvest_descriptions(campaign_id=None):
         else:
             cursor.execute(
                 """
-                SELECT l.id, l.url, l.title FROM listings l
+                SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
                 JOIN searches s ON l.search_id = s.id
                 WHERE s.enabled = 1 AND (
-                    l.detailed_description IS NULL OR l.detailed_description = '' OR
-                    l.details IS NULL OR l.details = '' OR l.details = '{}' OR
-                    l.images IS NULL OR l.images = '' OR l.images = '[]'
+                    l.full_info_obtained = 0 OR l.full_info_obtained IS NULL
                 )
             """
             )
@@ -386,21 +382,50 @@ def harvest_descriptions(campaign_id=None):
                 if parsed is None:
                     continue
 
-                cursor.execute(
-                    """
-                    UPDATE listings 
-                    SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
-                        last_description_changed_at = ?
-                    WHERE id = ?
-                """,
-                    (
-                        parsed["detailed_description"],
-                        json.dumps(parsed["details"]),
-                        json.dumps(parsed["images"]),
-                        datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        listing_id,
-                    ),
-                )
+                # Only stamp last_description_changed_at when the description
+                # actually changed. The column is named for a change, and the AI
+                # work queue reads it that way -- it re-evaluates anything whose
+                # description is newer than its last evaluation. Stamping it on
+                # every fetch meant re-running the model over text that had not
+                # moved, and it was one half of a loop: the worker marked a
+                # listing incomplete, the harvester re-fetched it, the stamp put
+                # it back in the worker's queue, forever.
+                old_description = (r["detailed_description"] or "").strip()
+                new_description = (parsed["detailed_description"] or "").strip()
+                description_changed = new_description != old_description
+
+                if description_changed:
+                    cursor.execute(
+                        """
+                        UPDATE listings
+                        SET detailed_description = ?, details = ?, images = ?,
+                            full_info_obtained = 1, last_description_changed_at = ?
+                        WHERE id = ?
+                    """,
+                        (
+                            parsed["detailed_description"],
+                            json.dumps(parsed["details"]),
+                            json.dumps(parsed["images"]),
+                            datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            listing_id,
+                        ),
+                    )
+                else:
+                    # Still record that the page was fetched -- that is what
+                    # full_info_obtained means, and it is what stops this listing
+                    # being harvested again next cycle.
+                    cursor.execute(
+                        """
+                        UPDATE listings
+                        SET details = ?, images = ?, full_info_obtained = 1
+                        WHERE id = ?
+                    """,
+                        (
+                            json.dumps(parsed["details"]),
+                            json.dumps(parsed["images"]),
+                            listing_id,
+                        ),
+                    )
                 conn.commit()
                 logger.info(
                     f"Successfully harvested detailed description, {len(parsed['details'])} details, and {len(parsed['images'])} images for ID {listing_id}"
