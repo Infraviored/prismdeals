@@ -149,19 +149,24 @@ export default function SettingsView({ onBack }: SettingsViewProps) {
                 <Input
                   id="scraper-interval-input"
                   type="number"
-                  min="1"
+                  min="0"
                   max="1440"
                   required
                   value={interval}
-                  onChange={(e) => setIntervalVal(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  onChange={(e) => setIntervalVal(Math.max(0, parseInt(e.target.value, 10) || 0))}
                   className="font-mono pr-12"
                 />
                 <div className="absolute right-4 top-3 text-sm text-text-muted font-medium pointer-events-none select-none">
                   min
                 </div>
               </div>
+              {/* Zero has to be reachable here. The backend treats 0 as "do not
+                  arm", which is the only way to stop scheduled scraping — and
+                  with a floor of 1 the off switch existed but could not be
+                  chosen, while saving anything on this page re-armed the timer
+                  at whatever the input had clamped itself to. */}
               <span className="text-sm text-text-muted block leading-normal">
-                {t('settings.frequencyDesc')}
+                {interval === 0 ? t('settings.frequencyOff') : t('settings.frequencyDesc')}
               </span>
             </div>
 
