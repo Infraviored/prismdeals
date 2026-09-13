@@ -87,6 +87,7 @@ function seedDefaultUser() {
   });
 
   backfillListingTimestamps();
+  backfillListingPrices();
 }
 
 /**
@@ -110,6 +111,41 @@ function backfillListingTimestamps() {
         AND llm_processed = 1
         AND llm_processed_time IS NOT NULL`,
     err => { if (err) console.error('Backfilling last_ai_evaluated_at:', err); }
+  );
+}
+
+/**
+ * Backfills price_cents and is_vb from unparsed price strings.
+ * Runs on startup and only fills rows where price_cents IS NULL and price IS NOT NULL.
+ */
+function backfillListingPrices() {
+  db.all(
+    `SELECT id, price FROM listings WHERE price_cents IS NULL AND price IS NOT NULL AND price != ''`,
+    (err, rows) => {
+      if (err || !rows || rows.length === 0) return;
+      db.serialize(() => {
+        const stmt = db.prepare('UPDATE listings SET price_cents = ?, is_vb = ? WHERE id = ?');
+        for (const r of rows) {
+          const trimmed = (r.price || '').trim();
+          if (!trimmed) continue;
+          const is_vb = /\bvb\b/i.test(trimmed) ? 1 : 0;
+          if (/zu verschenken/i.test(trimmed)) {
+            stmt.run(0, is_vb, r.id);
+            continue;
+          }
+          const match = trimmed.match(/^(\d+(?:[.,]\d+)?)/);
+          if (match) {
+            const val = parseFloat(match[1].replace(',', '.'));
+            if (!isNaN(val)) {
+              stmt.run(Math.round(val * 100), is_vb, r.id);
+            }
+          }
+        }
+        stmt.finalize(e => {
+          if (e) console.error('Error finalizing price backfill statement:', e);
+        });
+      });
+    }
   );
 }
 
