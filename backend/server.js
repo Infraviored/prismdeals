@@ -116,33 +116,44 @@ function backfillListingTimestamps() {
 
 /**
  * Backfills price_cents and is_vb from unparsed price strings.
- * Runs on startup and only fills rows where price_cents IS NULL and price IS NOT NULL.
+ * Runs on startup and only fills rows where price_cents IS NULL and is_vb = 0.
+ * Wraps batch updates in a transaction to avoid per-row autocommit disk syncs.
  */
 function backfillListingPrices() {
   db.all(
-    `SELECT id, price FROM listings WHERE price_cents IS NULL AND price IS NOT NULL AND price != ''`,
+    `SELECT id, price FROM listings WHERE price_cents IS NULL AND (is_vb = 0 OR is_vb IS NULL) AND price IS NOT NULL AND price != ''`,
     (err, rows) => {
       if (err || !rows || rows.length === 0) return;
       db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
         const stmt = db.prepare('UPDATE listings SET price_cents = ?, is_vb = ? WHERE id = ?');
         for (const r of rows) {
           const trimmed = (r.price || '').trim();
           if (!trimmed) continue;
-          const is_vb = /\bvb\b/i.test(trimmed) ? 1 : 0;
+          const is_vb = /vb/i.test(trimmed) ? 1 : 0;
           if (/zu verschenken/i.test(trimmed)) {
             stmt.run(0, is_vb, r.id);
             continue;
           }
-          const match = trimmed.match(/^(\d+(?:[.,]\d+)?)/);
+          // German numbers use '.' as thousands separator and ',' as decimal separator
+          const match = trimmed.match(/^(\d+(?:[.,]\d+)*)/);
           if (match) {
-            const val = parseFloat(match[1].replace(',', '.'));
+            const normalized = match[1].replace(/\./g, '').replace(',', '.');
+            const val = parseFloat(normalized);
             if (!isNaN(val)) {
               stmt.run(Math.round(val * 100), is_vb, r.id);
+              continue;
             }
           }
+          // Pure VB or non-numeric: record is_vb to prevent re-querying on next startup
+          if (is_vb) {
+            stmt.run(null, 1, r.id);
+          }
         }
-        stmt.finalize(e => {
-          if (e) console.error('Error finalizing price backfill statement:', e);
+        stmt.finalize(() => {
+          db.run('COMMIT', e => {
+            if (e) console.error('Error committing price backfill:', e);
+          });
         });
       });
     }
@@ -225,6 +236,16 @@ setInterval(() => {
 
 const userCache = new Map();
 const USER_CACHE_TTL_MS = 60 * 1000;
+
+// Periodically prune expired user cache entries to prevent unbounded memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, entry] of userCache.entries()) {
+    if (entry.expiresAt <= now) {
+      userCache.delete(userId);
+    }
+  }
+}, 15 * 60 * 1000).unref();
 
 const authenticateToken = async (req, res, next) => {
   let token = null;
@@ -414,8 +435,10 @@ app.get('/api/listings', async (req, res) => {
   try {
     const { campaign_id, search_id, limit, offset } = req.query;
     const hasPagination = limit !== undefined;
-    const limitNum = hasPagination ? Math.max(1, parseInt(limit, 10)) : null;
-    const offsetNum = hasPagination ? Math.max(0, parseInt(offset, 10) || 0) : 0;
+    const parsedLimit = parseInt(limit, 10);
+    const limitNum = hasPagination ? (Math.max(1, parsedLimit) || 50) : null;
+    const parsedOffset = parseInt(offset, 10);
+    const offsetNum = hasPagination ? (Math.max(0, parsedOffset) || 0) : 0;
 
     let whereClause = '';
     const params = [];
@@ -1913,6 +1936,10 @@ function setupScheduledScraping() {
 }
 
 function runScraper() {
+  if (activeScraperProcess !== null) {
+    console.log('Skipping scheduled scrape: scraper is already running');
+    return;
+  }
   console.log('Running scheduled scrape...');
   
   let autoAiEval = true;
