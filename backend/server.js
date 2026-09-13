@@ -1198,13 +1198,23 @@ app.post('/api/searches/preview', (req, res) => {
 app.post('/api/searches/recalculate', async (req, res) => {
   try {
     const { search_id, item_json } = req.body;
+    if (!search_id) {
+      return res.status(400).json({ error: 'Missing search_id' });
+    }
+
+    const search = await get('SELECT id, knowledge_set_id FROM searches WHERE id = ?', [search_id]);
+    if (!search) {
+      return res.status(404).json({ error: 'Search not found' });
+    }
+
+    if (search.knowledge_set_id && item_json) {
+      await run('UPDATE knowledge_sets SET item_json = ? WHERE id = ?', [
+        JSON.stringify(item_json),
+        search.knowledge_set_id
+      ]);
+    }
     
-    await run('UPDATE searches SET item_json = ? WHERE id = ?', [
-      JSON.stringify(item_json),
-      search_id
-    ]);
-    
-    const scoringModel = item_json.scoring_model || {};
+    const scoringModel = (item_json && item_json.scoring_model) ? item_json.scoring_model : {};
     await recalculateItemScores(search_id, JSON.stringify(scoringModel));
     res.json({ success: true });
   } catch (error) {
