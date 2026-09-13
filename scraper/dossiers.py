@@ -258,6 +258,8 @@ def get(conn, key, require_approved=False):
     except (ValueError, TypeError):
         logger.warning("Corrupt dossier payload for %s", key)
         return None
+    if isinstance(payload, dict) and "claims" in payload and row[2]:
+        payload = dict(payload, claims=fresh_claims(payload, row[2]))
     return {
         "payload": payload,
         "version": row[1],

@@ -119,6 +119,38 @@ def test_fresh_claims_filters_by_kind():
     assert [c["kind"] for c in fresh] == ["construction_defect"]
 
 
+def test_get_filters_out_stale_claims_by_ttl(conn):
+    """Claims whose TTL has expired are filtered out when read via dossiers.get()."""
+    long_ago = (
+        datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=60)
+    ).isoformat()
+    payload = {
+        "claims": [
+            {
+                "kind": "construction_defect",
+                "statement": "a",
+                "sources": ["https://example.org/a"],
+            },
+            {
+                "kind": "price_band",
+                "statement": "b",
+                "sources": ["https://example.org/b"],
+            },
+        ]
+    }
+    dossiers.put(conn, "stale_test", "vehicles/cars", payload, approved=True)
+    # Backdate researched_at
+    conn.execute(
+        "UPDATE dossiers SET researched_at = ? WHERE identity_key = ?",
+        (long_ago, "stale_test"),
+    )
+    conn.commit()
+
+    stored = dossiers.get(conn, "stale_test")
+    assert stored is not None
+    assert [c["kind"] for c in stored["payload"]["claims"]] == ["construction_defect"]
+
+
 def test_unapproved_dossier_is_hidden_when_approval_required(conn):
     dossiers.put(conn, "k", "vehicles/cars", PAYLOAD, approved=False)
 
