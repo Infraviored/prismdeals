@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type { Campaign, KnowledgeSet, SearchTarget, Listing, SampleListing } from './types'
 import ScraperProgressCard from './components/ScraperProgressCard'
 import PlaceInput from './components/PlaceInput'
@@ -1051,6 +1052,14 @@ export default function App() {
     return isMatched
   })
 
+  const mainListParentRef = useRef<HTMLDivElement>(null)
+  const rowVirtualizer = useVirtualizer({
+    count: filteredListings.length,
+    getScrollElement: () => mainListParentRef.current,
+    estimateSize: () => 140,
+    overscan: 5,
+  })
+
 
 
   if (authLoading) {
@@ -1657,23 +1666,47 @@ export default function App() {
               <div className="flex flex-col lg:flex-row gap-6 items-start w-full relative">
                 
                 {/* Left Master List / Mobile Grid */}
-                <div className={cn(
-                  "w-full flex-1 flex flex-col gap-4",
-                  "lg:w-[380px] lg:max-w-[380px] lg:flex-initial lg:max-h-[calc(100vh-220px)] lg:overflow-y-auto lg:pr-2 scrollbar-thin"
-                )}>
-                  {/* Grid on mobile, vertical list on desktop */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
-                    {filteredListings.map(l => (
-                      <ListingDetailCard
-                        key={l.id}
-                        l={l}
-                        activeProcessingListingIds={activeProcessingListingIds}
-                        handleProcessSingleListing={handleProcessSingleListing}
-                        selectedListingId={selectedListingId}
-                        setSelectedListingId={setSelectedListingId}
-                        mode="list"
-                      />
-                    ))}
+                <div
+                  ref={mainListParentRef}
+                  className={cn(
+                    "w-full flex-1 flex flex-col gap-4",
+                    "lg:w-[380px] lg:max-w-[380px] lg:flex-initial max-h-[calc(100vh-220px)] overflow-y-auto pr-2 scrollbar-thin"
+                  )}
+                >
+                  <div
+                    style={{
+                      height: `${rowVirtualizer.getTotalSize()}px`,
+                      width: '100%',
+                      position: 'relative',
+                    }}
+                  >
+                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const l = filteredListings[virtualRow.index]
+                      return (
+                        <div
+                          key={l.id}
+                          ref={rowVirtualizer.measureElement}
+                          data-index={virtualRow.index}
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            transform: `translateY(${virtualRow.start}px)`,
+                            paddingBottom: '16px',
+                          }}
+                        >
+                          <ListingDetailCard
+                            l={l}
+                            activeProcessingListingIds={activeProcessingListingIds}
+                            handleProcessSingleListing={handleProcessSingleListing}
+                            selectedListingId={selectedListingId}
+                            setSelectedListingId={setSelectedListingId}
+                            mode="list"
+                          />
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
 
