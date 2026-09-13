@@ -1,4 +1,5 @@
 import React from 'react';
+import { cn } from '../../utils/cn';
 
 interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   interactive?: boolean;
@@ -17,7 +18,7 @@ export const Card: React.FC<CardProps> = ({
 
   return (
     <div
-      className={`${baseStyle} ${interactiveStyle} ${className}`}
+      className={cn(baseStyle, interactiveStyle, className)}
       {...props}
     >
       {children}
