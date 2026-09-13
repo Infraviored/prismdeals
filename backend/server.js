@@ -87,6 +87,7 @@ function seedDefaultUser() {
   });
 
   backfillListingTimestamps();
+  backfillListingPrices();
 }
 
 /**
@@ -110,6 +111,52 @@ function backfillListingTimestamps() {
         AND llm_processed = 1
         AND llm_processed_time IS NOT NULL`,
     err => { if (err) console.error('Backfilling last_ai_evaluated_at:', err); }
+  );
+}
+
+/**
+ * Backfills price_cents and is_vb from unparsed price strings.
+ * Runs on startup and only fills rows where price_cents IS NULL and is_vb = 0.
+ * Wraps batch updates in a transaction to avoid per-row autocommit disk syncs.
+ */
+function backfillListingPrices() {
+  db.all(
+    `SELECT id, price FROM listings WHERE price_cents IS NULL AND (is_vb = 0 OR is_vb IS NULL) AND price IS NOT NULL AND price != ''`,
+    (err, rows) => {
+      if (err || !rows || rows.length === 0) return;
+      db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
+        const stmt = db.prepare('UPDATE listings SET price_cents = ?, is_vb = ? WHERE id = ?');
+        for (const r of rows) {
+          const trimmed = (r.price || '').trim();
+          if (!trimmed) continue;
+          const is_vb = /vb/i.test(trimmed) ? 1 : 0;
+          if (/zu verschenken/i.test(trimmed)) {
+            stmt.run(0, is_vb, r.id);
+            continue;
+          }
+          // German numbers use '.' as thousands separator and ',' as decimal separator
+          const match = trimmed.match(/^(\d+(?:[.,]\d+)*)/);
+          if (match) {
+            const normalized = match[1].replace(/\./g, '').replace(',', '.');
+            const val = parseFloat(normalized);
+            if (!isNaN(val)) {
+              stmt.run(Math.round(val * 100), is_vb, r.id);
+              continue;
+            }
+          }
+          // Pure VB or non-numeric: record is_vb to prevent re-querying on next startup
+          if (is_vb) {
+            stmt.run(null, 1, r.id);
+          }
+        }
+        stmt.finalize(() => {
+          db.run('COMMIT', e => {
+            if (e) console.error('Error committing price backfill:', e);
+          });
+        });
+      });
+    }
   );
 }
 
@@ -187,6 +234,19 @@ setInterval(() => {
   }
 }, 15 * 60 * 1000).unref();
 
+const userCache = new Map();
+const USER_CACHE_TTL_MS = 60 * 1000;
+
+// Periodically prune expired user cache entries to prevent unbounded memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, entry] of userCache.entries()) {
+    if (entry.expiresAt <= now) {
+      userCache.delete(userId);
+    }
+  }
+}, 15 * 60 * 1000).unref();
+
 const authenticateToken = async (req, res, next) => {
   let token = null;
   if (req.headers.cookie) {
@@ -205,10 +265,21 @@ const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await get("SELECT id, email, role FROM users WHERE id = ?", [decoded.userId]);
-    if (!user) {
-      return res.status(401).json({ error: 'User session invalid or user deleted.' });
+    const now = Date.now();
+    const cached = userCache.get(decoded.userId);
+    let user;
+
+    if (cached && cached.expiresAt > now) {
+      user = cached.user;
+    } else {
+      user = await get("SELECT id, email, role FROM users WHERE id = ?", [decoded.userId]);
+      if (!user) {
+        userCache.delete(decoded.userId);
+        return res.status(401).json({ error: 'User session invalid or user deleted.' });
+      }
+      userCache.set(decoded.userId, { user, expiresAt: now + USER_CACHE_TTL_MS });
     }
+
     req.user = user;
     next();
   } catch (err) {
@@ -230,28 +301,37 @@ async function recalculateItemScores(searchId, scoringModelStr) {
   const weights = scoringModel.weights || {};
   const listings = await query('SELECT id, extracted_facts FROM listings WHERE search_id = ?', [searchId]);
 
-  for (const listing of listings) {
-    let envelope = {};
-    try {
-      envelope = JSON.parse(listing.extracted_facts || '{}');
-    } catch (e) {
-      continue;
-    }
+  if (!listings.length) return;
 
-    // Support nested envelope from AI analysis
-    const facts = (envelope && envelope.criteria) ? envelope.criteria : envelope;
-
-    let score = 0;
-    for (const [criterionId, cfg] of Object.entries(weights)) {
-      const factValue = facts[criterionId];
-      if (factValue === undefined || factValue === null || factValue === 'unknown') continue;
-      if (factValue === cfg.satisfied_if) {
-        score += cfg.importance;
+  await run('BEGIN TRANSACTION');
+  try {
+    for (const listing of listings) {
+      let envelope = {};
+      try {
+        envelope = JSON.parse(listing.extracted_facts || '{}');
+      } catch (e) {
+        continue;
       }
-    }
 
-    score = Math.max(0, Math.min(100, score));
-    await run('UPDATE listings SET niceness_score = ?, status = ? WHERE id = ?', [score, 'New', listing.id]);
+      // Support nested envelope from AI analysis
+      const facts = (envelope && envelope.criteria) ? envelope.criteria : envelope;
+
+      let score = 0;
+      for (const [criterionId, cfg] of Object.entries(weights)) {
+        const factValue = facts[criterionId];
+        if (factValue === undefined || factValue === null || factValue === 'unknown') continue;
+        if (factValue === cfg.satisfied_if) {
+          score += cfg.importance;
+        }
+      }
+
+      score = Math.max(0, Math.min(100, score));
+      await run('UPDATE listings SET niceness_score = ? WHERE id = ?', [score, listing.id]);
+    }
+    await run('COMMIT');
+  } catch (err) {
+    await run('ROLLBACK');
+    throw err;
   }
 }
 
@@ -266,6 +346,11 @@ function runPythonWorker(args) {
     python.stdout.on('data', (data) => stdout += data);
     python.stderr.on('data', (data) => stderr += data);
     
+    python.on('error', (err) => {
+      console.error('Python worker spawn error:', err);
+      reject(err);
+    });
+
     python.on('close', (code) => {
       if (code === 0) {
         resolve(stdout.trim());
@@ -344,49 +429,55 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 // Global API Auth Protection (applied to all subsequent /api/* routes)
 app.use('/api', authenticateToken);
 
-// API: Serve the external research agent prompt template
-app.get('/api/external-prompt', (req, res) => {
-  try {
-    const promptPath = path.join(__dirname, '..', 'prompts', 'external_prompt.md');
-    const content = fs.readFileSync(promptPath, 'utf8');
-    res.type('text/plain').send(content);
-  } catch (e) {
-    res.status(500).json({ error: 'external_prompt.md not found' });
-  }
-});
 
-// API: Get all listings
+// API: Get listings (with backwards-compatible pagination support)
 app.get('/api/listings', async (req, res) => {
   try {
-    const { campaign_id, search_id } = req.query;
-    let rows;
+    const { campaign_id, search_id, limit, offset } = req.query;
+    const hasPagination = limit !== undefined;
+    const parsedLimit = parseInt(limit, 10);
+    const limitNum = hasPagination ? (Math.max(1, parsedLimit) || 50) : null;
+    const parsedOffset = parseInt(offset, 10);
+    const offsetNum = hasPagination ? (Math.max(0, parsedOffset) || 0) : 0;
+
+    let whereClause = '';
+    const params = [];
     if (search_id) {
-      rows = await query(`
-        SELECT l.*, s.name as item_name, c.name as campaign_name 
-        FROM listings l 
-        LEFT JOIN searches s ON l.search_id = s.id 
-        LEFT JOIN campaigns c ON s.campaign_id = c.id
-        WHERE l.search_id = ? 
-        ORDER BY l.niceness_score DESC
-      `, [search_id]);
+      whereClause = 'WHERE l.search_id = ?';
+      params.push(search_id);
     } else if (campaign_id) {
-      rows = await query(`
-        SELECT l.*, s.name as item_name, c.name as campaign_name 
-        FROM listings l 
-        LEFT JOIN searches s ON l.search_id = s.id 
-        LEFT JOIN campaigns c ON s.campaign_id = c.id
-        WHERE s.campaign_id = ? 
-        ORDER BY l.niceness_score DESC
-      `, [campaign_id]);
-    } else {
-      rows = await query(`
-        SELECT l.*, s.name as item_name, c.name as campaign_name 
-        FROM listings l 
-        LEFT JOIN searches s ON l.search_id = s.id 
-        LEFT JOIN campaigns c ON s.campaign_id = c.id
-        ORDER BY l.niceness_score DESC
-      `);
+      whereClause = 'WHERE s.campaign_id = ?';
+      params.push(campaign_id);
     }
+
+    let total = null;
+    if (hasPagination) {
+      const countResult = await get(`
+        SELECT COUNT(*) as count
+        FROM listings l
+        LEFT JOIN searches s ON l.search_id = s.id
+        ${whereClause}
+      `, params);
+      total = countResult ? countResult.count : 0;
+      res.set('X-Total-Count', String(total));
+    }
+
+    let queryStr = `
+      SELECT l.*, s.name as item_name, c.name as campaign_name 
+      FROM listings l 
+      LEFT JOIN searches s ON l.search_id = s.id 
+      LEFT JOIN campaigns c ON s.campaign_id = c.id
+      ${whereClause}
+      ORDER BY l.niceness_score DESC
+    `;
+
+    const queryParams = [...params];
+    if (hasPagination) {
+      queryStr += ' LIMIT ? OFFSET ?';
+      queryParams.push(limitNum, offsetNum);
+    }
+
+    const rows = await query(queryStr, queryParams);
     
     // Parse JSON string fields back to objects
     const listings = rows.map(r => ({
@@ -398,10 +489,48 @@ app.get('/api/listings', async (req, res) => {
       images: JSON.parse(r.images || '[]')
     }));
     
-    res.json(listings);
+    if (hasPagination) {
+      res.json({
+        listings,
+        total,
+        limit: limitNum,
+        offset: offsetNum
+      });
+    } else {
+      res.json(listings);
+    }
   } catch (error) {
     console.error('Error fetching listings:', error);
     res.status(500).json({ error: 'Failed to load listings data' });
+  }
+});
+
+// API: Get a single listing by ID
+app.get('/api/listings/:id', async (req, res) => {
+  try {
+    const row = await get(`
+      SELECT l.*, s.name as item_name, c.name as campaign_name 
+      FROM listings l 
+      LEFT JOIN searches s ON l.search_id = s.id 
+      LEFT JOIN campaigns c ON s.campaign_id = c.id
+      WHERE l.id = ?
+    `, [req.params.id]);
+
+    if (!row) {
+      return res.status(404).json({ error: 'Listing not found' });
+    }
+
+    res.json({
+      ...row,
+      llm_processed: !!row.llm_processed,
+      full_info_obtained: !!row.full_info_obtained,
+      extracted_facts: JSON.parse(row.extracted_facts || '{}'),
+      details: JSON.parse(row.details || '{}'),
+      images: JSON.parse(row.images || '[]')
+    });
+  } catch (error) {
+    console.error('Error fetching single listing:', error);
+    res.status(500).json({ error: 'Failed to load listing' });
   }
 });
 
@@ -1176,11 +1305,21 @@ app.post('/api/searches/preview', (req, res) => {
   
   let stdout = '';
   let stderr = '';
+  let replied = false;
   
   python.stdout.on('data', (data) => stdout += data);
   python.stderr.on('data', (data) => stderr += data);
   
+  python.on('error', (err) => {
+    console.error('Preview spawn error:', err);
+    if (replied) return;
+    replied = true;
+    res.status(500).json({ error: 'Headless browser check failed to start.' });
+  });
+
   python.on('close', (code) => {
+    if (replied) return;
+    replied = true;
     if (code === 0) {
       const match = stdout.match(/__PREVIEW_COUNT__:(\d+)/);
       if (match) {
@@ -1199,13 +1338,23 @@ app.post('/api/searches/preview', (req, res) => {
 app.post('/api/searches/recalculate', async (req, res) => {
   try {
     const { search_id, item_json } = req.body;
+    if (!search_id) {
+      return res.status(400).json({ error: 'Missing search_id' });
+    }
+
+    const search = await get('SELECT id, knowledge_set_id FROM searches WHERE id = ?', [search_id]);
+    if (!search) {
+      return res.status(404).json({ error: 'Search not found' });
+    }
+
+    if (search.knowledge_set_id && item_json) {
+      await run('UPDATE knowledge_sets SET item_json = ? WHERE id = ?', [
+        JSON.stringify(item_json),
+        search.knowledge_set_id
+      ]);
+    }
     
-    await run('UPDATE searches SET item_json = ? WHERE id = ?', [
-      JSON.stringify(item_json),
-      search_id
-    ]);
-    
-    const scoringModel = item_json.scoring_model || {};
+    const scoringModel = (item_json && item_json.scoring_model) ? item_json.scoring_model : {};
     await recalculateItemScores(search_id, JSON.stringify(scoringModel));
     res.json({ success: true });
   } catch (error) {
@@ -1282,18 +1431,15 @@ app.get('/api/chats/:listing_id', async (req, res) => {
 app.post('/api/listings/draft', async (req, res) => {
   try {
     const { listing_id } = req.body;
+    if (!listing_id) {
+      return res.status(400).json({ error: 'Missing listing_id' });
+    }
     
-    // Fetch listing & profile data
+    // Fetch listing data
     const listing = await get('SELECT * FROM listings WHERE id = ?', [listing_id]);
     if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
     }
-    
-    if (!listing.profile_id) {
-      return res.status(400).json({ error: 'No profile associated with this listing' });
-    }
-    
-    const profile = await get('SELECT * FROM profiles WHERE id = ?', [listing.profile_id]);
     
     // Spawn Python AI Worker to generate the tailored draft outreach
     const result = await runPythonWorker(['draft', listing_id]);
@@ -1480,6 +1626,11 @@ app.post('/api/scrape', (req, res) => {
     python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
     python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
     
+    python.on('error', (err) => {
+      console.error('Background scraper spawn error:', err);
+      activeScraperProcess = null;
+    });
+
     python.on('close', (code) => {
       console.log(`Python scraper exited with code ${code}`);
       activeScraperProcess = null;
@@ -1527,6 +1678,11 @@ app.post('/api/scrape/update-all', (req, res) => {
     python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
     python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
     
+    python.on('error', (err) => {
+      console.error('Background deep update spawn error:', err);
+      activeScraperProcess = null;
+    });
+
     python.on('close', (code) => {
       console.log(`Python scraper exited with code ${code}`);
       activeScraperProcess = null;
@@ -1576,6 +1732,11 @@ app.post('/api/searches/:search_id/scrape', async (req, res) => {
     python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
     python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
 
+    python.on('error', (err) => {
+      console.error('Targeted scraper spawn error:', err);
+      activeScraperProcess = null;
+    });
+
     python.on('close', (code) => {
       console.log(`Python targeted scraper exited with code ${code}`);
       activeScraperProcess = null;
@@ -1620,12 +1781,23 @@ app.post('/api/process', (req, res) => {
     const python = spawn(pythonExecutable, args, { env: { ...process.env } });
     activeWorkerProcesses.set(key, python);
 
+    let replied = false;
     python.stdout.on('data', (data) => console.log(`AI worker stdout: ${data}`));
     python.stderr.on('data', (data) => console.error(`AI worker stderr: ${data}`));
+
+    python.on('error', (err) => {
+      console.error('AI worker spawn error:', err);
+      activeWorkerProcesses.delete(key);
+      if (replied) return;
+      replied = true;
+      res.status(500).json({ error: 'Failed to start AI process' });
+    });
 
     python.on('close', (code) => {
       console.log(`AI worker exited with code ${code}`);
       activeWorkerProcesses.delete(key);
+      if (replied) return;
+      replied = true;
       res.json({ success: code === 0, message: 'AI processing completed' });
     });
 
@@ -1665,11 +1837,21 @@ app.post('/api/login-session', (req, res) => {
       }
     });
 
+    let replied = false;
     python.stdout.on('data', (data) => console.log(`Login process: ${data}`));
     python.stderr.on('data', (data) => console.error(`Login error: ${data}`));
 
+    python.on('error', (err) => {
+      console.error('Interactive login process spawn error:', err);
+      if (replied) return;
+      replied = true;
+      res.status(500).json({ error: 'Failed to start login process' });
+    });
+
     python.on('close', (code) => {
       console.log(`Interactive login process exited with code ${code}`);
+      if (replied) return;
+      replied = true;
       res.json({ success: code === 0 });
     });
   } catch (error) {
@@ -1754,6 +1936,10 @@ function setupScheduledScraping() {
 }
 
 function runScraper() {
+  if (activeScraperProcess !== null) {
+    console.log('Skipping scheduled scrape: scraper is already running');
+    return;
+  }
   console.log('Running scheduled scrape...');
   
   let autoAiEval = true;
@@ -1779,6 +1965,7 @@ function runScraper() {
   ], {
     env: { ...process.env }
   });
+  activeScraperProcess = python;
   // An unhandled 'error' on a ChildProcess ends the Node process. This file
   // already says so at the route-planner spawn, in a comment written when it
   // was fixed there — and this is the one spawn that fires unattended, so a
@@ -1786,9 +1973,14 @@ function runScraper() {
   // systemd would restart it straight back into the same failure.
   python.on('error', err => {
     console.error('Scheduled scrape could not start:', err.message);
+    activeScraperProcess = null;
   });
   python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
   python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
+  python.on('close', (code) => {
+    console.log(`Scheduled scrape exited with code ${code}`);
+    activeScraperProcess = null;
+  });
 }
 
 app.listen(port, () => {
