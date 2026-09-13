@@ -78,15 +78,7 @@ Things that are broken in production today: dead endpoints, inverted loops, miss
 **Shape of the fix:** Change key `"profile_id"` to `"search_id"` in `main.py:383`.
 **Cost:** 1 line in `scraper/main.py`.
 
-### A-7 — Foreign keys are never enabled on Node.js SQLite connections
-**Where:** `backend/server.js:37-43`
-**What:** `backend/server.js` contains an explicit comment at lines 39–42 stating: *"SQLite ignores foreign keys unless asked, per connection. Without this the ON DELETE CASCADE declarations in the schema are decoration: deleting a campaign removed one row and left its searches, listings and messages behind as orphans..."* However, the actual call `db.run('PRAGMA foreign_keys = ON;')` was never written.
-**Evidence:** Grep for `foreign_keys` in `backend/` returns zero matches. Foreign keys are disabled by default on every new SQLite connection. Cascading deletes (`ON DELETE CASCADE`) never execute in Node.js.
-**Bites:** Today (deleting a campaign or search leaves orphaned listings and messages in the database).
-**Shape of the fix:** Add `db.run('PRAGMA foreign_keys = ON;');` immediately after opening the database connection in `server.js`.
-**Cost:** 1 line in `backend/server.js`.
-
-### A-8 — Unhandled `error` events on spawned child processes crash the Node.js API server
+### A-7 — Unhandled `error` events on spawned child processes crash the Node.js API server
 **Where:** `backend/server.js:1469`, `1516`, `1565`, `1616`, `1766`
 **What:** Lines 761–769 document why `python.on('error')` is critical: *"An unhandled 'error' event ends the Node process. Planning a route would take the whole API down."* Yet five other spawn call sites (`/api/scrape`, `/api/scrape/update-all`, `/api/searches/:search_id/scrape`, `/api/process`, and `runScraper`) lack error handlers. If the Python executable is missing or fails to spawn, Node crashes immediately.
 **Evidence:** Grep across `server.js` shows lines 764 and 595 handle `'error'`, while lines 1469, 1516, 1565, 1616, and 1766 attach only `'data'` and `'close'` listeners.
@@ -94,7 +86,7 @@ Things that are broken in production today: dead endpoints, inverted loops, miss
 **Shape of the fix:** Attach `.on('error', (err) => { ... })` handlers to all child processes and reset process locks.
 **Cost:** ~15 lines in `backend/server.js`.
 
-### A-9 — Interactive login endpoint executes on non-search URL and fails in JSON parsing
+### A-8 — Interactive login endpoint executes on non-search URL and fails in JSON parsing
 **Where:** `backend/server.js:1656` and `scraper/main.py:408-411`
 **What:** `/api/login-session` invokes `main.py --mode scrape --urls https://www.kleinanzeigen.de/m-meine-anzeigen.html?tab=PROJECTS`. `main.py` runs listing scrapers against this URL and then attempts to parse `data/temp_scraped.json`. Because the account page contains no listing cards, `temp_scraped.json` is empty, causing JSON decode errors.
 **Evidence:** Code check: `server.js:1656` targets an account URL. `main.py:409` executes `with open(temp_output_file) as f: scraped_items = json.load(f)`.
@@ -102,13 +94,14 @@ Things that are broken in production today: dead endpoints, inverted loops, miss
 **Shape of the fix:** Separate interactive session login from the listing scrape pipeline into a dedicated helper script.
 **Cost:** ~20 lines across backend and scraper.
 
-### A-10 — Dead `/api/external-prompt` endpoint reads non-existent file
+### A-9 — Dead `/api/external-prompt` endpoint reads non-existent file
 **Where:** `backend/server.js:350-355`
 **What:** Endpoint tries to read `path.join(__dirname, '..', 'prompts', 'external_prompt.md')`. That file does not exist (the directory contains `external_prompt_market.md`, `external_prompt_profile.md`, and `external_prompt_research.md`).
 **Evidence:** File existence check: `ls prompts/external_prompt.md` returns file not found. Endpoint always returns 500 `{ error: 'external_prompt.md not found' }`.
 **Bites:** Today (endpoint is 100% broken).
 **Shape of the fix:** Remove the obsolete endpoint or redirect to the modular prompt files.
 **Cost:** 8 lines in `backend/server.js`.
+
 
 ---
 
@@ -117,7 +110,7 @@ Things that are broken in production today: dead endpoints, inverted loops, miss
 Architectural ceilings that function with 1,200 rows but collapse at 10x or 100x data scale.
 
 ### B-1 — Missing index on `listings.search_id` forces full-table scans for all campaign feeds
-**Where:** `db/schema.sql:22-38`, `backend/server.js:364-388`
+**Where:** `db/schema.sql:77-96`, `backend/server.js:364-388`
 **What:** `listings` has a primary key on `id`, but no index on `search_id`. Every dashboard query joining `searches` and `listings` performs a full table scan.
 **Evidence:** `PRAGMA index_list(listings)` returns 0 user-defined indexes. `EXPLAIN QUERY PLAN SELECT * FROM listings WHERE search_id = 1` reports `SCAN listings`.
 **Bites:** Today: negligible; at 10x (12,000 rows): dashboard load latency; at 100x (120,000 rows): multi-second table scans blocking the SQLite single-thread lock.
@@ -133,7 +126,7 @@ Architectural ceilings that function with 1,200 rows but collapse at 10x or 100x
 **Cost:** Schema migration in `db/schema.sql`.
 
 ### B-3 — Missing index on `messages.listing_id` forces full table scan on every chat view
-**Where:** `db/schema.sql:40-48`, `backend/server.js:1272`
+**Where:** `db/schema.sql:98-106`, `backend/server.js:1272`
 **What:** Table `messages` has a primary key on `id`, but no index on `listing_id`. Fetching chat history for any listing performs a full scan of the messages table.
 **Evidence:** `PRAGMA index_list(messages)` returns 0 user-defined indexes.
 **Bites:** Today: negligible (0 messages); at 10x: slow drawer opening; at 100x: high I/O across thousands of messages.
@@ -189,7 +182,7 @@ Architectural ceilings that function with 1,200 rows but collapse at 10x or 100x
 **Cost:** New dependency + ~40 lines in `RouteCorridorMap.tsx`.
 
 ### B-10 — Price stored as unparsed `TEXT` prevents SQL numerical sorting and range filtering
-**Where:** `db/schema.sql:24`, `listings.price` column
+**Where:** `db/schema.sql:80`, `listings.price` column
 **What:** Price is stored as raw scraped text: `'109 € VB'`, `'350 € VB390 €'`, `'140 €149 €'`. Lexicographical string sorting in SQL sorts `'1000 €'` before `'20 €'`. SQL cannot execute `WHERE price < 500` or `ORDER BY price ASC`.
 **Evidence:** Live query `SELECT price FROM listings LIMIT 5` returns string representations with currency symbols and negotiation suffixes.
 **Bites:** Today: frontend must parse prices client-side with regex; at 10x: SQL cannot filter price ranges; at 100x: un-indexable.
@@ -197,7 +190,7 @@ Architectural ceilings that function with 1,200 rows but collapse at 10x or 100x
 **Cost:** Schema migration + scraper ingest parser update (~25 lines).
 
 ### B-11 — Extracted facts stored as monolithic JSON blob instead of structured columns
-**Where:** `db/schema.sql:32`, `listings.extracted_facts`
+**Where:** `db/schema.sql:88`, `listings.extracted_facts`
 **What:** Extraction results are stored as raw JSON strings averaging 3,841 bytes per row. This prevents indexing specific criteria (GPU, RAM, condition) and forces both runtimes to deserialize megabytes of JSON to evaluate simple conditions.
 **Evidence:** Live database measurement: average length of `extracted_facts` where non-null is 3,841.1 bytes (63% of the total row size).
 **Bites:** Today: JSON parsing overhead; at 10x: high memory churn; at 100x: database file bloat to gigabytes.
@@ -242,15 +235,7 @@ Logic where two parts of the system make conflicting assumptions, or where promi
 **Shape of the fix:** Flag corridor-generated searches with `is_corridor = 1` and only retire corridor-owned searches.
 **Cost:** Schema migration + 10 lines in `route_store.py`.
 
-### C-4 — `requeue` only re-queues `TOO_FAR`, leaving transient `FAILED` listings stuck permanently
-**Where:** `scraper/route_store.py:469-482`, `scraper/route_pipeline.py:278`
-**What:** `requeue` defaults to `from_status=TOO_FAR` and only executes `UPDATE listing_route_geo SET status = 'failed' WHERE route_search_id = ? AND status = ?`. Meanwhile, `annotate`'s docstring and logs claim that failed listings are retried. If an OSRM call failed due to network timeout, its status is already `FAILED` with `detour_min = NULL`; `requeue` ignores it, so redrawing the route never retries failed listings.
-**Evidence:** Code inspection of `requeue` query: `AND status = ?` filters exclusively for `TOO_FAR`.
-**Bites:** Today (temporary network drops cause permanent routing omissions).
-**Shape of the fix:** Make `requeue` reset both `TOO_FAR` and `FAILED` rows.
-**Cost:** 4 lines in `scraper/route_store.py`.
-
-### C-5 — Dossier TTL is computed by `claim_is_fresh` but never evaluated on the read path
+### C-4 — Dossier TTL is computed by `claim_is_fresh` but never evaluated on the read path
 **Where:** `scraper/dossiers.py:224-233` and `scraper/dossiers.py:245-266`
 **What:** `TTL_DAYS` and helper functions `claim_is_fresh` and `fresh_claims` are defined to expire stale dossier data. But `dossiers.get()` returns the stored JSON payload directly without evaluating freshness, and `pipeline.py` consumes it without checks.
 **Evidence:** Grep for `fresh_claims` and `claim_is_fresh` shows they are defined at lines 224–233 of `dossiers.py` and called nowhere else in the codebase.
@@ -258,7 +243,7 @@ Logic where two parts of the system make conflicting assumptions, or where promi
 **Shape of the fix:** Filter claims through `fresh_claims()` in `dossiers.get()` before returning the payload.
 **Cost:** 6 lines in `scraper/dossiers.py`.
 
-### C-6 — Total model failure is persisted as a plausible mid score and marked complete
+### C-5 — Total model failure is persisted as a plausible mid score and marked complete
 **Where:** `scraper/agent_worker.py:442-536`, `scraper/agent_worker.py:594`
 **What:** When LLM extraction fails completely or outputs invalid JSON, `extracted_data` defaults to `{}`. All criteria default to `"unknown"`, all dimensions default to 3 (`raw_score = 3`), reference comparison defaults to `"mixed"`, and `score_listing` computes a neutral score around 50. Line 594 writes `llm_processed = 1, niceness_score = score, status = 'New'`. The failure is recorded as complete and will never be retried.
 **Evidence:** Code trace: `agent_worker.py:519` defaults missing dimensions to 3; line 594 writes `llm_processed = 1`.
@@ -266,7 +251,7 @@ Logic where two parts of the system make conflicting assumptions, or where promi
 **Shape of the fix:** Set `status = 'Error'` and keep `llm_processed = 0` (or `-1`) when extraction fails so it can be re-run.
 **Cost:** 6 lines in `scraper/agent_worker.py`.
 
-### C-7 — Unconditional timestamp update in `harvest_listing_details_requests` forces endless LLM re-evaluations
+### C-6 — Unconditional timestamp update in `harvest_listing_details_requests` forces endless LLM re-evaluations
 **Where:** `scraper/scraper.py:393-401` and `scraper/agent_worker.py:248`
 **What:** Line 393 sets `last_description_changed_at = now()` on every detail fetch, even if `detailed_description` is identical to what is already stored. In `agent_worker.py:248`, the predicate `last_description_changed_at > last_ai_evaluated_at` triggers re-evaluation. Re-harvesting completed listings forces expensive LLM re-evaluations on unchanged text.
 **Evidence:** Code check: `scraper.py:393` executes unconditional `UPDATE` without comparing with existing description.
@@ -274,7 +259,7 @@ Logic where two parts of the system make conflicting assumptions, or where promi
 **Shape of the fix:** Check if `detailed_description.strip() != old_description.strip()` before updating `last_description_changed_at`.
 **Cost:** 5 lines in `scraper/scraper.py`.
 
-### C-8 — Shared `data/temp_scraped.json` file used concurrently by multiple processes
+### C-7 — Shared `data/temp_scraped.json` file used concurrently by multiple processes
 **Where:** `scraper/main.py:341`, `scraper/main.py:393-410`
 **What:** The temporary scrape file path is static: `temp_output_file = os.path.join(data_dir, "temp_scraped.json")`. When multiple scraping processes execute concurrently, one process unlinks or overwrites the file while another is writing or reading it.
 **Evidence:** Code check: line 341 defines hardcoded string; line 395 calls `os.remove(temp_output_file)` before each target.
@@ -282,7 +267,7 @@ Logic where two parts of the system make conflicting assumptions, or where promi
 **Shape of the fix:** Use unique temporary file names (e.g. `tempfile.NamedTemporaryFile`).
 **Cost:** 5 lines in `scraper/main.py`.
 
-### C-9 — Stale closure in React polling loop navigates user out of their selected campaign
+### C-8 — Stale closure in React polling loop navigates user out of their selected campaign
 **Where:** `frontend/src/App.tsx:259-262`, `frontend/src/App.tsx:323-373`
 **What:** `refreshAll()` sets default campaign selection: `if (campaignsData.length > 0 && currentCampaignId === null) setCurrentCampaignId(campaignsData[0].id)`. When called from the interval poller whose closure captured `currentCampaignId` as `null`, it resets the user's active campaign back to the first campaign.
 **Evidence:** Code check: `checkStatus` interval at line 366 invokes `refreshAll()`, closing over stale initial render state.
@@ -290,7 +275,7 @@ Logic where two parts of the system make conflicting assumptions, or where promi
 **Shape of the fix:** Use functional state updater: `setCurrentCampaignId(prev => prev ?? campaignsData[0].id)`.
 **Cost:** 2 lines in `frontend/src/App.tsx`.
 
-### C-10 — Knowledge-set polling effect overwrites unsaved wizard input when background scrape completes
+### C-9 — Knowledge-set polling effect overwrites unsaved wizard input when background scrape completes
 **Where:** `frontend/src/App.tsx:691-745`
 **What:** `useEffect` at line 691 depends on `[activeSearchTarget, searches, knowledgeSets]`. When a scrape finishes, `refreshAll()` fetches knowledge sets and updates `knowledgeSets` state. The new array reference triggers the effect, which reloads database values into local form state, blowing away unsaved user edits in the Guidelines Wizard.
 **Evidence:** Code check: lines 696–724 call setters for `editKsName`, `marketMemo`, `sampledListings`, and `researcherOutput` whenever `knowledgeSets` reference updates.
@@ -298,13 +283,14 @@ Logic where two parts of the system make conflicting assumptions, or where promi
 **Shape of the fix:** Guard state reset with a `dirty` flag or only update on explicit user action.
 **Cost:** 10 lines in `frontend/src/App.tsx`.
 
-### C-11 — Bulk AI matching completion is hardcoded to a 4-second `setTimeout`
+### C-10 — Bulk AI matching completion is hardcoded to a 4-second `setTimeout`
 **Where:** `frontend/src/App.tsx:933-937`
 **What:** When a user starts AI matching, the frontend sets status to "AI matching completed!" and resets loading state after exactly 4,000ms via `setTimeout`, regardless of how many listings are being processed or whether the background worker has finished.
 **Evidence:** Code check: lines 934–937 execute `setTimeout(() => { refreshAll(); setIsProcessing(false); }, 4000);`.
 **Bites:** Today (premature success feedback; listings remain un-evaluated after spinner disappears).
 **Shape of the fix:** Poll `/api/process/active` until the background process finishes.
 **Cost:** 12 lines in `frontend/src/App.tsx`.
+
 
 ---
 
@@ -375,7 +361,7 @@ The entire application is architected as a single-user system. Supporting multi-
 **Cost:** High (full schema migration + modifying every query in `server.js`, `route_store.py`, `dossiers.py`).
 
 ### E-2 — Global `UNIQUE` constraints on `searches.url` and `campaigns.name` prevent multi-user sharing
-**Where:** `db/schema.sql:10`, `db/schema.sql:20`
+**Where:** `db/schema.sql:31`, `db/schema.sql:135`
 **What:** `campaigns.name` and `searches.url` are declared globally `UNIQUE`. If User A creates a campaign named "Laptops" or tracks a specific search URL, User B is barred from using that name or tracking that URL.
 **Evidence:** DDL: `CREATE TABLE campaigns ( name TEXT UNIQUE )` and `CREATE TABLE searches ( url TEXT UNIQUE )`.
 **Bites:** Multi-user: immediate constraint violation errors on common searches and names.
