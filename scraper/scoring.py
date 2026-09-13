@@ -5,6 +5,35 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# Scoring model versioning
+SCORING_VERSION = "1.0.0"
+
+# Neutral default score floor
+SCORE_NEUTRAL_DEFAULT = 50.0
+
+# Legacy blended scorer weights
+BLENDED_CRITERIA_WEIGHT = 0.65
+BLENDED_DIMENSIONS_WEIGHT = 0.35
+
+# Evidence scorer parameters
+IMPORTANCE_POINTS = {"high": 3, "medium": 2, "low": 1}
+NEG_PENALTY_POINTS = {3: 12, 2: 7, 1: 3}  # per confirmed-present negative criterion
+NEG_RELIEF_POINTS = {3: 4, 2: 2, 1: 1}  # per confirmed-absent negative criterion
+EVIDENCE_COVERAGE_TARGET = 0.60
+MAX_NEG_PENALTY = 35
+MAX_NEG_RELIEF = 15
+HVU_PENALTY_FACTOR = 2
+HVU_CAP_FACTOR = 12
+MAX_RISK_PENALTY = 3
+REF_COMPARISON_MODIFIERS = {"good": 4, "bad": 0, "mixed": 0}
+EVIDENCE_POS_WEIGHT = 0.45
+EVIDENCE_DIM_WEIGHT = 0.55
+EVIDENCE_RELIEF_WEIGHT = 0.15
+
+# Unified field scorer parameters
+CRITICAL_GAP_PENALTY_BASE = 0.8
+
+
 @dataclass
 class ScoringResult:
     score: int
@@ -12,6 +41,7 @@ class ScoringResult:
     dimensions_score: float
     contributions: Dict[str, Any]
     is_new_schema: bool
+    scoring_version: str = SCORING_VERSION
     # Field ids of hard constraints this listing violates. Non-empty means the
     # listing is disqualified rather than merely poorly rated.
     disqualified_by: Tuple[str, ...] = ()
@@ -161,8 +191,8 @@ def calculate_blended_score(
 
     # Coverage factor: penalise sparse/vague listings
     coverage_ratio = resolved_count / total_count
-    # Scale smoothly to 1.0 at 60% coverage, instead of a hard cliff at 40%
-    coverage_factor = min(1.0, coverage_ratio / 0.60)
+    # Scale smoothly to 1.0 at target coverage, instead of a hard cliff at 40%
+    coverage_factor = min(1.0, coverage_ratio / EVIDENCE_COVERAGE_TARGET)
 
     # 2. Dimensions score
     expected_dims = [
@@ -201,20 +231,24 @@ def calculate_blended_score(
     if dim_scores:
         dimensions_score = sum(dim_scores) / len(dim_scores)
     else:
-        dimensions_score = 50.0
+        dimensions_score = SCORE_NEUTRAL_DEFAULT
 
-    raw_blended = (criteria_score * 0.65) + (dimensions_score * 0.35)
+    raw_blended = (criteria_score * BLENDED_CRITERIA_WEIGHT) + (
+        dimensions_score * BLENDED_DIMENSIONS_WEIGHT
+    )
 
-    # Apply coverage: blend between 50 (floor for unknown-heavy listings) and raw_blended
-    final_score = 50.0 * (1 - coverage_factor) + raw_blended * coverage_factor
+    # Apply coverage: blend between neutral default and raw_blended
+    final_score = (
+        SCORE_NEUTRAL_DEFAULT * (1 - coverage_factor) + raw_blended * coverage_factor
+    )
     final_score = max(0, min(100, round(final_score)))
 
     return final_score, criteria_score, dimensions_score, contributions
 
 
-_IMPORTANCE_PTS = {"high": 3, "medium": 2, "low": 1}
-_NEG_PENALTY_PTS = {3: 12, 2: 7, 1: 3}  # per confirmed-present negative criterion
-_NEG_RELIEF_PTS = {3: 4, 2: 2, 1: 1}  # per confirmed-absent negative criterion
+_IMPORTANCE_PTS = IMPORTANCE_POINTS
+_NEG_PENALTY_PTS = NEG_PENALTY_POINTS
+_NEG_RELIEF_PTS = NEG_RELIEF_POINTS
 
 
 def calculate_evidence_score(
@@ -242,10 +276,11 @@ def calculate_evidence_score(
 
     # 1. Positive score (0-100)
     total_pos_weight = sum(
-        _IMPORTANCE_PTS.get(c.get("importance_hint", "medium"), 2) for c in pos_criteria
+        IMPORTANCE_POINTS.get(c.get("importance_hint", "medium"), 2)
+        for c in pos_criteria
     )
     earned_pos_weight = sum(
-        _IMPORTANCE_PTS.get(c.get("importance_hint", "medium"), 2)
+        IMPORTANCE_POINTS.get(c.get("importance_hint", "medium"), 2)
         for c in pos_criteria
         if normalized_criteria.get(c["id"], {}).get("value") == "yes"
     )
@@ -258,31 +293,31 @@ def calculate_evidence_score(
         if normalized_criteria.get(c["id"], {}).get("value") in ("yes", "no")
     )
     coverage_ratio = resolved / max(len(all_criteria), 1)
-    # Instead of a hard cliff at 0.40, we scale smoothly to 1.0 at 60% coverage
-    coverage_factor = min(1.0, coverage_ratio / 0.60)
+    # Instead of a hard cliff at 0.40, we scale smoothly to 1.0 at target coverage
+    coverage_factor = min(1.0, coverage_ratio / EVIDENCE_COVERAGE_TARGET)
 
     # 3. Negative penalty: confirmed-present bad things (0-35)
     neg_penalty = min(
         sum(
-            _NEG_PENALTY_PTS.get(
-                _IMPORTANCE_PTS.get(c.get("importance_hint", "medium"), 2), 7
+            NEG_PENALTY_POINTS.get(
+                IMPORTANCE_POINTS.get(c.get("importance_hint", "medium"), 2), 7
             )
             for c in neg_criteria
             if normalized_criteria.get(c["id"], {}).get("value") == "yes"
         ),
-        35,
+        MAX_NEG_PENALTY,
     )
 
     # 4. Negative relief: confirmed-absent bad things (0-15)
     neg_relief = min(
         sum(
-            _NEG_RELIEF_PTS.get(
-                _IMPORTANCE_PTS.get(c.get("importance_hint", "medium"), 2), 2
+            NEG_RELIEF_POINTS.get(
+                IMPORTANCE_POINTS.get(c.get("importance_hint", "medium"), 2), 2
             )
             for c in neg_criteria
             if normalized_criteria.get(c["id"], {}).get("value") == "no"
         ),
-        15,
+        MAX_NEG_RELIEF,
     )
 
     # 5. High-value unknowns (small flat penalty + upside cap)
@@ -293,12 +328,14 @@ def calculate_evidence_score(
         else 0
     )
     hvu_ratio = (n_model_hvu / max(n_profile_hvu, 1)) if n_profile_hvu > 0 else 0
-    hvu_penalty = round(hvu_ratio * 2)  # max 2 point flat penalty
-    hvu_cap = 100 - round(hvu_ratio * 12)  # caps upside at 88 if all HVUs are missing
+    hvu_penalty = round(hvu_ratio * HVU_PENALTY_FACTOR)  # max 2 point flat penalty
+    hvu_cap = 100 - round(
+        hvu_ratio * HVU_CAP_FACTOR
+    )  # caps upside at 88 if all HVUs are missing
 
     # 6. Risk flags penalty (0-3)
     n_flags = len(model_risk_flags) if isinstance(model_risk_flags, list) else 0
-    risk_penalty = min(n_flags, 3)
+    risk_penalty = min(n_flags, MAX_RISK_PENALTY)
 
     # 7. Dimensions score (0-100) — same inversion as blended scorer
     expected_dims = [
@@ -327,19 +364,21 @@ def calculate_evidence_score(
         if isinstance(normalized_ref_comp, dict)
         else "mixed"
     )
-    ref_mod = {"good": 4, "bad": 0, "mixed": 0}.get(closer_to, 0)
+    ref_mod = REF_COMPARISON_MODIFIERS.get(closer_to, 0)
 
-    # 9. Assemble: 45% positive evidence + 55% dimensions, then apply penalties
-    base = 0.45 * pos_score + 0.55 * dimensions_score
+    # 9. Assemble: positive evidence + dimensions, then apply penalties
+    base = EVIDENCE_POS_WEIGHT * pos_score + EVIDENCE_DIM_WEIGHT * dimensions_score
     # Neg relief is added before penalties (confirmed safety is real positive signal)
-    effective = base + 0.15 * neg_relief
+    effective = base + EVIDENCE_RELIEF_WEIGHT * neg_relief
     penalized = effective - neg_penalty - hvu_penalty - risk_penalty + ref_mod
 
     # Apply HVU upside cap
     penalized = min(penalized, hvu_cap)
 
-    # Coverage floor: sparse listings collapse toward 50 (ordinary) instead of 35
-    final = coverage_factor * penalized + (1.0 - coverage_factor) * 50.0
+    # Coverage floor: sparse listings collapse toward neutral default instead of 35
+    final = (
+        coverage_factor * penalized + (1.0 - coverage_factor) * SCORE_NEUTRAL_DEFAULT
+    )
     final = max(0, min(100, round(final)))
 
     contributions = {
@@ -495,7 +534,7 @@ def calculate_unified_score(
     raw_field_score = (max(0.0, earned_points) / max(total_max_points, 1.0)) * 100.0
 
     # Handle dimensions if enabled
-    dimensions_score = 50.0
+    dimensions_score = SCORE_NEUTRAL_DEFAULT
     if dimensions_enabled:
         expected_dims = [
             "trustworthiness",
@@ -522,7 +561,7 @@ def calculate_unified_score(
 
     # Penalize critical gaps
     if critical_gaps > 0:
-        blended = blended * (0.8**critical_gaps)
+        blended = blended * (CRITICAL_GAP_PENALTY_BASE**critical_gaps)
 
     final_score = max(0, min(100, round(blended)))
     return final_score, raw_field_score, dimensions_score, contributions

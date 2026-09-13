@@ -598,6 +598,7 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
 
             # Reconstruct full nested facts envelope for the DB
             facts_envelope = {
+                "scoring_version": scoring_res.scoring_version,
                 "criteria": normalized_criteria,
                 "dimensions": normalized_dimensions,
                 "reference_comparison": normalized_ref_comp,
@@ -930,8 +931,10 @@ def analyze_conversation(listing_id):
             if isinstance(facts_envelope, dict):
                 facts_envelope["criteria"] = facts
                 facts_envelope["_full_info_obtained"] = full_info
+                facts_envelope["scoring_version"] = scoring_res.scoring_version
             else:
                 facts_envelope = {
+                    "scoring_version": scoring_res.scoring_version,
                     "criteria": facts,
                     "dimensions": dimensions,
                     "reference_comparison": reference_comparison,

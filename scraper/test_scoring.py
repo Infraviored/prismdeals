@@ -252,6 +252,24 @@ class TestScoringEngine(unittest.TestCase):
         # final = 0.333 * 36.5 + 0.667 * 50 = 12.16 + 33.33 = 45.5 -> 46
         self.assertEqual(res_new.score, 46)
 
+    def test_scoring_version_and_constants(self):
+        from scoring import (
+            SCORING_VERSION,
+            SCORE_NEUTRAL_DEFAULT,
+            BLENDED_CRITERIA_WEIGHT,
+            BLENDED_DIMENSIONS_WEIGHT,
+            EVIDENCE_COVERAGE_TARGET,
+        )
+
+        self.assertEqual(SCORING_VERSION, "1.0.0")
+        self.assertEqual(SCORE_NEUTRAL_DEFAULT, 50.0)
+        self.assertEqual(BLENDED_CRITERIA_WEIGHT, 0.65)
+        self.assertEqual(BLENDED_DIMENSIONS_WEIGHT, 0.35)
+        self.assertEqual(EVIDENCE_COVERAGE_TARGET, 0.60)
+
+        res = score_listing({}, {})
+        self.assertEqual(res.scoring_version, SCORING_VERSION)
+
 
 if __name__ == "__main__":
     unittest.main()
