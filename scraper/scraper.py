@@ -511,30 +511,30 @@ def update_all_descriptions_session(campaign_id=None):
                 if parsed is None:
                     continue
 
-            detailed_description = parsed["detailed_description"] or ""
+                detailed_description = parsed["detailed_description"] or ""
 
-            if detailed_description.strip() != old_description.strip():
-                logger.info(
-                    f"Description changed for listing {listing_id}! Updating in DB."
-                )
-                cursor.execute(
-                    """
-                    UPDATE listings 
-                    SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
-                        last_description_changed_at = ?
-                    WHERE id = ?
-                """,
-                    (
-                        detailed_description,
-                        json.dumps(parsed["details"]),
-                        json.dumps(parsed["images"]),
-                        datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        listing_id,
-                    ),
-                )
-                conn.commit()
-            else:
-                logger.info(f"No description changes for listing {listing_id}.")
+                if detailed_description.strip() != old_description.strip():
+                    logger.info(
+                        f"Description changed for listing {listing_id}! Updating in DB."
+                    )
+                    cursor.execute(
+                        """
+                        UPDATE listings 
+                        SET detailed_description = ?, details = ?, images = ?, full_info_obtained = 1,
+                            last_description_changed_at = ?
+                        WHERE id = ?
+                    """,
+                        (
+                            detailed_description,
+                            json.dumps(parsed["details"]),
+                            json.dumps(parsed["images"]),
+                            datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            listing_id,
+                        ),
+                    )
+                    conn.commit()
+                else:
+                    logger.info(f"No description changes for listing {listing_id}.")
 
         if total > 0:
             update_progress(
