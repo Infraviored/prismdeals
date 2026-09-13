@@ -187,6 +187,9 @@ setInterval(() => {
   }
 }, 15 * 60 * 1000).unref();
 
+const userCache = new Map();
+const USER_CACHE_TTL_MS = 60 * 1000;
+
 const authenticateToken = async (req, res, next) => {
   let token = null;
   if (req.headers.cookie) {
@@ -205,10 +208,21 @@ const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await get("SELECT id, email, role FROM users WHERE id = ?", [decoded.userId]);
-    if (!user) {
-      return res.status(401).json({ error: 'User session invalid or user deleted.' });
+    const now = Date.now();
+    const cached = userCache.get(decoded.userId);
+    let user;
+
+    if (cached && cached.expiresAt > now) {
+      user = cached.user;
+    } else {
+      user = await get("SELECT id, email, role FROM users WHERE id = ?", [decoded.userId]);
+      if (!user) {
+        userCache.delete(decoded.userId);
+        return res.status(401).json({ error: 'User session invalid or user deleted.' });
+      }
+      userCache.set(decoded.userId, { user, expiresAt: now + USER_CACHE_TTL_MS });
     }
+
     req.user = user;
     next();
   } catch (err) {
