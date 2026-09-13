@@ -566,6 +566,8 @@ export default function RouteResultsView({
                           src={selectedListing.images[0]}
                           alt={selectedListing.title}
                           className="w-14 h-14 rounded-xl object-cover shrink-0 border border-border-subtle bg-bg-input"
+                          loading="lazy"
+                          decoding="async"
                         />
                       ) : (
                         <div className="w-14 h-14 rounded-xl shrink-0 border border-border-subtle bg-bg-input flex items-center justify-center text-text-muted text-2xs">
@@ -667,6 +669,7 @@ export default function RouteResultsView({
                               alt={l.title}
                               className="w-full h-full object-cover transition-transform group-hover:scale-105"
                               loading="lazy"
+                              decoding="async"
                             />
                           </div>
                         ) : (
