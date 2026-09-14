@@ -21,7 +21,7 @@ import {
 import ScraperProgressCard from './ScraperProgressCard';
 import CorridorPlanner from './CorridorPlanner';
 import SearchFamilyFilterBar from './SearchFamilyFilterBar';
-import type { ScraperProgressCardProps, SearchFamilyTerm } from '../types';
+import type { ScraperProgressCardProps, SearchFamilyTerm, MatchedTerm } from '../types';
 
 export interface RouteCorridorData {
   route: {
@@ -58,6 +58,7 @@ interface RouteResultsViewProps {
   liveLogs?: string;
   showLogConsole?: boolean;
   setShowLogConsole?: (val: boolean) => void;
+  onEditFamily?: () => void;
 }
 
 function formatLocation(loc: string | null | undefined): string {
@@ -82,6 +83,7 @@ export default function RouteResultsView({
   liveLogs = '',
   showLogConsole = false,
   setShowLogConsole,
+  onEditFamily,
 }: RouteResultsViewProps) {
   const { t } = useTranslation();
 
@@ -172,31 +174,51 @@ export default function RouteResultsView({
             setSelectedTermIds(new Set(termsList.map((tm) => tm.id ?? 0)));
           }
 
-          if (!corridorData) {
-            const listingsRes = await fetch(`/api/search-families/${targetFamilyId}/listings`);
-            if (listingsRes.ok) {
-              const listingsData = await listingsRes.json();
-              const rawListings = listingsData.listings || [];
-              const familyListings: RouteListingGeo[] = rawListings.map((l: Partial<RouteListingGeo> & Record<string, unknown>) => ({
-                id: String(l.id),
-                title: String(l.title || ''),
-                price: String(l.price || ''),
-                location: String(l.location || ''),
-                url: String(l.url || ''),
-                lat: typeof l.lat === 'number' ? l.lat : null,
-                lon: typeof l.lon === 'number' ? l.lon : null,
-                detour_min: typeof l.detour_min === 'number' ? l.detour_min : null,
-                offroute_km: typeof l.offroute_km === 'number' ? l.offroute_km : null,
-                geo_status: l.geo_status ?? null,
-                niceness_score: typeof l.niceness_score === 'number' ? l.niceness_score : null,
-                llm_processed: !!l.llm_processed,
-                images: Array.isArray(l.images)
-                  ? (l.images as string[])
-                  : typeof l.images === 'string'
-                    ? JSON.parse(l.images || '[]')
-                    : [],
-                matched_terms: l.matched_terms || [],
+          const listingsRes = await fetch(`/api/search-families/${targetFamilyId}/listings`);
+          if (listingsRes.ok) {
+            const listingsData = await listingsRes.json();
+            const rawListings = listingsData.listings || [];
+
+            const matchedTermsMap = new Map<string, MatchedTerm[]>();
+            for (const rl of rawListings) {
+              if (rl.id && Array.isArray(rl.matched_terms)) {
+                matchedTermsMap.set(String(rl.id), rl.matched_terms);
+              }
+            }
+
+            if (corridorData) {
+              // Campaign has both route corridor and search family: enrich corridor listings with matched_terms
+              corridorData.listings = corridorData.listings.map((l) => ({
+                ...l,
+                matched_terms:
+                  l.matched_terms && l.matched_terms.length > 0
+                    ? l.matched_terms
+                    : matchedTermsMap.get(String(l.id)) || [],
               }));
+            } else {
+              // Pure search family without route corridor
+              const familyListings: RouteListingGeo[] = rawListings.map(
+                (l: Partial<RouteListingGeo> & Record<string, unknown>) => ({
+                  id: String(l.id),
+                  title: String(l.title || ''),
+                  price: String(l.price || ''),
+                  location: String(l.location || ''),
+                  url: String(l.url || ''),
+                  lat: typeof l.lat === 'number' ? l.lat : null,
+                  lon: typeof l.lon === 'number' ? l.lon : null,
+                  detour_min: typeof l.detour_min === 'number' ? l.detour_min : null,
+                  offroute_km: typeof l.offroute_km === 'number' ? l.offroute_km : null,
+                  geo_status: l.geo_status ?? null,
+                  niceness_score: typeof l.niceness_score === 'number' ? l.niceness_score : null,
+                  llm_processed: !!l.llm_processed,
+                  images: Array.isArray(l.images)
+                    ? (l.images as string[])
+                    : typeof l.images === 'string'
+                      ? JSON.parse(l.images || '[]')
+                      : [],
+                  matched_terms: l.matched_terms || [],
+                })
+              );
 
               corridorData = {
                 route: {
@@ -331,12 +353,7 @@ export default function RouteResultsView({
   }, []);
 
   const handleToggleAllTerms = useCallback(() => {
-    setSelectedTermIds((prev) => {
-      if (prev.size === familyTerms.length) {
-        return new Set();
-      }
-      return new Set(familyTerms.map((t) => t.id ?? 0));
-    });
+    setSelectedTermIds(new Set(familyTerms.map((t) => t.id ?? 0)));
   }, [familyTerms]);
 
   const filteredListings = useMemo(() => {
@@ -491,6 +508,19 @@ export default function RouteResultsView({
               </Button>
             )}
 
+            {familyTerms.length > 0 && onEditFamily && (
+              <Button
+                id="btn-edit-family"
+                variant="secondary"
+                size="sm"
+                onClick={onEditFamily}
+                className="py-2.5 px-3 font-bold flex items-center justify-center gap-1.5 min-h-[44px] whitespace-normal text-center leading-tight"
+              >
+                <SlidersHorizontal className="w-4 h-4 shrink-0" />
+                <span>{t('searchFamily.editFamily')}</span>
+              </Button>
+            )}
+
             <Button
               id="btn-evaluate-ai"
               variant="action-indigo"
@@ -591,8 +621,8 @@ export default function RouteResultsView({
       {/* Main Content Area */}
       {!hasListings ? (
         /* Empty State */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          {(isDesktop || mobileTab === 'map') && (
+        <div className={`grid grid-cols-1 ${route.circles.length > 0 ? 'lg:grid-cols-12' : 'max-w-md mx-auto'} gap-5 items-start`}>
+          {route.circles.length > 0 && (isDesktop || mobileTab === 'map') && (
             <div className={`rounded-2xl overflow-hidden ${isDesktop ? 'lg:col-span-7 h-[420px]' : 'h-[360px]'}`}>
               <RouteCorridorMap
                 polyline={route.polyline}
@@ -606,8 +636,8 @@ export default function RouteResultsView({
             </div>
           )}
 
-          {(isDesktop || mobileTab === 'list') && (
-            <div className={isDesktop ? 'lg:col-span-5' : 'w-full'}>
+          {(isDesktop || mobileTab === 'list' || route.circles.length === 0) && (
+            <div className={route.circles.length > 0 && isDesktop ? 'lg:col-span-5' : 'w-full'}>
               <Card className="p-8 text-center space-y-4 border-border-subtle bg-bg-surface">
                 <div className="w-12 h-12 rounded-2xl bg-brand-accent/10 border border-brand-accent/20 flex items-center justify-center mx-auto text-brand-accent">
                   <Navigation className="w-6 h-6" />
@@ -618,7 +648,9 @@ export default function RouteResultsView({
                     {t('routeResults.emptyHeadline')}
                   </h3>
                   <p className="text-xs text-text-muted leading-relaxed font-semibold">
-                    {t('routeResults.emptyExplanation', { count: route.circles.length })}
+                    {familyTerms.length > 0 && route.circles.length === 0
+                      ? t('searchFamily.emptyExplanation', { count: familyTerms.length })
+                      : t('routeResults.emptyExplanation', { count: route.circles.length })}
                   </p>
                 </div>
 

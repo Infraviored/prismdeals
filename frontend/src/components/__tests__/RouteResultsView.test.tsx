@@ -38,7 +38,6 @@ const mockRouteData = {
       niceness_score: 8,
       llm_processed: true,
       images: [],
-      matched_terms: [{ id: 101, label: 'ThinkPad T480', term: 'ThinkPad T480' }],
     },
     {
       id: 'item-2',
@@ -54,7 +53,6 @@ const mockRouteData = {
       niceness_score: 9,
       llm_processed: false,
       images: [],
-      matched_terms: [{ id: 102, label: 'ThinkPad T490', term: 'ThinkPad T490' }],
     },
     {
       id: 'item-3',
@@ -70,7 +68,6 @@ const mockRouteData = {
       niceness_score: 7,
       llm_processed: false,
       images: [],
-      matched_terms: [{ id: 101, label: 'ThinkPad T480', term: 'ThinkPad T480' }],
     },
   ],
   counts: {
@@ -91,18 +88,30 @@ const mockFamilyDetail = {
   ],
 };
 
+const mockFamilyListings = {
+  total: 3,
+  listings: [
+    { id: 'item-1', matched_terms: [{ id: 101, label: 'ThinkPad T480', term: 'ThinkPad T480' }] },
+    { id: 'item-2', matched_terms: [{ id: 102, label: 'ThinkPad T490', term: 'ThinkPad T490' }] },
+    { id: 'item-3', matched_terms: [{ id: 101, label: 'ThinkPad T480', term: 'ThinkPad T480' }] },
+  ],
+};
+
 describe('RouteResultsView', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('displays matched model badge on listing cards', async () => {
+  it('displays matched model badge on listing cards via family listings enrichment', async () => {
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url === '/api/campaigns/1/route') {
         return Promise.resolve({ ok: true, json: async () => mockRouteData });
       }
       if (url === '/api/search-families/5') {
         return Promise.resolve({ ok: true, json: async () => mockFamilyDetail });
+      }
+      if (url === '/api/search-families/5/listings') {
+        return Promise.resolve({ ok: true, json: async () => mockFamilyListings });
       }
       return Promise.resolve({ ok: true, json: async () => ({}) });
     });
@@ -140,6 +149,9 @@ describe('RouteResultsView', () => {
       }
       if (url === '/api/search-families/5') {
         return Promise.resolve({ ok: true, json: async () => mockFamilyDetail });
+      }
+      if (url === '/api/search-families/5/listings') {
+        return Promise.resolve({ ok: true, json: async () => mockFamilyListings });
       }
       return Promise.resolve({ ok: true, json: async () => ({}) });
     });
@@ -188,6 +200,12 @@ describe('RouteResultsView', () => {
       expect(screen.getByText('Lenovo ThinkPad T490 i7 32GB')).toBeInTheDocument();
       expect(screen.getByText('Lenovo ThinkPad T480s Top Zustand')).toBeInTheDocument();
     });
+
+    // Click "Alle Modelle" button AGAIN when all are active; all must remain visible ("Alle an = alles")
+    fireEvent.click(allButton);
+    expect(screen.getByText('Lenovo ThinkPad T480 i5 16GB')).toBeInTheDocument();
+    expect(screen.getByText('Lenovo ThinkPad T490 i7 32GB')).toBeInTheDocument();
+    expect(screen.getByText('Lenovo ThinkPad T480s Top Zustand')).toBeInTheDocument();
   });
 
   it('renders fallback when price is empty or whitespace', async () => {

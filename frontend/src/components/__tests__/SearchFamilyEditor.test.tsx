@@ -140,7 +140,38 @@ describe('SearchFamilyEditor', () => {
     expect(screen.getAllByText(/At least one active model required|Mindestens ein Modell eintragen/i).length).toBeGreaterThan(0);
   });
 
-  it('submits POST /api/search-families when clicking save and invokes onSave callback', async () => {
+  it('keeps save button disabled when preview request fails with an error', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/search-families/preview') {
+        return Promise.resolve({
+          ok: false,
+          json: async () => ({
+            error: 'Invalid search parameters',
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    globalThis.fetch = fetchMock;
+
+    render(
+      <SearchFamilyEditor
+        initialName="ThinkPads"
+        initialBaseUrl="https://www.kleinanzeigen.de/s-laptop/k0c278"
+        initialTerms={[
+          { term: 'ThinkPad T480', label: 'ThinkPad T480', enabled: true },
+        ]}
+      />
+    );
+
+    const saveBtn = screen.getByRole('button', { name: /Speichern|Save/i });
+    await waitFor(() => {
+      expect(saveBtn).toBeDisabled();
+      expect(screen.getByText(/Preview failed or invalid search parameters|Vorschau fehlgeschlagen/i)).toBeInTheDocument();
+    });
+  });
+
+  it('submits POST /api/search-families preserving disabled terms in payload and invokes onSave callback', async () => {
     const onSave = vi.fn();
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url === '/api/search-families/preview') {
@@ -179,6 +210,7 @@ describe('SearchFamilyEditor', () => {
         initialBaseUrl="https://www.kleinanzeigen.de/s-laptop/k0c278"
         initialTerms={[
           { term: 'ThinkPad T480', label: 'ThinkPad T480', enabled: true },
+          { term: 'ThinkPad X280', label: 'ThinkPad X280', enabled: false },
         ]}
         onSave={onSave}
       />
@@ -199,7 +231,10 @@ describe('SearchFamilyEditor', () => {
           body: JSON.stringify({
             name: 'ThinkPads',
             base_url: 'https://www.kleinanzeigen.de/s-laptop/k0c278',
-            terms: [{ term: 'ThinkPad T480', label: 'ThinkPad T480', enabled: true }],
+            terms: [
+              { term: 'ThinkPad T480', label: 'ThinkPad T480', enabled: true },
+              { term: 'ThinkPad X280', label: 'ThinkPad X280', enabled: false },
+            ],
           }),
         })
       );

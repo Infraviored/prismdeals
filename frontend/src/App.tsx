@@ -247,9 +247,25 @@ export default function App() {
       fetch('/api/campaigns').then(res => res.json()),
       fetch('/api/search-urls').then(res => res.json()),
       fetch('/api/listings').then(res => res.json()),
-      fetch('/api/knowledge-sets').then(res => res.json())
-    ]).then(([campaignsData, searchesData, listingsData, ksData]) => {
-      setCampaigns(campaignsData)
+      fetch('/api/knowledge-sets').then(res => res.json()),
+      fetch('/api/search-families').then(res => (res.ok ? res.json() : [])).catch(() => []),
+    ]).then(([campaignsData, searchesData, listingsData, ksData, familiesData]) => {
+      const familyMap = new Map<number, number>();
+      if (Array.isArray(familiesData)) {
+        for (const fam of familiesData) {
+          if (fam.campaign_id && fam.id) {
+            familyMap.set(fam.campaign_id, fam.id);
+          }
+        }
+      }
+
+      setCampaigns(prev => {
+        const prevFamilyMap = new Map(prev.map(c => [c.id, c.family_id]));
+        return campaignsData.map((c: Campaign) => ({
+          ...c,
+          family_id: c.family_id ?? familyMap.get(c.id) ?? prevFamilyMap.get(c.id),
+        }));
+      });
       setSearches(searchesData)
       setKnowledgeSets(ksData)
 
@@ -266,6 +282,24 @@ export default function App() {
       console.error("Error refreshing dashboard state:", err)
     })
   }
+
+  // Ensure search family ID is populated for current campaign even on direct reload
+  useEffect(() => {
+    if (!currentCampaignId) return;
+    const current = campaigns.find(c => c.id === currentCampaignId);
+    if (current && !current.family_id && !current.route_id) {
+      fetch(`/api/search-families?campaign_id=${currentCampaignId}`)
+        .then(res => (res.ok ? res.json() : []))
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0 && data[0].id) {
+            setCampaigns(prev =>
+              prev.map(c => (c.id === currentCampaignId ? { ...c, family_id: data[0].id } : c))
+            );
+          }
+        })
+        .catch(() => {});
+    }
+  }, [currentCampaignId, campaigns]);
 
   // Load Prompt templates
   useEffect(() => {
@@ -1438,6 +1472,10 @@ export default function App() {
                 liveLogs={liveLogs}
                 showLogConsole={showLogConsole}
                 setShowLogConsole={setShowLogConsole}
+                onEditFamily={() => {
+                  setSearchTargetMode('family');
+                  navigate('edit', currentCampaignId, null);
+                }}
               />
             </div>
           ) : (
@@ -1968,6 +2006,10 @@ export default function App() {
                   liveLogs={liveLogs}
                   showLogConsole={showLogConsole}
                   setShowLogConsole={setShowLogConsole}
+                  onEditFamily={() => {
+                    setSearchTargetMode('family');
+                    navigate('edit', currentCampaignId, null);
+                  }}
                 />
               </div>
             ) : (

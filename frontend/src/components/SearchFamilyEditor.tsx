@@ -148,10 +148,11 @@ export default function SearchFamilyEditor({
   const disabledReason = useMemo(() => {
     if (!name.trim()) return t('searchFamily.saveDisabledNoName');
     if (!baseUrl.trim()) return t('searchFamily.saveDisabledNoUrl');
-    if (activeTerms.length === 0) return t('searchFamily.saveDisabledNoTerms');
+    if (terms.length === 0 || activeTerms.length === 0) return t('searchFamily.saveDisabledNoTerms');
     if (previewLoading) return t('searchFamily.saveDisabledPreviewLoading');
+    if (previewError) return t('searchFamily.saveDisabledPreviewError');
     return null;
-  }, [name, baseUrl, activeTerms, previewLoading, t]);
+  }, [name, baseUrl, terms.length, activeTerms.length, previewLoading, previewError, t]);
 
   const isSaveDisabled = disabledReason !== null || saving;
 
@@ -164,8 +165,8 @@ export default function SearchFamilyEditor({
     const payload: Record<string, unknown> = {
       name: name.trim(),
       base_url: baseUrl.trim(),
-      terms: activeTerms.map((t) => ({
-        id: t.id,
+      terms: terms.map((t) => ({
+        ...(t.id ? { id: t.id } : {}),
         term: t.term,
         label: t.label || t.term,
         enabled: t.enabled,

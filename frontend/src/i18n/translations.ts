@@ -376,6 +376,7 @@ export const translations = {
       saveDisabledNoTerms: "At least one active model required",
       saveDisabledNoName: "Family name is required",
       saveDisabledPreviewLoading: "Calculating search preview...",
+      saveDisabledPreviewError: "Preview failed or invalid search parameters",
       saving: "Saving...",
       savedSuccess: "Search family saved successfully.",
       conflictWarning: "Conflicts detected with {{count}} existing searches",
@@ -383,8 +384,8 @@ export const translations = {
       filterByModel: "Models:",
       matchedModel: "Model:",
       noModelsFound: "No models added yet.",
-      pasteModeSwitch: "Paste as text",
-      listModeSwitch: "Item list"
+      emptyExplanation: "{{count}} models configured. Start scraping to find listings.",
+      editFamily: "Family settings"
     }
   },
   de: {
@@ -764,6 +765,7 @@ export const translations = {
       saveDisabledNoTerms: "Mindestens ein aktives Modell erforderlich",
       saveDisabledNoName: "Name fehlt",
       saveDisabledPreviewLoading: "Such-Vorschau wird berechnet...",
+      saveDisabledPreviewError: "Vorschau fehlgeschlagen oder ungültige Suchparameter",
       saving: "Wird gespeichert...",
       savedSuccess: "Suchfamilie erfolgreich gespeichert.",
       conflictWarning: "Konflikte bei {{count}} bestehenden Suchen",
@@ -771,8 +773,8 @@ export const translations = {
       filterByModel: "Modelle:",
       matchedModel: "Modell:",
       noModelsFound: "Noch keine Modelle hinzugefügt.",
-      pasteModeSwitch: "Als Text einfügen",
-      listModeSwitch: "Einzelliste"
+      emptyExplanation: "{{count}} Modelle wurden angelegt. Starten Sie das Scraping, um Treffer zu finden.",
+      editFamily: "Familieneinstellungen"
     }
   }
 } as const;
