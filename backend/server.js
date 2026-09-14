@@ -410,7 +410,8 @@ app.get('/api/campaigns', async (req, res) => {
   try {
     const rows = await query(`
       SELECT c.*,
-             (SELECT id FROM route_searches r WHERE r.campaign_id = c.id ORDER BY r.id DESC LIMIT 1) as route_id
+             (SELECT id FROM route_searches r WHERE r.campaign_id = c.id ORDER BY r.id DESC LIMIT 1) as route_id,
+             (SELECT id FROM search_families sf WHERE sf.campaign_id = c.id ORDER BY sf.id DESC LIMIT 1) as family_id
       FROM campaigns c
     `);
     res.json(rows);
@@ -491,6 +492,29 @@ app.delete('/api/campaigns/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting campaign:', error);
     res.status(500).json({ error: 'Failed to delete campaign' });
+  }
+});
+
+// API: Delete a campaign's route corridor to return to single location mode
+app.delete('/api/campaigns/:id/route', async (req, res) => {
+  try {
+    const campaignId = req.params.id;
+    await run(
+      `DELETE FROM listing_route_geo WHERE route_search_id IN
+         (SELECT id FROM route_searches WHERE campaign_id = ?)`,
+      [campaignId]
+    ).catch(() => {});
+    await run(
+      `DELETE FROM route_search_circles WHERE route_search_id IN
+         (SELECT id FROM route_searches WHERE campaign_id = ?)`,
+      [campaignId]
+    ).catch(() => {});
+    await run('DELETE FROM route_searches WHERE campaign_id = ?', [campaignId])
+      .catch(() => {});
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting campaign route:', error);
+    res.status(500).json({ error: 'Failed to delete campaign route' });
   }
 });
 

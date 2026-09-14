@@ -168,12 +168,25 @@ def walk(driver, base, out_dir, width, height):
     for campaign in campaigns:
         identifier = campaign.get("id")
         has_route = bool(campaign.get("route_id"))
+        has_family = bool(campaign.get("family_id"))
 
         driver.get(f"{base}/#edit?campaignId={identifier}")
         time.sleep(2)
         shoot(driver, out_dir, f"03-campaign-{identifier}")
 
-        if has_route:
+        if has_family:
+            try:
+                for btn in driver.find_elements(By.CSS_SELECTOR, "button"):
+                    txt = (btn.text or "").lower()
+                    if "route" in txt or "standort" in txt or "search area" in txt:
+                        driver.execute_script("arguments[0].click();", btn)
+                        time.sleep(1)
+                        shoot(driver, out_dir, f"03b-geometry-settings-{identifier}")
+                        break
+            except Exception as error:
+                print(f"  ! could not open geometry settings: {error}")
+
+        if has_route or has_family:
             # Also capture the corridor dashboard view
             driver.get(f"{base}/#dashboard?campaignId={identifier}")
             time.sleep(2)
