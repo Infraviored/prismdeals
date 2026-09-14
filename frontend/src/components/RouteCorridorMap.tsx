@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Polyline, Circle, Marker, Popup, useMap } from
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useTranslation } from '../hooks/useTranslation';
+import type { MatchedTerm } from '../types';
 
 export interface RouteCircle {
   lat: number | null;
@@ -29,6 +30,7 @@ export interface RouteListingGeo {
   niceness_score: number | null;
   llm_processed?: boolean;
   images: string[];
+  matched_terms?: MatchedTerm[];
 }
 
 interface RouteCorridorMapProps {
