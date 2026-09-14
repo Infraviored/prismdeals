@@ -106,6 +106,77 @@ def save_plan(
     return route_id, conflicts
 
 
+def _register_search(cursor, label, url, campaign_id, knowledge_set_id, display_label):
+    conflicts = []
+    existing = cursor.execute(
+        "SELECT id, campaign_id, knowledge_set_id, enabled FROM searches WHERE url = ?",
+        (url,),
+    ).fetchone()
+
+    search_id = None
+    if existing is None:
+        try:
+            cursor.execute(
+                "INSERT INTO searches (campaign_id, name, url, enabled, "
+                "knowledge_set_id) VALUES (?, ?, ?, 1, ?)",
+                (campaign_id, label, url, knowledge_set_id),
+            )
+            search_id = cursor.lastrowid
+        except sqlite3.IntegrityError:
+            # Someone inserted this url between the SELECT above and here.
+            # `searches.url` is unique, so the row that won is the row this
+            # circle has to use — the same outcome as finding it in the
+            # first place, reached a moment later.
+            logger.info(
+                "Search for %s was created concurrently; using that row.",
+                url,
+            )
+            existing = cursor.execute(
+                "SELECT id, campaign_id, knowledge_set_id, enabled FROM "
+                "searches WHERE url = ?",
+                (url,),
+            ).fetchone()
+            if existing is None:
+                logger.warning(
+                    "Could not register or find a search for %s; this circle "
+                    "is not part of the route.",
+                    url,
+                )
+                return None, conflicts
+            search_id = existing[0]
+
+    if existing is not None:
+        search_id, existing_campaign, existing_set, enabled = existing
+        mismatch = []
+        if knowledge_set_id is not None and existing_set != knowledge_set_id:
+            mismatch.append(
+                f"knowledge set {existing_set} instead of {knowledge_set_id}"
+            )
+        if campaign_id is not None and existing_campaign != campaign_id:
+            mismatch.append(f"campaign {existing_campaign} instead of {campaign_id}")
+        if not enabled:
+            mismatch.append("disabled")
+
+        if mismatch:
+            conflicts.append(
+                {
+                    "url": url,
+                    "search_id": search_id,
+                    "label": display_label,
+                    "reasons": mismatch,
+                }
+            )
+            logger.warning(
+                "Circle %s reuses existing search %s, which is %s. Its "
+                "listings will not be scored the way this route expects.",
+                display_label,
+                search_id,
+                " and ".join(mismatch),
+            )
+
+    return search_id, conflicts
+
+
 def attach_circles(
     conn,
     route_search_id,
@@ -125,98 +196,70 @@ def attach_circles(
     Returns the conflicts: circles that had to reuse a row meaning something
     else.
     """
+    import family_store
+
     cursor = conn.cursor()
     conflicts = []
-    for index, circle in enumerate(plan.circles, 1):
+    affected_search_ids = set()
+
+    row = cursor.execute(
+        "SELECT base_url, family_id FROM route_searches WHERE id = ?",
+        (route_search_id,),
+    ).fetchone()
+    if row:
+        base_url, family_id = row[0], row[1]
+    else:
+        base_url = plan.circles[0].url if plan.circles else ""
+        family_id = None
+
+    if family_id:
+        terms = cursor.execute(
+            "SELECT id, term, label FROM search_family_terms WHERE family_id = ? AND enabled = 1 ORDER BY position, id",
+            (family_id,),
+        ).fetchall()
+    else:
+        terms = None
+
+    base_expanded = list(family_store.expand(base_url, None, circles=plan.circles))
+
+    for index, (circle, (term_id, url, _)) in enumerate(
+        zip(plan.circles, base_expanded), 1
+    ):
+        circle.url = url
         label = f"{name or destination} · {index}/{len(plan.circles)} {circle.label}"
-
-        existing = cursor.execute(
-            "SELECT id, campaign_id, knowledge_set_id, enabled FROM searches "
-            "WHERE url = ?",
-            (circle.url,),
-        ).fetchone()
-
-        if existing is None:
-            try:
-                cursor.execute(
-                    "INSERT INTO searches (campaign_id, name, url, enabled, "
-                    "knowledge_set_id) VALUES (?, ?, ?, 1, ?)",
-                    (campaign_id, label, circle.url, knowledge_set_id),
-                )
-                search_id = cursor.lastrowid
-            except sqlite3.IntegrityError:
-                # Someone inserted this url between the SELECT above and here.
-                # `searches.url` is unique, so the row that won is the row this
-                # circle has to use — the same outcome as finding it in the
-                # first place, reached a moment later.
-                logger.info(
-                    "Search for %s was created concurrently; using that row.",
-                    circle.url,
-                )
-                existing = cursor.execute(
-                    "SELECT id, campaign_id, knowledge_set_id, enabled FROM "
-                    "searches WHERE url = ?",
-                    (circle.url,),
-                ).fetchone()
-                if existing is None:
-                    logger.warning(
-                        "Could not register or find a search for %s; this circle "
-                        "is not part of the route.",
-                        circle.url,
-                    )
-                    continue
-
-        if existing is not None:
-            # `searches.url` is unique, so a corridor crossing a town another
-            # search already covers has to reuse that row. Reuse is only safe
-            # when the row means the same thing: a search bound to a different
-            # knowledge set would score wardrobes with laptop criteria, and a
-            # disabled one would never be scraped at all. Silently accepting
-            # either was the original mistake — the circle is now recorded, and
-            # the mismatch reported, rather than pretending it was registered.
-            search_id, existing_campaign, existing_set, enabled = existing
-            mismatch = []
-            if knowledge_set_id is not None and existing_set != knowledge_set_id:
-                mismatch.append(
-                    f"knowledge set {existing_set} instead of {knowledge_set_id}"
-                )
-            if campaign_id is not None and existing_campaign != campaign_id:
-                mismatch.append(
-                    f"campaign {existing_campaign} instead of {campaign_id}"
-                )
-            if not enabled:
-                mismatch.append("disabled")
-
-            if mismatch:
-                conflicts.append(
-                    {
-                        "url": circle.url,
-                        "search_id": search_id,
-                        "label": circle.label,
-                        "reasons": mismatch,
-                    }
-                )
-                logger.warning(
-                    "Circle %s reuses existing search %s, which is %s. Its "
-                    "listings will not be scored the way this route expects.",
-                    circle.label,
-                    search_id,
-                    " and ".join(mismatch),
-                )
-
-        cursor.execute(
-            "INSERT OR REPLACE INTO route_search_circles "
-            "(route_search_id, search_id, location_id, label, radius_km) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (
-                route_search_id,
-                search_id,
-                circle.location_id,
-                circle.label,
-                circle.radius_km,
-            ),
+        search_id, c_conflicts = _register_search(
+            cursor, label, url, campaign_id, knowledge_set_id, circle.label
         )
+        conflicts.extend(c_conflicts)
+        if search_id is not None:
+            cursor.execute(
+                "INSERT OR REPLACE INTO route_search_circles "
+                "(route_search_id, search_id, location_id, label, radius_km, family_id) "
+                "VALUES (?, ?, ?, ?, ?, NULL)",
+                (
+                    route_search_id,
+                    search_id,
+                    circle.location_id,
+                    circle.label,
+                    circle.radius_km,
+                ),
+            )
+            affected_search_ids.add(search_id)
 
+    if family_id and terms:
+        t_conflicts = family_store.attach_terms(
+            conn,
+            family_id,
+            terms,
+            circles=plan.circles,
+            campaign_id=campaign_id,
+            knowledge_set_id=knowledge_set_id,
+            route_search_id=route_search_id,
+            cursor=cursor,
+        )
+        conflicts.extend(t_conflicts)
+
+    family_store.recompute_enabled(conn, affected_search_ids, cursor=cursor)
     return conflicts
 
 
@@ -426,15 +469,8 @@ def replace_circles(
 def retire_searches(conn, urls, keep_route_id=None):
     """Switches off searches that no route covers any more.
 
-    Deleting the circle rows was not enough: the search behind a dropped circle
-    kept `enabled = 1` and its campaign, so the scraper went on fetching it every
-    run and its listings went on arriving. Narrowing a corridor to cut the load
-    against a site that rate-limits therefore cut nothing, and repeated redraws
-    piled up searches nobody had asked for.
-
-    Disabled rather than deleted: the listings already found through it are real
-    and stay reachable in the campaign. Only searches no other route still uses
-    are touched.
+    A dropped corridor circle is switched off unless another route circle
+    or active search family still owns it.
     """
     retired = 0
     for url in urls:
@@ -447,6 +483,18 @@ def retire_searches(conn, urls, keep_route_id=None):
             (search_id,),
         ).fetchone()
         if still_used:
+            continue
+        still_family = conn.execute(
+            """
+            SELECT 1 FROM search_family_searches sfs
+            JOIN search_families f ON f.id = sfs.family_id
+            JOIN search_family_terms t ON t.id = sfs.term_id
+            WHERE sfs.search_id = ? AND f.enabled = 1 AND t.enabled = 1
+            LIMIT 1
+            """,
+            (search_id,),
+        ).fetchone()
+        if still_family:
             continue
         conn.execute("UPDATE searches SET enabled = 0 WHERE id = ?", (search_id,))
         retired += 1

@@ -1,5 +1,6 @@
 import os
 import sys
+import datetime
 import db_schema
 import json
 import sqlite3
@@ -48,7 +49,7 @@ DB_PATH = db_schema.default_path()
 
 
 def get_db_connection():
-    return sqlite3.connect(DB_PATH)
+    return db_schema.connect(DB_PATH)
 
 
 def annotate_route_detours(conn, campaign_id=None):
@@ -194,6 +195,105 @@ def run_route_mode(args):
     )
 
 
+def run_family_mode(args):
+    """Handles search family preview, creation, updates, and deletion."""
+    import family_store
+
+    conn = get_db_connection()
+
+    if args.mode == "family-preview":
+        if not args.urls:
+            print("__FAMILY_PREVIEW_ERROR__:Missing base URL")
+            return
+        base_url = args.urls[0]
+        terms = []
+        if args.payload_json:
+            try:
+                payload = json.loads(args.payload_json)
+                terms = payload.get("terms", [])
+            except Exception as e:
+                print(f"__FAMILY_PREVIEW_ERROR__:Invalid payload: {e}")
+                return
+
+        try:
+            preview = family_store.preview_family(
+                conn,
+                base_url,
+                terms,
+                route_search_id=args.route_id,
+                campaign_id=args.campaign_id,
+                knowledge_set_id=args.knowledge_set_id,
+            )
+            print("__FAMILY_PREVIEW__:" + json.dumps(preview))
+        except Exception as e:
+            print(f"__FAMILY_PREVIEW_ERROR__:{e}")
+        return
+
+    if args.mode == "family-create":
+        if not args.payload_json:
+            print("__FAMILY_CREATE_ERROR__:Missing payload")
+            return
+        try:
+            payload = json.loads(args.payload_json)
+            name = payload.get("name")
+            base_url = payload.get("base_url")
+            terms = payload.get("terms", [])
+            campaign_id = payload.get("campaign_id")
+            knowledge_set_id = payload.get("knowledge_set_id")
+            route_search_id = payload.get("route_search_id")
+            fid, count, conflicts = family_store.save_family(
+                conn,
+                name=name,
+                base_url=base_url,
+                terms=terms,
+                campaign_id=campaign_id,
+                knowledge_set_id=knowledge_set_id,
+                route_search_id=route_search_id,
+            )
+            print(
+                "__FAMILY_CREATED__:"
+                + json.dumps(
+                    {
+                        "id": fid,
+                        "searches": count,
+                        "conflicts": conflicts,
+                    }
+                )
+            )
+        except Exception as e:
+            print(f"__FAMILY_CREATE_ERROR__:{e}")
+        return
+
+    if args.mode == "family-update":
+        if not args.family_id or not args.payload_json:
+            print("__FAMILY_UPDATE_ERROR__:Missing family id or payload")
+            return
+        try:
+            payload = json.loads(args.payload_json)
+            res = family_store.update_family(
+                conn,
+                args.family_id,
+                name=payload.get("name"),
+                enabled=payload.get("enabled"),
+                terms=payload.get("terms"),
+            )
+            print("__FAMILY_UPDATED__:" + json.dumps(res))
+        except Exception as e:
+            print(f"__FAMILY_UPDATE_ERROR__:{e}")
+        return
+
+    if args.mode == "family-delete":
+        if not args.family_id:
+            print("__FAMILY_DELETE_ERROR__:Missing family id")
+            return
+        try:
+            family_store.delete_family(conn, args.family_id)
+            print("__FAMILY_DELETED__:" + json.dumps({"success": True}))
+        except Exception as e:
+            print(f"__FAMILY_DELETE_ERROR__:{e}")
+        return
+
+
 def _thin(points, limit):
     """Every nth point, keeping both ends. A map draws the shape, not the kerb."""
     if len(points) <= limit:
@@ -222,13 +322,19 @@ def main():
             "route-replan",
             "route-create",
             "route-annotate",
+            "family-preview",
+            "family-create",
+            "family-update",
+            "family-delete",
         ],
         default="both",
         help=(
             "Operation mode: scrape, process, both, preview, update-all, "
-            "route-preview, route-replan, route-create, or route-annotate"
+            "route-preview, route-replan, route-create, route-annotate, "
+            "family-preview, family-create, family-update, or family-delete"
         ),
     )
+
     parser.add_argument(
         "--urls",
         nargs="+",
@@ -307,6 +413,24 @@ def main():
         help="Label for this route search",
     )
 
+    # --- search families ------------------------------------------------
+    family = parser.add_argument_group(
+        "search families",
+        "Manage search families: multi-model search expansion, shared search row ownership, "
+        "and preview calculation.",
+    )
+    family.add_argument(
+        "--family-id",
+        type=int,
+        default=None,
+        help="Search family ID for update or delete operations",
+    )
+    family.add_argument(
+        "--payload-json",
+        default=None,
+        help="JSON payload for family operations (terms, configuration)",
+    )
+
     args = parser.parse_args()
 
     if args.mode in (
@@ -316,6 +440,15 @@ def main():
         "route-annotate",
     ):
         run_route_mode(args)
+        return
+
+    if args.mode in (
+        "family-preview",
+        "family-create",
+        "family-update",
+        "family-delete",
+    ):
+        run_family_mode(args)
         return
 
     if args.mode == "preview":
@@ -436,7 +569,23 @@ def main():
                                 search_id,
                             ),
                         )
+                        if search_id is not None:
+                            cursor.execute(
+                                """
+                                INSERT OR IGNORE INTO listing_search_hits (
+                                    listing_id, search_id, first_seen_at
+                                ) VALUES (?, ?, ?)
+                            """,
+                                (
+                                    listing_id,
+                                    search_id,
+                                    datetime.datetime.now(
+                                        datetime.timezone.utc
+                                    ).isoformat(),
+                                ),
+                            )
                     conn.commit()
+
             except Exception as e:
                 logger.error(f"Error scraping or importing URL {url}: {str(e)}")
 

@@ -29,11 +29,10 @@ inflate the whole corridor.
 import json
 import logging
 import math
-import re
-import urllib.parse
 
 import corridor
 import geo
+from search_url import TAIL_RE, parse_tail, with_location  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -51,55 +50,6 @@ BROWSER_HEADERS = {
 # Three, because the failure it guards against is one unrecognised village, not a
 # region the platform does not know at all — and each attempt is a lookup.
 POSTAL_FALLBACK_CANDIDATES = 3
-
-# k<keyword flag> c<category> l<location> r<radius>, any of the last three absent.
-TAIL_RE = re.compile(r"(k\d+)(c\d+)?(l\d+)?(r\d+)?$")
-
-
-def parse_tail(url):
-    """Returns the (keyword, category, location, radius) parts, or None.
-
-    A URL whose final segment does not carry this grammar is not a search we can
-    re-aim, and saying so is better than emitting a plausible URL that quietly
-    searches the wrong place.
-    """
-    path = urllib.parse.urlsplit(url).path.rstrip("/")
-    last = path.rsplit("/", 1)[-1]
-    match = TAIL_RE.fullmatch(last)
-    if not match:
-        return None
-    keyword, category, location, radius = match.groups()
-    return {
-        "keyword": keyword,
-        "category": category,
-        "location": location,
-        "radius": int(radius[1:]) if radius else None,
-    }
-
-
-def with_location(url, location_id, radius_km):
-    """Re-aims a search URL at another location and radius.
-
-    Everything before the final segment is left byte-for-byte alone.
-    """
-    parts = parse_tail(url)
-    if parts is None:
-        raise ValueError(
-            f"Not a re-aimable search URL: {url!r} — its last path segment must "
-            f"look like k0c278l6411r25"
-        )
-
-    location = str(location_id)
-    if not location.startswith("l"):
-        location = "l" + location.lstrip("_")
-
-    radius = max(1, int(round(radius_km)))
-    tail = f"{parts['keyword']}{parts['category'] or ''}{location}r{radius}"
-
-    split = urllib.parse.urlsplit(url)
-    path = split.path.rstrip("/")
-    new_path = path.rsplit("/", 1)[0] + "/" + tail
-    return urllib.parse.urlunsplit(split._replace(path=new_path))
 
 
 def default_suggest_fetcher(timeout=10):
