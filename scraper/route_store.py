@@ -217,6 +217,8 @@ def attach_circles(
             "SELECT id, term, label FROM search_family_terms WHERE family_id = ? AND enabled = 1 ORDER BY position, id",
             (family_id,),
         ).fetchall()
+        if not terms:
+            return []
     else:
         terms = None
 
@@ -249,7 +251,12 @@ def attach_circles(
                 )
                 affected_search_ids.add(search_id)
     else:
-        for term_id, url, exp_label in expanded:
+        for item in expanded:
+            term_id, url, exp_label = item
+            c_info = getattr(item, "circle", None) or {}
+            loc_id = c_info.get("location_id")
+            c_rad = c_info.get("radius_km")
+            c_lbl = c_info.get("label") or exp_label
             label = f"{name or destination} · {exp_label}"
             search_id, c_conflicts = _register_search(
                 cursor, label, url, campaign_id, knowledge_set_id, exp_label
@@ -263,16 +270,17 @@ def attach_circles(
                     (
                         route_search_id,
                         search_id,
-                        None,
-                        label,
-                        None,
+                        loc_id,
+                        c_lbl,
+                        c_rad,
                     ),
                 )
-                cursor.execute(
-                    "INSERT OR IGNORE INTO search_family_searches (family_id, term_id, search_id) "
-                    "VALUES (?, ?, ?)",
-                    (family_id, term_id, search_id),
-                )
+                if term_id is not None:
+                    cursor.execute(
+                        "INSERT OR IGNORE INTO search_family_searches (family_id, term_id, search_id) "
+                        "VALUES (?, ?, ?)",
+                        (family_id, term_id, search_id),
+                    )
                 affected_search_ids.add(search_id)
 
     family_store.recompute_enabled(conn, affected_search_ids, cursor=cursor)

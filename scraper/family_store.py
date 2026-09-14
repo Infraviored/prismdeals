@@ -43,6 +43,19 @@ def _now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+class ExpandedSearch(tuple):
+    """3-tuple (term_id, url, label) extended with term string and circle metadata."""
+
+    def __new__(cls, term_id, url, label, term=None, circle=None):
+        obj = super().__new__(cls, (term_id, url, label))
+        obj.term_id = term_id
+        obj.url = url
+        obj.label = label
+        obj.term = term
+        obj.circle = circle
+        return obj
+
+
 def expand(base_url, terms=None, circles=None):
     """Computes the Cartesian product of search terms and locations without side effects.
 
@@ -50,36 +63,36 @@ def expand(base_url, terms=None, circles=None):
     - A route without a family: [base_url query] × circles -> N searches
     - Both: terms × circles -> N × M searches
 
-    Yields tuples of: (term_id, url, label)
+    Yields ExpandedSearch tuples of: (term_id, url, label) with .term and .circle attributes.
     """
-    # 1. Normalize terms into (term_id, term_slug, term_label)
+    # 1. Normalize terms into (term_id, term_slug, term_label, orig_term)
     if terms is None or len(terms) == 0:
-        terms_list = [(None, None, None)]
+        terms_list = [(None, None, None, None)]
     else:
         terms_list = []
         for t in terms:
             if isinstance(t, str):
-                terms_list.append((None, slugify(t), t.strip()))
+                terms_list.append((None, slugify(t), t.strip(), t.strip()))
             elif isinstance(t, dict):
                 tid = t.get("id")
                 raw_term = t.get("term", "")
                 slug = slugify(raw_term)
                 label = t.get("label") or raw_term
-                terms_list.append((tid, slug, label))
+                terms_list.append((tid, slug, label, raw_term))
             elif isinstance(t, (tuple, list)):
                 # (id, term, label) or (term, label)
                 if len(t) >= 3:
-                    terms_list.append((t[0], slugify(t[1]), t[2] or t[1]))
+                    terms_list.append((t[0], slugify(t[1]), t[2] or t[1], t[1]))
                 elif len(t) == 2:
-                    terms_list.append((None, slugify(t[0]), t[1] or t[0]))
+                    terms_list.append((None, slugify(t[0]), t[1] or t[0], t[0]))
                 else:
-                    terms_list.append((None, slugify(t[0]), t[0]))
+                    terms_list.append((None, slugify(t[0]), t[0], t[0]))
             else:
                 tid = getattr(t, "id", None)
                 raw_term = getattr(t, "term", "")
                 slug = slugify(raw_term)
                 label = getattr(t, "label", None) or raw_term
-                terms_list.append((tid, slug, label))
+                terms_list.append((tid, slug, label, raw_term))
 
     # 2. Normalize circles
     if circles is None or len(circles) == 0:
@@ -88,13 +101,14 @@ def expand(base_url, terms=None, circles=None):
         circles_list = list(circles)
 
     # 3. Cross-product
-    for term_id, term_slug, term_label in terms_list:
+    for term_id, term_slug, term_label, orig_term in terms_list:
         if term_slug is not None:
             query_url = with_query(base_url, term_slug)
         else:
             query_url = base_url
 
         for circle in circles_list:
+            circle_obj = None
             if circle is not None:
                 if hasattr(circle, "location_id"):
                     loc_id = circle.location_id
@@ -113,6 +127,11 @@ def expand(base_url, terms=None, circles=None):
                     )
 
                 final_url = with_location(query_url, loc_id, radius)
+                circle_obj = {
+                    "location_id": loc_id,
+                    "radius_km": radius,
+                    "label": c_label,
+                }
             else:
                 final_url = query_url
                 c_label = None
@@ -126,7 +145,10 @@ def expand(base_url, terms=None, circles=None):
             else:
                 label = final_url
 
-            yield (term_id, final_url, label)
+            display_term = orig_term or term_label or term_slug
+            yield ExpandedSearch(
+                term_id, final_url, label, term=display_term, circle=circle_obj
+            )
 
 
 def recompute_enabled(conn, search_ids, cursor=None):
@@ -139,8 +161,8 @@ def recompute_enabled(conn, search_ids, cursor=None):
 
     Owners are:
     1. search_family_searches: active when both the family and the term are enabled.
-    2. route_search_circles: active when the route has no family (family_id IS NULL)
-       or when its family is enabled.
+    2. route_search_circles: active when the route has no family (r.family_id IS NULL).
+       When a route has a family, active ownership is tracked via search_family_searches.
     """
     if not search_ids:
         return {}
@@ -170,15 +192,15 @@ def recompute_enabled(conn, search_ids, cursor=None):
     ).fetchall()
     family_counts = {row[0]: (row[1], row[2] or 0) for row in family_rows}
 
-    # 2. Route owners
+    # 2. Route owners: only routes without a family represent independent route owners.
+    # When a route has a family, active ownership is tracked via search_family_searches.
     route_rows = cursor.execute(
         f"""
         SELECT rsc.search_id,
                COUNT(*) AS total,
-               SUM(CASE WHEN r.family_id IS NULL OR f.enabled = 1 THEN 1 ELSE 0 END) AS active
+               SUM(CASE WHEN r.family_id IS NULL THEN 1 ELSE 0 END) AS active
         FROM route_search_circles rsc
         JOIN route_searches r ON r.id = rsc.route_search_id
-        LEFT JOIN search_families f ON f.id = r.family_id
         WHERE rsc.search_id IN ({placeholders})
         GROUP BY rsc.search_id
         """,
@@ -233,26 +255,14 @@ def preview_family(
     new_searches = 0
     reused_searches = 0
 
-    # Build map for looking up original term string by slug
-    term_strings = {}
-    for t in terms:
-        if isinstance(t, str):
-            term_strings[slugify(t)] = t
-        elif isinstance(t, dict):
-            term_strings[slugify(t.get("term", ""))] = t.get("term", "")
-
-    for term_id, url, label in expanded:
+    for item in expanded:
+        term_id, url, label = item
         existing = cursor.execute(
             "SELECT id, campaign_id, knowledge_set_id, enabled FROM searches WHERE url = ?",
             (url,),
         ).fetchone()
 
-        # Find matching term string
-        term_val = label
-        for s, orig in term_strings.items():
-            if s in url:
-                term_val = orig
-                break
+        term_val = item.term or label
 
         if existing is not None:
             reused_searches += 1
@@ -335,7 +345,8 @@ def attach_terms(
     conflicts = []
     affected_search_ids = set()
 
-    for term_id, url, label in expanded:
+    for item in expanded:
+        term_id, url, label = item
         existing = cursor.execute(
             "SELECT id, campaign_id, knowledge_set_id, enabled FROM searches WHERE url = ?",
             (url,),
@@ -384,13 +395,19 @@ def attach_terms(
                 (family_id, term_id, search_id),
             )
 
-        if route_search_id is not None and circles is not None:
-            # Also record in route_search_circles if not present
+        if route_search_id is not None and getattr(item, "circle", None) is not None:
+            c_info = item.circle
             cursor.execute(
-                "INSERT OR IGNORE INTO route_search_circles "
+                "INSERT OR REPLACE INTO route_search_circles "
                 "(route_search_id, search_id, location_id, label, radius_km) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (route_search_id, search_id, None, label, None),
+                (
+                    route_search_id,
+                    search_id,
+                    c_info.get("location_id"),
+                    c_info.get("label") or label,
+                    c_info.get("radius_km"),
+                ),
             )
 
         affected_search_ids.add(search_id)
@@ -537,17 +554,44 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None):
 
             if tid and tid in existing_by_id:
                 kept_term_ids.add(tid)
-                # Update term details
-                cursor.execute(
-                    "UPDATE search_family_terms SET term = ?, label = ?, enabled = ?, position = ? WHERE id = ?",
-                    (slug, lbl, en, pos, tid),
-                )
-                # Find its searches to recompute enabled
-                for (sid,) in cursor.execute(
-                    "SELECT search_id FROM search_family_searches WHERE family_id = ? AND term_id = ?",
-                    (family_id, tid),
-                ).fetchall():
-                    affected_search_ids.add(sid)
+                old_slug = existing_by_id[tid][1]
+                slug_changed = slug != old_slug
+
+                if slug_changed:
+                    # Term keyword changed: detach old searches and attach new ones
+                    old_sids = [
+                        s[0]
+                        for s in cursor.execute(
+                            "SELECT search_id FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+                            (family_id, tid),
+                        ).fetchall()
+                    ]
+                    affected_search_ids.update(old_sids)
+                    cursor.execute(
+                        "DELETE FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+                        (family_id, tid),
+                    )
+                    if route_search_id and old_sids:
+                        placeholders = ",".join("?" for _ in old_sids)
+                        cursor.execute(
+                            f"DELETE FROM route_search_circles WHERE route_search_id = ? AND search_id IN ({placeholders})",
+                            (route_search_id, *old_sids),
+                        )
+                    cursor.execute(
+                        "UPDATE search_family_terms SET term = ?, label = ?, enabled = ?, position = ? WHERE id = ?",
+                        (slug, lbl, en, pos, tid),
+                    )
+                    new_terms_to_attach.append({"id": tid, "term": slug, "label": lbl})
+                else:
+                    cursor.execute(
+                        "UPDATE search_family_terms SET term = ?, label = ?, enabled = ?, position = ? WHERE id = ?",
+                        (slug, lbl, en, pos, tid),
+                    )
+                    for (sid,) in cursor.execute(
+                        "SELECT search_id FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+                        (family_id, tid),
+                    ).fetchall():
+                        affected_search_ids.add(sid)
             else:
                 cursor.execute(
                     "INSERT INTO search_family_terms (family_id, term, label, enabled, position) "
@@ -573,6 +617,12 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None):
                     "DELETE FROM search_family_searches WHERE family_id = ? AND term_id = ?",
                     (family_id, tid),
                 )
+                if route_search_id and sids:
+                    placeholders = ",".join("?" for _ in sids)
+                    cursor.execute(
+                        f"DELETE FROM route_search_circles WHERE route_search_id = ? AND search_id IN ({placeholders})",
+                        (route_search_id, *sids),
+                    )
                 cursor.execute("DELETE FROM search_family_terms WHERE id = ?", (tid,))
                 removed_count += 1
 
@@ -625,6 +675,18 @@ def delete_family(conn, family_id):
             (family_id,),
         ).fetchall()
     ]
+
+    # Clean up multiplied searches from route_search_circles for any route attached to this family
+    route_rows = cursor.execute(
+        "SELECT id FROM route_searches WHERE family_id = ?", (family_id,)
+    ).fetchall()
+    for (rid,) in route_rows:
+        if affected_searches:
+            placeholders = ",".join("?" for _ in affected_searches)
+            cursor.execute(
+                f"DELETE FROM route_search_circles WHERE route_search_id = ? AND search_id IN ({placeholders})",
+                (rid, *affected_searches),
+            )
 
     cursor.execute(
         "DELETE FROM search_family_searches WHERE family_id = ?", (family_id,)

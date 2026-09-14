@@ -86,3 +86,10 @@ def test_broken_urls_and_empty_terms_are_refused():
 
     with pytest.raises(ValueError, match="empty search term"):
         search_url.with_query(MATRATZE, "   ")
+
+
+def test_with_query_replaces_term_starting_with_s_dash():
+    """Model names starting with s- (e.g. s-pen, s-line, s-works) are terms, not root slugs."""
+    s_pen_url = "https://www.kleinanzeigen.de/s-muenchen/s-pen/k0l6411"
+    rewritten = search_url.with_query(s_pen_url, "apple-pencil")
+    assert rewritten == "https://www.kleinanzeigen.de/s-muenchen/apple-pencil/k0l6411"

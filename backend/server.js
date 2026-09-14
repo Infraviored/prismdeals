@@ -1355,24 +1355,29 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
 
     if (listings.length > 0) {
       const listingIds = listings.map(l => l.id);
-      const placeholders = listingIds.map(() => '?').join(',');
-      const termsRows = await query(
-        `SELECT DISTINCT lsh.listing_id, t.id AS term_id, COALESCE(t.label, t.term) AS label
-           FROM search_family_searches sfs
-           JOIN search_family_terms t ON t.id = sfs.term_id
-           JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-          WHERE sfs.family_id = ? AND lsh.listing_id IN (${placeholders})
-          ORDER BY t.position ASC, t.id ASC`,
-        [fam.id, ...listingIds]
-      );
-
       const termsByListing = {};
-      for (const tr of termsRows) {
-        if (!termsByListing[tr.listing_id]) termsByListing[tr.listing_id] = [];
-        termsByListing[tr.listing_id].push({
-          id: tr.term_id,
-          label: tr.label
-        });
+      const CHUNK_SIZE = 500;
+
+      for (let i = 0; i < listingIds.length; i += CHUNK_SIZE) {
+        const chunk = listingIds.slice(i, i + CHUNK_SIZE);
+        const placeholders = chunk.map(() => '?').join(',');
+        const termsRows = await query(
+          `SELECT DISTINCT lsh.listing_id, t.id AS term_id, COALESCE(t.label, t.term) AS label
+             FROM search_family_searches sfs
+             JOIN search_family_terms t ON t.id = sfs.term_id
+             JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+            WHERE sfs.family_id = ? AND lsh.listing_id IN (${placeholders})
+            ORDER BY t.position ASC, t.id ASC`,
+          [fam.id, ...chunk]
+        );
+
+        for (const tr of termsRows) {
+          if (!termsByListing[tr.listing_id]) termsByListing[tr.listing_id] = [];
+          termsByListing[tr.listing_id].push({
+            id: tr.term_id,
+            label: tr.label
+          });
+        }
       }
 
       for (const l of listings) {

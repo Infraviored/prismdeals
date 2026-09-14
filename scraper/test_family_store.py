@@ -259,3 +259,184 @@ def test_listing_search_hits_records_all_matches_without_overwriting_search_id(c
     assert len(hits) == 2
     assert hits[0] == (1, now1)
     assert hits[1] == (2, now2)
+
+
+def test_route_replan_with_all_disabled_terms(conn):
+    """Finding 1: Route replan with all disabled terms must not crash on NOT NULL term_id."""
+    import route_store
+
+    cursor = conn.cursor()
+    fam_id, _, _ = family_store.save_family(
+        conn,
+        name="Printers",
+        base_url=MATRATZE,
+        terms=[{"term": "MFC-L2740DW", "enabled": 0}],
+    )
+    cursor.execute(
+        "INSERT INTO route_searches (name, base_url, origin, destination, radius_km, half_width_km, plan_json, created_at, family_id) "
+        "VALUES ('Test Route', ?, 'A', 'B', 20, 10, '{}', '2026-09-14T20:00:00Z', ?)",
+        (MATRATZE, fam_id),
+    )
+    route_id = cursor.lastrowid
+
+    class DummyPlan:
+        circles = [DummyCircle("7091", 20, "Landsberg")]
+
+    conflicts = route_store.attach_circles(conn, route_id, DummyPlan())
+    assert conflicts == []
+
+
+def test_term_keyword_update_reattaches_searches(conn):
+    """Finding 2: Updating term keyword text must detach old search and attach new search."""
+    cursor = conn.cursor()
+    fam_id, count, _ = family_store.save_family(
+        conn,
+        name="Printers",
+        base_url=MATRATZE,
+        terms=[{"term": "MFC-L2740DW", "label": "Model 2740"}],
+    )
+    term_row = cursor.execute(
+        "SELECT id, term FROM search_family_terms WHERE family_id = ?", (fam_id,)
+    ).fetchone()
+    term_id = term_row[0]
+    old_sid = cursor.execute(
+        "SELECT search_id FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+        (fam_id, term_id),
+    ).fetchone()[0]
+    old_url = cursor.execute(
+        "SELECT url FROM searches WHERE id = ?", (old_sid,)
+    ).fetchone()[0]
+    assert "mfc-l2740dw" in old_url
+
+    # Update term keyword to MFC-L2750DW
+    family_store.update_family(
+        conn,
+        fam_id,
+        terms=[{"id": term_id, "term": "MFC-L2750DW", "label": "Model 2750"}],
+    )
+
+    new_sid = cursor.execute(
+        "SELECT search_id FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+        (fam_id, term_id),
+    ).fetchone()[0]
+    new_url = cursor.execute(
+        "SELECT url FROM searches WHERE id = ?", (new_sid,)
+    ).fetchone()[0]
+    assert "mfc-l2750dw" in new_url
+    assert new_sid != old_sid
+
+    # Old search is no longer owned by this family
+    assert (
+        cursor.execute(
+            "SELECT 1 FROM search_family_searches WHERE search_id = ?", (old_sid,)
+        ).fetchone()
+        is None
+    )
+
+
+def test_disabled_term_on_route_family_disables_search(conn):
+    """Finding 3: Disabling a term on a route-attached family must disable its search row."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO route_searches (name, base_url, origin, destination, radius_km, half_width_km, plan_json, created_at) "
+        'VALUES (\'Route\', ?, \'A\', \'B\', 20, 10, \'{"circles": [{"location_id": "7091", "radius_km": 20, "label": "Landsberg"}]}\', \'2026-09-14T20:00:00Z\')',
+        (MATRATZE,),
+    )
+    route_id = cursor.lastrowid
+
+    fam_id, _, _ = family_store.save_family(
+        conn,
+        name="Route Family",
+        base_url=MATRATZE,
+        terms=[{"term": "Model A", "enabled": 1}, {"term": "Model B", "enabled": 1}],
+        route_search_id=route_id,
+    )
+
+    term_b_id = cursor.execute(
+        "SELECT id FROM search_family_terms WHERE family_id = ? AND term = 'model-b'",
+        (fam_id,),
+    ).fetchone()[0]
+    sid_b = cursor.execute(
+        "SELECT search_id FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+        (fam_id, term_b_id),
+    ).fetchone()[0]
+    assert (
+        cursor.execute(
+            "SELECT enabled FROM searches WHERE id = ?", (sid_b,)
+        ).fetchone()[0]
+        == 1
+    )
+
+    # Disable Model B
+    term_a_id = cursor.execute(
+        "SELECT id FROM search_family_terms WHERE family_id = ? AND term = 'model-a'",
+        (fam_id,),
+    ).fetchone()[0]
+    family_store.update_family(
+        conn,
+        fam_id,
+        terms=[
+            {"id": term_a_id, "term": "Model A", "enabled": 1},
+            {"id": term_b_id, "term": "Model B", "enabled": 0},
+        ],
+    )
+
+    # Search B must now be disabled (enabled = 0)
+    assert (
+        cursor.execute(
+            "SELECT enabled FROM searches WHERE id = ?", (sid_b,)
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_delete_family_cleans_up_route_circles(conn):
+    """Finding 4: Deleting a family cleans up its circles from route_search_circles."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO route_searches (name, base_url, origin, destination, radius_km, half_width_km, plan_json, created_at) "
+        'VALUES (\'Route\', ?, \'A\', \'B\', 20, 10, \'{"circles": [{"location_id": "7091", "radius_km": 20, "label": "Landsberg"}]}\', \'2026-09-14T20:00:00Z\')',
+        (MATRATZE,),
+    )
+    route_id = cursor.lastrowid
+
+    fam_id, _, _ = family_store.save_family(
+        conn,
+        name="Family with Route",
+        base_url=MATRATZE,
+        terms=["Model X"],
+        route_search_id=route_id,
+    )
+    assert (
+        cursor.execute(
+            "SELECT COUNT(*) FROM route_search_circles WHERE route_search_id = ?",
+            (route_id,),
+        ).fetchone()[0]
+        > 0
+    )
+
+    # Delete family
+    family_store.delete_family(conn, fam_id)
+
+    # Multiplied searches from this family are removed from route_search_circles
+    assert (
+        cursor.execute(
+            "SELECT COUNT(*) FROM route_search_circles WHERE route_search_id = ?",
+            (route_id,),
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_preview_distinguishes_prefix_terms(conn):
+    """Finding 7: Terms where one is a prefix of another are not confused in preview."""
+    terms = ["ThinkPad T14", "ThinkPad T14s"]
+    preview = family_store.preview_family(conn, LAPTOPS, terms)
+    t14s_url = next(u for u in preview["urls"] if "thinkpad-t14s" in u["url"])
+    assert t14s_url["term"] == "ThinkPad T14s"
+    t14_url = next(
+        u
+        for u in preview["urls"]
+        if "thinkpad-t14/" in u["url"] or "thinkpad-t14-" in u["url"]
+    )
+    assert t14_url["term"] == "ThinkPad T14"

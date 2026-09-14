@@ -115,7 +115,14 @@ def with_query(url, term):
         raise ValueError(f"URL path too short to rewrite: {url!r}")
 
     preceding = segments[-2]
-    if preceding.startswith("s-") or (":" in preceding):
+    # A term is inserted before the tail if the preceding segment is a filter (contains ':')
+    # or is the root location/category slug (the first path segment, which starts with 's-').
+    # Any subsequent segment, even if starting with 's-' (e.g. 's-pen', 's-line'), is an
+    # existing query term and must be replaced.
+    is_root_slug = (
+        len(segments) >= 2 and preceding == segments[1] and preceding.startswith("s-")
+    )
+    if is_root_slug or (":" in preceding):
         segments.insert(-1, slug)
     else:
         segments[-2] = slug
