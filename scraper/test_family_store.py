@@ -3,6 +3,8 @@ import pytest
 
 import db_schema
 import family_store
+import route_search
+import route_store
 import search_url
 
 
@@ -440,3 +442,122 @@ def test_preview_distinguishes_prefix_terms(conn):
         if "thinkpad-t14/" in u["url"] or "thinkpad-t14-" in u["url"]
     )
     assert t14_url["term"] == "ThinkPad T14"
+
+
+class MockRoute:
+    distance_km = 50.0
+    duration_min = 40
+    polyline = [(48.0, 11.0), (48.1, 11.5)]
+
+
+def test_route_preserves_circles_on_family_delete_and_term_removal(conn):
+    """A route with N circles whose family includes the route's original search term
+    retains exactly its original N circles with family_id IS NULL and enabled = 1
+    when a family term is removed or when the family is deleted.
+    """
+    cursor = conn.cursor()
+    circles = [
+        route_search.Circle(
+            centre=(48.0, 11.0),
+            postal_code="82266",
+            location_id="7091",
+            label="Inning",
+            snap_km=0.0,
+            radius_km=25.0,
+            url="https://www.kleinanzeigen.de/s-inning-am-ammersee/matratze-140x200/k0l7091r25",
+        ),
+        route_search.Circle(
+            centre=(48.1, 11.5),
+            postal_code="80331",
+            location_id="6411",
+            label="München",
+            snap_km=0.0,
+            radius_km=25.0,
+            url="https://www.kleinanzeigen.de/s-muenchen/matratze-140x200/k0l6411r25",
+        ),
+    ]
+    plan = route_search.RoutePlan(
+        route=MockRoute(),
+        circles=circles,
+        radius_km=25.0,
+        half_width_km=10.0,
+    )
+    route_id, _ = route_store.save_plan(
+        conn, plan, base_url=MATRATZE, origin="Inning", destination="München"
+    )
+
+    initial_circles = cursor.execute(
+        "SELECT search_id, location_id, label, radius_km, family_id "
+        "FROM route_search_circles WHERE route_search_id = ? ORDER BY search_id",
+        (route_id,),
+    ).fetchall()
+    assert len(initial_circles) == 2
+    for c in initial_circles:
+        assert c[4] is None  # family_id IS NULL
+
+    orig_sids = [c[0] for c in initial_circles]
+    for sid in orig_sids:
+        assert (
+            cursor.execute(
+                "SELECT enabled FROM searches WHERE id = ?", (sid,)
+            ).fetchone()[0]
+            == 1
+        )
+
+    # Attach family with terms including the route's original term ('matratze 140x200')
+    fam_id, _, _ = family_store.save_family(
+        conn,
+        name="Matratzen & Drucker",
+        base_url=MATRATZE,
+        terms=["matratze 140x200", "Brother MFC-L2740DW"],
+        route_search_id=route_id,
+    )
+
+    # Route now has 4 circles: 2 belonging to route (family_id NULL), 2 to family (family_id = fam_id)
+    after_save = cursor.execute(
+        "SELECT search_id, location_id, label, radius_km, family_id "
+        "FROM route_search_circles WHERE route_search_id = ? ORDER BY search_id",
+        (route_id,),
+    ).fetchall()
+    assert len(after_save) == 4
+    assert sum(1 for c in after_save if c[4] is None) == 2
+    assert sum(1 for c in after_save if c[4] == fam_id) == 2
+
+    # 1. Update family: remove route's original term 'matratze 140x200' from family
+    # The route's original 2 circles MUST remain untouched and enabled = 1
+    family_store.update_family(
+        conn,
+        fam_id,
+        terms=[{"term": "Brother MFC-L2740DW", "enabled": 1}],
+    )
+    after_term_removal = cursor.execute(
+        "SELECT search_id, location_id, label, radius_km, family_id "
+        "FROM route_search_circles WHERE route_search_id = ? ORDER BY search_id",
+        (route_id,),
+    ).fetchall()
+    for c in initial_circles:
+        assert c in after_term_removal
+    for sid in orig_sids:
+        assert (
+            cursor.execute(
+                "SELECT enabled FROM searches WHERE id = ?", (sid,)
+            ).fetchone()[0]
+            == 1
+        )
+
+    # 2. Delete family completely
+    # The route MUST retain exactly its original 2 circles and enabled = 1
+    family_store.delete_family(conn, fam_id)
+    final_circles = cursor.execute(
+        "SELECT search_id, location_id, label, radius_km, family_id "
+        "FROM route_search_circles WHERE route_search_id = ? ORDER BY search_id",
+        (route_id,),
+    ).fetchall()
+    assert final_circles == initial_circles
+    for sid in orig_sids:
+        assert (
+            cursor.execute(
+                "SELECT enabled FROM searches WHERE id = ?", (sid,)
+            ).fetchone()[0]
+            == 1
+        )

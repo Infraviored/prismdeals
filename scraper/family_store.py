@@ -192,16 +192,18 @@ def recompute_enabled(conn, search_ids, cursor=None):
     ).fetchall()
     family_counts = {row[0]: (row[1], row[2] or 0) for row in family_rows}
 
-    # 2. Route owners: only routes without a family represent independent route owners.
-    # When a route has a family, active ownership is tracked via search_family_searches.
+    # 2. Route owners: circle rows belonging to the route itself (family_id IS NULL)
+    # represent independent active route owners. Circles added on behalf of an attached family
+    # (family_id IS NOT NULL) are evaluated via search_family_searches instead.
     route_rows = cursor.execute(
         f"""
         SELECT rsc.search_id,
                COUNT(*) AS total,
-               SUM(CASE WHEN r.family_id IS NULL THEN 1 ELSE 0 END) AS active
+               COUNT(*) AS active
         FROM route_search_circles rsc
         JOIN route_searches r ON r.id = rsc.route_search_id
         WHERE rsc.search_id IN ({placeholders})
+          AND rsc.family_id IS NULL
         GROUP BY rsc.search_id
         """,
         sids,
@@ -325,9 +327,11 @@ def attach_terms(
     campaign_id=None,
     knowledge_set_id=None,
     route_search_id=None,
+    cursor=None,
 ):
     """Materialises searches for (terms × circles) and registers family ownership."""
-    cursor = conn.cursor()
+    if cursor is None:
+        cursor = conn.cursor()
     family_row = cursor.execute(
         "SELECT base_url, campaign_id, knowledge_set_id FROM search_families WHERE id = ?",
         (family_id,),
@@ -365,18 +369,22 @@ def attach_terms(
                     "SELECT id, campaign_id, knowledge_set_id, enabled FROM searches WHERE url = ?",
                     (url,),
                 ).fetchone()
-                if existing:
-                    search_id = existing[0]
-                else:
-                    continue
+                search_id = existing[0] if existing else None
         else:
-            search_id, ex_camp, ex_ks, enabled = existing
+            search_id = existing[0]
+            existing_camp, existing_ks, existing_enabled = (
+                existing[1],
+                existing[2],
+                existing[3],
+            )
             mismatch = []
-            if knowledge_set_id is not None and ex_ks != knowledge_set_id:
-                mismatch.append(f"knowledge set {ex_ks} instead of {knowledge_set_id}")
-            if campaign_id is not None and ex_camp != campaign_id:
-                mismatch.append(f"campaign {ex_camp} instead of {campaign_id}")
-            if not enabled:
+            if campaign_id is not None and existing_camp != campaign_id:
+                mismatch.append(f"campaign {existing_camp} instead of {campaign_id}")
+            if knowledge_set_id is not None and existing_ks != knowledge_set_id:
+                mismatch.append(
+                    f"knowledge set {existing_ks} instead of {knowledge_set_id}"
+                )
+            if not existing_enabled:
                 mismatch.append("disabled")
             if mismatch:
                 conflicts.append(
@@ -398,21 +406,22 @@ def attach_terms(
         if route_search_id is not None and getattr(item, "circle", None) is not None:
             c_info = item.circle
             cursor.execute(
-                "INSERT OR REPLACE INTO route_search_circles "
-                "(route_search_id, search_id, location_id, label, radius_km) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO route_search_circles "
+                "(route_search_id, search_id, location_id, label, radius_km, family_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     route_search_id,
                     search_id,
                     c_info.get("location_id"),
                     c_info.get("label") or label,
                     c_info.get("radius_km"),
+                    family_id,
                 ),
             )
 
         affected_search_ids.add(search_id)
 
-    recompute_enabled(conn, affected_search_ids)
+    recompute_enabled(conn, affected_search_ids, cursor=cursor)
     return conflicts
 
 
@@ -574,8 +583,8 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None):
                     if route_search_id and old_sids:
                         placeholders = ",".join("?" for _ in old_sids)
                         cursor.execute(
-                            f"DELETE FROM route_search_circles WHERE route_search_id = ? AND search_id IN ({placeholders})",
-                            (route_search_id, *old_sids),
+                            f"DELETE FROM route_search_circles WHERE route_search_id = ? AND family_id = ? AND search_id IN ({placeholders})",
+                            (route_search_id, family_id, *old_sids),
                         )
                     cursor.execute(
                         "UPDATE search_family_terms SET term = ?, label = ?, enabled = ?, position = ? WHERE id = ?",
@@ -620,8 +629,8 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None):
                 if route_search_id and sids:
                     placeholders = ",".join("?" for _ in sids)
                     cursor.execute(
-                        f"DELETE FROM route_search_circles WHERE route_search_id = ? AND search_id IN ({placeholders})",
-                        (route_search_id, *sids),
+                        f"DELETE FROM route_search_circles WHERE route_search_id = ? AND family_id = ? AND search_id IN ({placeholders})",
+                        (route_search_id, family_id, *sids),
                     )
                 cursor.execute("DELETE FROM search_family_terms WHERE id = ?", (tid,))
                 removed_count += 1
@@ -676,17 +685,8 @@ def delete_family(conn, family_id):
         ).fetchall()
     ]
 
-    # Clean up multiplied searches from route_search_circles for any route attached to this family
-    route_rows = cursor.execute(
-        "SELECT id FROM route_searches WHERE family_id = ?", (family_id,)
-    ).fetchall()
-    for (rid,) in route_rows:
-        if affected_searches:
-            placeholders = ",".join("?" for _ in affected_searches)
-            cursor.execute(
-                f"DELETE FROM route_search_circles WHERE route_search_id = ? AND search_id IN ({placeholders})",
-                (rid, *affected_searches),
-            )
+    # Clean up multiplied searches from route_search_circles created by this family
+    cursor.execute("DELETE FROM route_search_circles WHERE family_id = ?", (family_id,))
 
     cursor.execute(
         "DELETE FROM search_family_searches WHERE family_id = ?", (family_id,)
@@ -697,6 +697,6 @@ def delete_family(conn, family_id):
     )
     cursor.execute("DELETE FROM search_families WHERE id = ?", (family_id,))
 
-    recompute_enabled(conn, affected_searches)
+    recompute_enabled(conn, affected_searches, cursor=cursor)
     conn.commit()
     return True

@@ -199,3 +199,5 @@ ALTER TABLE listings ADD COLUMN last_ai_evaluated_at TEXT;
 
 ALTER TABLE route_searches ADD COLUMN family_id INTEGER;
 
+ALTER TABLE route_search_circles ADD COLUMN family_id INTEGER;
+

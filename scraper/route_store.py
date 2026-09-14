@@ -217,71 +217,47 @@ def attach_circles(
             "SELECT id, term, label FROM search_family_terms WHERE family_id = ? AND enabled = 1 ORDER BY position, id",
             (family_id,),
         ).fetchall()
-        if not terms:
-            return []
     else:
         terms = None
 
-    expanded = list(family_store.expand(base_url, terms, circles=plan.circles))
+    base_expanded = list(family_store.expand(base_url, None, circles=plan.circles))
 
-    if terms is None:
-        for index, (circle, (term_id, url, _)) in enumerate(
-            zip(plan.circles, expanded), 1
-        ):
-            circle.url = url
-            label = (
-                f"{name or destination} · {index}/{len(plan.circles)} {circle.label}"
+    for index, (circle, (term_id, url, _)) in enumerate(
+        zip(plan.circles, base_expanded), 1
+    ):
+        circle.url = url
+        label = f"{name or destination} · {index}/{len(plan.circles)} {circle.label}"
+        search_id, c_conflicts = _register_search(
+            cursor, label, url, campaign_id, knowledge_set_id, circle.label
+        )
+        conflicts.extend(c_conflicts)
+        if search_id is not None:
+            cursor.execute(
+                "INSERT OR REPLACE INTO route_search_circles "
+                "(route_search_id, search_id, location_id, label, radius_km, family_id) "
+                "VALUES (?, ?, ?, ?, ?, NULL)",
+                (
+                    route_search_id,
+                    search_id,
+                    circle.location_id,
+                    circle.label,
+                    circle.radius_km,
+                ),
             )
-            search_id, c_conflicts = _register_search(
-                cursor, label, url, campaign_id, knowledge_set_id, circle.label
-            )
-            conflicts.extend(c_conflicts)
-            if search_id is not None:
-                cursor.execute(
-                    "INSERT OR REPLACE INTO route_search_circles "
-                    "(route_search_id, search_id, location_id, label, radius_km) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (
-                        route_search_id,
-                        search_id,
-                        circle.location_id,
-                        circle.label,
-                        circle.radius_km,
-                    ),
-                )
-                affected_search_ids.add(search_id)
-    else:
-        for item in expanded:
-            term_id, url, exp_label = item
-            c_info = getattr(item, "circle", None) or {}
-            loc_id = c_info.get("location_id")
-            c_rad = c_info.get("radius_km")
-            c_lbl = c_info.get("label") or exp_label
-            label = f"{name or destination} · {exp_label}"
-            search_id, c_conflicts = _register_search(
-                cursor, label, url, campaign_id, knowledge_set_id, exp_label
-            )
-            conflicts.extend(c_conflicts)
-            if search_id is not None:
-                cursor.execute(
-                    "INSERT OR REPLACE INTO route_search_circles "
-                    "(route_search_id, search_id, location_id, label, radius_km) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (
-                        route_search_id,
-                        search_id,
-                        loc_id,
-                        c_lbl,
-                        c_rad,
-                    ),
-                )
-                if term_id is not None:
-                    cursor.execute(
-                        "INSERT OR IGNORE INTO search_family_searches (family_id, term_id, search_id) "
-                        "VALUES (?, ?, ?)",
-                        (family_id, term_id, search_id),
-                    )
-                affected_search_ids.add(search_id)
+            affected_search_ids.add(search_id)
+
+    if family_id and terms:
+        t_conflicts = family_store.attach_terms(
+            conn,
+            family_id,
+            terms,
+            circles=plan.circles,
+            campaign_id=campaign_id,
+            knowledge_set_id=knowledge_set_id,
+            route_search_id=route_search_id,
+            cursor=cursor,
+        )
+        conflicts.extend(t_conflicts)
 
     family_store.recompute_enabled(conn, affected_search_ids, cursor=cursor)
     return conflicts
