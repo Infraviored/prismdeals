@@ -8,6 +8,7 @@ import type { Place } from './components/PlaceInput'
 import ListingDetailCard from './components/ListingDetailCard'
 import GuidelinesWizard from './components/GuidelinesWizard'
 import RouteResultsView from './components/RouteResultsView'
+import SearchFamilyEditor from './components/SearchFamilyEditor'
 import SettingsView from './components/SettingsView'
 import { transformListing } from './utils/listingTransformer'
 import { useHashRouter } from './hooks/useHashRouter'
@@ -115,6 +116,7 @@ export default function App() {
   // pasted URL as a single one the moment it looks valid would quietly give the
   // user the point search they were trying not to make.
   const [routeMode, setRouteMode] = useState(false)
+  const [searchTargetMode, setSearchTargetMode] = useState<'point' | 'route' | 'family'>('point')
   const [routeFrom, setRouteFrom] = useState<Place | null>(null)
   const [routeTo, setRouteTo] = useState<Place | null>(null)
   const [routeRadiusKm, setRouteRadiusKm] = useState(30)
@@ -565,8 +567,8 @@ export default function App() {
 
   // Debounced auto-registration and count fetch
   useEffect(() => {
-    if (routeMode) {
-      // A corridor is registered deliberately, not the moment a URL looks valid.
+    if (routeMode || searchTargetMode === 'family') {
+      // A corridor or search family is registered deliberately, not the moment a URL looks valid.
       return;
     }
     if (!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl)) {
@@ -657,7 +659,7 @@ export default function App() {
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newTargetUrl, currentCampaignId, searches, isRegisteringTarget, routeMode]);
+  }, [newTargetUrl, currentCampaignId, searches, isRegisteringTarget, routeMode, searchTargetMode]);
 
 
 
@@ -1393,7 +1395,7 @@ export default function App() {
 
         {/* VIEW 2: CAMPAIGN DASHBOARD - FEED LISTINGS VIEW */}
         {view === 'dashboard' && (
-          campaigns.find(c => c.id === currentCampaignId)?.route_id ? (
+          (campaigns.find(c => c.id === currentCampaignId)?.route_id || campaigns.find(c => c.id === currentCampaignId)?.family_id) ? (
             <div className="flex flex-col space-y-6 animate-fadeIn w-full">
               <div className="flex items-center space-x-3">
                 <Button
@@ -1423,6 +1425,7 @@ export default function App() {
               <RouteResultsView
                 campaignId={currentCampaignId || 0}
                 campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
+                familyId={campaigns.find(c => c.id === currentCampaignId)?.family_id ?? undefined}
                 onEvaluateWithAi={() => {
                   const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
                   setShowAiWizard(true);
@@ -1719,43 +1722,25 @@ export default function App() {
             </div>
 
             {activeSearches.length === 0 ? (
-              // The card widens for the route corridor: two place fields, two
-              // sliders and a suggestion list do not fit in the column that
-              // suits a single URL. `overflow-hidden` would clip the
-              // suggestions, so it only applies when there is nothing to clip.
-              <Card className={`p-8 mx-auto w-full relative animate-fadeIn ${
-                routeMode ? 'max-w-3xl' : 'max-w-xl overflow-hidden'
-              }`}>
-                <div className="space-y-1.5 text-center">
-                  <h2 className="text-2xl font-bold text-text-primary font-sans tracking-tight">{t('common.pasteSearchUrl')}</h2>
-                  <p className="text-base text-text-secondary leading-relaxed">{t('wizard.targetsDescription')}</p>
-                </div>
-
-                <div className="space-y-4 pt-2">
-                  <div className="space-y-1.5">
-                    <label className="text-sm text-text-secondary font-medium block">{t('common.pasteSearchUrl')}</label>
-                    <Input
-                      type="text"
-                      value={newTargetUrl}
-                      onChange={e => setNewTargetUrl(e.target.value)}
-                      placeholder={t('common.searchUrlPlaceholder')}
-                      className="font-mono"
-                    />
-                  </div>
-
-                  {/* Where to search: around the URL's own place, or along a drive. */}
-                  <div className="flex rounded-xl bg-bg-input border border-border-subtle p-1 text-sm font-bold">
+              searchTargetMode === 'family' ? (
+                <div className="max-w-3xl mx-auto w-full space-y-4 animate-fadeIn">
+                  <div className="flex rounded-xl bg-bg-input border border-border-subtle p-1 text-sm font-bold max-w-md mx-auto">
                     {[
-                      { key: false, label: t('common.searchModePoint') },
-                      { key: true, label: t('common.searchModeRoute') },
+                      { key: 'point', label: t('common.searchModePoint') },
+                      { key: 'route', label: t('common.searchModeRoute') },
+                      { key: 'family', label: t('common.searchModeFamily') },
                     ].map(mode => (
                       <button
-                        key={String(mode.key)}
+                        key={mode.key}
                         type="button"
-                        onClick={() => { setRouteMode(mode.key); setRouteError(null); }}
-                        aria-pressed={routeMode === mode.key}
+                        onClick={() => {
+                          setSearchTargetMode(mode.key as 'point' | 'route' | 'family');
+                          setRouteMode(mode.key === 'route');
+                          setRouteError(null);
+                        }}
+                        aria-pressed={searchTargetMode === mode.key}
                         className={`flex-1 rounded-lg px-3 py-2 transition-colors ${
-                          routeMode === mode.key
+                          searchTargetMode === mode.key
                             ? 'bg-brand-accent/15 text-brand-accent'
                             : 'text-text-muted hover:text-text-primary'
                         }`}
@@ -1765,11 +1750,74 @@ export default function App() {
                     ))}
                   </div>
 
-                  {routeMode && (
-                    <div className="bg-bg-surface border border-border-subtle rounded-2xl p-4 space-y-4 shadow-inner animate-fadeIn">
-                      <p className="text-sm text-text-secondary leading-relaxed">{t('common.routeExplainer')}</p>
+                  <SearchFamilyEditor
+                    campaignId={currentCampaignId}
+                    initialBaseUrl={newTargetUrl}
+                    onSave={(savedFamily) => {
+                      if (currentCampaignId) {
+                        setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, family_id: savedFamily.id } : c));
+                      }
+                      refreshAll();
+                    }}
+                    onCancel={() => {
+                      setSearchTargetMode('point');
+                      setRouteMode(false);
+                    }}
+                  />
+                </div>
+              ) : (
+                <Card className={`p-8 mx-auto w-full relative animate-fadeIn ${
+                  routeMode ? 'max-w-3xl' : 'max-w-xl overflow-hidden'
+                }`}>
+                  <div className="space-y-1.5 text-center">
+                    <h2 className="text-2xl font-bold text-text-primary font-sans tracking-tight">{t('common.pasteSearchUrl')}</h2>
+                    <p className="text-base text-text-secondary leading-relaxed">{t('wizard.targetsDescription')}</p>
+                  </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-4 pt-2">
+                    <div className="space-y-1.5">
+                      <label className="text-sm text-text-secondary font-medium block">{t('common.pasteSearchUrl')}</label>
+                      <Input
+                        type="text"
+                        value={newTargetUrl}
+                        onChange={e => setNewTargetUrl(e.target.value)}
+                        placeholder={t('common.searchUrlPlaceholder')}
+                        className="font-mono"
+                      />
+                    </div>
+
+                    {/* Where to search: around the URL's own place, along a drive, or for a family of models */}
+                    <div className="flex rounded-xl bg-bg-input border border-border-subtle p-1 text-sm font-bold">
+                      {[
+                        { key: 'point', label: t('common.searchModePoint') },
+                        { key: 'route', label: t('common.searchModeRoute') },
+                        { key: 'family', label: t('common.searchModeFamily') },
+                      ].map(mode => (
+                        <button
+                          key={mode.key}
+                          type="button"
+                          onClick={() => {
+                            setSearchTargetMode(mode.key as 'point' | 'route' | 'family');
+                            setRouteMode(mode.key === 'route');
+                            setRouteError(null);
+                          }}
+                          aria-pressed={searchTargetMode === mode.key}
+                          className={`flex-1 rounded-lg px-3 py-2 transition-colors ${
+                            searchTargetMode === mode.key
+                              ? 'bg-brand-accent/15 text-brand-accent'
+                              : 'text-text-muted hover:text-text-primary'
+                          }`}
+                        >
+                          {mode.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {routeMode && (
+                      <div className="bg-bg-surface border border-border-subtle rounded-2xl p-4 space-y-4 shadow-inner animate-fadeIn">
+                        <p className="text-sm text-text-secondary leading-relaxed">{t('common.routeExplainer')}</p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <PlaceInput
                           label={t('common.routeFrom')}
                           placeholder={t('common.routePlaceholder')}
@@ -1901,12 +1949,14 @@ export default function App() {
                   )}
                 </div>
               </Card>
-            ) : (campaigns.find(c => c.id === currentCampaignId)?.route_id && !showAiWizard) ? (
+              )
+            ) : ((campaigns.find(c => c.id === currentCampaignId)?.route_id || campaigns.find(c => c.id === currentCampaignId)?.family_id) && !showAiWizard) ? (
               /* CORRIDOR RESULTS VIEW */
               <div className="w-full animate-fadeIn">
                 <RouteResultsView
                   campaignId={currentCampaignId || 0}
                   campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
+                  familyId={campaigns.find(c => c.id === currentCampaignId)?.family_id ?? undefined}
                   onEvaluateWithAi={() => {
                     setShowAiWizard(true);
                     setWizardStep(1);
@@ -1923,7 +1973,7 @@ export default function App() {
             ) : (
               /* DIRECT 3-STEP GUIDELINES WIZARD WORKSPACE */
               <div className="w-full animate-fadeIn space-y-4">
-                {campaigns.find(c => c.id === currentCampaignId)?.route_id && (
+                {(campaigns.find(c => c.id === currentCampaignId)?.route_id || campaigns.find(c => c.id === currentCampaignId)?.family_id) && (
                   <div className="flex items-center justify-between pb-2">
                     <Button
                       variant="badge"

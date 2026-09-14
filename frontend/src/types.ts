@@ -2,6 +2,7 @@ export interface Campaign {
   id: number
   name: string
   route_id?: number | null
+  family_id?: number | null
 }
 
 export interface KnowledgeSet {
@@ -108,6 +109,7 @@ export interface Listing {
   description?: string
   dimensions?: Record<string, { score: number; reasoning: string }>
   reference_comparison?: { closer_to: 'good' | 'bad' | 'mixed'; reasoning: string }
+  matched_terms?: MatchedTerm[]
 }
 
 export interface ScraperProgressCardProps {
@@ -141,5 +143,57 @@ export interface ParsedKnowledgeConfig {
       importance?: number;
     }>;
   };
+}
+
+export interface SearchFamilyTerm {
+  id?: number;
+  family_id?: number;
+  term: string;
+  label: string;
+  enabled: boolean;
+  position?: number;
+  listings?: number;
+}
+
+export interface SearchFamily {
+  id: number;
+  name: string;
+  base_url: string;
+  campaign_id?: number | null;
+  knowledge_set_id?: number | null;
+  route_search_id?: number | null;
+  enabled: boolean;
+  created_at?: string;
+  terms?: SearchFamilyTerm[];
+  searches?: number;
+  listings?: number;
+}
+
+export interface SearchFamilyPreview {
+  terms: number;
+  circles: number;
+  searches: number;
+  new_searches: number;
+  reused_searches: number;
+  pages: number;
+  estimated_seconds: number;
+  urls: Array<{
+    term: string;
+    label: string;
+    url: string;
+    exists: boolean;
+  }>;
+  conflicts: Array<{
+    url: string;
+    search_id: number;
+    label: string;
+    reasons: string[];
+  }>;
+}
+
+export interface MatchedTerm {
+  id: number;
+  label: string;
+  term?: string;
 }
 

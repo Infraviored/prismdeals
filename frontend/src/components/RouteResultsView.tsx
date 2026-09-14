@@ -20,7 +20,8 @@ import {
 } from 'lucide-react';
 import ScraperProgressCard from './ScraperProgressCard';
 import CorridorPlanner from './CorridorPlanner';
-import type { ScraperProgressCardProps } from '../types';
+import SearchFamilyFilterBar from './SearchFamilyFilterBar';
+import type { ScraperProgressCardProps, SearchFamilyTerm } from '../types';
 
 export interface RouteCorridorData {
   route: {
@@ -46,7 +47,8 @@ export interface RouteCorridorData {
 }
 
 interface RouteResultsViewProps {
-  campaignId: number;
+  campaignId?: number;
+  familyId?: number;
   campaignName: string;
   onEvaluateWithAi: () => void;
   isScraping: boolean;
@@ -70,6 +72,7 @@ function formatLocation(loc: string | null | undefined): string {
 
 export default function RouteResultsView({
   campaignId,
+  familyId,
   campaignName,
   onEvaluateWithAi,
   isScraping,
@@ -85,6 +88,10 @@ export default function RouteResultsView({
   const [routeData, setRouteData] = useState<RouteCorridorData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Search Family terms and filter selection
+  const [familyTerms, setFamilyTerms] = useState<SearchFamilyTerm[]>([]);
+  const [selectedTermIds, setSelectedTermIds] = useState<Set<number>>(new Set());
 
   // Filters and sorting
   const [draft, setDraft] = useState<{ radius: number; corridor: number } | null>(null);
@@ -125,30 +132,145 @@ export default function RouteResultsView({
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`/api/campaigns/${campaignId}/route`);
-      if (!res.ok) {
-        if (res.status === 404) {
-          setError('no_route');
-        } else {
-          setError('fetch_failed');
+      let corridorData: RouteCorridorData | null = null;
+
+      // 1. Fetch route corridor if campaignId is present
+      if (campaignId) {
+        try {
+          const res = await fetch(`/api/campaigns/${campaignId}/route`);
+          if (res.ok) {
+            corridorData = await res.json();
+          }
+        } catch {
+          // Corridor endpoint fetch failed or no route
         }
-        setRouteData(null);
-        return;
       }
-      const data: RouteCorridorData = await res.json();
-      setRouteData(data);
+
+      // 2. Fetch search family if familyId is provided or via campaignId
+      let targetFamilyId = familyId;
+      if (!targetFamilyId && campaignId) {
+        try {
+          const famRes = await fetch(`/api/search-families?campaign_id=${campaignId}`);
+          if (famRes.ok) {
+            const famList = await famRes.json();
+            if (Array.isArray(famList) && famList.length > 0) {
+              targetFamilyId = famList[0].id;
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
+      if (targetFamilyId) {
+        try {
+          const famDetailRes = await fetch(`/api/search-families/${targetFamilyId}`);
+          if (famDetailRes.ok) {
+            const famDetail = await famDetailRes.json();
+            const termsList: SearchFamilyTerm[] = famDetail.terms || [];
+            setFamilyTerms(termsList);
+            setSelectedTermIds(new Set(termsList.map((tm) => tm.id ?? 0)));
+          }
+
+          if (!corridorData) {
+            const listingsRes = await fetch(`/api/search-families/${targetFamilyId}/listings`);
+            if (listingsRes.ok) {
+              const listingsData = await listingsRes.json();
+              const rawListings = listingsData.listings || [];
+              const familyListings: RouteListingGeo[] = rawListings.map((l: Partial<RouteListingGeo> & Record<string, unknown>) => ({
+                id: String(l.id),
+                title: String(l.title || ''),
+                price: String(l.price || ''),
+                location: String(l.location || ''),
+                url: String(l.url || ''),
+                lat: typeof l.lat === 'number' ? l.lat : null,
+                lon: typeof l.lon === 'number' ? l.lon : null,
+                detour_min: typeof l.detour_min === 'number' ? l.detour_min : null,
+                offroute_km: typeof l.offroute_km === 'number' ? l.offroute_km : null,
+                geo_status: l.geo_status ?? null,
+                niceness_score: typeof l.niceness_score === 'number' ? l.niceness_score : null,
+                llm_processed: !!l.llm_processed,
+                images: Array.isArray(l.images)
+                  ? (l.images as string[])
+                  : typeof l.images === 'string'
+                    ? JSON.parse(l.images || '[]')
+                    : [],
+                matched_terms: l.matched_terms || [],
+              }));
+
+              corridorData = {
+                route: {
+                  id: 0,
+                  campaign_id: campaignId || 0,
+                  name: campaignName,
+                  base_url: '',
+                  origin: '',
+                  destination: '',
+                  radius_km: 0,
+                  half_width_km: 0,
+                  distance_km: null,
+                  duration_min: null,
+                  polyline: [],
+                  circles: [],
+                },
+                listings: familyListings,
+                counts: {
+                  total: familyListings.length,
+                  routed: familyListings.filter((l) => l.detour_min !== null).length,
+                  unplaced: familyListings.filter((l) => l.lat === null).length,
+                },
+              };
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
+      if (!corridorData) {
+        setError('no_route');
+        setRouteData(null);
+      } else {
+        setRouteData(corridorData);
+      }
     } catch {
       setError('network_error');
     } finally {
       setLoading(false);
     }
-  }, [campaignId]);
+  }, [campaignId, familyId, campaignName]);
 
   useEffect(() => {
     if (!isScraping) {
       fetchRouteData();
     }
   }, [isScraping, fetchRouteData]);
+
+  // If no family terms loaded via API, extract terms present in listings
+  useEffect(() => {
+    if (familyTerms.length === 0 && routeData?.listings) {
+      const termMap = new Map<number, SearchFamilyTerm>();
+      for (const l of routeData.listings) {
+        if (l.matched_terms) {
+          for (const mt of l.matched_terms) {
+            if (!termMap.has(mt.id)) {
+              termMap.set(mt.id, {
+                id: mt.id,
+                term: mt.term || mt.label,
+                label: mt.label,
+                enabled: true,
+              });
+            }
+          }
+        }
+      }
+      if (termMap.size > 0) {
+        const derived = Array.from(termMap.values());
+        setFamilyTerms(derived);
+        setSelectedTermIds(new Set(derived.map((tm) => tm.id ?? 0)));
+      }
+    }
+  }, [routeData?.listings, familyTerms.length]);
 
   const redrawCorridor = useCallback(async () => {
     if (!draft || !routeData) return;
@@ -183,9 +305,50 @@ export default function RouteResultsView({
     return match ? parseFloat(match[0]) : 999999;
   };
 
+  const termCounts = useMemo(() => {
+    const counts: Record<number, number> = {};
+    if (!routeData?.listings) return counts;
+    for (const l of routeData.listings) {
+      if (l.matched_terms) {
+        for (const mt of l.matched_terms) {
+          counts[mt.id] = (counts[mt.id] || 0) + 1;
+        }
+      }
+    }
+    return counts;
+  }, [routeData]);
+
+  const handleToggleTermFilter = useCallback((termId: number) => {
+    setSelectedTermIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(termId)) {
+        next.delete(termId);
+      } else {
+        next.add(termId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleToggleAllTerms = useCallback(() => {
+    setSelectedTermIds((prev) => {
+      if (prev.size === familyTerms.length) {
+        return new Set();
+      }
+      return new Set(familyTerms.map((t) => t.id ?? 0));
+    });
+  }, [familyTerms]);
+
   const filteredListings = useMemo(() => {
     if (!routeData) return [];
     let list = [...routeData.listings];
+
+    // Filter by active search family models ("alle an bedeutet alles")
+    if (familyTerms.length > 0 && selectedTermIds.size < familyTerms.length) {
+      list = list.filter((l) =>
+        l.matched_terms?.some((mt) => selectedTermIds.has(mt.id))
+      );
+    }
 
     if (selectedDetourMax !== 'all') {
       const maxMin = parseInt(selectedDetourMax, 10);
@@ -213,7 +376,7 @@ export default function RouteResultsView({
     });
 
     return list;
-  }, [routeData, selectedDetourMax, searchQuery, sortBy]);
+  }, [routeData, familyTerms, selectedTermIds, selectedDetourMax, searchQuery, sortBy]);
 
   const selectedListing = useMemo(() => {
     if (!selectedListingId) return null;
@@ -266,9 +429,10 @@ export default function RouteResultsView({
 
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-text-muted">
               <span>
-                <strong className="font-semibold text-text-secondary">{campaignName}</strong>: {route.origin} → {route.destination}
+                <strong className="font-semibold text-text-secondary">{campaignName}</strong>
+                {route.origin && route.destination ? `: ${route.origin} → ${route.destination}` : ''}
               </span>
-              {route.distance_km && route.duration_min && (
+              {route.distance_km && route.duration_min ? (
                 <span className="flex items-center gap-1">
                   <span className="text-text-muted/60">·</span>
                   <Navigation className="w-3 h-3 text-brand-accent shrink-0 inline" />
@@ -277,11 +441,13 @@ export default function RouteResultsView({
                     duration: route.duration_min,
                   })}
                 </span>
-              )}
-              <span className="flex items-center gap-1">
-                <span className="text-text-muted/60">·</span>
-                {t('routeResults.searchCirclesCount', { count: route.circles.length })}
-              </span>
+              ) : null}
+              {route.circles && route.circles.length > 0 ? (
+                <span className="flex items-center gap-1">
+                  <span className="text-text-muted/60">·</span>
+                  {t('routeResults.searchCirclesCount', { count: route.circles.length })}
+                </span>
+              ) : null}
             </div>
           </div>
 
@@ -308,20 +474,22 @@ export default function RouteResultsView({
               )}
             </Button>
 
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() =>
-                setDraft({
-                  radius: routeData.route.radius_km,
-                  corridor: routeData.route.half_width_km,
-                })
-              }
-              className="py-2.5 px-3 font-bold flex items-center justify-center gap-1.5 min-h-[44px] whitespace-normal text-center leading-tight"
-            >
-              <SlidersHorizontal className="w-4 h-4 shrink-0" />
-              <span>{t('corridor.editSettings')}</span>
-            </Button>
+            {routeData.route.id > 0 && routeData.route.radius_km > 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  setDraft({
+                    radius: routeData.route.radius_km,
+                    corridor: routeData.route.half_width_km,
+                  })
+                }
+                className="py-2.5 px-3 font-bold flex items-center justify-center gap-1.5 min-h-[44px] whitespace-normal text-center leading-tight"
+              >
+                <SlidersHorizontal className="w-4 h-4 shrink-0" />
+                <span>{t('corridor.editSettings')}</span>
+              </Button>
+            )}
 
             <Button
               id="btn-evaluate-ai"
@@ -473,6 +641,18 @@ export default function RouteResultsView({
       ) : (
         /* Populated Results View */
         <div className="space-y-4">
+          {/* Search Family Model Filter Bar */}
+          {(isDesktop || mobileTab === 'list') && familyTerms.length > 0 && (
+            <SearchFamilyFilterBar
+              terms={familyTerms}
+              selectedTermIds={selectedTermIds}
+              termCounts={termCounts}
+              totalCount={routeData.listings.length}
+              onToggleTerm={handleToggleTermFilter}
+              onToggleAll={handleToggleAllTerms}
+            />
+          )}
+
           {/* Filter & Sorting Controls: on desktop, or on mobile when in list tab */}
           {(isDesktop || mobileTab === 'list') && (
             <Card className="p-3 sm:p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-bg-surface border-border-subtle">
@@ -589,7 +769,19 @@ export default function RouteResultsView({
                         <h4 className="text-xs font-bold text-text-primary line-clamp-2 mt-0.5 leading-snug">
                           {selectedListing.title}
                         </h4>
-                        <p className="text-2xs text-text-muted truncate">
+                        {selectedListing.matched_terms && selectedListing.matched_terms.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {selectedListing.matched_terms.map((mt) => (
+                              <span
+                                key={mt.id}
+                                className="text-2xs font-semibold px-1.5 py-0.5 rounded bg-brand-accent/15 text-brand-accent border border-border-brand truncate max-w-[160px]"
+                              >
+                                {mt.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-2xs text-text-muted truncate mt-0.5">
                           {formatLocation(selectedListing.location)}
                           {selectedListing.offroute_km !== null ? ` · ${selectedListing.offroute_km.toFixed(1)} km` : ''}
                         </p>
@@ -681,6 +873,21 @@ export default function RouteResultsView({
                             {l.title}
                           </h3>
 
+                          {l.matched_terms && l.matched_terms.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {l.matched_terms.map((mt) => (
+                                <span
+                                  key={mt.id}
+                                  data-testid="matched-term-badge"
+                                  className="text-2xs font-semibold px-1.5 py-0.5 rounded bg-brand-accent/15 text-brand-accent border border-border-brand truncate max-w-[200px]"
+                                  title={mt.label}
+                                >
+                                  {mt.label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
                           <div className="flex items-center gap-1.5 text-2xs text-text-muted truncate mt-1">
                             <span className="truncate">{formatLocation(l.location)}</span>
                             {l.offroute_km !== null && (
@@ -718,11 +925,6 @@ export default function RouteResultsView({
                             </span>
                           )}
 
-                          {/* 19 of 1,266 live listings carry no price — a
-                              seller who wrote "VB" into the title, or nothing at
-                              all. Rendering the empty string left a blank cell
-                              that reads as a loading failure rather than as the
-                              absence it is. */}
                           <span className="text-sm font-semibold text-text-secondary font-mono mt-1 leading-none">
                             {l.price?.trim() || t('routeResults.noPrice')}
                           </span>
