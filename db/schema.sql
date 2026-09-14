@@ -137,6 +137,45 @@ CREATE TABLE IF NOT EXISTS searches (
       knowledge_set_id INTEGER REFERENCES knowledge_sets(id) ON DELETE SET NULL
     );
 
+CREATE TABLE IF NOT EXISTS search_families (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    name             TEXT NOT NULL,
+    campaign_id      INTEGER,
+    knowledge_set_id INTEGER,
+    base_url         TEXT NOT NULL,
+    enabled          INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS search_family_terms (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    family_id INTEGER NOT NULL,
+    term      TEXT NOT NULL,   -- was in die URL geht
+    label     TEXT,            -- was der Mensch liest
+    enabled   INTEGER NOT NULL DEFAULT 1,
+    position  INTEGER NOT NULL DEFAULT 0
+);
+
+-- Welche searches-Zeilen zu (Familie, Begriff) gehören. Die Zeile kann geteilt
+-- sein: dieselbe URL kann mehreren Familien gehören.
+CREATE TABLE IF NOT EXISTS search_family_searches (
+    family_id INTEGER NOT NULL,
+    term_id   INTEGER NOT NULL,
+    search_id INTEGER NOT NULL,
+    PRIMARY KEY (family_id, term_id, search_id)
+);
+
+-- Punkt 1: die n:m-Beziehung, die listings.search_id nicht sein kann.
+CREATE TABLE IF NOT EXISTS listing_search_hits (
+    listing_id    TEXT NOT NULL,
+    search_id     INTEGER NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    PRIMARY KEY (listing_id, search_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_listing_search_hits_search
+    ON listing_search_hits (search_id);
+
 CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT UNIQUE NOT NULL,
@@ -157,3 +196,6 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE listings ADD COLUMN last_description_changed_at TEXT;
 
 ALTER TABLE listings ADD COLUMN last_ai_evaluated_at TEXT;
+
+ALTER TABLE route_searches ADD COLUMN family_id INTEGER;
+

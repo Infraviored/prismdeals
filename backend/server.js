@@ -967,21 +967,443 @@ app.get('/api/route-searches/:id', async (req, res) => {
   }
 });
 
+// API: Preview search family cross-product and existing search conflicts without saving.
+//
+// A search family multiplies models with corridor circles (or the single base URL
+// location). At 2 pages per search and 2 seconds per page, 10 models across 6 circles
+// is 60 searches and ~4 minutes of crawl time. The user must see the exact size of
+// this Cartesian product, how many searches already exist, and any campaign/knowledge
+// set conflicts before committing.
+app.post('/api/search-families/preview', async (req, res) => {
+  const { base_url, terms, route_search_id, campaign_id, knowledge_set_id } = req.body;
+
+  if (!base_url) {
+    return res.status(400).json({ error: 'Missing base_url' });
+  }
+  if (!isValidScrapeUrl(base_url)) {
+    return res.status(400).json({
+      error: 'Invalid search target URL. Only Kleinanzeigen URLs are allowed.',
+    });
+  }
+  if (!terms || !Array.isArray(terms) || terms.length === 0) {
+    return res.status(400).json({ error: 'Missing or empty terms' });
+  }
+
+  const args = [
+    '--mode', 'family-preview',
+    '--urls', base_url,
+    '--payload-json', JSON.stringify({ terms })
+  ];
+  if (route_search_id) args.push('--route-id', String(route_search_id));
+  if (campaign_id) args.push('--campaign-id', String(campaign_id));
+  if (knowledge_set_id) args.push('--knowledge-set-id', String(knowledge_set_id));
+
+  let result;
+  try {
+    result = await runPlanner(args, res);
+  } catch (err) {
+    console.error('Could not start search family preview:', err);
+    return res.status(500).json({ error: 'Could not start search family preview.' });
+  }
+
+  const refused = readMarker(result.stdout, 'FAMILY_PREVIEW_ERROR');
+  if (refused) return res.status(400).json({ error: refused });
+
+  const drawn = readMarker(result.stdout, 'FAMILY_PREVIEW');
+  if (!drawn) {
+    console.error('Family preview produced nothing:', result.stdout, result.stderr);
+    return res.status(500).json({ error: 'Could not generate family preview.' });
+  }
+
+  try {
+    res.json(JSON.parse(drawn));
+  } catch (error) {
+    console.error('Family preview was not valid JSON:', error);
+    res.status(500).json({ error: 'Could not read family preview.' });
+  }
+});
+
+// API: Create a search family, register its terms and cross-product searches.
+//
+// Translates the user intent (e.g. 10 printer models along a corridor) into
+// ordinary searches rows via family_store.save_family. Shared searches rows are
+// reused; conflicting configurations are recorded and returned so the client
+// can inform the user without breaking existing crawl jobs.
+app.post('/api/search-families', async (req, res) => {
+  const { name, base_url, campaign_id, knowledge_set_id, route_search_id, terms } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: 'Missing name' });
+  }
+  if (!base_url) {
+    return res.status(400).json({ error: 'Missing base_url' });
+  }
+  if (!isValidScrapeUrl(base_url)) {
+    return res.status(400).json({
+      error: 'Invalid search target URL. Only Kleinanzeigen URLs are allowed.',
+    });
+  }
+  if (!terms || !Array.isArray(terms) || terms.length === 0) {
+    return res.status(400).json({ error: 'Missing or empty terms' });
+  }
+
+  const payload = {
+    name,
+    base_url,
+    terms,
+    campaign_id: campaign_id || null,
+    knowledge_set_id: knowledge_set_id || null,
+    route_search_id: route_search_id || null
+  };
+
+  const args = [
+    '--mode', 'family-create',
+    '--payload-json', JSON.stringify(payload)
+  ];
+
+  let result;
+  try {
+    result = await runPlanner(args, res);
+  } catch (err) {
+    console.error('Could not start family creation:', err);
+    return res.status(500).json({ error: 'Could not start family creation.' });
+  }
+
+  const refused = readMarker(result.stdout, 'FAMILY_CREATE_ERROR');
+  if (refused) return res.status(400).json({ error: refused });
+
+  const created = readMarker(result.stdout, 'FAMILY_CREATED');
+  if (!created) {
+    console.error('Family creation produced nothing:', result.stdout, result.stderr);
+    return res.status(500).json({ error: 'Could not create search family.' });
+  }
+
+  try {
+    const data = JSON.parse(created);
+    res.json({
+      id: data.id,
+      searches: data.searches,
+      conflicts: data.conflicts || []
+    });
+  } catch (error) {
+    console.error('Family creation output was not valid JSON:', error);
+    res.status(500).json({ error: 'Could not read created search family.' });
+  }
+});
+
+// API: List search families, optionally filtered by campaign.
+//
+// Computes live counts: terms count, constituent searches count, and distinct
+// listings hits via listing_search_hits. Because listings.search_id is 1:1 to the
+// first search that found an item, querying listing_search_hits is required to
+// capture all listings discovered across any of this family's searches.
+app.get('/api/search-families', async (req, res) => {
+  try {
+    const { campaign_id } = req.query;
+    let sql = `
+      SELECT f.id, f.name, f.enabled,
+             (SELECT COUNT(*) FROM search_family_terms t WHERE t.family_id = f.id) AS terms,
+             (SELECT COUNT(DISTINCT sfs.search_id) FROM search_family_searches sfs WHERE sfs.family_id = f.id) AS searches,
+             (SELECT COUNT(DISTINCT lsh.listing_id)
+                FROM search_family_searches sfs
+                JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+               WHERE sfs.family_id = f.id) AS listings
+        FROM search_families f
+    `;
+    const params = [];
+    if (campaign_id !== undefined && campaign_id !== '') {
+      sql += ' WHERE f.campaign_id = ?';
+      params.push(Number(campaign_id));
+    }
+    sql += ' ORDER BY f.id DESC';
+
+    const rows = await query(sql, params);
+    const result = rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      enabled: Boolean(r.enabled),
+      terms: Number(r.terms || 0),
+      searches: Number(r.searches || 0),
+      listings: Number(r.listings || 0)
+    }));
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching search families:', error);
+    res.status(500).json({ error: 'Failed to fetch search families' });
+  }
+});
+
+// API: Get search family details and terms with per-term listing counts.
+//
+// In a family with many model variants, knowing which specific terms produced
+// results in the scraped area is essential for deciding which models to keep
+// or discard.
+app.get('/api/search-families/:id', async (req, res) => {
+  try {
+    const fam = await get(
+      'SELECT id, name, base_url, enabled FROM search_families WHERE id = ?',
+      [req.params.id]
+    );
+    if (!fam) {
+      return res.status(404).json({ error: 'Search family not found' });
+    }
+
+    const route = await get(
+      'SELECT id FROM route_searches WHERE family_id = ? ORDER BY id DESC LIMIT 1',
+      [fam.id]
+    );
+    const route_search_id = route ? route.id : null;
+
+    const termsRows = await query(
+      `SELECT t.id, t.term, t.label, t.enabled,
+              (SELECT COUNT(DISTINCT lsh.listing_id)
+                 FROM search_family_searches sfs
+                 JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+                WHERE sfs.family_id = t.family_id AND sfs.term_id = t.id) AS listings
+         FROM search_family_terms t
+        WHERE t.family_id = ?
+        ORDER BY t.position ASC, t.id ASC`,
+      [fam.id]
+    );
+
+    const terms = termsRows.map(t => ({
+      id: t.id,
+      term: t.term,
+      label: t.label || t.term,
+      enabled: Boolean(t.enabled),
+      listings: Number(t.listings || 0)
+    }));
+
+    res.json({
+      id: fam.id,
+      name: fam.name,
+      base_url: fam.base_url,
+      enabled: Boolean(fam.enabled),
+      route_search_id,
+      terms
+    });
+  } catch (error) {
+    console.error('Error fetching search family:', error);
+    res.status(500).json({ error: 'Failed to fetch search family' });
+  }
+});
+
+// API: Update search family name, enabled state, or terms list.
+//
+// Dropped terms do not delete listings; their searches rows simply lose this
+// family as an owner. recompute_enabled recalculates the active state across
+// all remaining owners, preserving searches needed elsewhere.
+app.put('/api/search-families/:id', async (req, res) => {
+  try {
+    const fam = await get('SELECT id FROM search_families WHERE id = ?', [req.params.id]);
+    if (!fam) {
+      return res.status(404).json({ error: 'Search family not found' });
+    }
+
+    const args = [
+      '--mode', 'family-update',
+      '--family-id', String(req.params.id),
+      '--payload-json', JSON.stringify(req.body)
+    ];
+
+    let result;
+    try {
+      result = await runPlanner(args, res);
+    } catch (err) {
+      console.error('Could not start family update:', err);
+      return res.status(500).json({ error: 'Could not start family update.' });
+    }
+
+    const refused = readMarker(result.stdout, 'FAMILY_UPDATE_ERROR');
+    if (refused) return res.status(400).json({ error: refused });
+
+    const updated = readMarker(result.stdout, 'FAMILY_UPDATED');
+    if (!updated) {
+      console.error('Family update produced nothing:', result.stdout, result.stderr);
+      return res.status(500).json({ error: 'Could not update search family.' });
+    }
+
+    try {
+      const data = JSON.parse(updated);
+      res.json({
+        id: data.id,
+        searches: data.searches,
+        added: data.added,
+        removed: data.removed,
+        conflicts: data.conflicts || []
+      });
+    } catch (error) {
+      console.error('Family update output was not valid JSON:', error);
+      res.status(500).json({ error: 'Could not read updated search family.' });
+    }
+  } catch (error) {
+    console.error('Error updating search family:', error);
+    res.status(500).json({ error: 'Failed to update search family' });
+  }
+});
+
+// API: Delete a search family and its ownership references.
+//
+// Deleting a family removes only the family and search_family_searches links.
+// Listings and search rows are preserved; searches rows are recomputed and
+// only disabled if no other family or corridor owns them.
+app.delete('/api/search-families/:id', async (req, res) => {
+  try {
+    const fam = await get('SELECT id FROM search_families WHERE id = ?', [req.params.id]);
+    if (!fam) {
+      return res.status(404).json({ error: 'Search family not found' });
+    }
+
+    const args = [
+      '--mode', 'family-delete',
+      '--family-id', String(req.params.id)
+    ];
+
+    let result;
+    try {
+      result = await runPlanner(args, res);
+    } catch (err) {
+      console.error('Could not start family deletion:', err);
+      return res.status(500).json({ error: 'Could not start family deletion.' });
+    }
+
+    const refused = readMarker(result.stdout, 'FAMILY_DELETE_ERROR');
+    if (refused) return res.status(400).json({ error: refused });
+
+    const deleted = readMarker(result.stdout, 'FAMILY_DELETED');
+    if (!deleted) {
+      console.error('Family deletion produced nothing:', result.stdout, result.stderr);
+      return res.status(500).json({ error: 'Could not delete search family.' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting search family:', error);
+    res.status(500).json({ error: 'Failed to delete search family' });
+  }
+});
+
+// API: Get deduplicated listings for a search family with matched terms.
+//
+// Unlike standard listings where search_id is 1:1 to the first finder, family
+// listings can match multiple models/keywords. Deduplication happens across
+// listing_search_hits, and matched_terms ([{ id, label }]) is populated on
+// every item so the frontend can display which model(s) hit and support filtering.
+app.get('/api/search-families/:id/listings', async (req, res) => {
+  try {
+    const fam = await get('SELECT id FROM search_families WHERE id = ?', [req.params.id]);
+    if (!fam) {
+      return res.status(404).json({ error: 'Search family not found' });
+    }
+
+    const route = await get(
+      'SELECT id FROM route_searches WHERE family_id = ? ORDER BY id DESC LIMIT 1',
+      [fam.id]
+    );
+    const routeId = route ? route.id : null;
+
+    const totalRow = await get(
+      `SELECT COUNT(DISTINCT l.id) AS total
+         FROM search_family_searches sfs
+         JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+         JOIN listings l ON l.id = lsh.listing_id
+        WHERE sfs.family_id = ?`,
+      [fam.id]
+    );
+    const total = totalRow ? Number(totalRow.total || 0) : 0;
+
+    let sql = `
+      SELECT l.*,
+             s.name as search_name,
+             g.lat, g.lon, g.offroute_km, g.detour_min, g.status as geo_status
+        FROM (
+          SELECT DISTINCT lsh.listing_id
+            FROM search_family_searches sfs
+            JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+           WHERE sfs.family_id = ?
+        ) hits
+        JOIN listings l ON l.id = hits.listing_id
+        LEFT JOIN searches s ON s.id = l.search_id
+        LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
+    `;
+    const params = [fam.id, routeId];
+
+    if (routeId) {
+      sql += ' ORDER BY (g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
+    } else {
+      sql += ' ORDER BY l.niceness_score DESC, l.id DESC';
+    }
+
+    if (req.query.limit !== undefined && req.query.limit !== '') {
+      const limit = Math.max(1, parseInt(req.query.limit, 10) || 50);
+      const offset = req.query.offset ? Math.max(0, parseInt(req.query.offset, 10) || 0) : 0;
+      sql += ' LIMIT ? OFFSET ?';
+      params.push(limit, offset);
+    }
+
+    const rows = await query(sql, params);
+
+    const listings = rows.map(r => ({
+      ...r,
+      llm_processed: !!r.llm_processed,
+      full_info_obtained: !!r.full_info_obtained,
+      extracted_facts: JSON.parse(r.extracted_facts || '{}'),
+      details: JSON.parse(r.details || '{}'),
+      images: JSON.parse(r.images || '[]'),
+      matched_terms: []
+    }));
+
+    if (listings.length > 0) {
+      const listingIds = listings.map(l => l.id);
+      const placeholders = listingIds.map(() => '?').join(',');
+      const termsRows = await query(
+        `SELECT DISTINCT lsh.listing_id, t.id AS term_id, COALESCE(t.label, t.term) AS label
+           FROM search_family_searches sfs
+           JOIN search_family_terms t ON t.id = sfs.term_id
+           JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+          WHERE sfs.family_id = ? AND lsh.listing_id IN (${placeholders})
+          ORDER BY t.position ASC, t.id ASC`,
+        [fam.id, ...listingIds]
+      );
+
+      const termsByListing = {};
+      for (const tr of termsRows) {
+        if (!termsByListing[tr.listing_id]) termsByListing[tr.listing_id] = [];
+        termsByListing[tr.listing_id].push({
+          id: tr.term_id,
+          label: tr.label
+        });
+      }
+
+      for (const l of listings) {
+        l.matched_terms = termsByListing[l.id] || [];
+      }
+    }
+
+    res.json({ total, listings });
+  } catch (error) {
+    console.error('Error fetching family listings:', error);
+    res.status(500).json({ error: 'Failed to fetch family listings' });
+  }
+});
+
 // API: Delete search item
 app.delete('/api/searches/:id', async (req, res) => {
   try {
-    // The route tables carry no foreign keys — SQLite cannot add one to a table
-    // that already exists, and these are live in every install. So the rows
-    // that reference a search are removed by hand, exactly as deleting a
-    // campaign does. Left behind, a circle row keeps pointing at a search that
-    // is gone, and the corridor read joins it away: the circle simply vanishes
-    // from the map with nothing to say why.
+    // The route and family tables carry no foreign keys — SQLite cannot add one
+    // to a table that already exists, and these are live in every install. So the
+    // rows that reference a search are removed by hand, exactly as deleting a
+    // campaign does.
     await run(
       `DELETE FROM listing_route_geo
         WHERE listing_id IN (SELECT id FROM listings WHERE search_id = ?)`,
       [req.params.id]
     ).catch(() => {});
     await run('DELETE FROM route_search_circles WHERE search_id = ?', [req.params.id])
+      .catch(() => {});
+    await run('DELETE FROM search_family_searches WHERE search_id = ?', [req.params.id])
+      .catch(() => {});
+    await run('DELETE FROM listing_search_hits WHERE search_id = ?', [req.params.id])
       .catch(() => {});
     await run('DELETE FROM searches WHERE id = ?', [req.params.id]);
     res.json({ success: true });
