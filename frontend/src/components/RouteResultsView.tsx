@@ -18,12 +18,17 @@ import {
   MapPin,
   X,
   Layers,
+  AlertCircle,
+  Compass,
+  Check,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import ScraperProgressCard from './ScraperProgressCard';
 import CorridorPlanner from './CorridorPlanner';
 import SearchFamilyFilterBar from './SearchFamilyFilterBar';
 import SearchFamilyEditor from './SearchFamilyEditor';
-import type { ScraperProgressCardProps, SearchFamilyTerm, MatchedTerm } from '../types';
+import type { ScraperProgressCardProps, SearchFamilyTerm, MatchedTerm, SearchFamily, RadiusDiagnosis } from '../types';
 
 export interface RouteCorridorData {
   route: {
@@ -73,6 +78,46 @@ function formatLocation(loc: string | null | undefined): string {
   return loc;
 }
 
+function extractRadiusFromUrl(url?: string): number {
+  if (!url) return 30;
+  const match = url.match(/r(\d+)(?:[#?]|$)/);
+  return match ? parseInt(match[1], 10) : 30;
+}
+
+function formatLocationSlug(slug: string): string {
+  const lowerWords = ['am', 'an', 'der', 'die', 'das', 'im', 'in', 'von', 'zu', 'und'];
+  return slug
+    .split('-')
+    .map((w, idx) =>
+      idx > 0 && lowerWords.includes(w.toLowerCase())
+        ? w.toLowerCase()
+        : w.charAt(0).toUpperCase() + w.slice(1)
+    )
+    .join(' ');
+}
+
+function extractLocationFromUrl(url?: string): string {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    for (const seg of segments) {
+      if (seg.startsWith('k0') || seg.includes(':')) continue;
+      if (seg.startsWith('s-')) {
+        const afterS = seg.slice(2);
+        if (['drucker-scanner', 'multimedia', 'elektronik'].includes(afterS)) continue;
+        return formatLocationSlug(afterS);
+      }
+      if (!['drucker', 'scanner', 'audio', 'kamera', 'computer'].includes(seg)) {
+        return formatLocationSlug(seg);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return '';
+}
+
 export default function RouteResultsView({
   campaignId,
   familyId,
@@ -98,6 +143,15 @@ export default function RouteResultsView({
   const [selectedTermIds, setSelectedTermIds] = useState<Set<number>>(new Set());
   const [showFamilyModal, setShowFamilyModal] = useState(false);
   const [effectiveFamilyId, setEffectiveFamilyId] = useState<number | null>(familyId ?? null);
+
+  // Search Family empty-state diagnosis & radius adoption
+  const [familyDetail, setFamilyDetail] = useState<SearchFamily | null>(null);
+  const [radiusDiagnosis, setRadiusDiagnosis] = useState<RadiusDiagnosis | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
+  const [applyingRadius, setApplyingRadius] = useState<number | null>(null);
+  const [radiusSuccessMsg, setRadiusSuccessMsg] = useState<string | null>(null);
+  const [showTermDetails, setShowTermDetails] = useState(false);
 
   useEffect(() => {
     if (familyId) setEffectiveFamilyId(familyId);
@@ -180,6 +234,10 @@ export default function RouteResultsView({
           const famDetailRes = await fetch(`/api/search-families/${targetFamilyId}`);
           if (famDetailRes.ok) {
             const famDetail = await famDetailRes.json();
+            setFamilyDetail(famDetail);
+            if (famDetail.radius_diagnosis) {
+              setRadiusDiagnosis(famDetail.radius_diagnosis);
+            }
             const termsList: SearchFamilyTerm[] = famDetail.terms || [];
             setFamilyTerms(termsList);
             setSelectedTermIds(new Set(termsList.map((tm) => tm.id ?? 0)));
@@ -332,6 +390,55 @@ export default function RouteResultsView({
     }
   }, [draft, routeData, t]);
 
+  const handleDiagnoseRadius = async () => {
+    if (!effectiveFamilyId) return;
+    setDiagnosing(true);
+    setDiagnoseError(null);
+    try {
+      const res = await fetch(`/api/search-families/${effectiveFamilyId}/diagnose-radius`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDiagnoseError(data.error || 'Diagnosis failed');
+        return;
+      }
+      setRadiusDiagnosis(data);
+    } catch {
+      setDiagnoseError('Network error while measuring radii');
+    } finally {
+      setDiagnosing(false);
+    }
+  };
+
+  const handleApplyRadius = async (newRadius: number) => {
+    if (!effectiveFamilyId) return;
+    setApplyingRadius(newRadius);
+    setRadiusSuccessMsg(null);
+    setDiagnoseError(null);
+    try {
+      const res = await fetch(`/api/search-families/${effectiveFamilyId}/radius`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ radius_km: newRadius }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDiagnoseError(data.error || 'Failed to update radius');
+        return;
+      }
+      setRadiusSuccessMsg(t('searchFamily.radiusAppliedSuccess', { radius: newRadius }));
+      if (data.family) {
+        setFamilyDetail(data.family);
+      }
+      await fetchRouteData();
+    } catch {
+      setDiagnoseError('Network error while updating radius');
+    } finally {
+      setApplyingRadius(null);
+    }
+  };
+
   const parsePrice = (priceStr: string): number => {
     if (!priceStr) return 999999;
     const match = priceStr.replace(/\./g, '').replace(/,/g, '.').match(/\d+(\.\d+)?/);
@@ -366,6 +473,13 @@ export default function RouteResultsView({
   const handleToggleAllTerms = useCallback(() => {
     setSelectedTermIds(new Set(familyTerms.map((t) => t.id ?? 0)));
   }, [familyTerms]);
+
+  const locationName = useMemo(() => {
+    const extracted = extractLocationFromUrl(familyDetail?.base_url);
+    if (extracted) return extracted;
+    if (campaignName) return campaignName;
+    return '';
+  }, [familyDetail?.base_url, campaignName]);
 
   const filteredListings = useMemo(() => {
     if (!routeData) return [];
@@ -435,6 +549,12 @@ export default function RouteResultsView({
 
   const { route, counts } = routeData;
   const hasListings = counts.total > 0;
+  const isSearchFamily =
+    (familyTerms.length > 0 && route.circles.length === 0) || !!effectiveFamilyId;
+  const hasCrawled = familyDetail?.has_crawled ?? false;
+  const currentRadius =
+    radiusDiagnosis?.current_radius ??
+    (familyDetail?.base_url ? extractRadiusFromUrl(familyDetail.base_url) : 30);
 
   return (
     <div className="flex flex-col space-y-4 animate-fadeIn w-full">
@@ -450,6 +570,8 @@ export default function RouteResultsView({
                 ) : (
                   t('routeResults.listingsFound', { count: counts.total })
                 )
+              ) : isSearchFamily && hasCrawled ? (
+                t('searchFamily.zeroInRadiusHeadline', { radius: currentRadius })
               ) : (
                 t('routeResults.noListingsFound')
               )}
@@ -640,85 +762,404 @@ export default function RouteResultsView({
 
       {/* Main Content Area */}
       {!hasListings ? (
-        /* Empty State */
-        <div className={`grid grid-cols-1 ${route.circles.length > 0 ? 'lg:grid-cols-12' : 'max-w-md mx-auto'} gap-5 items-start`}>
-          {route.circles.length > 0 && (isDesktop || mobileTab === 'map') && (
-            <div className={`rounded-2xl overflow-hidden ${isDesktop ? 'lg:col-span-7 h-[420px]' : 'h-[360px]'}`}>
-              <RouteCorridorMap
-                polyline={route.polyline}
-                circles={route.circles}
-                listings={[]}
-                selectedListingId={null}
-                onSelectListing={() => {}}
-                originName={route.origin}
-                destinationName={route.destination}
-              />
-            </div>
-          )}
+        isSearchFamily && hasCrawled ? (
+          /* Zero In Radius State ("Null im Radius") */
+          <div className="max-w-2xl mx-auto w-full space-y-5" data-testid="zero-in-radius-view">
+            {/* Diagnosis / Zero-in-radius Header Card */}
+            <Card className="p-6 sm:p-7 border-border-subtle bg-bg-surface space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-status-amber/15 text-status-amber border border-status-amber/30 w-fit">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{t('searchFamily.zeroInRadiusBadge')}</span>
+                </div>
+                {familyDetail?.last_crawled_at && (
+                  <span className="text-2xs font-mono text-text-muted">
+                    {familyDetail.last_crawled_at}
+                  </span>
+                )}
+              </div>
 
-          {(isDesktop || mobileTab === 'list' || route.circles.length === 0) && (
-            <div className={route.circles.length > 0 && isDesktop ? 'lg:col-span-5' : 'w-full'}>
-              <Card className="p-8 text-center space-y-4 border-border-subtle bg-bg-surface">
-                <div className="w-12 h-12 rounded-2xl bg-brand-accent/10 border border-brand-accent/20 flex items-center justify-center mx-auto text-brand-accent">
-                  {familyTerms.length > 0 && route.circles.length === 0 ? (
-                    <Layers className="w-6 h-6" />
-                  ) : (
-                    <Navigation className="w-6 h-6" />
+              <div className="space-y-2">
+                <h3 className="text-lg sm:text-xl font-black text-text-primary">
+                  {t('searchFamily.zeroInRadiusHeadline', { radius: currentRadius })}
+                </h3>
+                <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
+                  {t('searchFamily.zeroInRadiusExplanation', {
+                    count: familyTerms.length,
+                    radius: currentRadius,
+                    location: locationName,
+                  })}
+                </p>
+              </div>
+
+              {/* List of checked models with 0-hit badges */}
+              <div className="pt-2 border-t border-border-subtle/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-2xs font-bold uppercase tracking-wider text-text-muted">
+                    {t('searchFamily.configuredModelsChecked', { count: familyTerms.length })}
+                  </p>
+                  {onEditFamily && (
+                    <button
+                      type="button"
+                      onClick={() => setShowFamilyModal(true)}
+                      className="text-2xs font-semibold text-brand-accent hover:underline"
+                    >
+                      {t('searchFamily.editFamily')}
+                    </button>
                   )}
                 </div>
+                <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto p-1 scrollbar-thin">
+                  {familyTerms.map((term) => {
+                    const termDiag = radiusDiagnosis?.terms?.find(
+                      (t) => t.id === term.id || t.term === term.term
+                    );
+                    const hitCount = termDiag?.counts?.[String(currentRadius)] ?? (term.listings ?? 0);
+                    return (
+                      <span
+                        key={term.id ?? term.term}
+                        data-testid="term-chip"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-bg-input text-text-secondary border border-border-subtle"
+                      >
+                        <span className="truncate max-w-[200px]">{term.label || term.term}</span>
+                        <span
+                          className={`font-mono text-2xs px-1.5 py-0.5 rounded ${
+                            hitCount > 0
+                              ? 'bg-brand-accent/20 text-brand-accent font-bold'
+                              : 'bg-bg-surface text-text-muted border border-border-subtle'
+                          }`}
+                        >
+                          {hitCount}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </Card>
 
-                <div className="space-y-1.5">
-                  <h3 className="text-base font-extrabold text-text-primary">
-                    {familyTerms.length > 0 && route.circles.length === 0
-                      ? t('searchFamily.emptyHeadline')
-                      : t('routeResults.emptyHeadline')}
-                  </h3>
-                  <p className="text-xs text-text-muted leading-relaxed font-semibold">
-                    {familyTerms.length > 0 && route.circles.length === 0
-                      ? t('searchFamily.emptyExplanation', { count: familyTerms.length })
-                      : t('routeResults.emptyExplanation', { count: route.circles.length })}
+            {/* Way Out / Radius Expansion Card */}
+            <Card className="p-6 sm:p-7 border-border-brand/40 bg-gradient-to-br from-bg-surface to-bg-surface-hover space-y-5 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-brand-accent/10 border border-brand-accent/30 flex items-center justify-center text-brand-accent shrink-0 mt-0.5">
+                  <Compass className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-base font-extrabold text-text-primary">
+                    {t('searchFamily.diagnosisCardTitle')}
+                  </h4>
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    {t('searchFamily.diagnosisCardSubtitle')}
                   </p>
                 </div>
+              </div>
 
-                {/* Show list of configured models so user can see them immediately */}
-                {familyTerms.length > 0 && (
-                  <div className="pt-2 pb-1 text-left">
-                    <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider mb-2 text-center">
-                      {t('searchFamily.configuredModels', { count: familyTerms.length })}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5 justify-center max-h-36 overflow-y-auto p-1">
-                      {familyTerms.map((term) => (
-                        <span
-                          key={term.id ?? term.term}
-                          className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-bg-base/60 text-text-secondary border border-border-subtle"
-                        >
-                          {term.label || term.term}
-                        </span>
-                      ))}
-                    </div>
+              {radiusSuccessMsg && (
+                <div className="p-3.5 bg-status-emerald/10 border border-status-emerald/30 rounded-xl text-status-emerald text-xs font-semibold flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>{radiusSuccessMsg}</span>
                   </div>
-                )}
-
-                <div className="pt-3">
                   <Button
-                    id="btn-empty-scrape"
                     variant="primary"
-                    size="md"
+                    size="xs"
                     onClick={onStartScrape}
                     disabled={isScraping}
-                    className="w-full py-3 text-base font-bold"
+                    className="font-bold shrink-0"
                   >
-                    {isScraping
-                      ? t('routeResults.scrapingInProgress')
-                      : familyTerms.length > 0 && route.circles.length === 0
-                        ? t('searchFamily.emptyAction')
-                        : t('routeResults.emptyAction')}
+                    {t('searchFamily.scrapeNewRadiusNow', { radius: currentRadius })}
                   </Button>
                 </div>
-              </Card>
+              )}
+
+              {diagnoseError && (
+                <div className="p-3 bg-status-danger/10 border border-status-danger/30 rounded-xl text-status-danger text-xs font-semibold">
+                  {diagnoseError}
+                </div>
+              )}
+
+              {/* Radius Options Grid or Diagnose Trigger */}
+              {radiusDiagnosis ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {radiusDiagnosis.options.map((opt) => {
+                      const isCurrent = opt.radius === currentRadius;
+                      const isRecommended = !isCurrent && opt.radius === 200;
+                      return (
+                        <div
+                          key={opt.radius}
+                          data-testid={`radius-option-${opt.radius}`}
+                          className={`p-3.5 rounded-xl border flex flex-col justify-between gap-2 transition-all ${
+                            isCurrent
+                              ? 'bg-bg-input/60 border-border-subtle opacity-75'
+                              : isRecommended
+                              ? 'bg-brand-accent/10 border-brand-accent shadow-sm'
+                              : 'bg-bg-surface border-border-subtle hover:border-border-brand'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-text-primary">
+                              {opt.radius} km
+                            </span>
+                            {isCurrent && (
+                              <span className="text-2xs font-semibold px-1.5 py-0.5 rounded bg-bg-surface text-text-muted border border-border-subtle">
+                                {t('searchFamily.currentRadiusTag')}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm font-extrabold text-text-primary">
+                            {opt.count === 1
+                              ? t('searchFamily.listingCountSingular')
+                              : t('searchFamily.listingCount', { count: opt.count })}
+                          </div>
+                          {!isCurrent && (
+                            <Button
+                              variant={isRecommended ? 'primary' : 'secondary'}
+                              size="xs"
+                              disabled={applyingRadius !== null || isScraping}
+                              onClick={() => handleApplyRadius(opt.radius)}
+                              className="w-full text-2xs font-bold mt-1"
+                            >
+                              {applyingRadius === opt.radius
+                                ? t('searchFamily.applyingRadius')
+                                : t('searchFamily.selectRadiusOption', { radius: opt.radius })}
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Primary Call To Action to expand to the largest tested radius */}
+                  {radiusDiagnosis.options.some((o) => o.radius > currentRadius && o.count > 0) && (
+                    <div className="pt-1">
+                      {(() => {
+                        const bestOpt = [...radiusDiagnosis.options]
+                          .filter((o) => o.radius > currentRadius && o.count > 0)
+                          .sort((a, b) => b.radius - a.radius)[0];
+                        if (!bestOpt) return null;
+                        return (
+                          <Button
+                            id="btn-apply-best-radius"
+                            variant="primary"
+                            size="md"
+                            disabled={applyingRadius !== null || isScraping}
+                            onClick={() => handleApplyRadius(bestOpt.radius)}
+                            className="w-full py-2.5 text-sm font-bold flex items-center justify-center gap-2"
+                          >
+                            <span>
+                              {applyingRadius === bestOpt.radius
+                                ? t('searchFamily.applyingRadius')
+                                : t('searchFamily.applyRadiusAction', {
+                                    radius: bestOpt.radius,
+                                    count: bestOpt.count,
+                                  })}
+                            </span>
+                          </Button>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Model Details Toggle & Table */}
+                  <div className="pt-2 border-t border-border-subtle/50 flex flex-col gap-2">
+                    <div className="flex items-center justify-between text-2xs">
+                      <button
+                        type="button"
+                        onClick={() => setShowTermDetails((v) => !v)}
+                        className="inline-flex items-center gap-1 font-semibold text-brand-accent hover:underline py-1"
+                      >
+                        {showTermDetails ? (
+                          <>
+                            <ChevronUp className="w-3.5 h-3.5" />
+                            <span>{t('searchFamily.hideTermBreakdown')}</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-3.5 h-3.5" />
+                            <span>{t('searchFamily.showTermBreakdown')}</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={diagnosing}
+                        onClick={handleDiagnoseRadius}
+                        className="inline-flex items-center gap-1 font-semibold text-text-muted hover:text-text-primary"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${diagnosing ? 'animate-spin' : ''}`} />
+                        <span>{t('searchFamily.reDiagnoseRadiusBtn')}</span>
+                      </button>
+                    </div>
+
+                    {showTermDetails && radiusDiagnosis.terms && (
+                      <div className="mt-1 border border-border-subtle rounded-xl overflow-x-auto bg-bg-surface text-2xs">
+                        <table className="w-full text-left">
+                          <thead className="bg-bg-input/80 border-b border-border-subtle text-text-muted font-bold">
+                            <tr>
+                              <th className="p-2">{t('searchFamily.termTableHeader')}</th>
+                              {radiusDiagnosis.options.map((o) => (
+                                <th key={o.radius} className="p-2 text-right">
+                                  {o.radius} km
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border-subtle/40">
+                            {radiusDiagnosis.terms.map((term) => (
+                              <tr key={term.id ?? term.term} className="hover:bg-bg-surface-hover/50">
+                                <td className="p-2 font-medium text-text-primary truncate max-w-[160px]">
+                                  {term.label || term.term}
+                                </td>
+                                {radiusDiagnosis.options.map((o) => {
+                                  const c = term.counts?.[String(o.radius)] ?? 0;
+                                  return (
+                                    <td
+                                      key={o.radius}
+                                      className={`p-2 text-right font-mono ${
+                                        c > 0 ? 'text-brand-accent font-bold' : 'text-text-muted'
+                                      }`}
+                                    >
+                                      {c}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs text-text-secondary leading-relaxed">
+                    {t('searchFamily.diagnosePrompt')}
+                  </p>
+                  <Button
+                    id="btn-diagnose-radius"
+                    variant="primary"
+                    size="md"
+                    disabled={diagnosing}
+                    onClick={handleDiagnoseRadius}
+                    className="w-full py-2.5 text-sm font-bold flex items-center justify-center gap-2"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${diagnosing ? 'animate-spin' : ''}`} />
+                    <span>
+                      {diagnosing
+                        ? t('searchFamily.diagnosingRadius')
+                        : t('searchFamily.diagnoseRadiusBtn')}
+                    </span>
+                  </Button>
+                </div>
+              )}
+            </Card>
+
+            {/* Fallback actions */}
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onStartScrape}
+                disabled={isScraping}
+                className="text-xs font-bold"
+              >
+                {t('routeResults.emptyAction')}
+              </Button>
+              {onEditFamily && (
+                <Button
+                  variant="quiet"
+                  size="sm"
+                  onClick={() => setShowFamilyModal(true)}
+                  className="text-xs font-semibold"
+                >
+                  {t('searchFamily.editFamily')}
+                </Button>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          /* Empty State */
+          <div className={`grid grid-cols-1 ${route.circles.length > 0 ? 'lg:grid-cols-12' : 'max-w-md mx-auto'} gap-5 items-start`}>
+            {route.circles.length > 0 && (isDesktop || mobileTab === 'map') && (
+              <div className={`rounded-2xl overflow-hidden ${isDesktop ? 'lg:col-span-7 h-[420px]' : 'h-[360px]'}`}>
+                <RouteCorridorMap
+                  polyline={route.polyline}
+                  circles={route.circles}
+                  listings={[]}
+                  selectedListingId={null}
+                  onSelectListing={() => {}}
+                  originName={route.origin}
+                  destinationName={route.destination}
+                />
+              </div>
+            )}
+
+            {(isDesktop || mobileTab === 'list' || route.circles.length === 0) && (
+              <div className={route.circles.length > 0 && isDesktop ? 'lg:col-span-5' : 'w-full'}>
+                <Card className="p-8 text-center space-y-4 border-border-subtle bg-bg-surface">
+                  <div className="w-12 h-12 rounded-2xl bg-brand-accent/10 border border-brand-accent/20 flex items-center justify-center mx-auto text-brand-accent">
+                    {familyTerms.length > 0 && route.circles.length === 0 ? (
+                      <Layers className="w-6 h-6" />
+                    ) : (
+                      <Navigation className="w-6 h-6" />
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-base font-extrabold text-text-primary">
+                      {familyTerms.length > 0 && route.circles.length === 0
+                        ? t('searchFamily.emptyHeadline')
+                        : t('routeResults.emptyHeadline')}
+                    </h3>
+                    <p className="text-xs text-text-muted leading-relaxed font-semibold">
+                      {familyTerms.length > 0 && route.circles.length === 0
+                        ? t('searchFamily.emptyExplanation', { count: familyTerms.length })
+                        : t('routeResults.emptyExplanation', { count: route.circles.length })}
+                    </p>
+                  </div>
+
+                  {/* Show list of configured models so user can see them immediately */}
+                  {familyTerms.length > 0 && (
+                    <div className="pt-2 pb-1 text-left">
+                      <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider mb-2 text-center">
+                        {t('searchFamily.configuredModels', { count: familyTerms.length })}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 justify-center max-h-36 overflow-y-auto p-1">
+                        {familyTerms.map((term) => (
+                          <span
+                            key={term.id ?? term.term}
+                            className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-bg-base/60 text-text-secondary border border-border-subtle"
+                          >
+                            {term.label || term.term}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-3">
+                    <Button
+                      id="btn-empty-scrape"
+                      variant="primary"
+                      size="md"
+                      onClick={onStartScrape}
+                      disabled={isScraping}
+                      className="w-full py-3 text-base font-bold"
+                    >
+                      {isScraping
+                        ? t('routeResults.scrapingInProgress')
+                        : familyTerms.length > 0 && route.circles.length === 0
+                          ? t('searchFamily.emptyAction')
+                          : t('routeResults.emptyAction')}
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+            )}
+          </div>
+        )
       ) : (
         /* Populated Results View */
         <div className="space-y-4">
