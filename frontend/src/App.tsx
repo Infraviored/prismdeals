@@ -638,7 +638,15 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newTargetUrl, routeFrom, routeTo, routeRadiusKm, routeCorridorKm, currentCampaignId]);
 
-  const handleRemoveRoute = useCallback(async () => {
+  // Not wrapped in useCallback, and the next two are not either.
+  //
+  // The React compiler refuses to reproduce the memoisation of a callback that
+  // depends on refreshAll, and reports it as "existing memoization could not be
+  // preserved" -- a lint error, not a warning. Memoising these buys nothing that
+  // would justify silencing a correctness rule: they are handed to one settings
+  // panel, so a fresh identity per render costs a re-render of that panel and
+  // nothing else.
+  const handleRemoveRoute = async () => {
     if (!currentCampaignId) return;
     try {
       const res = await fetch(`/api/campaigns/${currentCampaignId}/route`, { method: 'DELETE' });
@@ -653,7 +661,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to remove route:', err);
     }
-  }, [currentCampaignId, refreshAll, t]);
+  };
 
   const handleUpdateCorridor = useCallback(async (newRadiusKm: number, newCorridorKm: number) => {
     if (!campaignRouteData?.route?.id) return;
@@ -674,7 +682,7 @@ export default function App() {
     }
   }, [campaignRouteData, t]);
 
-  const handleDeleteSearch = useCallback(async (searchId: number) => {
+  const handleDeleteSearch = async (searchId: number) => {
     try {
       const res = await fetch(`/api/searches/${searchId}`, { method: 'DELETE' });
       if (res.ok) {
@@ -684,7 +692,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to delete search:', err);
     }
-  }, [refreshAll]);
+  };
 
   const handleAddSearchTarget = useCallback(async () => {
     if (!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl) || !currentCampaignId) return;
@@ -1880,11 +1888,15 @@ export default function App() {
             </div>
 
             {/* Tabs for Settings Workspace */}
-            <div className="flex items-center space-x-1 p-1 bg-bg-input border border-border-subtle rounded-xl max-w-xl">
+            {/* max-w-3xl, not max-w-xl: three labels of this length wrapped to two
+                lines inside 576px even on a 1440px screen, which put the icon on
+                the seam between the lines -- the same defect that had just been
+                fixed on the action buttons below. */}
+            <div className="flex items-center gap-1 p-1 bg-bg-input border border-border-subtle rounded-xl max-w-3xl overflow-x-auto">
               <button
                 type="button"
                 onClick={() => setEditTab('terms')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
                   editTab === 'terms'
                     ? 'bg-brand-accent/15 text-brand-accent shadow-sm'
                     : 'text-text-muted hover:text-text-primary'
@@ -1896,7 +1908,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setEditTab('geometry')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
                   editTab === 'geometry'
                     ? 'bg-brand-accent/15 text-brand-accent shadow-sm'
                     : 'text-text-muted hover:text-text-primary'
@@ -1908,7 +1920,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setEditTab('guidelines')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
                   editTab === 'guidelines'
                     ? 'bg-brand-accent/15 text-brand-accent shadow-sm'
                     : 'text-text-muted hover:text-text-primary'

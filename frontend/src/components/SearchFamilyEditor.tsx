@@ -116,8 +116,11 @@ export default function SearchFamilyEditor({
   }, []);
 
   const activeTerms = useMemo(() => terms.filter((t) => t.enabled), [terms]);
+  // Keyed on `term`, not on `label`, for the same reason the preview request is:
+  // the two differ for every saved family, and keying on the label would skip the
+  // refetch when only the search term changed.
   const activeTermLabelsKey = useMemo(
-    () => activeTerms.map((t) => t.label || t.term).join('|'),
+    () => activeTerms.map((t) => t.term || t.label).join('|'),
     [activeTerms]
   );
 
@@ -140,7 +143,12 @@ export default function SearchFamilyEditor({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           base_url: trimmedUrl,
-          terms: activeTerms.map((t) => t.label || t.term),
+          // `term` is what becomes the URL; `label` is only what the human reads.
+          // Saving sends `term`, so previewing the label made the two disagree:
+          // for a family whose labels differ from its terms, the preview reported
+          // "8 new, 5 reused" where saving would have done "0 new, 13 reused" —
+          // wrong in exactly the number the preview exists to show.
+          terms: activeTerms.map((t) => t.term || t.label),
           route_search_id: routeSearchId ?? undefined,
         }),
       });
