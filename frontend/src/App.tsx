@@ -1907,7 +1907,7 @@ export default function App() {
                 }`}
               >
                 <Layers className="w-4 h-4 shrink-0" />
-                <span>{t('campaignSettings.tabTerms')}</span>
+                <span className="sm:hidden">{t('campaignSettings.tabTermsShort')}</span><span className="hidden sm:inline">{t('campaignSettings.tabTerms')}</span>
               </button>
               <button
                 type="button"
@@ -1919,7 +1919,7 @@ export default function App() {
                 }`}
               >
                 <MapPin className="w-4 h-4 shrink-0" />
-                <span>{t('campaignSettings.tabGeometry')}</span>
+                <span className="sm:hidden">{t('campaignSettings.tabGeometryShort')}</span><span className="hidden sm:inline">{t('campaignSettings.tabGeometry')}</span>
               </button>
               <button
                 type="button"
@@ -1931,7 +1931,7 @@ export default function App() {
                 }`}
               >
                 <Sparkles className="w-4 h-4 shrink-0" />
-                <span>{t('campaignSettings.tabGuidelines')}</span>
+                <span className="sm:hidden">{t('campaignSettings.tabGuidelinesShort')}</span><span className="hidden sm:inline">{t('campaignSettings.tabGuidelines')}</span>
               </button>
             </div>
 

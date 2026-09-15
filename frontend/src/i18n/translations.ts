@@ -422,6 +422,11 @@ export const translations = {
       tabTerms: "Search Terms & Models",
       tabGeometry: "Search Area & Route",
       tabGuidelines: "AI Guidelines",
+      // Short forms for phone width: three full labels overflow 390px and get
+      // sliced mid-word, which reads as a broken control rather than as tabs.
+      tabTermsShort: "Models",
+      tabGeometryShort: "Area",
+      tabGuidelinesShort: "AI",
       termsTitle: "Search Terms & Models",
       termsSubtitle: "Manage model variants or individual search queries for this campaign.",
       geometryTitle: "Search Area & Route Corridor",
@@ -868,6 +873,9 @@ export const translations = {
       tabTerms: "Suchbegriffe & Modelle",
       tabGeometry: "Suchgebiet & Route",
       tabGuidelines: "KI-Leitfaden",
+      tabTermsShort: "Modelle",
+      tabGeometryShort: "Gebiet",
+      tabGuidelinesShort: "KI",
       termsTitle: "Suchbegriffe & Modelle",
       termsSubtitle: "Verwalten Sie Modellvarianten oder einzelne Suchanfragen für diese Kampagne.",
       geometryTitle: "Suchgebiet & Routen-Korridor",
