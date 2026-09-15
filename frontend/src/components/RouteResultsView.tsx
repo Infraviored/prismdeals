@@ -17,10 +17,12 @@ import {
   ListFilter,
   MapPin,
   X,
+  Layers,
 } from 'lucide-react';
 import ScraperProgressCard from './ScraperProgressCard';
 import CorridorPlanner from './CorridorPlanner';
 import SearchFamilyFilterBar from './SearchFamilyFilterBar';
+import SearchFamilyEditor from './SearchFamilyEditor';
 import type { ScraperProgressCardProps, SearchFamilyTerm, MatchedTerm } from '../types';
 
 export interface RouteCorridorData {
@@ -94,6 +96,12 @@ export default function RouteResultsView({
   // Search Family terms and filter selection
   const [familyTerms, setFamilyTerms] = useState<SearchFamilyTerm[]>([]);
   const [selectedTermIds, setSelectedTermIds] = useState<Set<number>>(new Set());
+  const [showFamilyModal, setShowFamilyModal] = useState(false);
+  const [effectiveFamilyId, setEffectiveFamilyId] = useState<number | null>(familyId ?? null);
+
+  useEffect(() => {
+    if (familyId) setEffectiveFamilyId(familyId);
+  }, [familyId]);
 
   // Filters and sorting
   const [draft, setDraft] = useState<{ radius: number; corridor: number } | null>(null);
@@ -157,11 +165,14 @@ export default function RouteResultsView({
             const famList = await famRes.json();
             if (Array.isArray(famList) && famList.length > 0) {
               targetFamilyId = famList[0].id;
+              setEffectiveFamilyId(targetFamilyId ?? null);
             }
           }
         } catch {
           // Ignore
         }
+      } else if (targetFamilyId !== undefined) {
+        setEffectiveFamilyId(targetFamilyId ?? null);
       }
 
       if (targetFamilyId) {
@@ -476,7 +487,7 @@ export default function RouteResultsView({
               size="sm"
               onClick={onStartScrape}
               disabled={isScraping}
-              className="py-2.5 px-3 font-bold flex items-center justify-center gap-1.5 min-h-[44px] whitespace-normal text-center leading-tight"
+              className="py-2 px-3.5 font-bold flex items-center justify-center gap-1.5 whitespace-nowrap"
             >
               {isScraping ? (
                 <>
@@ -501,36 +512,41 @@ export default function RouteResultsView({
                     corridor: routeData.route.half_width_km,
                   })
                 }
-                className="py-2.5 px-3 font-bold flex items-center justify-center gap-1.5 min-h-[44px] whitespace-normal text-center leading-tight"
+                className="py-2 px-3.5 font-bold flex items-center justify-center gap-1.5 whitespace-nowrap"
               >
                 <SlidersHorizontal className="w-4 h-4 shrink-0" />
                 <span>{t('corridor.editSettings')}</span>
               </Button>
             )}
 
-            {familyTerms.length > 0 && onEditFamily && (
+            {(familyTerms.length > 0 || effectiveFamilyId) && (
               <Button
                 id="btn-edit-family"
                 variant="secondary"
                 size="sm"
-                onClick={onEditFamily}
-                className="py-2.5 px-3 font-bold flex items-center justify-center gap-1.5 min-h-[44px] whitespace-normal text-center leading-tight"
+                onClick={() => {
+                  setShowFamilyModal(true);
+                  if (onEditFamily) onEditFamily();
+                }}
+                className="py-2 px-3.5 font-bold flex items-center justify-center gap-1.5 whitespace-nowrap"
               >
                 <SlidersHorizontal className="w-4 h-4 shrink-0" />
                 <span>{t('searchFamily.editFamily')}</span>
               </Button>
             )}
 
-            <Button
-              id="btn-evaluate-ai"
-              variant="action-indigo"
-              size="sm"
-              onClick={onEvaluateWithAi}
-              className="col-span-2 sm:col-span-1 py-2.5 px-3 font-bold flex items-center justify-center gap-1.5 min-h-[44px] whitespace-normal text-center leading-tight"
-            >
-              <Sparkles className="w-4 h-4 shrink-0" />
-              <span>{t('routeResults.evaluateWithAi')}</span>
-            </Button>
+            {hasListings && routeData.listings.some((l) => !l.llm_processed) && (
+              <Button
+                id="btn-evaluate-ai"
+                variant="action-indigo"
+                size="sm"
+                onClick={onEvaluateWithAi}
+                className="col-span-2 sm:col-span-1 py-2 px-3.5 font-bold flex items-center justify-center gap-1.5 whitespace-nowrap"
+              >
+                <Sparkles className="w-4 h-4 shrink-0" />
+                <span>{t('routeResults.evaluateWithAi')}</span>
+              </Button>
+            )}
           </div>
         </div>
       </Card>
@@ -558,24 +574,28 @@ export default function RouteResultsView({
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {redrawError && (
+              <div className="p-3 bg-status-danger/10 border border-status-danger/30 rounded-xl text-status-danger text-sm font-semibold">
+                {redrawError}
+              </div>
+            )}
+
             <CorridorPlanner
-              baseUrl={route.base_url}
-              origin={route.origin}
-              destination={route.destination}
-              originName={route.origin}
-              destinationName={route.destination}
+              baseUrl={routeData.route.name || ''}
+              origin={routeData.route.origin || ''}
+              destination={routeData.route.destination || ''}
+              originName={routeData.route.origin || ''}
+              destinationName={routeData.route.destination || ''}
               radiusKm={draft.radius}
               corridorKm={draft.corridor}
-              onRadiusChange={radius => setDraft(d => (d ? { ...d, radius } : d))}
-              onCorridorChange={corridor => setDraft(d => (d ? { ...d, corridor } : d))}
-              committing={redrawing}
-              commitLabel={t('corridor.commitChange')}
+              onRadiusChange={(r) => setDraft((d) => (d ? { ...d, radius: r } : null))}
+              onCorridorChange={(c) => setDraft((d) => (d ? { ...d, corridor: c } : null))}
               onCancel={() => { setDraft(null); setRedrawError(null); }}
               onCommit={redrawCorridor}
+              committing={redrawing}
+              commitLabel={t('corridor.commitChange')}
             />
-            {redrawError && (
-              <p className="text-sm text-brand-accent font-semibold">{redrawError}</p>
-            )}
           </Card>
         </div>
       )}
@@ -640,12 +660,18 @@ export default function RouteResultsView({
             <div className={route.circles.length > 0 && isDesktop ? 'lg:col-span-5' : 'w-full'}>
               <Card className="p-8 text-center space-y-4 border-border-subtle bg-bg-surface">
                 <div className="w-12 h-12 rounded-2xl bg-brand-accent/10 border border-brand-accent/20 flex items-center justify-center mx-auto text-brand-accent">
-                  <Navigation className="w-6 h-6" />
+                  {familyTerms.length > 0 && route.circles.length === 0 ? (
+                    <Layers className="w-6 h-6" />
+                  ) : (
+                    <Navigation className="w-6 h-6" />
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
                   <h3 className="text-base font-extrabold text-text-primary">
-                    {t('routeResults.emptyHeadline')}
+                    {familyTerms.length > 0 && route.circles.length === 0
+                      ? t('searchFamily.emptyHeadline')
+                      : t('routeResults.emptyHeadline')}
                   </h3>
                   <p className="text-xs text-text-muted leading-relaxed font-semibold">
                     {familyTerms.length > 0 && route.circles.length === 0
@@ -653,6 +679,25 @@ export default function RouteResultsView({
                       : t('routeResults.emptyExplanation', { count: route.circles.length })}
                   </p>
                 </div>
+
+                {/* Show list of configured models so user can see them immediately */}
+                {familyTerms.length > 0 && (
+                  <div className="pt-2 pb-1 text-left">
+                    <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider mb-2 text-center">
+                      {t('searchFamily.configuredModels', { count: familyTerms.length })}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 justify-center max-h-36 overflow-y-auto p-1">
+                      {familyTerms.map((term) => (
+                        <span
+                          key={term.id ?? term.term}
+                          className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-bg-base/60 text-text-secondary border border-border-subtle"
+                        >
+                          {term.label || term.term}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="pt-3">
                   <Button
@@ -663,7 +708,11 @@ export default function RouteResultsView({
                     disabled={isScraping}
                     className="w-full py-3 text-base font-bold"
                   >
-                    {isScraping ? t('routeResults.scrapingInProgress') : t('routeResults.emptyAction')}
+                    {isScraping
+                      ? t('routeResults.scrapingInProgress')
+                      : familyTerms.length > 0 && route.circles.length === 0
+                        ? t('searchFamily.emptyAction')
+                        : t('routeResults.emptyAction')}
                   </Button>
                 </div>
               </Card>
@@ -967,6 +1016,23 @@ export default function RouteResultsView({
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Search Family Editor Modal */}
+      {showFamilyModal && effectiveFamilyId && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <SearchFamilyEditor
+              campaignId={campaignId}
+              familyId={effectiveFamilyId}
+              onSave={() => {
+                setShowFamilyModal(false);
+                fetchRouteData();
+              }}
+              onCancel={() => setShowFamilyModal(false)}
+            />
           </div>
         </div>
       )}

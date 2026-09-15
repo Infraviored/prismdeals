@@ -7,12 +7,29 @@ import PlaceInput from './components/PlaceInput'
 import type { Place } from './components/PlaceInput'
 import ListingDetailCard from './components/ListingDetailCard'
 import GuidelinesWizard from './components/GuidelinesWizard'
-import RouteResultsView from './components/RouteResultsView'
+import RouteResultsView, { type RouteCorridorData } from './components/RouteResultsView'
 import SearchFamilyEditor from './components/SearchFamilyEditor'
 import SettingsView from './components/SettingsView'
 import { transformListing } from './utils/listingTransformer'
 import { useHashRouter } from './hooks/useHashRouter'
-import { Menu, X, Settings, Globe, LogOut, Key, Search, RefreshCw, Sparkles, ChevronDown } from 'lucide-react'
+import {
+  Menu,
+  X,
+  Settings,
+  Globe,
+  LogOut,
+  Key,
+  Search,
+  RefreshCw,
+  Sparkles,
+  ChevronDown,
+  Layers,
+  MapPin,
+  Navigation,
+  Check,
+  Trash2,
+  Plus,
+} from 'lucide-react'
 import { useTranslation } from './hooks/useTranslation'
 import { Button } from './components/ui/Button'
 import { Input } from './components/ui/Input'
@@ -115,7 +132,6 @@ export default function App() {
   // auto-registration below: a corridor is several searches, and registering the
   // pasted URL as a single one the moment it looks valid would quietly give the
   // user the point search they were trying not to make.
-  const [routeMode, setRouteMode] = useState(false)
   const [searchTargetMode, setSearchTargetMode] = useState<'point' | 'route' | 'family'>('point')
   const [routeFrom, setRouteFrom] = useState<Place | null>(null)
   const [routeTo, setRouteTo] = useState<Place | null>(null)
@@ -125,12 +141,36 @@ export default function App() {
   const [routeError, setRouteError] = useState<string | null>(null)
   const [routeResult, setRouteResult] = useState<{ count: number; width: number } | null>(null)
   const [isEditingCampaignName, setIsEditingCampaignName] = useState(false)
-  const [showAiWizard, setShowAiWizard] = useState(false)
+  const [editTab, setEditTab] = useState<'terms' | 'geometry' | 'guidelines'>('terms')
+  const [campaignRouteData, setCampaignRouteData] = useState<RouteCorridorData | null>(null)
+  const [loadingRouteData, setLoadingRouteData] = useState(false)
+  const [geometrySuccessMsg, setGeometrySuccessMsg] = useState<string | null>(null)
 
-  // Reset AI wizard view state when switching campaigns
+  // Reset edit tab when switching campaigns
   useEffect(() => {
-    setShowAiWizard(false)
+    setEditTab('terms')
   }, [currentCampaignId])
+
+  // Sync campaign route data when currentCampaignId or campaigns change
+  useEffect(() => {
+    if (!currentCampaignId) {
+      setCampaignRouteData(null)
+      return
+    }
+    const currentCampaign = campaigns.find(c => c.id === currentCampaignId)
+    if (!currentCampaign?.route_id) {
+      setCampaignRouteData(null)
+      return
+    }
+    setLoadingRouteData(true)
+    fetch(`/api/campaigns/${currentCampaignId}/route`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        setCampaignRouteData(data)
+      })
+      .catch(err => console.error('Failed to fetch campaign route:', err))
+      .finally(() => setLoadingRouteData(false))
+  }, [currentCampaignId, campaigns])
 
   // Step wizard states for Guidelines Editor
   const [sampledListings, setSampledListings] = useState<SampleListing[]>([])
@@ -589,7 +629,6 @@ export default function App() {
       if (data.route_id && currentCampaignId) {
         setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, route_id: data.route_id } : c));
       }
-      setShowAiWizard(false);
       refreshAll();
     } catch {
       setRouteError(t('common.connectionIssueFailed'));
@@ -599,9 +638,88 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newTargetUrl, routeFrom, routeTo, routeRadiusKm, routeCorridorKm, currentCampaignId]);
 
+  const handleRemoveRoute = useCallback(async () => {
+    if (!currentCampaignId) return;
+    try {
+      const res = await fetch(`/api/campaigns/${currentCampaignId}/route`, { method: 'DELETE' });
+      if (res.ok) {
+        setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, route_id: null } : c));
+        setCampaignRouteData(null);
+        setRouteResult(null);
+        setGeometrySuccessMsg(t('campaignSettings.routeRemovedSuccess'));
+        setTimeout(() => setGeometrySuccessMsg(null), 4000);
+        refreshAll();
+      }
+    } catch (err) {
+      console.error('Failed to remove route:', err);
+    }
+  }, [currentCampaignId, refreshAll, t]);
+
+  const handleUpdateCorridor = useCallback(async (newRadiusKm: number, newCorridorKm: number) => {
+    if (!campaignRouteData?.route?.id) return;
+    try {
+      const res = await fetch(`/api/route-searches/${campaignRouteData.route.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ radius_km: newRadiusKm, corridor_km: newCorridorKm }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setCampaignRouteData(updated);
+        setGeometrySuccessMsg(t('searchFamily.savedSuccess'));
+        setTimeout(() => setGeometrySuccessMsg(null), 4000);
+      }
+    } catch (err) {
+      console.error('Failed to update corridor:', err);
+    }
+  }, [campaignRouteData, t]);
+
+  const handleDeleteSearch = useCallback(async (searchId: number) => {
+    try {
+      const res = await fetch(`/api/searches/${searchId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setSearches(prev => prev.filter(s => s.id !== searchId));
+        refreshAll();
+      }
+    } catch (err) {
+      console.error('Failed to delete search:', err);
+    }
+  }, [refreshAll]);
+
+  const handleAddSearchTarget = useCallback(async () => {
+    if (!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl) || !currentCampaignId) return;
+    try {
+      const suggested = suggestTitleFromUrl(newTargetUrl) || 'New Search';
+      const ksRes = await fetch('/api/knowledge-sets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: `${suggested} Guidelines`, expert_knowledge: '', item_json: {} }),
+      });
+      const boundKsId = ksRes.ok ? (await ksRes.json()).id : null;
+      const searchRes = await fetch('/api/searches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaign_id: currentCampaignId,
+          name: suggested,
+          url: newTargetUrl,
+          knowledge_set_id: boundKsId,
+        }),
+      });
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        setNewTargetUrl('');
+        setCurrentSearchId(searchData.id);
+        refreshAll();
+      }
+    } catch (err) {
+      console.error('Failed to add search target:', err);
+    }
+  }, [newTargetUrl, currentCampaignId, refreshAll]);
+
   // Debounced auto-registration and count fetch
   useEffect(() => {
-    if (routeMode || searchTargetMode === 'family') {
+    if (searchTargetMode === 'family' || Boolean(campaigns.find(c => c.id === currentCampaignId)?.route_id)) {
       // A corridor or search family is registered deliberately, not the moment a URL looks valid.
       return;
     }
@@ -693,7 +811,7 @@ export default function App() {
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newTargetUrl, currentCampaignId, searches, isRegisteringTarget, routeMode, searchTargetMode]);
+  }, [newTargetUrl, currentCampaignId, searches, isRegisteringTarget, searchTargetMode]);
 
 
 
@@ -1447,6 +1565,7 @@ export default function App() {
                   size="xs"
                   onClick={() => {
                     const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
+                    setEditTab('terms');
                     navigate('edit', currentCampaignId, firstTarget?.id || null);
                   }}
                   title={t('landing.configureTooltip')}
@@ -1462,7 +1581,7 @@ export default function App() {
                 familyId={campaigns.find(c => c.id === currentCampaignId)?.family_id ?? undefined}
                 onEvaluateWithAi={() => {
                   const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
-                  setShowAiWizard(true);
+                  setEditTab('guidelines');
                   navigate('edit', currentCampaignId, firstTarget?.id || null);
                 }}
                 isScraping={isScraping}
@@ -1474,6 +1593,7 @@ export default function App() {
                 setShowLogConsole={setShowLogConsole}
                 onEditFamily={() => {
                   setSearchTargetMode('family');
+                  setEditTab('terms');
                   navigate('edit', currentCampaignId, null);
                 }}
               />
@@ -1705,7 +1825,7 @@ export default function App() {
                 <Button
                   variant="badge"
                   size="sm"
-                  onClick={() => setView('dashboard')}
+                  onClick={() => navigate('dashboard', currentCampaignId, null)}
                   className="shrink-0"
                 >
                   <span>← {t('common.backToDashboard')}</span>
@@ -1759,103 +1879,318 @@ export default function App() {
               </div>
             </div>
 
-            {activeSearches.length === 0 ? (
-              searchTargetMode === 'family' ? (
-                <div className="max-w-3xl mx-auto w-full space-y-4 animate-fadeIn">
-                  <div className="flex rounded-xl bg-bg-input border border-border-subtle p-1 text-sm font-bold max-w-md mx-auto">
-                    {[
-                      { key: 'point', label: t('common.searchModePoint') },
-                      { key: 'route', label: t('common.searchModeRoute') },
-                      { key: 'family', label: t('common.searchModeFamily') },
-                    ].map(mode => (
-                      <button
-                        key={mode.key}
-                        type="button"
-                        onClick={() => {
-                          setSearchTargetMode(mode.key as 'point' | 'route' | 'family');
-                          setRouteMode(mode.key === 'route');
-                          setRouteError(null);
-                        }}
-                        aria-pressed={searchTargetMode === mode.key}
-                        className={`flex-1 rounded-lg px-3 py-2 transition-colors ${
-                          searchTargetMode === mode.key
-                            ? 'bg-brand-accent/15 text-brand-accent'
-                            : 'text-text-muted hover:text-text-primary'
-                        }`}
-                      >
-                        {mode.label}
-                      </button>
-                    ))}
+            {/* Tabs for Settings Workspace */}
+            <div className="flex items-center space-x-1 p-1 bg-bg-input border border-border-subtle rounded-xl max-w-xl">
+              <button
+                type="button"
+                onClick={() => setEditTab('terms')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+                  editTab === 'terms'
+                    ? 'bg-brand-accent/15 text-brand-accent shadow-sm'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <Layers className="w-4 h-4 shrink-0" />
+                <span>{t('campaignSettings.tabTerms')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTab('geometry')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+                  editTab === 'geometry'
+                    ? 'bg-brand-accent/15 text-brand-accent shadow-sm'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <MapPin className="w-4 h-4 shrink-0" />
+                <span>{t('campaignSettings.tabGeometry')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTab('guidelines')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+                  editTab === 'guidelines'
+                    ? 'bg-brand-accent/15 text-brand-accent shadow-sm'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 shrink-0" />
+                <span>{t('campaignSettings.tabGuidelines')}</span>
+              </button>
+            </div>
+
+            {/* TAB 1: SEARCH TERMS & MODELS */}
+            {editTab === 'terms' && (
+              <div className="w-full space-y-6 animate-fadeIn">
+                {campaigns.find(c => c.id === currentCampaignId)?.family_id || searchTargetMode === 'family' ? (
+                  <div className="max-w-3xl mx-auto w-full space-y-4">
+                    <SearchFamilyEditor
+                      campaignId={currentCampaignId}
+                      familyId={campaigns.find(c => c.id === currentCampaignId)?.family_id ?? undefined}
+                      initialBaseUrl={newTargetUrl || (activeSearches[0]?.url || '')}
+                      onSave={(savedFamily) => {
+                        if (currentCampaignId) {
+                          setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, family_id: savedFamily.id } : c));
+                        }
+                        refreshAll();
+                      }}
+                      onCancel={() => {
+                        if (!campaigns.find(c => c.id === currentCampaignId)?.family_id) {
+                          setSearchTargetMode('point');
+                        }
+                        navigate('dashboard', currentCampaignId, null);
+                      }}
+                    />
                   </div>
-
-                  <SearchFamilyEditor
-                    campaignId={currentCampaignId}
-                    initialBaseUrl={newTargetUrl}
-                    onSave={(savedFamily) => {
-                      if (currentCampaignId) {
-                        setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, family_id: savedFamily.id } : c));
-                      }
-                      refreshAll();
-                    }}
-                    onCancel={() => {
-                      setSearchTargetMode('point');
-                      setRouteMode(false);
-                    }}
-                  />
-                </div>
-              ) : (
-                <Card className={`p-8 mx-auto w-full relative animate-fadeIn ${
-                  routeMode ? 'max-w-3xl' : 'max-w-xl overflow-hidden'
-                }`}>
-                  <div className="space-y-1.5 text-center">
-                    <h2 className="text-2xl font-bold text-text-primary font-sans tracking-tight">{t('common.pasteSearchUrl')}</h2>
-                    <p className="text-base text-text-secondary leading-relaxed">{t('wizard.targetsDescription')}</p>
-                  </div>
-
-                  <div className="space-y-4 pt-2">
-                    <div className="space-y-1.5">
-                      <label className="text-sm text-text-secondary font-medium block">{t('common.pasteSearchUrl')}</label>
-                      <Input
-                        type="text"
-                        value={newTargetUrl}
-                        onChange={e => setNewTargetUrl(e.target.value)}
-                        placeholder={t('common.searchUrlPlaceholder')}
-                        className="font-mono"
-                      />
-                    </div>
-
-                    {/* Where to search: around the URL's own place, along a drive, or for a family of models */}
-                    <div className="flex rounded-xl bg-bg-input border border-border-subtle p-1 text-sm font-bold">
-                      {[
-                        { key: 'point', label: t('common.searchModePoint') },
-                        { key: 'route', label: t('common.searchModeRoute') },
-                        { key: 'family', label: t('common.searchModeFamily') },
-                      ].map(mode => (
-                        <button
-                          key={mode.key}
-                          type="button"
-                          onClick={() => {
-                            setSearchTargetMode(mode.key as 'point' | 'route' | 'family');
-                            setRouteMode(mode.key === 'route');
-                            setRouteError(null);
-                          }}
-                          aria-pressed={searchTargetMode === mode.key}
-                          className={`flex-1 rounded-lg px-3 py-2 transition-colors ${
-                            searchTargetMode === mode.key
-                              ? 'bg-brand-accent/15 text-brand-accent'
-                              : 'text-text-muted hover:text-text-primary'
-                          }`}
+                ) : (
+                  <div className="max-w-3xl mx-auto w-full space-y-6">
+                    {/* Add Single Search Target Card */}
+                    <Card className="p-6 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h2 className="text-lg font-bold text-text-primary">{t('common.pasteSearchUrl')}</h2>
+                          <p className="text-xs text-text-secondary">{t('wizard.targetsDescription')}</p>
+                        </div>
+                        <Button
+                          variant="secondary"
+                          size="xs"
+                          onClick={() => setSearchTargetMode('family')}
+                          className="flex items-center gap-1 text-brand-accent font-semibold"
                         >
-                          {mode.label}
-                        </button>
-                      ))}
+                          <Layers className="w-3.5 h-3.5 shrink-0" />
+                          <span>{t('campaignSettings.btnCreateFamily')}</span>
+                        </Button>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            value={newTargetUrl}
+                            onChange={e => setNewTargetUrl(e.target.value)}
+                            placeholder={t('common.searchUrlPlaceholder')}
+                            className="font-mono text-sm flex-1"
+                          />
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            disabled={!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl)}
+                            onClick={handleAddSearchTarget}
+                            className="shrink-0"
+                          >
+                            <Plus className="w-4 h-4 mr-1" />
+                            <span>{t('common.add')}</span>
+                          </Button>
+                        </div>
+
+                        {newTargetUrl && (
+                          <div className="bg-bg-input border border-border-subtle rounded-xl p-3 text-xs space-y-1.5 font-mono">
+                            <div className="flex items-center justify-between">
+                              <span className="text-text-muted">{t('common.urlStatus')}:</span>
+                              {isValidKleinanzeigenUrl(newTargetUrl) ? (
+                                <span className="text-status-good font-bold">{t('common.validUrl')}</span>
+                              ) : (
+                                <span className="text-status-danger font-bold">{t('common.invalidUrl')}</span>
+                              )}
+                            </div>
+                            {suggestTitleFromUrl(newTargetUrl) && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-text-muted">{t('common.suggestedName')}:</span>
+                                <span className="text-text-primary font-semibold">{suggestTitleFromUrl(newTargetUrl)}</span>
+                              </div>
+                            )}
+                            {previewLoading && (
+                              <div className="text-text-muted flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-brand-accent animate-ping" />
+                                <span>{t('common.processing')}</span>
+                              </div>
+                            )}
+                            {previewCount !== null && (
+                              <div className="text-status-good font-semibold">
+                                {t('common.foundCount', { count: previewCount })}
+                              </div>
+                            )}
+                            {previewError && (
+                              <div className="text-status-danger font-semibold">
+                                {previewError}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+
+                    {/* Active Searches List */}
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider">
+                        {t('campaignSettings.singleSearchesTitle')} ({activeSearches.length})
+                      </h3>
+                      {activeSearches.length === 0 ? (
+                        <Card className="p-8 text-center text-text-muted text-sm border-dashed">
+                          {t('campaignSettings.noSearchesYet')}
+                        </Card>
+                      ) : (
+                        <div className="space-y-2">
+                          {activeSearches.map(s => (
+                            <Card key={s.id} className="p-3.5 flex items-center justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <h4 className="text-sm font-bold text-text-primary truncate">{s.name || s.url}</h4>
+                                <p className="text-xs text-text-muted font-mono truncate">{s.url}</p>
+                              </div>
+                              <Button
+                                variant="icon"
+                                size="xs"
+                                onClick={() => s.id && handleDeleteSearch(s.id)}
+                                title={t('common.delete')}
+                                className="text-text-muted hover:text-status-danger"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: GEOMETRY & LOCATION */}
+            {editTab === 'geometry' && (
+              <div className="max-w-3xl mx-auto w-full space-y-6 animate-fadeIn">
+                {/* Geometry Header Card */}
+                <div className="space-y-1">
+                  <h2 className="text-xl font-bold text-text-primary tracking-tight font-heading">
+                    {t('campaignSettings.geometryTitle')}
+                  </h2>
+                  <p className="text-sm text-text-secondary leading-relaxed">
+                    {t('campaignSettings.geometrySubtitle')}
+                  </p>
+                </div>
+
+                {geometrySuccessMsg && (
+                  <div className="bg-status-good/10 text-status-good px-4 py-2.5 rounded-xl border border-status-good/20 text-sm font-semibold flex items-center gap-2 animate-fadeIn">
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>{geometrySuccessMsg}</span>
+                  </div>
+                )}
+
+                {/* Status Card */}
+                {campaigns.find(c => c.id === currentCampaignId)?.route_id ? (
+                  /* Route Corridor Active */
+                  <Card className="p-6 space-y-5 border-brand-accent/30 bg-bg-surface">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border-subtle pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-brand-accent/15 border border-border-brand flex items-center justify-center text-brand-accent shrink-0">
+                          <Navigation className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-brand-accent/15 text-brand-accent border border-border-brand">
+                              {t('campaignSettings.activeModeRoute')}
+                            </span>
+                          </div>
+                          <p className="text-xs text-text-muted mt-1">
+                            {t('campaignSettings.currentRouteNotice')}
+                          </p>
+                        </div>
+                      </div>
+
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleRemoveRoute}
+                        className="text-status-danger border-status-danger/30 hover:bg-status-danger/10 shrink-0 font-semibold"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-1" />
+                        <span>{t('campaignSettings.btnSwitchToLocation')}</span>
+                      </Button>
                     </div>
 
-                    {routeMode && (
-                      <div className="bg-bg-surface border border-border-subtle rounded-2xl p-4 space-y-4 shadow-inner animate-fadeIn">
-                        <p className="text-sm text-text-secondary leading-relaxed">{t('common.routeExplainer')}</p>
+                    {routeResult && (
+                      <div className="text-sm bg-status-good/10 text-status-good px-3.5 py-2.5 rounded-xl border border-status-good/20 font-semibold animate-fadeIn">
+                        {t('common.corridorPlanned', { count: routeResult.count, width: routeResult.width })}
+                      </div>
+                    )}
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {campaignRouteData?.route && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                          <div className="bg-bg-input p-3 rounded-xl border border-border-subtle">
+                            <span className="text-text-muted block">{t('common.routeFrom')} → {t('common.routeTo')}</span>
+                            <span className="font-bold text-text-primary text-sm mt-0.5 block truncate">
+                              {campaignRouteData.route.origin} → {campaignRouteData.route.destination}
+                            </span>
+                          </div>
+                          <div className="bg-bg-input p-3 rounded-xl border border-border-subtle">
+                            <span className="text-text-muted block">{t('corridor.radiusLabel', { km: campaignRouteData.route.radius_km })}</span>
+                            <span className="font-bold text-text-primary text-sm mt-0.5 block">
+                              {campaignRouteData.route.radius_km} km
+                            </span>
+                          </div>
+                          <div className="bg-bg-input p-3 rounded-xl border border-border-subtle">
+                            <span className="text-text-muted block">{t('corridor.halfWidthLabel', { km: campaignRouteData.route.half_width_km })}</span>
+                            <span className="font-bold text-text-primary text-sm mt-0.5 block">
+                              ±{campaignRouteData.route.half_width_km} km ({campaignRouteData.route.half_width_km * 2} km {t('corridor.totalWidth')})
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Corridor Tuner */}
+                        <div className="pt-2 border-t border-border-subtle">
+                          <h4 className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-3">
+                            {t('corridor.editSettings')}
+                          </h4>
+                          <CorridorPlanner
+                            baseUrl={campaignRouteData.route.base_url || newTargetUrl || (activeSearches[0]?.url || 'https://www.kleinanzeigen.de/s-multimedia-elektronik/c161')}
+                            origin={campaignRouteData.route.origin}
+                            destination={campaignRouteData.route.destination}
+                            originName={campaignRouteData.route.origin}
+                            destinationName={campaignRouteData.route.destination}
+                            radiusKm={campaignRouteData.route.radius_km}
+                            corridorKm={campaignRouteData.route.half_width_km}
+                            onRadiusChange={(r) => handleUpdateCorridor(r, campaignRouteData.route.half_width_km)}
+                            onCorridorChange={(c) => handleUpdateCorridor(campaignRouteData.route.radius_km, c)}
+                            onCommit={() => handleUpdateCorridor(campaignRouteData.route.radius_km, campaignRouteData.route.half_width_km)}
+                            committing={loadingRouteData}
+                            commitLabel={t('corridor.commitChange')}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                ) : (
+                  /* Single Location Active */
+                  <div className="space-y-6">
+                    <Card className="p-6 space-y-4 bg-bg-surface border-border-subtle">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-status-good/15 border border-status-good/20 flex items-center justify-center text-status-good shrink-0">
+                          <MapPin className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-status-good/15 text-status-good border border-status-good/20">
+                            {t('campaignSettings.activeModeLocation')}
+                          </span>
+                          <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                            {t('campaignSettings.currentLocationNotice')}
+                          </p>
+                        </div>
+                      </div>
+                    </Card>
+
+                    {/* Switch to Route Form */}
+                    <Card className="p-6 space-y-4 bg-bg-surface border-border-subtle">
+                      <div>
+                        <h3 className="text-base font-bold text-text-primary">
+                          {t('campaignSettings.switchToRoutePrompt')}
+                        </h3>
+                        <p className="text-xs text-text-secondary mt-0.5">
+                          {t('common.routeExplainer')}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <PlaceInput
                           label={t('common.routeFrom')}
                           placeholder={t('common.routePlaceholder')}
@@ -1872,14 +2207,10 @@ export default function App() {
                         />
                       </div>
 
-                      {/* The corridor is only a question once the search and
-                          both ends are known. The guard has to cover all three:
-                          rendering the planner without a URL showed "pick where
-                          you set off" to someone who already had, while the
-                          message that names the real blocker was unreachable. */}
-                      {routeFrom && routeTo && newTargetUrl && isValidKleinanzeigenUrl(newTargetUrl) ? (
+                      {/* Corridor Planner */}
+                      {routeFrom && routeTo ? (
                         <CorridorPlanner
-                          baseUrl={newTargetUrl}
+                          baseUrl={newTargetUrl || activeSearches[0]?.url || 'https://www.kleinanzeigen.de/s-multimedia-elektronik/c161'}
                           origin={routeFrom.postal_code}
                           destination={routeTo.postal_code}
                           originName={routeFrom.name}
@@ -1890,146 +2221,33 @@ export default function App() {
                           onCorridorChange={setRouteCorridorKm}
                           onCommit={handlePlanCorridor}
                           committing={routePlanning}
-                          commitLabel={t('corridor.commitNew')}
+                          commitLabel={t('campaignSettings.btnSwitchToRoute')}
                         />
                       ) : (
-                        <p className="text-sm text-text-muted text-center py-2">
-                          {!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl)
-                            ? t('common.routeNeedsUrl')
-                            : !routeFrom && !routeTo
-                              ? t('common.routeNeedsBoth')
-                              : !routeFrom
-                                ? t('common.routeNeedsFrom')
-                                : t('common.routeNeedsTo')}
+                        <p className="text-xs text-text-muted text-center py-2">
+                          {!routeFrom && !routeTo
+                            ? t('common.routeNeedsBoth')
+                            : !routeFrom
+                              ? t('common.routeNeedsFrom')
+                              : t('common.routeNeedsTo')}
                         </p>
                       )}
 
                       {routeError && (
-                        <div className="text-sm bg-status-danger/10 text-status-danger px-3.5 py-2.5 rounded-xl border border-status-danger/20 font-semibold animate-fadeIn">
+                        <div className="text-xs bg-status-danger/10 text-status-danger px-3.5 py-2 rounded-xl border border-status-danger/20 font-semibold animate-fadeIn">
                           {routeError}
                         </div>
                       )}
-                      {routeResult && (
-                        <div className="text-sm bg-status-good/10 text-status-good px-3.5 py-2.5 rounded-xl border border-status-good/20 font-semibold animate-fadeIn">
-                          {t('common.corridorPlanned', { count: routeResult.count, width: routeResult.width })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Reactive Indicators Panel */}
-                  {!routeMode && newTargetUrl && (
-                    <div className="bg-bg-surface border border-border-subtle rounded-2xl p-4 space-y-3 shadow-inner animate-fadeIn">
-                      <div className="text-sm font-semibold text-text-secondary border-b border-border-subtle pb-1.5 flex justify-between items-center">
-                        <span>{t('common.diagnostics')}</span>
-                        {previewLoading && (
-                          <div className="flex items-center space-x-1">
-                            <span className="w-2 h-2 rounded-full bg-brand-accent animate-ping" />
-                            <span className="text-sm text-brand-accent font-mono">{t('common.processing')}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* URL Validity indicator */}
-                      <div className="flex items-center space-x-2 text-sm">
-                        <span className="text-sm font-mono text-text-muted shrink-0">{t('common.urlStatus')}</span>
-                        {isValidKleinanzeigenUrl(newTargetUrl) ? (
-                          <span className="text-status-good font-semibold">{t('common.validUrl')}</span>
-                        ) : (
-                          <span className="text-status-danger font-semibold">{t('common.invalidUrl')}</span>
-                        )}
-                      </div>
-
-                      {/* Suggested Title */}
-                      {isValidKleinanzeigenUrl(newTargetUrl) && (
-                        <div className="flex items-center space-x-2 text-sm">
-                          <span className="text-sm font-mono text-text-muted shrink-0">{t('common.suggestedName')}</span>
-                          <span className="text-text-primary font-medium bg-bg-input px-2 py-0.5 rounded border border-border-subtle">
-                            {suggestTitleFromUrl(newTargetUrl) || t('common.extractingTitle')}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Diagnostic Logs */}
-                      {previewLoading && (
-                        <div className="text-sm text-text-muted space-y-1 font-mono pt-1">
-                          <div className="flex items-center space-x-1.5">
-                            <span className="text-brand-accent">&gt;</span>
-                            <span>{t('common.diagnosticLog1')}</span>
-                          </div>
-                          <div className="flex items-center space-x-1.5">
-                            <span className="text-brand-accent">&gt;</span>
-                            <span>{t('common.diagnosticLog2')}</span>
-                          </div>
-                          <div className="flex items-center space-x-1.5">
-                            <span className="text-brand-accent">&gt;</span>
-                            <span>{t('common.diagnosticLog3')}</span>
-                          </div>
-                          <div className="flex items-center space-x-1.5">
-                            <span className="text-brand-accent">&gt;</span>
-                            <span>{t('common.diagnosticLog4')}</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {previewCount !== null && (
-                        <div className="text-sm bg-status-good/10 text-status-good px-3.5 py-2.5 rounded-xl border border-status-good/20 font-semibold animate-fadeIn">
-                          {t('common.foundCount', { count: previewCount })}
-                        </div>
-                      )}
-
-                      {previewError && (
-                        <div className="text-sm bg-status-danger/10 text-status-danger px-3.5 py-2.5 rounded-xl border border-status-danger/20 font-semibold animate-fadeIn">
-                          {previewError}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </Card>
-              )
-            ) : ((campaigns.find(c => c.id === currentCampaignId)?.route_id || campaigns.find(c => c.id === currentCampaignId)?.family_id) && !showAiWizard) ? (
-              /* CORRIDOR RESULTS VIEW */
-              <div className="w-full animate-fadeIn">
-                <RouteResultsView
-                  campaignId={currentCampaignId || 0}
-                  campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
-                  familyId={campaigns.find(c => c.id === currentCampaignId)?.family_id ?? undefined}
-                  onEvaluateWithAi={() => {
-                    setShowAiWizard(true);
-                    setWizardStep(1);
-                  }}
-                  isScraping={isScraping}
-                  onStartScrape={handleStartScrape}
-                  scrapingStatus={scrapingStatus}
-                  scrapingProgress={scrapingProgress}
-                  liveLogs={liveLogs}
-                  showLogConsole={showLogConsole}
-                  setShowLogConsole={setShowLogConsole}
-                  onEditFamily={() => {
-                    setSearchTargetMode('family');
-                    navigate('edit', currentCampaignId, null);
-                  }}
-                />
-              </div>
-            ) : (
-              /* DIRECT 3-STEP GUIDELINES WIZARD WORKSPACE */
-              <div className="w-full animate-fadeIn space-y-4">
-                {(campaigns.find(c => c.id === currentCampaignId)?.route_id || campaigns.find(c => c.id === currentCampaignId)?.family_id) && (
-                  <div className="flex items-center justify-between pb-2">
-                    <Button
-                      variant="badge"
-                      size="sm"
-                      onClick={() => {
-                        setShowAiWizard(false);
-                        setWizardStep(1);
-                      }}
-                    >
-                      <span>{t('routeResults.backToResults')}</span>
-                    </Button>
+                    </Card>
                   </div>
                 )}
-                {activeSearchTarget && (
+              </div>
+            )}
+
+            {/* TAB 3: AI GUIDELINES */}
+            {editTab === 'guidelines' && (
+              <div className="w-full animate-fadeIn space-y-4">
+                {activeSearchTarget ? (
                   <GuidelinesWizard
                     activeSearchTarget={activeSearchTarget}
                     marketMemo={marketMemo}
@@ -2055,6 +2273,13 @@ export default function App() {
                     scrapingStatus={scrapingStatus}
                     scrapingProgress={scrapingProgress}
                   />
+                ) : (
+                  <Card className="p-8 text-center space-y-3">
+                    <p className="text-text-muted text-sm">{t('campaignSettings.noSearchesYet')}</p>
+                    <Button variant="primary" size="sm" onClick={() => setEditTab('terms')}>
+                      {t('campaignSettings.tabTerms')} →
+                    </Button>
+                  </Card>
                 )}
               </div>
             )}

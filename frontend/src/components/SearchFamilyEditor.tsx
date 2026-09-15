@@ -46,6 +46,32 @@ export default function SearchFamilyEditor({
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [loadingFamily, setLoadingFamily] = useState(false);
+
+  useEffect(() => {
+    if (!familyId) return;
+    if (initialTerms.length > 0 && initialName && initialBaseUrl) return;
+    setLoadingFamily(true);
+    fetch(`/api/search-families/${familyId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        if (data.name) setName(data.name);
+        if (data.base_url) setBaseUrl(data.base_url);
+        if (Array.isArray(data.terms)) {
+          setTerms(
+            data.terms.map((t: { id?: number; term: string; label?: string; enabled?: boolean | number }) => ({
+              id: t.id,
+              term: t.term,
+              label: t.label || t.term,
+              enabled: t.enabled !== 0 && t.enabled !== false,
+            }))
+          );
+        }
+      })
+      .catch((err) => console.error('Failed to load search family data:', err))
+      .finally(() => setLoadingFamily(false));
+  }, [familyId]);
 
   const requestId = useRef(0);
 
@@ -207,6 +233,11 @@ export default function SearchFamilyEditor({
             <h2 className="text-lg sm:text-xl font-bold text-text-primary tracking-tight font-heading">
               {t('searchFamily.editorTitle')}
             </h2>
+            {loadingFamily && (
+              <span className="text-xs text-brand-accent animate-pulse font-mono">
+                ({t('common.processing')})
+              </span>
+            )}
           </div>
           <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
             {t('searchFamily.editorDescription')}
