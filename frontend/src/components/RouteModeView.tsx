@@ -1,5 +1,5 @@
 import type { Campaign, ScraperProgressCardProps } from '../types'
-import RouteResultsView from './RouteResultsView'
+import ResultsScreen from '../screens/ResultsScreen'
 import { useTranslation } from '../hooks/useTranslation'
 import { Button } from './ui/Button'
 import { Settings } from 'lucide-react'
@@ -61,7 +61,7 @@ export default function RouteModeView({
         </Button>
       </div>
 
-      <RouteResultsView
+      <ResultsScreen
         campaignId={campaignId || 0}
         campaignName={campaign?.name || ''}
         familyId={campaign?.family_id ?? undefined}
