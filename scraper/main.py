@@ -551,22 +551,40 @@ def main():
                         if not listing_id:
                             continue
 
-                        # Insert or ignore to prevent duplicates
+                        now_iso = datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat()
+                        source = item.get("source") or "kleinanzeigen"
+                        source_id = item.get("source_id") or listing_id
+                        price_eur = item.get("price_eur")
+                        last_seen_at = item.get("last_seen_at") or now_iso
+
+                        # Upsert: new rows are created with all canonical fields;
+                        # known rows ONLY have last_seen_at updated without
+                        # overwriting title, price, or other existing attributes.
                         cursor.execute(
                             """
-                            INSERT OR IGNORE INTO listings (
-                                id, title, price, location, url, short_description, detailed_description, search_id
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            INSERT INTO listings (
+                                id, source, source_id, title, price, price_eur,
+                                location, url, short_description, detailed_description,
+                                search_id, last_seen_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(id) DO UPDATE SET
+                                last_seen_at = excluded.last_seen_at
                         """,
                             (
                                 listing_id,
+                                source,
+                                source_id,
                                 item.get("title", ""),
                                 item.get("price", ""),
+                                price_eur,
                                 item.get("location", ""),
                                 item.get("url", ""),
                                 item.get("short_description", ""),
                                 item.get("detailed_description", ""),
                                 search_id,
+                                last_seen_at,
                             ),
                         )
                         if search_id is not None:
@@ -579,9 +597,7 @@ def main():
                                 (
                                     listing_id,
                                     search_id,
-                                    datetime.datetime.now(
-                                        datetime.timezone.utc
-                                    ).isoformat(),
+                                    now_iso,
                                 ),
                             )
                     conn.commit()

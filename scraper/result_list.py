@@ -28,6 +28,8 @@ import html as html_module
 import json
 import logging
 import re
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 import geo
 
@@ -54,6 +56,7 @@ ALT_LOCATION_RE = re.compile(
     + r')\s*-\s*([^"]+?)\s+Vorschau"'
 )
 PRICE_RE = re.compile(r">\s*([\d.]+)\s*€(\s*VB)?\s*<")
+GIVEAWAY_RE = re.compile(r">\s*Zu verschenken\s*<", re.I)
 
 
 EMPTY_RE = re.compile(
@@ -164,6 +167,8 @@ def parse(page_html):
         price_match = PRICE_RE.search(segment)
         if price_match:
             price = int(price_match.group(1).replace(".", ""))
+        elif GIVEAWAY_RE.search(segment):
+            price = 0
 
         listings.append(
             {
@@ -174,9 +179,103 @@ def parse(page_html):
                 "price_eur": price,
                 "location": location,
                 "state": state,
+                "source": "kleinanzeigen",
+                "source_id": adid,
             }
         )
     return listings
+
+
+@dataclass
+class CanonicalListing:
+    """The canonical listing representation in Python.
+
+    Deliberately thin: provides a single named structure for listing data
+    consumed by the scraper pipeline, routing, and database layers so nothing
+    unpacks source-specific assumptions.
+    """
+
+    id: str
+    title: str
+    url: str
+    price_eur: Optional[int]
+    price: str
+    location: str
+    short_description: str
+    source: str = "kleinanzeigen"
+    source_id: Optional[str] = None
+    place: Optional[str] = None
+    state: Optional[str] = None
+    detailed_description: str = ""
+    llm_processed: bool = False
+    last_seen_at: Optional[str] = None
+    delisted_at: Optional[str] = None
+    raw_fields: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "source": self.source,
+            "source_id": self.source_id or self.id,
+            "title": self.title,
+            "price": self.price,
+            "price_eur": self.price_eur,
+            "location": self.location,
+            "place": self.place,
+            "state": self.state,
+            "url": self.url,
+            "short_description": self.short_description,
+            "detailed_description": self.detailed_description,
+            "llm_processed": self.llm_processed,
+            "last_seen_at": self.last_seen_at,
+            "delisted_at": self.delisted_at,
+        }
+
+
+def as_canonical(parsed) -> CanonicalListing:
+    """Converts a parsed listing or mapping into the canonical representation."""
+    if isinstance(parsed, CanonicalListing):
+        return parsed
+
+    price_eur = parsed.get("price_eur")
+    location = parsed.get("location") or ""
+    state = parsed.get("state")
+    loc_str = f"{state} - {location}" if state and location else location
+
+    raw_price = parsed.get("price")
+    if raw_price is not None:
+        price_str = raw_price
+    elif price_eur == 0:
+        price_str = "Zu verschenken"
+    elif price_eur is not None:
+        price_str = f"{price_eur} €"
+    else:
+        price_str = ""
+
+    adid = str(parsed["id"])
+    source = parsed.get("source") or "kleinanzeigen"
+    source_id = str(parsed.get("source_id") or adid)
+
+    return CanonicalListing(
+        id=adid,
+        source=source,
+        source_id=source_id,
+        title=parsed.get("title") or "",
+        price=price_str,
+        price_eur=price_eur,
+        location=loc_str,
+        place=parsed.get("location") or parsed.get("place"),
+        state=state,
+        url=parsed.get("url") or "",
+        short_description=parsed.get("description")
+        or parsed.get("short_description")
+        or "",
+        detailed_description=parsed.get("detailed_description") or "",
+        llm_processed=bool(parsed.get("llm_processed", False)),
+        last_seen_at=parsed.get("last_seen_at"),
+        delisted_at=parsed.get("delisted_at"),
+        raw_fields=parsed.get("raw_fields"),
+    )
 
 
 def as_db_listing(parsed):
@@ -188,21 +287,4 @@ def as_db_listing(parsed):
     schema, so repairing the parser stays a repair: the structured fields travel
     alongside under their own keys, for the code that wants numbers.
     """
-    price = parsed.get("price_eur")
-    location = parsed.get("location") or ""
-    state = parsed.get("state")
-
-    return {
-        "id": parsed["id"],
-        "title": parsed.get("title") or "",
-        "price": f"{price} €" if price is not None else "",
-        "short_description": parsed.get("description") or "",
-        "location": f"{state} - {location}" if state and location else location,
-        "url": parsed["url"],
-        "detailed_description": "",
-        "llm_processed": False,
-        # Structured forms, for anything that would otherwise re-parse the above.
-        "price_eur": price,
-        "place": parsed.get("location"),
-        "state": state,
-    }
+    return as_canonical(parsed).to_dict()

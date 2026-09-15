@@ -201,3 +201,25 @@ ALTER TABLE route_searches ADD COLUMN family_id INTEGER;
 
 ALTER TABLE route_search_circles ADD COLUMN family_id INTEGER;
 
+-- Phase 0: Canonical source and source ID tracking.
+-- Quelle zuerst: listings.source mit Vorgabe 'kleinanzeigen' und source_id.
+ALTER TABLE listings ADD COLUMN source TEXT DEFAULT 'kleinanzeigen';
+
+ALTER TABLE listings ADD COLUMN source_id TEXT;
+
+-- Phase 2a: Structured integer price in EUR.
+ALTER TABLE listings ADD COLUMN price_eur INTEGER;
+
+-- CREATE INDEX muss im Dateitext unter dem zugehörigen ALTER stehen, damit
+-- Neuinstallationen wie bestehende Datenbanken von oben nach unten durchlaufen
+-- können, ohne auf eine noch nicht existierende Spalte zu treffen.
+CREATE INDEX IF NOT EXISTS idx_listings_price_eur ON listings (price_eur);
+
+-- Phase 2b: Freshness tracking and delisting timestamp.
+-- last_seen_at und delisted_at werden gemeinsam ausgeliefert.
+-- Indizes auf last_seen_at/delisted_at bewusst noch nicht -- es gibt bis zur
+-- Umstellung der Ernte keine Abfrage, die darauf filtert.
+ALTER TABLE listings ADD COLUMN last_seen_at TEXT;
+
+ALTER TABLE listings ADD COLUMN delisted_at TEXT;
+

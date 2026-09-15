@@ -83,11 +83,26 @@ def parse_listing_details_requests(url, session=None):
     try:
         caller = session if session is not None else requests
         response = fetch(url, caller=caller)
+        if response.status_code in (404, 410):
+            logger.info(
+                f"Listing details returned HTTP {response.status_code} for {url} (delisted)."
+            )
+            return {"delisted": True}
+
         if response.status_code != 200:
             logger.warning(
                 f"Failed to fetch listing details for {url}. Status: {response.status_code}"
             )
             return None
+
+        # Detect explicit delisting notices on Kleinanzeigen detail pages
+        text_lower = response.text.lower()
+        if (
+            "die gewünschte anzeige ist nicht mehr verfügbar" in text_lower
+            or "diese anzeige ist leider nicht mehr verfügbar" in text_lower
+        ):
+            logger.info(f"Listing details page indicated delisting for {url}.")
+            return {"delisted": True}
 
         soup = BeautifulSoup(response.text, "html.parser")
 
@@ -317,7 +332,7 @@ def harvest_descriptions(campaign_id=None):
         return
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = db_schema.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
@@ -382,6 +397,23 @@ def harvest_descriptions(campaign_id=None):
                 if parsed is None:
                     continue
 
+                now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+                if parsed.get("delisted"):
+                    logger.info(
+                        f"Listing {listing_id} is confirmed delisted on detail fetch: {url}"
+                    )
+                    cursor.execute(
+                        """
+                        UPDATE listings
+                        SET delisted_at = ?, full_info_obtained = 1
+                        WHERE id = ?
+                    """,
+                        (now_iso, listing_id),
+                    )
+                    conn.commit()
+                    continue
+
                 # Only stamp last_description_changed_at when the description
                 # actually changed. The column is named for a change, and the AI
                 # work queue reads it that way -- it re-evaluates anything whose
@@ -399,30 +431,35 @@ def harvest_descriptions(campaign_id=None):
                         """
                         UPDATE listings
                         SET detailed_description = ?, details = ?, images = ?,
-                            full_info_obtained = 1, last_description_changed_at = ?
+                            full_info_obtained = 1, last_description_changed_at = ?,
+                            last_seen_at = ?
                         WHERE id = ?
                     """,
                         (
                             parsed["detailed_description"],
                             json.dumps(parsed["details"]),
                             json.dumps(parsed["images"]),
-                            datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            now_iso,
+                            now_iso,
                             listing_id,
                         ),
                     )
                 else:
                     # Still record that the page was fetched -- that is what
                     # full_info_obtained means, and it is what stops this listing
-                    # being harvested again next cycle.
+                    # being harvested again next cycle. Also stamp last_seen_at
+                    # since this successful fetch confirms the listing is alive.
                     cursor.execute(
                         """
                         UPDATE listings
-                        SET details = ?, images = ?, full_info_obtained = 1
+                        SET details = ?, images = ?, full_info_obtained = 1,
+                            last_seen_at = ?
                         WHERE id = ?
                     """,
                         (
                             json.dumps(parsed["details"]),
                             json.dumps(parsed["images"]),
+                            now_iso,
                             listing_id,
                         ),
                     )
