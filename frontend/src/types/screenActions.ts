@@ -14,12 +14,13 @@
  */
 
 import type { LucideIcon } from 'lucide-react';
+import type { TranslationPath } from '../i18n/translations';
 
 export interface ScreenAction {
   /** Machine id — must be unique within a screen's action list. */
   id: string;
   /** Translation key suffix to look up via `t()`. */
-  labelKey: string;
+  labelKey: TranslationPath;
   /** Lucide icon to show left of the label. */
   icon: LucideIcon;
   /** Called when the user taps/clicks the button. */

@@ -1,8 +1,10 @@
-import type { Campaign, SearchTarget, Listing } from '../types'
-import type { ScraperProgressCardProps } from '../types'
-import RouteResultsView from '../components/RouteResultsView'
+import type { Campaign, SearchTarget, Listing, ScraperProgressCardProps } from '../types'
+import type { ScreenAction } from '../types/screenActions'
+import RouteModeView from '../components/RouteModeView'
 import ListingDetailCard from '../components/ListingDetailCard'
 import ScraperProgressCard from '../components/ScraperProgressCard'
+import ScreenActionBar from '../components/ScreenActionBar'
+import { resolveSearchState } from '../searchState'
 import { useTranslation } from '../hooks/useTranslation'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -51,6 +53,78 @@ interface DashboardScreenProps {
   onEditFamily: () => void
 }
 
+function filterDashboardListings(
+  listings: Listing[],
+  searches: SearchTarget[],
+  campaignId: number | null,
+  selectedSearchId: string,
+  selectedStatusFilter: 'All' | 'High Niceness' | 'New' | 'Evaluate with AI'
+): Listing[] {
+  return listings.filter(l => {
+    const targetSearch = searches.find(s => s.id === l.search_id)
+    const matchesCampaign = !campaignId || (targetSearch && targetSearch.campaign_id === campaignId)
+    const matchesSearch = selectedSearchId === 'All' || String(l.search_id) === selectedSearchId
+    if (!matchesCampaign || !matchesSearch) return false
+
+    if (selectedStatusFilter === 'High Niceness') {
+      return !!(l.llm_processed && l.niceness_score !== null && l.niceness_score !== undefined && l.niceness_score >= 70)
+    }
+    if (selectedStatusFilter === 'New') {
+      return l.status === 'New'
+    }
+    if (selectedStatusFilter === 'Evaluate with AI') {
+      return !l.llm_processed
+    }
+    return true
+  })
+}
+
+function DesktopDetailInspector({
+  selectedListing,
+  selectedListingId,
+  activeProcessingListingIds,
+  handleProcessSingleListing,
+  setSelectedListingId,
+}: {
+  selectedListing: Listing | undefined
+  selectedListingId: string | null
+  activeProcessingListingIds: string[]
+  handleProcessSingleListing: (id: string) => void
+  setSelectedListingId: (id: string | null) => void
+}) {
+  const { t } = useTranslation()
+
+  if (!selectedListingId) {
+    return (
+      <div className="h-[350px] flex flex-col items-center justify-center text-center p-8 text-text-muted border border-dashed border-border-subtle rounded-xl bg-bg-input/20">
+        <Sparkles className="w-8 h-8 text-brand-accent/40 mb-3 animate-pulse" />
+        <p className="text-sm font-semibold">
+          {t('listing.selectListingPrompt') || 'Select a listing from the list to view its full AI evaluation, specs, and outreach drafts.'}
+        </p>
+      </div>
+    )
+  }
+
+  if (!selectedListing) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-center p-8 text-text-muted">
+        <p className="text-sm font-semibold">{t('common.listingNotFound')}</p>
+      </div>
+    )
+  }
+
+  return (
+    <ListingDetailCard
+      l={selectedListing}
+      activeProcessingListingIds={activeProcessingListingIds}
+      handleProcessSingleListing={handleProcessSingleListing}
+      selectedListingId={selectedListingId}
+      setSelectedListingId={setSelectedListingId}
+      mode="detail"
+    />
+  )
+}
+
 export default function DashboardScreen({
   campaign,
   searches,
@@ -85,67 +159,73 @@ export default function DashboardScreen({
 
   if (isRouteOrFamilyMode) {
     return (
-      <div className="flex flex-col space-y-3 sm:space-y-6 animate-fadeIn w-full">
-        <div className="flex items-center space-x-3">
-          <Button
-            variant="badge"
-            size="sm"
-            onClick={onBack}
-            className="px-3 py-1.5"
-          >
-            <span className="mr-1">←</span>
-            <span>{t('common.backToCampaigns')}</span>
-          </Button>
-          <div className="w-[1px] h-5 bg-border-subtle" />
-          {/* Single settings entry point for this screen */}
-          <Button
-            variant="icon"
-            size="xs"
-            onClick={onConfigure}
-            title={t('landing.configureTooltip')}
-            className="p-1.5 border-border-subtle hover:border-brand-accent/30"
-          >
-            <Settings className="w-4 h-4 transition-transform duration-500 hover:rotate-90 text-text-muted hover:text-brand-accent" />
-          </Button>
-        </div>
-
-        <RouteResultsView
-          campaignId={campaignId || 0}
-          campaignName={campaign?.name || ''}
-          familyId={campaign?.family_id ?? undefined}
-          onEvaluateWithAi={onEvaluateWithAi}
-          isScraping={isScraping}
-          onStartScrape={onStartScrape}
-          scrapingStatus={scrapingStatus}
-          scrapingProgress={scrapingProgress}
-          liveLogs={liveLogs}
-          showLogConsole={showLogConsole}
-          setShowLogConsole={setShowLogConsole}
-          onEditFamily={onEditFamily}
-        />
-      </div>
+      <RouteModeView
+        campaign={campaign}
+        campaignId={campaignId}
+        onBack={onBack}
+        onConfigure={onConfigure}
+        onEvaluateWithAi={onEvaluateWithAi}
+        isScraping={isScraping}
+        onStartScrape={onStartScrape}
+        scrapingStatus={scrapingStatus}
+        scrapingProgress={scrapingProgress}
+        liveLogs={liveLogs}
+        showLogConsole={showLogConsole}
+        setShowLogConsole={setShowLogConsole}
+        onEditFamily={onEditFamily}
+      />
     )
   }
 
   // Standard dashboard (non-route, non-family)
   const campaignSearches = searches.filter(s => s.campaign_id === campaignId)
-  const filteredListings = listings.filter(l => {
-    const targetSearch = searches.find(s => s.id === l.search_id)
-    const matchesCampaign = !campaignId || (targetSearch && targetSearch.campaign_id === campaignId)
-    const matchesSearch = selectedSearchId === 'All' || String(l.search_id) === selectedSearchId
-    const isMatched = matchesCampaign && matchesSearch
+  const filteredListings = filterDashboardListings(
+    listings,
+    searches,
+    campaignId,
+    selectedSearchId,
+    selectedStatusFilter
+  )
 
-    if (selectedStatusFilter === 'High Niceness') {
-      return isMatched && l.llm_processed && l.niceness_score !== null && l.niceness_score !== undefined && l.niceness_score >= 70
-    }
-    if (selectedStatusFilter === 'New') {
-      return isMatched && l.status === 'New'
-    }
-    if (selectedStatusFilter === 'Evaluate with AI') {
-      return isMatched && !l.llm_processed
-    }
-    return isMatched
+  const selectedListing = selectedListingId ? listings.find(l => l.id === selectedListingId) : undefined
+
+  const hasCrawled = listings.some(l => {
+    const targetSearch = searches.find(s => s.id === l.search_id)
+    return !campaignId || (targetSearch && targetSearch.campaign_id === campaignId)
+  }) || (scrapingStatus !== '' && scrapingStatus !== 'idle')
+
+  const searchPhase = resolveSearchState({
+    hasCrawled,
+    isScraping,
+    listingCount: filteredListings.length,
   })
+
+  const actions: ScreenAction[] = [
+    {
+      id: 'fetch-fresh',
+      labelKey: 'dashboard.fetchFresh',
+      icon: Search,
+      handler: onStartScrape,
+      disabled: isScraping || isProcessing,
+      variant: 'action-emerald',
+    },
+    {
+      id: 'update-desc',
+      labelKey: 'dashboard.updateDesc',
+      icon: RefreshCw,
+      handler: onStartDeepUpdate,
+      disabled: isScraping || isProcessing,
+      variant: 'action-sky',
+    },
+    {
+      id: 'auto-ai',
+      labelKey: 'dashboard.autoAi',
+      icon: Sparkles,
+      handler: onStartProcess,
+      disabled: isScraping || isProcessing,
+      variant: 'action-indigo',
+    },
+  ]
 
   return (
     <div className="flex flex-col space-y-3 sm:space-y-6 animate-fadeIn w-full">
@@ -181,38 +261,7 @@ export default function DashboardScreen({
 
         <div className="flex flex-col lg:flex-row lg:items-center gap-4 w-full md:w-auto">
           {/* Action list — all actions for this screen, defined here, rendered here */}
-          <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-            <Button
-              variant="action-emerald"
-              size="sm"
-              onClick={onStartScrape}
-              disabled={isScraping || isProcessing}
-              className="min-w-[9.5rem] py-2.5 px-3 text-center flex items-center justify-center gap-1.5"
-            >
-              <Search className="w-3.5 h-3.5" />
-              <span>{t('dashboard.fetchFresh')}</span>
-            </Button>
-            <Button
-              variant="action-sky"
-              size="sm"
-              onClick={onStartDeepUpdate}
-              disabled={isScraping || isProcessing}
-              className="min-w-[9.5rem] py-2.5 px-3 text-center flex items-center justify-center gap-1.5"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>{t('dashboard.updateDesc')}</span>
-            </Button>
-            <Button
-              variant="action-indigo"
-              size="sm"
-              onClick={onStartProcess}
-              disabled={isScraping || isProcessing}
-              className="min-w-[9.5rem] py-2.5 px-3 text-center flex items-center justify-center gap-1.5"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{t('dashboard.autoAi')}</span>
-            </Button>
-          </div>
+          <ScreenActionBar actions={actions} />
 
           {/* Filter dropdowns */}
           <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
@@ -240,14 +289,17 @@ export default function DashboardScreen({
         </div>
       </Card>
 
-      <ScraperProgressCard
-        isScraping={isScraping}
-        scrapingStatus={scrapingStatus}
-        scrapingProgress={scrapingProgress}
-        liveLogs={liveLogs}
-        showLogConsole={showLogConsole}
-        setShowLogConsole={setShowLogConsole}
-      />
+      {/* Scraper / processing feedback */}
+      {searchPhase === 'searching' && (
+        <ScraperProgressCard
+          isScraping={isScraping}
+          scrapingStatus={scrapingStatus}
+          scrapingProgress={scrapingProgress}
+          liveLogs={liveLogs}
+          showLogConsole={showLogConsole}
+          setShowLogConsole={setShowLogConsole}
+        />
+      )}
 
       {isProcessing && (
         <div className="bg-brand-accent/5 border border-brand-accent/20 p-4 rounded-2xl flex items-center space-x-3 text-sm text-brand-accent">
@@ -256,13 +308,22 @@ export default function DashboardScreen({
         </div>
       )}
 
-      {/* Grid/Split of Matched Listings */}
-      {filteredListings.length === 0 ? (
+      {/* States: one state, one component */}
+      {searchPhase === 'never_searched' && (
+        <div className="bg-bg-surface/20 border border-dashed border-border-subtle rounded-2xl p-16 text-center shadow-inner">
+          <span className="text-base text-text-muted font-semibold block mb-1">{t('landing.noListings')}</span>
+          <span className="text-sm text-text-muted block">{t('common.dashboardEmptyHint')}</span>
+        </div>
+      )}
+
+      {searchPhase === 'empty' && (
         <div className="bg-bg-surface/20 border border-dashed border-border-subtle rounded-2xl p-16 text-center shadow-inner">
           <span className="text-base text-text-muted font-semibold block mb-1">{t('common.noMatchingListings')}</span>
           <span className="text-sm text-text-muted block">{t('common.dashboardEmptyHint')}</span>
         </div>
-      ) : (
+      )}
+
+      {searchPhase === 'has_results' && (
         <div className="flex flex-col lg:flex-row gap-6 items-start w-full relative">
 
           {/* Left Master List / Mobile Grid */}
@@ -287,32 +348,17 @@ export default function DashboardScreen({
 
           {/* Right Detail Inspector (Desktop) */}
           <div className="hidden lg:block lg:flex-1 lg:sticky lg:top-24 bg-bg-surface border border-border-subtle rounded-2xl p-6 shadow-xl max-h-[calc(100vh-220px)] overflow-y-auto scrollbar-thin w-full">
-            {selectedListingId ? (() => {
-              const selectedListing = listings.find(l => l.id === selectedListingId)
-              return selectedListing ? (
-                <ListingDetailCard
-                  l={selectedListing}
-                  activeProcessingListingIds={activeProcessingListingIds}
-                  handleProcessSingleListing={handleProcessSingleListing}
-                  selectedListingId={selectedListingId}
-                  setSelectedListingId={setSelectedListingId}
-                  mode="detail"
-                />
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center p-8 text-text-muted">
-                  <p className="text-sm font-semibold">{t('common.listingNotFound')}</p>
-                </div>
-              )
-            })() : (
-              <div className="h-[350px] flex flex-col items-center justify-center text-center p-8 text-text-muted border border-dashed border-border-subtle rounded-xl bg-bg-input/20">
-                <Sparkles className="w-8 h-8 text-brand-accent/40 mb-3 animate-pulse" />
-                <p className="text-sm font-semibold">{t('listing.selectListingPrompt') || 'Select a listing from the list to view its full AI evaluation, specs, and outreach drafts.'}</p>
-              </div>
-            )}
+            <DesktopDetailInspector
+              selectedListing={selectedListing}
+              selectedListingId={selectedListingId}
+              activeProcessingListingIds={activeProcessingListingIds}
+              handleProcessSingleListing={handleProcessSingleListing}
+              setSelectedListingId={setSelectedListingId}
+            />
           </div>
 
           {/* Mobile Drawer Overlay / Dialog Modal for Details (lg:hidden) */}
-          {selectedListingId && (
+          {selectedListingId && selectedListing && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:hidden animate-fade-in">
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedListingId(null)} />
               <div className="bg-bg-surface border border-border-subtle w-full max-w-lg max-h-[85vh] rounded-2xl overflow-y-auto p-5 relative z-10 shadow-2xl animate-slide-up">
@@ -322,21 +368,16 @@ export default function DashboardScreen({
                 >
                   <X className="w-4 h-4" />
                 </button>
-                {(() => {
-                  const selectedListing = listings.find(l => l.id === selectedListingId)
-                  return selectedListing ? (
-                    <div className="mt-4">
-                      <ListingDetailCard
-                        l={selectedListing}
-                        activeProcessingListingIds={activeProcessingListingIds}
-                        handleProcessSingleListing={handleProcessSingleListing}
-                        selectedListingId={selectedListingId}
-                        setSelectedListingId={setSelectedListingId}
-                        mode="detail"
-                      />
-                    </div>
-                  ) : null
-                })()}
+                <div className="mt-4">
+                  <ListingDetailCard
+                    l={selectedListing}
+                    activeProcessingListingIds={activeProcessingListingIds}
+                    handleProcessSingleListing={handleProcessSingleListing}
+                    selectedListingId={selectedListingId}
+                    setSelectedListingId={setSelectedListingId}
+                    mode="detail"
+                  />
+                </div>
               </div>
             </div>
           )}
