@@ -1,304 +1,141 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect, useCallback } from 'react'
 import type { Campaign, KnowledgeSet, SearchTarget, Listing, SampleListing } from './types'
-import ScraperProgressCard from './components/ScraperProgressCard'
-import CorridorPlanner from './components/CorridorPlanner'
-import PlaceInput from './components/PlaceInput'
+import type { RouteCorridorData } from './components/RouteResultsView'
 import type { Place } from './components/PlaceInput'
-import ListingDetailCard from './components/ListingDetailCard'
-import GuidelinesWizard from './components/GuidelinesWizard'
-import RouteResultsView, { type RouteCorridorData } from './components/RouteResultsView'
-import SearchFamilyEditor from './components/SearchFamilyEditor'
 import SettingsView from './components/SettingsView'
 import { transformListing } from './utils/listingTransformer'
 import { useHashRouter } from './hooks/useHashRouter'
-import {
-  Menu,
-  X,
-  Settings,
-  Globe,
-  LogOut,
-  Key,
-  Search,
-  RefreshCw,
-  Sparkles,
-  ChevronDown,
-  Layers,
-  MapPin,
-  Navigation,
-  Check,
-  Trash2,
-  Plus,
-} from 'lucide-react'
+import { Globe, ChevronDown, LogOut, Key, Menu, X, Settings } from 'lucide-react'
 import { useTranslation } from './hooks/useTranslation'
 import { Button } from './components/ui/Button'
 import { Input } from './components/ui/Input'
 import { Card } from './components/ui/Card'
-import { Select } from './components/ui/Select'
 import { cn } from './utils/cn'
-
-
+import LandingScreen from './screens/LandingScreen'
+import DashboardScreen from './screens/DashboardScreen'
+import EditScreen from './screens/EditScreen'
+import CreateCampaignScreen from './screens/CreateCampaignScreen'
 
 const isValidKleinanzeigenUrl = (urlStr: string): boolean => {
   try {
-    const url = new URL(urlStr);
-    return url.hostname.includes('kleinanzeigen.de');
-  } catch {
-    return false;
-  }
+    return new URL(urlStr).hostname.includes('kleinanzeigen.de');
+  } catch { return false; }
 };
 
 const suggestTitleFromUrl = (urlStr: string): string => {
   try {
-    const url = new URL(urlStr);
-    const paths = url.pathname.split('/');
-    const candidate = paths.find(segment => {
-      if (!segment) return false;
-      if (segment.startsWith('s-')) return false;
-      if (segment.includes(':')) return false;
-      if (/^\d+$/.test(segment)) return false;
-      if (segment.startsWith('k0') || segment.includes('+') || segment.includes('.')) return false;
-      if (['suche', 'kategorie', 'anzeigen'].includes(segment.toLowerCase())) return false;
+    const paths = new URL(urlStr).pathname.split('/');
+    const candidate = paths.find(seg => {
+      if (!seg || seg.startsWith('s-') || seg.includes(':')) return false;
+      if (/^\d+$/.test(seg)) return false;
+      if (seg.startsWith('k0') || seg.includes('+') || seg.includes('.')) return false;
+      if (['suche', 'kategorie', 'anzeigen'].includes(seg.toLowerCase())) return false;
       return true;
     });
-    
-    if (candidate) {
-      return decodeURIComponent(candidate)
-        .replace(/-/g, ' ')
-        .trim();
-    }
-  } catch {
-    // Ignore
-  }
-  return '';
+    return candidate ? decodeURIComponent(candidate).replace(/-/g, ' ').trim() : '';
+  } catch { return ''; }
 };
-
-
-
 
 export default function App() {
   const {
-    view,
-    currentCampaignId,
-    currentSearchId,
-    selectedListingId,
-    wizardStep,
-    previousView,
-    setView,
-    setCurrentCampaignId,
-    setCurrentSearchId,
-    setSelectedListingId,
-    setWizardStep,
-    navigate
-  } = useHashRouter()
+    view, currentCampaignId, currentSearchId, selectedListingId, wizardStep,
+    previousView, setView, setCurrentCampaignId, setCurrentSearchId,
+    setSelectedListingId, setWizardStep, navigate,
+  } = useHashRouter();
 
-  const { t, lang, toggleLanguage } = useTranslation()
+  const { t, lang, toggleLanguage } = useTranslation();
 
-  const [isRegisteringTarget, setIsRegisteringTarget] = useState(false)
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false)
+  // --- UI chrome state ---
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
 
-  // Database lists
-  const [campaigns, setCampaigns] = useState<Campaign[]>([])
-  const [searches, setSearches] = useState<SearchTarget[]>([])
-  const [listings, setListings] = useState<Listing[]>([])
-  const [knowledgeSets, setKnowledgeSets] = useState<KnowledgeSet[]>([])
+  // --- Data ---
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [searches, setSearches] = useState<SearchTarget[]>([]);
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [knowledgeSets, setKnowledgeSets] = useState<KnowledgeSet[]>([]);
 
-  // Authentication session state
-  const [sessionEmail, setSessionEmail] = useState<string | null>(null)
-  const [appUser, setAppUser] = useState<{ email: string, role: string } | null>(null)
-  const [authLoading, setAuthLoading] = useState(true)
-  const [loginEmail, setLoginEmail] = useState('')
-  const [loginPassword, setLoginPassword] = useState('')
-  const [loginError, setLoginError] = useState('')
-  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  // --- Auth ---
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [appUser, setAppUser] = useState<{ email: string; role: string } | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // Sidebar selections & details
-  const [currentKnowledgeSetId, setCurrentKnowledgeSetId] = useState<number | null>(null)
+  // --- Scraper / Processing ---
+  const [isScraping, setIsScraping] = useState(false);
+  const [scrapingStatus, setScrapingStatus] = useState('');
+  const [scrapingProgress, setScrapingProgress] = useState<{ phase: string; current: number; total: number; status: string } | null>(null);
+  const [liveLogs, setLiveLogs] = useState('');
+  const [showLogConsole, setShowLogConsole] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState('');
+  const [activeProcessingListingIds, setActiveProcessingListingIds] = useState<string[]>([]);
 
-  const activeSearches = searches.filter(s => s.campaign_id === currentCampaignId)
-  const activeSearchTarget = searches.find(s => s.id === currentSearchId) || activeSearches[0]
+  // --- Dashboard filters ---
+  const [selectedSearchId, setSelectedSearchId] = useState<string>('All');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'New' | 'Evaluate with AI'>('All');
 
+  // --- Edit screen form state ---
+  const [newCampaignName, setNewCampaignName] = useState('');
+  const [newTargetUrl, setNewTargetUrl] = useState('');
+  const [searchTargetMode, setSearchTargetMode] = useState<'point' | 'route' | 'family'>('point');
+  const [routeFrom, setRouteFrom] = useState<Place | null>(null);
+  const [routeTo, setRouteTo] = useState<Place | null>(null);
+  const [routeRadiusKm, setRouteRadiusKm] = useState(30);
+  const [routeCorridorKm, setRouteCorridorKm] = useState(15);
+  const [routePlanning, setRoutePlanning] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [routeResult, setRouteResult] = useState<{ count: number; width: number } | null>(null);
+  const [campaignRouteData, setCampaignRouteData] = useState<RouteCorridorData | null>(null);
+  const [loadingRouteData, setLoadingRouteData] = useState(false);
+  const [geometrySuccessMsg, setGeometrySuccessMsg] = useState<string | null>(null);
+  const [isRegisteringTarget, setIsRegisteringTarget] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
-  // Filtering states for Deal Matcher
-  const [selectedSearchId, setSelectedSearchId] = useState<string>('All')
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'New' | 'Evaluate with AI'>('All')
-  const [activeProcessingListingIds, setActiveProcessingListingIds] = useState<string[]>([])
+  // --- Guidelines wizard state ---
+  const [currentKnowledgeSetId, setCurrentKnowledgeSetId] = useState<number | null>(null);
+  const [editKsName, setEditKsName] = useState('');
+  const [editKsError, setEditKsError] = useState('');
+  const [marketMemo, setMarketMemo] = useState('');
+  const [sampledListings, setSampledListings] = useState<SampleListing[]>([]);
+  const [sampledListingsLoading, setSampledListingsLoading] = useState(false);
+  const [researcherOutput, setResearcherOutput] = useState('');
+  const [researchPromptTemplate, setResearchPromptTemplate] = useState('');
+  const [marketPromptTemplate, setMarketPromptTemplate] = useState('');
+  const [profilePromptTemplate, setProfilePromptTemplate] = useState('');
+  const [parsedExpertKnowledge, setParsedExpertKnowledge] = useState('');
+  const [parsedGoodRef, setParsedGoodRef] = useState('');
+  const [parsedBadRef, setParsedBadRef] = useState('');
+  const [parsedDemoMsg, setParsedDemoMsg] = useState('');
+  const [parsedItemJson, setParsedItemJson] = useState('');
 
-  // Inline forms
-  const [newCampaignName, setNewCampaignName] = useState('')
-  const [newTargetUrl, setNewTargetUrl] = useState('')
-  // Route corridor search. `routeMode` also suppresses the debounced
-  // auto-registration below: a corridor is several searches, and registering the
-  // pasted URL as a single one the moment it looks valid would quietly give the
-  // user the point search they were trying not to make.
-  const [searchTargetMode, setSearchTargetMode] = useState<'point' | 'route' | 'family'>('point')
-  const [routeFrom, setRouteFrom] = useState<Place | null>(null)
-  const [routeTo, setRouteTo] = useState<Place | null>(null)
-  const [routeRadiusKm, setRouteRadiusKm] = useState(30)
-  const [routeCorridorKm, setRouteCorridorKm] = useState(15)
-  const [routePlanning, setRoutePlanning] = useState(false)
-  const [routeError, setRouteError] = useState<string | null>(null)
-  const [routeResult, setRouteResult] = useState<{ count: number; width: number } | null>(null)
-  const [isEditingCampaignName, setIsEditingCampaignName] = useState(false)
-  const [editTab, setEditTab] = useState<'terms' | 'geometry' | 'guidelines'>('terms')
-  const [campaignRouteData, setCampaignRouteData] = useState<RouteCorridorData | null>(null)
-  const [loadingRouteData, setLoadingRouteData] = useState(false)
-  const [geometrySuccessMsg, setGeometrySuccessMsg] = useState<string | null>(null)
+  const activeSearches = searches.filter(s => s.campaign_id === currentCampaignId);
+  const activeSearchTarget = searches.find(s => s.id === currentSearchId) || activeSearches[0];
 
-  // Reset edit tab when switching campaigns
-  useEffect(() => {
-    setEditTab('terms')
-  }, [currentCampaignId])
+  // =========================================================================
+  // Data helpers
+  // =========================================================================
 
-  // Sync campaign route data when currentCampaignId or campaigns change
-  useEffect(() => {
-    if (!currentCampaignId) {
-      setCampaignRouteData(null)
-      return
-    }
-    const currentCampaign = campaigns.find(c => c.id === currentCampaignId)
-    if (!currentCampaign?.route_id) {
-      setCampaignRouteData(null)
-      return
-    }
-    setLoadingRouteData(true)
-    fetch(`/api/campaigns/${currentCampaignId}/route`)
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        setCampaignRouteData(data)
-      })
-      .catch(err => console.error('Failed to fetch campaign route:', err))
-      .finally(() => setLoadingRouteData(false))
-  }, [currentCampaignId, campaigns])
-
-  // Step wizard states for Guidelines Editor
-  const [sampledListings, setSampledListings] = useState<SampleListing[]>([])
-  const [sampledListingsLoading, setSampledListingsLoading] = useState(false)
-  const [marketMemo, setMarketMemo] = useState<string>('')
-  const [researcherOutput, setResearcherOutput] = useState<string>('')
-
-  // Prompt templates from backend
-  const [researchPromptTemplate, setResearchPromptTemplate] = useState<string>('')
-  const [marketPromptTemplate, setMarketPromptTemplate] = useState<string>('')
-  const [profilePromptTemplate, setProfilePromptTemplate] = useState<string>('')
-
-  // Parsed XML states for Step 3
-  const [parsedExpertKnowledge, setParsedExpertKnowledge] = useState('')
-  const [parsedGoodRef, setParsedGoodRef] = useState('')
-  const [parsedBadRef, setParsedBadRef] = useState('')
-  const [parsedDemoMsg, setParsedDemoMsg] = useState('')
-  const [parsedItemJson, setParsedItemJson] = useState('')
-
-  // Compatibility names for existing views and components
-  const [editKsName, setEditKsName] = useState('')
-  const [editKsError, setEditKsError] = useState('')
-
-  const checkAuth = async () => {
-    try {
-      const res = await fetch('/api/auth/me')
-      if (res.ok) {
-        const data = await res.json()
-        setAppUser(data.user || null)
-        return data.user
-      } else {
-        setAppUser(null)
-      }
-    } catch (err) {
-      console.error("Auth check failed:", err)
-      setAppUser(null)
-    } finally {
-      setAuthLoading(false)
-    }
-    return null
-  }
-
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!loginEmail.trim() || !loginPassword.trim()) {
-      setLoginError("Please enter email and password.")
-      return
-    }
-    setIsLoggingIn(true)
-    setLoginError('')
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword })
-      })
-      const data = await res.json()
-      if (res.ok && data.success) {
-        setAppUser(data.user)
-        refreshAll()
-        checkSessionStatus()
-      } else {
-        setLoginError(data.error || t('auth.errorInvalid'))
-      }
-    } catch {
-      setLoginError("Network connection failed.")
-    } finally {
-      setIsLoggingIn(false)
-    }
-  }
-
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' })
-      setAppUser(null)
-    } catch (err) {
-      console.error("Logout failed:", err)
-    }
-  }
-
-  const checkSessionStatus = async () => {
-    try {
-      const res = await fetch('/api/session-status')
-      if (res.ok) {
-        const data = await res.json()
-        setSessionEmail(data.email || null)
-      }
-    } catch (err) {
-      console.error("Error checking session status:", err)
-    }
-  }
-
-  const fetchSampleListings = async (searchId: number) => {
-    setSampledListingsLoading(true)
-    try {
-      const response = await fetch(`/api/searches/${searchId}/sample-listings`)
-      if (response.ok) {
-        const data = await response.json()
-        setSampledListings(data)
-      } else {
-        console.error("Failed to fetch sample listings")
-        alert("Failed to fetch sample listings from server.")
-      }
-    } catch (error) {
-      console.error("Error fetching sample listings:", error)
-      alert("Error contacting the backend to fetch listings.")
-    } finally {
-      setSampledListingsLoading(false)
-    }
-  }
-
-  const refreshAll = () => {
+  const refreshAll = useCallback(() => {
     Promise.all([
-      fetch('/api/campaigns').then(res => res.json()),
-      fetch('/api/search-urls').then(res => res.json()),
-      fetch('/api/listings').then(res => res.json()),
-      fetch('/api/knowledge-sets').then(res => res.json()),
-      fetch('/api/search-families').then(res => (res.ok ? res.json() : [])).catch(() => []),
+      fetch('/api/campaigns').then(r => r.json()),
+      fetch('/api/search-urls').then(r => r.json()),
+      fetch('/api/listings').then(r => r.json()),
+      fetch('/api/knowledge-sets').then(r => r.json()),
+      fetch('/api/search-families').then(r => r.ok ? r.json() : []).catch(() => []),
     ]).then(([campaignsData, searchesData, listingsData, ksData, familiesData]) => {
       const familyMap = new Map<number, number>();
       if (Array.isArray(familiesData)) {
         for (const fam of familiesData) {
-          if (fam.campaign_id && fam.id) {
-            familyMap.set(fam.campaign_id, fam.id);
-          }
+          if (fam.campaign_id && fam.id) familyMap.set(fam.campaign_id, fam.id);
         }
       }
-
       setCampaigns(prev => {
         const prevFamilyMap = new Map(prev.map(c => [c.id, c.family_id]));
         return campaignsData.map((c: Campaign) => ({
@@ -306,832 +143,386 @@ export default function App() {
           family_id: c.family_id ?? familyMap.get(c.id) ?? prevFamilyMap.get(c.id),
         }));
       });
-      setSearches(searchesData)
-      setKnowledgeSets(ksData)
-
-      // Map raw listings to include React UI helper properties
-      const mappedListings = listingsData.map((l: Listing) => transformListing(l, searchesData, ksData));
-
-      setListings(mappedListings)
-
-      // Set default campaign selection if none set
+      setSearches(searchesData);
+      setKnowledgeSets(ksData);
+      setListings(listingsData.map((l: Listing) => transformListing(l, searchesData, ksData)));
       if (campaignsData.length > 0 && currentCampaignId === null) {
         setCurrentCampaignId(campaignsData[0].id);
       }
-    }).catch(err => {
-      console.error("Error refreshing dashboard state:", err)
-    })
-  }
+    }).catch(err => console.error('Error refreshing:', err));
+  }, [currentCampaignId, setCurrentCampaignId]);
 
-  // Ensure search family ID is populated for current campaign even on direct reload
-  useEffect(() => {
-    if (!currentCampaignId) return;
-    const current = campaigns.find(c => c.id === currentCampaignId);
-    if (current && !current.family_id && !current.route_id) {
-      fetch(`/api/search-families?campaign_id=${currentCampaignId}`)
-        .then(res => (res.ok ? res.json() : []))
-        .then(data => {
-          if (Array.isArray(data) && data.length > 0 && data[0].id) {
-            setCampaigns(prev =>
-              prev.map(c => (c.id === currentCampaignId ? { ...c, family_id: data[0].id } : c))
-            );
-          }
-        })
-        .catch(() => {});
-    }
-  }, [currentCampaignId, campaigns]);
-
-  // Load Prompt templates
-  useEffect(() => {
-    if (!appUser) return;
-    fetch('/api/prompts/research')
-      .then(r => r.ok ? r.text() : '')
-      .then(setResearchPromptTemplate)
-      .catch(err => console.error("Error loading research template:", err))
-
-    fetch('/api/prompts/market')
-      .then(r => r.ok ? r.text() : '')
-      .then(setMarketPromptTemplate)
-      .catch(err => console.error("Error loading market template:", err))
-
-    fetch('/api/prompts/profile')
-      .then(r => r.ok ? r.text() : '')
-      .then(setProfilePromptTemplate)
-      .catch(err => console.error("Error loading profile template:", err))
-  }, [appUser])
-
-  // Parse XML blocks in Step 3 on the fly
-  useEffect(() => {
-    const ekMatch = researcherOutput.match(/<expert_knowledge>([\s\S]*?)<\/expert_knowledge>/i)
-    setParsedExpertKnowledge(ekMatch ? ekMatch[1].trim() : '')
-
-    const grMatch = researcherOutput.match(/<good_reference_description>([\s\S]*?)<\/good_reference_description>/i)
-    setParsedGoodRef(grMatch ? grMatch[1].trim() : '')
-
-    const brMatch = researcherOutput.match(/<bad_reference_description>([\s\S]*?)<\/bad_reference_description>/i)
-    setParsedBadRef(brMatch ? brMatch[1].trim() : '')
-
-    const dmMatch = researcherOutput.match(/<demo_message>([\s\S]*?)<\/demo_message>/i)
-    setParsedDemoMsg(dmMatch ? dmMatch[1].trim() : '')
-
-    const ijMatch = researcherOutput.match(/<item_json>([\s\S]*?)<\/item_json>/i)
-    setParsedItemJson(ijMatch ? ijMatch[1].trim() : '')
-  }, [researcherOutput])
-
-  // Live URL validation preview
-  const [previewLoading, setPreviewLoading] = useState(false)
-  const [previewCount, setPreviewCount] = useState<number | null>(null)
-  const [previewError, setPreviewError] = useState<string | null>(null)
-
-  // General state
-  const [isScraping, setIsScraping] = useState(false)
-  const [scrapingStatus, setScrapingStatus] = useState('')
-  const [scrapingProgress, setScrapingProgress] = useState<{
-    phase: string;
-    current: number;
-    total: number;
-    status: string;
-  } | null>(null)
-  const [liveLogs, setLiveLogs] = useState<string>('')
-  const [showLogConsole, setShowLogConsole] = useState(false)
-
-  // Polling loop for active scraping task
-  useEffect(() => {
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    const checkStatus = async () => {
-      try {
-        const res = await fetch('/api/scrape/status');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.active) {
-            setIsScraping(true);
-            setScrapingProgress(data.progress);
-            if (data.progress && data.progress.status) {
-              setScrapingStatus(data.progress.status);
-            }
-
-            // Also fetch live logs
-            const logsRes = await fetch('/api/logs');
-            if (logsRes.ok) {
-              const logsData = await logsRes.json();
-              setLiveLogs(logsData.logs || '');
-            }
-          } else {
-            // Scraper is no longer active in backend
-            if (isScraping) {
-              setIsScraping(false);
-              setScrapingProgress(null);
-              setScrapingStatus("Scraping completed!");
-              refreshAll();
-              if (activeSearchTarget?.id) {
-                fetchSampleListings(activeSearchTarget.id);
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Error polling scraper status:", e);
-      }
-    };
-
-    // Run immediately
-    checkStatus();
-
-    // Poll every 1.5 seconds
-    intervalId = setInterval(checkStatus, 1500);
-
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-    
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isScraping, activeSearchTarget?.id]);
-
-  // Polling loop for active AI evaluations
-  useEffect(() => {
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-    const checkActiveProcesses = async () => {
-      try {
-        const res = await fetch('/api/process/active');
-        if (res.ok) {
-          const data = await res.json();
-          // If the list of active IDs changed, we might want to refresh listings
-          // to get the new scores for those that just finished.
-          setActiveProcessingListingIds(prev => {
-            const finished = prev.filter(id => !data.active.includes(id));
-            if (finished.length > 0) {
-              refreshAll();
-            }
-            return data.active;
-          });
-        }
-      } catch {
-        // Ignore
-      }
-    };
-    checkActiveProcesses();
-    intervalId = setInterval(checkActiveProcesses, 2000);
-    return () => clearInterval(intervalId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const checkAuth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/me');
+      if (res.ok) { const d = await res.json(); setAppUser(d.user || null); return d.user; }
+      else setAppUser(null);
+    } catch { setAppUser(null); }
+    finally { setAuthLoading(false); }
+    return null;
   }, []);
 
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [processingStatus, setProcessingStatus] = useState('')
+  const checkSessionStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/session-status');
+      if (res.ok) { const d = await res.json(); setSessionEmail(d.email || null); }
+    } catch { /* silent */ }
+  }, []);
 
+  const fetchSampleListings = useCallback(async (searchId: number) => {
+    setSampledListingsLoading(true);
+    try {
+      const r = await fetch(`/api/searches/${searchId}/sample-listings`);
+      if (r.ok) setSampledListings(await r.json());
+      else alert('Failed to fetch sample listings from server.');
+    } catch { alert('Error contacting the backend to fetch listings.'); }
+    finally { setSampledListingsLoading(false); }
+  }, []);
 
+  // =========================================================================
+  // Effects
+  // =========================================================================
 
-  // Custom states for images and descriptions
+  useEffect(() => { checkAuth(); }, [checkAuth]);
 
-  // Initial load
   useEffect(() => {
-    checkAuth()
-  }, [])
+    if (!appUser) return;
+    refreshAll();
+    checkSessionStatus();
+    const i = setInterval(checkSessionStatus, 8000);
+    return () => clearInterval(i);
+  }, [appUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load data when authenticated
-  useEffect(() => {
-    if (appUser) {
-      refreshAll()
-      checkSessionStatus()
-
-      const interval = setInterval(checkSessionStatus, 8000)
-      return () => clearInterval(interval)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appUser])
-
-  // Auto-redirect empty campaigns to configuration view
   useEffect(() => {
     if (currentCampaignId && view === 'dashboard') {
       const campaignSearches = searches.filter(s => s.campaign_id === currentCampaignId);
-      if (campaignSearches.length === 0) {
-        navigate('edit', currentCampaignId, null);
-      }
+      if (campaignSearches.length === 0) navigate('edit', currentCampaignId, null);
     }
   }, [currentCampaignId, searches, view, navigate]);
 
-  // Trigger a fast crawler scrape directly from the target URL
-  async function triggerFastScrape(searchId: number) {
-    setIsScraping(true)
-    setScrapingStatus("Spawning targeted crawler to fetch market listings...")
-    setLiveLogs("Starting targeted Chrome headless scraper session...")
-    setScrapingProgress({ phase: 'starting', current: 0, total: 100, status: 'Spawning scraper worker...' })
-    try {
-      const res = await fetch(`/api/searches/${searchId}/scrape`, { method: 'POST' })
-      if (!res.ok) {
-        alert("Failed to start targeted scraper.")
-        setIsScraping(false)
-      }
-    } catch {
-      alert("Error triggering targeted scraper.")
-      setIsScraping(false)
-    }
-  }
+  useEffect(() => {
+    if (!currentCampaignId) { setCampaignRouteData(null); return; }
+    const c = campaigns.find(c => c.id === currentCampaignId);
+    if (!c?.route_id) { setCampaignRouteData(null); return; }
+    setLoadingRouteData(true);
+    fetch(`/api/campaigns/${currentCampaignId}/route`)
+      .then(r => r.ok ? r.json() : null)
+      .then(setCampaignRouteData)
+      .catch(e => console.error('Failed to fetch campaign route:', e))
+      .finally(() => setLoadingRouteData(false));
+  }, [currentCampaignId, campaigns]);
 
-  const handleDeleteCampaign = useCallback(async (
-    campaignId: number,
-    name: string,
-    searchCount: number,
-    listingCount: number
-  ) => {
-    // Name what is about to be lost. "Are you sure?" tells nobody anything, and
-    // deleting a campaign takes its searches and everything crawled into them.
-    const contents = [
-      searchCount ? t('landing.deleteSearches', { count: searchCount }) : null,
-      listingCount ? t('landing.deleteListings', { count: listingCount }) : null,
-    ].filter(Boolean).join(', ');
-
-    const message = contents
-      ? t('landing.deleteConfirmWithContents', { name, contents })
-      : t('landing.deleteConfirm', { name });
-
-    if (!window.confirm(message)) return;
-
-    try {
-      const res = await fetch(`/api/campaigns/${campaignId}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        alert(data.error || t('landing.deleteFailed'));
-        return;
-      }
-      refreshAll();
-    } catch {
-      alert(t('common.connectionIssueFailed'));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handlePlanCorridor = useCallback(async () => {
-    if (!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl)) {
-      setRouteError(t('common.routeNeedsUrl'));
-      return;
-    }
-    if (!routeFrom || !routeTo) {
-      setRouteError(t('common.routeNeedsBoth'));
-      return;
-    }
-
-    setRoutePlanning(true);
-    setRouteError(null);
-    setRouteResult(null);
-
-    try {
-      const suggested = suggestTitleFromUrl(newTargetUrl) || 'New Search';
-
-      // The corridor's searches share one profile, or each circle would be
-      // scored against different criteria for the same thing.
-      const ksRes = await fetch('/api/knowledge-sets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: `${suggested} Guidelines`,
-          expert_knowledge: '',
-          item_json: {}
-        })
-      });
-      const boundKsId = ksRes.ok ? (await ksRes.json()).id : null;
-
-      const res = await fetch('/api/route-searches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          campaign_id: currentCampaignId,
-          base_url: newTargetUrl,
-          // The postal code, not the typed text: the user already resolved the
-          // ambiguity by choosing from the list, so nothing is left to guess.
-          origin: routeFrom.postal_code,
-          destination: routeTo.postal_code,
-          radius_km: routeRadiusKm,
-          corridor_km: routeCorridorKm,
-          knowledge_set_id: boundKsId,
-          name: `${suggested}: ${routeFrom.name} → ${routeTo.name}`
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setRouteError(data.error || t('common.targetRegistrationFailed'));
-        return;
-      }
-
-      setRouteResult({
-        count: (data.searches || []).length,
-        width: (data.corridor_km || routeCorridorKm) * 2
-      });
-      setNewTargetUrl('');
-      setRouteFrom(null);
-      setRouteTo(null);
-      setIsRegisteringTarget(false);
-
-      if (data.searches && data.searches.length) {
-        setCurrentSearchId(data.searches[0].id);
-      }
-      if (data.route_id && currentCampaignId) {
-        setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, route_id: data.route_id } : c));
-      }
-      refreshAll();
-    } catch {
-      setRouteError(t('common.connectionIssueFailed'));
-    } finally {
-      setRoutePlanning(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newTargetUrl, routeFrom, routeTo, routeRadiusKm, routeCorridorKm, currentCampaignId]);
-
-  // Not wrapped in useCallback, and the next two are not either.
-  //
-  // The React compiler refuses to reproduce the memoisation of a callback that
-  // depends on refreshAll, and reports it as "existing memoization could not be
-  // preserved" -- a lint error, not a warning. Memoising these buys nothing that
-  // would justify silencing a correctness rule: they are handed to one settings
-  // panel, so a fresh identity per render costs a re-render of that panel and
-  // nothing else.
-  const handleRemoveRoute = async () => {
+  useEffect(() => {
     if (!currentCampaignId) return;
-    try {
-      const res = await fetch(`/api/campaigns/${currentCampaignId}/route`, { method: 'DELETE' });
-      if (res.ok) {
-        setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, route_id: null } : c));
-        setCampaignRouteData(null);
-        setRouteResult(null);
-        setGeometrySuccessMsg(t('campaignSettings.routeRemovedSuccess'));
-        setTimeout(() => setGeometrySuccessMsg(null), 4000);
-        refreshAll();
-      }
-    } catch (err) {
-      console.error('Failed to remove route:', err);
+    const c = campaigns.find(c => c.id === currentCampaignId);
+    if (c && !c.family_id && !c.route_id) {
+      fetch(`/api/search-families?campaign_id=${currentCampaignId}`)
+        .then(r => r.ok ? r.json() : [])
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0 && data[0].id) {
+            setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, family_id: data[0].id } : c));
+          }
+        }).catch(() => {});
     }
+  }, [currentCampaignId, campaigns]);
+
+  useEffect(() => {
+    if (!appUser) return;
+    fetch('/api/prompts/research').then(r => r.ok ? r.text() : '').then(setResearchPromptTemplate).catch(console.error);
+    fetch('/api/prompts/market').then(r => r.ok ? r.text() : '').then(setMarketPromptTemplate).catch(console.error);
+    fetch('/api/prompts/profile').then(r => r.ok ? r.text() : '').then(setProfilePromptTemplate).catch(console.error);
+  }, [appUser]);
+
+  useEffect(() => {
+    const ekM = researcherOutput.match(/<expert_knowledge>([\s\S]*?)<\/expert_knowledge>/i);
+    setParsedExpertKnowledge(ekM ? ekM[1].trim() : '');
+    const grM = researcherOutput.match(/<good_reference_description>([\s\S]*?)<\/good_reference_description>/i);
+    setParsedGoodRef(grM ? grM[1].trim() : '');
+    const brM = researcherOutput.match(/<bad_reference_description>([\s\S]*?)<\/bad_reference_description>/i);
+    setParsedBadRef(brM ? brM[1].trim() : '');
+    const dmM = researcherOutput.match(/<demo_message>([\s\S]*?)<\/demo_message>/i);
+    setParsedDemoMsg(dmM ? dmM[1].trim() : '');
+    const ijM = researcherOutput.match(/<item_json>([\s\S]*?)<\/item_json>/i);
+    setParsedItemJson(ijM ? ijM[1].trim() : '');
+  }, [researcherOutput]);
+
+  useEffect(() => {
+    if (activeSearchTarget?.knowledge_set_id) {
+      const ks = knowledgeSets.find(k => k.id === activeSearchTarget.knowledge_set_id);
+      if (ks) {
+        setCurrentKnowledgeSetId(ks.id || null);
+        setEditKsName(ks.name);
+        setMarketMemo(ks.market_memo || '');
+        let samples: SampleListing[] = [];
+        if (ks.market_samples_json) {
+          try { samples = typeof ks.market_samples_json === 'string' ? JSON.parse(ks.market_samples_json) : ks.market_samples_json; } catch { /* empty */ }
+        }
+        setSampledListings(samples);
+        let raw = '';
+        if (ks.expert_knowledge) raw += `<expert_knowledge>\n${ks.expert_knowledge}\n</expert_knowledge>\n\n`;
+        if (ks.good_reference_description) raw += `<good_reference_description>\n${ks.good_reference_description}\n</good_reference_description>\n\n`;
+        if (ks.bad_reference_description) raw += `<bad_reference_description>\n${ks.bad_reference_description}\n</bad_reference_description>\n\n`;
+        if (ks.item_json) {
+          const s = typeof ks.item_json === 'string' ? ks.item_json : JSON.stringify(ks.item_json, null, 2);
+          raw += `<item_json>\n${s}\n</item_json>`;
+        }
+        setResearcherOutput(raw.trim());
+        setEditKsError('');
+        if (ks.market_memo && ks.good_reference_description) setWizardStep(3);
+        else if (ks.market_memo) setWizardStep(2);
+        else setWizardStep(1);
+      }
+    } else {
+      setCurrentKnowledgeSetId(null); setEditKsName(''); setMarketMemo('');
+      setSampledListings([]); setResearcherOutput(''); setEditKsError(''); setWizardStep(1);
+    }
+  }, [activeSearchTarget, searches, knowledgeSets]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Scraper polling
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch('/api/scrape/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.active) {
+          setIsScraping(true);
+          setScrapingProgress(data.progress);
+          if (data.progress?.status) setScrapingStatus(data.progress.status);
+          const logsRes = await fetch('/api/logs');
+          if (logsRes.ok) { const d = await logsRes.json(); setLiveLogs(d.logs || ''); }
+        } else if (isScraping) {
+          setIsScraping(false); setScrapingProgress(null); setScrapingStatus('Scraping completed!');
+          refreshAll();
+          if (activeSearchTarget?.id) fetchSampleListings(activeSearchTarget.id);
+        }
+      } catch { /* silent */ }
+    };
+    check();
+    const id = setInterval(check, 1500);
+    return () => clearInterval(id);
+  }, [isScraping, activeSearchTarget?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // AI processing polling
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch('/api/process/active');
+        if (!res.ok) return;
+        const data = await res.json();
+        setActiveProcessingListingIds(prev => {
+          const finished = prev.filter(id => !data.active.includes(id));
+          if (finished.length > 0) refreshAll();
+          return data.active;
+        });
+      } catch { /* silent */ }
+    };
+    check();
+    const id = setInterval(check, 2000);
+    return () => clearInterval(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // URL preview debounce
+  useEffect(() => {
+    if (searchTargetMode === 'family' || campaigns.find(c => c.id === currentCampaignId)?.route_id) return;
+    if (!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl)) return;
+    const campaignSearches = searches.filter(s => s.campaign_id === currentCampaignId);
+    if (!(campaignSearches.length === 0 || isRegisteringTarget)) return;
+    const timer = setTimeout(async () => {
+      const suggested = suggestTitleFromUrl(newTargetUrl) || 'New Search';
+      setPreviewLoading(true); setPreviewError(null); setPreviewCount(null);
+      try {
+        const countRes = await fetch('/api/searches/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: newTargetUrl }) });
+        if (countRes.ok) { const d = await countRes.json(); setPreviewCount(d.count); }
+        const ksRes = await fetch('/api/knowledge-sets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `${suggested} Guidelines`, expert_knowledge: '', item_json: {} }) });
+        const boundKsId = ksRes.ok ? (await ksRes.json()).id : null;
+        const searchRes = await fetch('/api/searches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaign_id: currentCampaignId, name: suggested, url: newTargetUrl, knowledge_set_id: boundKsId }) });
+        if (searchRes.ok) {
+          const sd = await searchRes.json();
+          setNewTargetUrl(''); setPreviewCount(null); setIsRegisteringTarget(false);
+          setCurrentSearchId(sd.id);
+          setIsScraping(true); setScrapingStatus('Spawning targeted crawler...'); setLiveLogs('Starting targeted Chrome headless scraper session...'); setScrapingProgress({ phase: 'starting', current: 0, total: 100, status: 'Spawning scraper worker...' });
+          await fetch(`/api/searches/${sd.id}/scrape`, { method: 'POST' });
+          refreshAll();
+        } else { const e = await searchRes.json(); setPreviewError(e.error || 'Failed to auto-register search target.'); }
+      } catch { setPreviewError('Failed to auto-register search query due to connection issues.'); }
+      finally { setPreviewLoading(false); }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [newTargetUrl, currentCampaignId, searches, isRegisteringTarget, searchTargetMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // =========================================================================
+  // Handlers
+  // =========================================================================
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail.trim() || !loginPassword.trim()) { setLoginError('Please enter email and password.'); return; }
+    setIsLoggingIn(true); setLoginError('');
+    try {
+      const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: loginEmail, password: loginPassword }) });
+      const data = await res.json();
+      if (res.ok && data.success) { setAppUser(data.user); refreshAll(); checkSessionStatus(); }
+      else setLoginError(data.error || t('auth.errorInvalid'));
+    } catch { setLoginError('Network connection failed.'); }
+    finally { setIsLoggingIn(false); }
   };
 
-  const handleUpdateCorridor = useCallback(async (newRadiusKm: number, newCorridorKm: number) => {
-    if (!campaignRouteData?.route?.id) return;
-    try {
-      const res = await fetch(`/api/route-searches/${campaignRouteData.route.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ radius_km: newRadiusKm, corridor_km: newCorridorKm }),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setCampaignRouteData(updated);
-        setGeometrySuccessMsg(t('searchFamily.savedSuccess'));
-        setTimeout(() => setGeometrySuccessMsg(null), 4000);
-      }
-    } catch (err) {
-      console.error('Failed to update corridor:', err);
-    }
-  }, [campaignRouteData, t]);
+  const handleLogout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); setAppUser(null); }
+    catch (e) { console.error('Logout failed:', e); }
+  };
 
-  const handleDeleteSearch = async (searchId: number) => {
+  const handleTriggerLogin = async () => {
+    setIsScraping(true); setScrapingStatus('Opening interactive browser window on your host...');
     try {
-      const res = await fetch(`/api/searches/${searchId}`, { method: 'DELETE' });
-      if (res.ok) {
-        setSearches(prev => prev.filter(s => s.id !== searchId));
-        refreshAll();
-      }
-    } catch (err) {
-      console.error('Failed to delete search:', err);
-    }
+      const res = await fetch('/api/login-session', { method: 'POST' });
+      if (res.ok) { const d = await res.json(); setScrapingStatus(d.success ? 'Authentication completed successfully!' : 'Session watcher finished or timed out.'); checkSessionStatus(); }
+      else setScrapingStatus('Authentication process failed to trigger.');
+    } catch { setScrapingStatus('Error connecting to backend server.'); }
+    finally { setIsScraping(false); }
+  };
+
+  const handleDeleteCampaign = useCallback(async (c: Campaign) => {
+    const campaignSearches = searches.filter(s => s.campaign_id === c.id);
+    const campaignListings = listings.filter(l => { const s = searches.find(x => x.id === l.search_id); return s && s.campaign_id === c.id; });
+    const contents = [
+      campaignSearches.length ? t('landing.deleteSearches', { count: campaignSearches.length }) : null,
+      campaignListings.length ? t('landing.deleteListings', { count: campaignListings.length }) : null,
+    ].filter(Boolean).join(', ');
+    const message = contents ? t('landing.deleteConfirmWithContents', { name: c.name, contents }) : t('landing.deleteConfirm', { name: c.name });
+    if (!window.confirm(message)) return;
+    try {
+      const res = await fetch(`/api/campaigns/${c.id}`, { method: 'DELETE' });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || t('landing.deleteFailed')); return; }
+      refreshAll();
+    } catch { alert(t('common.connectionIssueFailed')); }
+  }, [searches, listings, t, refreshAll]);
+
+  const handleCreateCampaign = async (): Promise<number | null> => {
+    if (!newCampaignName.trim()) return null;
+    try {
+      const res = await fetch('/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newCampaignName }) });
+      const data = await res.json();
+      if (res.ok) { setNewCampaignName(''); refreshAll(); return data.id; }
+      else alert(data.error || 'Failed to create campaign.');
+    } catch { alert('Failed to connect to backend server.'); }
+    return null;
+  };
+
+  const handleUpdateCampaignName = async (name: string) => {
+    if (!currentCampaignId) return;
+    const previous = campaigns.find(c => c.id === currentCampaignId)?.name;
+    setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, name } : c));
+    try {
+      const res = await fetch('/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: currentCampaignId, name }) });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setCampaigns(prev => prev.map(c => c.id === currentCampaignId && previous ? { ...c, name: previous } : c)); alert(d.error || t('landing.renameFailed')); }
+    } catch { setCampaigns(prev => prev.map(c => c.id === currentCampaignId && previous ? { ...c, name: previous } : c)); alert(t('common.connectionIssueFailed')); }
   };
 
   const handleAddSearchTarget = useCallback(async () => {
     if (!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl) || !currentCampaignId) return;
     try {
       const suggested = suggestTitleFromUrl(newTargetUrl) || 'New Search';
-      const ksRes = await fetch('/api/knowledge-sets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: `${suggested} Guidelines`, expert_knowledge: '', item_json: {} }),
-      });
+      const ksRes = await fetch('/api/knowledge-sets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `${suggested} Guidelines`, expert_knowledge: '', item_json: {} }) });
       const boundKsId = ksRes.ok ? (await ksRes.json()).id : null;
-      const searchRes = await fetch('/api/searches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          campaign_id: currentCampaignId,
-          name: suggested,
-          url: newTargetUrl,
-          knowledge_set_id: boundKsId,
-        }),
-      });
-      if (searchRes.ok) {
-        const searchData = await searchRes.json();
-        setNewTargetUrl('');
-        setCurrentSearchId(searchData.id);
-        refreshAll();
-      }
-    } catch (err) {
-      console.error('Failed to add search target:', err);
-    }
-  }, [newTargetUrl, currentCampaignId, refreshAll]);
+      const searchRes = await fetch('/api/searches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaign_id: currentCampaignId, name: suggested, url: newTargetUrl, knowledge_set_id: boundKsId }) });
+      if (searchRes.ok) { const sd = await searchRes.json(); setNewTargetUrl(''); setCurrentSearchId(sd.id); refreshAll(); }
+    } catch (e) { console.error('Failed to add search target:', e); }
+  }, [newTargetUrl, currentCampaignId, refreshAll, setCurrentSearchId]);
 
-  // Debounced auto-registration and count fetch
-  useEffect(() => {
-    if (searchTargetMode === 'family' || Boolean(campaigns.find(c => c.id === currentCampaignId)?.route_id)) {
-      // A corridor or search family is registered deliberately, not the moment a URL looks valid.
-      return;
-    }
-    if (!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl)) {
-      return;
-    }
+  const handleDeleteSearch = async (searchId: number) => {
+    try {
+      const res = await fetch(`/api/searches/${searchId}`, { method: 'DELETE' });
+      if (res.ok) { setSearches(prev => prev.filter(s => s.id !== searchId)); refreshAll(); }
+    } catch (e) { console.error('Failed to delete search:', e); }
+  };
 
-    // Only auto-register if we are in registration mode
-    const campaignSearches = searches.filter(s => s.campaign_id === currentCampaignId);
-    if (!(campaignSearches.length === 0 || isRegisteringTarget)) {
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      // Suggest title
+  const handlePlanCorridor = useCallback(async () => {
+    if (!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl)) { setRouteError(t('common.routeNeedsUrl')); return; }
+    if (!routeFrom || !routeTo) { setRouteError(t('common.routeNeedsBoth')); return; }
+    setRoutePlanning(true); setRouteError(null); setRouteResult(null);
+    try {
       const suggested = suggestTitleFromUrl(newTargetUrl) || 'New Search';
+      const ksRes = await fetch('/api/knowledge-sets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `${suggested} Guidelines`, expert_knowledge: '', item_json: {} }) });
+      const boundKsId = ksRes.ok ? (await ksRes.json()).id : null;
+      const res = await fetch('/api/route-searches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaign_id: currentCampaignId, base_url: newTargetUrl, origin: routeFrom.postal_code, destination: routeTo.postal_code, radius_km: routeRadiusKm, corridor_km: routeCorridorKm, knowledge_set_id: boundKsId, name: `${suggested}: ${routeFrom.name} → ${routeTo.name}` }) });
+      const data = await res.json();
+      if (!res.ok) { setRouteError(data.error || t('common.targetRegistrationFailed')); return; }
+      setRouteResult({ count: (data.searches || []).length, width: (data.corridor_km || routeCorridorKm) * 2 });
+      setNewTargetUrl(''); setRouteFrom(null); setRouteTo(null); setIsRegisteringTarget(false);
+      if (data.searches?.length) setCurrentSearchId(data.searches[0].id);
+      if (data.route_id && currentCampaignId) setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, route_id: data.route_id } : c));
+      refreshAll();
+    } catch { setRouteError(t('common.connectionIssueFailed')); }
+    finally { setRoutePlanning(false); }
+  }, [newTargetUrl, routeFrom, routeTo, routeRadiusKm, routeCorridorKm, currentCampaignId, t, setCurrentSearchId, refreshAll]);
 
-      setPreviewLoading(true);
-      setPreviewError(null);
-      setPreviewCount(null);
-
-      try {
-        // Fetch count in background
-        const countRes = await fetch('/api/searches/preview', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: newTargetUrl })
-        });
-        let fetchedCount = null;
-        if (countRes.ok) {
-          const countData = await countRes.json();
-          fetchedCount = countData.count;
-          setPreviewCount(fetchedCount);
-        }
-
-        // Auto-create guidelines profile
-        const ksRes = await fetch('/api/knowledge-sets', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: `${suggested} Guidelines`,
-            expert_knowledge: '',
-            item_json: {}
-          })
-        });
-        let boundKsId = null;
-        if (ksRes.ok) {
-          const ksData = await ksRes.json();
-          boundKsId = ksData.id;
-        }
-
-        // Auto-register Search Query
-        const searchRes = await fetch('/api/searches', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            campaign_id: currentCampaignId,
-            name: suggested,
-            url: newTargetUrl,
-            knowledge_set_id: boundKsId
-          })
-        });
-
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          // Reset input states
-          setNewTargetUrl('');
-          setPreviewCount(null);
-          setIsRegisteringTarget(false);
-          
-          // Set newly registered search active
-          setCurrentSearchId(searchData.id);
-          
-          // Trigger the fast crawler crawl
-          triggerFastScrape(searchData.id);
-
-          // Force refresh list of campaigns/searches
-          refreshAll();
-        } else {
-          const errData = await searchRes.json();
-          setPreviewError(errData.error || "Failed to auto-register search target.");
-        }
-      } catch {
-        setPreviewError("Failed to auto-register search query due to connection issues.");
-      } finally {
-        setPreviewLoading(false);
-      }
-    }, 600); // 600ms debounce
-
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newTargetUrl, currentCampaignId, searches, isRegisteringTarget, searchTargetMode]);
-
-
-
-
-  const handleTriggerLogin = async () => {
-    setIsScraping(true)
-    setScrapingStatus("Opening interactive browser window on your host... Please complete the login form inside the browser window. We will automatically detect when you have successfully logged in.")
+  const handleRemoveRoute = async () => {
+    if (!currentCampaignId) return;
     try {
-      const res = await fetch('/api/login-session', { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.success) {
-          setScrapingStatus("Authentication completed successfully!")
-          checkSessionStatus()
-        } else {
-          setScrapingStatus("Session watcher finished or timed out.")
-        }
-      } else {
-        setScrapingStatus("Authentication process failed to trigger.")
-      }
-    } catch {
-      setScrapingStatus("Error connecting to backend server.")
-    } finally {
-      setIsScraping(false)
-    }
-  }
+      const res = await fetch(`/api/campaigns/${currentCampaignId}/route`, { method: 'DELETE' });
+      if (res.ok) { setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, route_id: null } : c)); setCampaignRouteData(null); setRouteResult(null); setGeometrySuccessMsg(t('campaignSettings.routeRemovedSuccess')); setTimeout(() => setGeometrySuccessMsg(null), 4000); refreshAll(); }
+    } catch (e) { console.error('Failed to remove route:', e); }
+  };
 
-
-
-  // Auto load active guidelines when active search target changes
-  useEffect(() => {
-    if (activeSearchTarget && activeSearchTarget.knowledge_set_id) {
-      const boundSet = knowledgeSets.find(ks => ks.id === activeSearchTarget.knowledge_set_id)
-      if (boundSet) {
-        setCurrentKnowledgeSetId(boundSet.id || null)
-        setEditKsName(boundSet.name)
-        setMarketMemo(boundSet.market_memo || '')
-        
-        let samples: SampleListing[] = []
-        if (boundSet.market_samples_json) {
-          try {
-            samples = typeof boundSet.market_samples_json === 'string' 
-              ? JSON.parse(boundSet.market_samples_json) 
-              : boundSet.market_samples_json
-          } catch { /* empty */ }
-        }
-        setSampledListings(samples)
-
-        let raw = ''
-        if (boundSet.expert_knowledge) {
-          raw += `<expert_knowledge>\n${boundSet.expert_knowledge}\n</expert_knowledge>\n\n`
-        }
-        if (boundSet.good_reference_description) {
-          raw += `<good_reference_description>\n${boundSet.good_reference_description}\n</good_reference_description>\n\n`
-        }
-        if (boundSet.bad_reference_description) {
-          raw += `<bad_reference_description>\n${boundSet.bad_reference_description}\n</bad_reference_description>\n\n`
-        }
-        if (boundSet.item_json) {
-          const ijStr = typeof boundSet.item_json === 'string' ? boundSet.item_json : JSON.stringify(boundSet.item_json, null, 2)
-          raw += `<item_json>\n${ijStr}\n</item_json>`
-        }
-        setResearcherOutput(raw.trim())
-        setEditKsError('')
-
-        // Intelligent step steering: start on the step where they need to make progress
-        if (boundSet.market_memo && boundSet.good_reference_description) {
-          setWizardStep(3)
-        } else if (boundSet.market_memo) {
-          setWizardStep(2)
-        } else {
-          setWizardStep(1)
-        }
-      }
-    } else {
-      setCurrentKnowledgeSetId(null)
-      setEditKsName('')
-      setMarketMemo('')
-      setSampledListings([])
-      setResearcherOutput('')
-      setEditKsError('')
-      setWizardStep(1)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSearchTarget, searches, knowledgeSets])
-
-  // Create Campaign
-  const handleCreateCampaign = async (): Promise<number | null> => {
-    if (!newCampaignName.trim()) return null
+  const handleUpdateCorridor = useCallback(async (newRadiusKm: number, newCorridorKm: number) => {
+    if (!campaignRouteData?.route?.id) return;
     try {
-      const res = await fetch('/api/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newCampaignName })
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setNewCampaignName('')
-        refreshAll()
-        return data.id
-      } else {
-        alert(data.error || "Failed to create campaign.")
-      }
-    } catch {
-      alert("Failed to connect to backend server.")
-    }
-    return null
-  }
+      const res = await fetch(`/api/route-searches/${campaignRouteData.route.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ radius_km: newRadiusKm, corridor_km: newCorridorKm }) });
+      if (res.ok) { setCampaignRouteData(await res.json()); setGeometrySuccessMsg(t('searchFamily.savedSuccess')); setTimeout(() => setGeometrySuccessMsg(null), 4000); }
+    } catch (e) { console.error('Failed to update corridor:', e); }
+  }, [campaignRouteData, t]);
 
-  const handleUpdateCampaignName = async (name: string) => {
-    if (!currentCampaignId) return
-    const previous = campaigns.find(c => c.id === currentCampaignId)?.name
-    setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, name } : c))
-    try {
-      const res = await fetch('/api/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: currentCampaignId, name })
-      })
-      if (!res.ok) {
-        // The rename was shown before it was saved. Leaving it on screen after
-        // the save failed would tell the user the campaign is called something
-        // it is not — so put the old name back and say what happened.
-        const data = await res.json().catch(() => ({}))
-        setCampaigns(prev => prev.map(c =>
-          c.id === currentCampaignId && previous ? { ...c, name: previous } : c
-        ))
-        alert(data.error || t('landing.renameFailed'))
-      }
-    } catch {
-      setCampaigns(prev => prev.map(c =>
-        c.id === currentCampaignId && previous ? { ...c, name: previous } : c
-      ))
-      alert(t('common.connectionIssueFailed'))
-    }
-  }
-
-
-
-  // Trigger AI agent processing on a single specific listing
   const handleProcessSingleListing = async (listingId: string) => {
-    // Optimistically add to active list
-    setActiveProcessingListingIds(prev => Array.from(new Set([...prev, listingId])))
+    setActiveProcessingListingIds(prev => Array.from(new Set([...prev, listingId])));
     try {
-      const res = await fetch('/api/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listing_id: listingId })
-      })
-      if (!res.ok && res.status !== 409) {
-        alert("Failed to run AI agent for this listing.")
-        setActiveProcessingListingIds(prev => prev.filter(id => id !== listingId))
-      }
-    } catch {
-      alert("Error contacting backend AI worker.")
-      setActiveProcessingListingIds(prev => prev.filter(id => id !== listingId))
-    }
-  }
+      const res = await fetch('/api/process', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ listing_id: listingId }) });
+      if (!res.ok && res.status !== 409) { alert('Failed to run AI agent for this listing.'); setActiveProcessingListingIds(prev => prev.filter(id => id !== listingId)); }
+    } catch { alert('Error contacting backend AI worker.'); setActiveProcessingListingIds(prev => prev.filter(id => id !== listingId)); }
+  };
 
-
-
-  // Save Knowledge Set
   const handleSaveKnowledgeSet = async () => {
-    if (!editKsName.trim()) {
-      alert("Please enter a name for the Guidelines Profile.")
-      return
-    }
-
-    let parsedJson: Record<string, unknown> = {}
+    if (!editKsName.trim()) { alert('Please enter a name for the Guidelines Profile.'); return; }
+    let parsedJson: Record<string, unknown> = {};
     if (parsedItemJson.trim()) {
-      try {
-        parsedJson = JSON.parse(parsedItemJson)
-      } catch (e) {
-        setEditKsError(`Invalid JSON syntax in <item_json>: ${(e as Error).message}`)
-        return
-      }
+      try { parsedJson = JSON.parse(parsedItemJson); } catch (e) { setEditKsError(`Invalid JSON syntax in <item_json>: ${(e as Error).message}`); return; }
     }
-
-    // Verify boolean-only schema check
-    const criteria = (parsedJson.extraction_criteria as { id: string; type: string }[]) || []
+    const criteria = (parsedJson.extraction_criteria as { id: string; type: string }[]) || [];
     for (const c of criteria) {
-      if (c.type !== 'boolean') {
-        setEditKsError(`Criteria types must be boolean only. Criterion '${c.id}' has type '${c.type}'. Legacy/mixed schemas are not supported in the new pipeline.`)
-        return
-      }
+      if (c.type !== 'boolean') { setEditKsError(`Criteria types must be boolean only. Criterion '${c.id}' has type '${c.type}'.`); return; }
     }
-
     try {
-      const res = await fetch('/api/knowledge-sets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: currentKnowledgeSetId || undefined,
-          name: editKsName,
-          expert_knowledge: parsedExpertKnowledge,
-          item_json: parsedJson,
-          market_memo: marketMemo,
-          good_reference_description: parsedGoodRef,
-          bad_reference_description: parsedBadRef,
-          market_samples_json: JSON.stringify(sampledListings),
-          source_search_url: activeSearchTarget?.url || '',
-          sample_timestamp: new Date().toISOString()
-        })
-      })
-      if (res.ok) {
-        setEditKsError('')
-        refreshAll()
-        setView('dashboard')
-      } else {
-        const data = await res.json()
-        setEditKsError(data.error || "Failed to save guidelines profile.")
-      }
-    } catch {
-      setEditKsError("Connection to backend server failed.")
-    }
-  }
+      const res = await fetch('/api/knowledge-sets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: currentKnowledgeSetId || undefined, name: editKsName, expert_knowledge: parsedExpertKnowledge, item_json: parsedJson, market_memo: marketMemo, good_reference_description: parsedGoodRef, bad_reference_description: parsedBadRef, market_samples_json: JSON.stringify(sampledListings), source_search_url: activeSearchTarget?.url || '', sample_timestamp: new Date().toISOString() }) });
+      if (res.ok) { setEditKsError(''); refreshAll(); setView('dashboard'); }
+      else { const d = await res.json(); setEditKsError(d.error || 'Failed to save guidelines profile.'); }
+    } catch { setEditKsError('Connection to backend server failed.'); }
+  };
 
-  // Trigger crawler background process (Scrape only)
   const handleStartScrape = async () => {
-    setIsScraping(true)
-    setScrapingStatus("Spawning scraper worker...")
-    setLiveLogs("Initializing browser context and logging session...")
-    setScrapingProgress({ phase: 'starting', current: 0, total: 100, status: 'Spawning scraper worker...' })
-    try {
-      const res = await fetch('/api/scrape', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignId: currentCampaignId })
-      })
-      if (!res.ok) {
-        alert("Failed to start scraper.")
-        setIsScraping(false)
-      }
-    } catch {
-      alert("Error triggering scraper process.")
-      setIsScraping(false)
-    }
-  }
+    setIsScraping(true); setScrapingStatus('Spawning scraper worker...'); setLiveLogs('Initializing browser context and logging session...'); setScrapingProgress({ phase: 'starting', current: 0, total: 100, status: 'Spawning scraper worker...' });
+    try { const res = await fetch('/api/scrape', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId: currentCampaignId }) }); if (!res.ok) { alert('Failed to start scraper.'); setIsScraping(false); } }
+    catch { alert('Error triggering scraper process.'); setIsScraping(false); }
+  };
 
-  // Trigger deep description updates for all existing listings
   const handleStartDeepUpdate = async () => {
-    setIsScraping(true)
-    setScrapingStatus("Spawning deep update worker...")
-    setLiveLogs("Initializing browser context for deep listing harvesting...")
-    setScrapingProgress({ phase: 'starting', current: 0, total: 100, status: 'Spawning deep update worker...' })
-    try {
-      const res = await fetch('/api/scrape/update-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignId: currentCampaignId })
-      })
-      if (!res.ok) {
-        alert("Failed to start deep update.")
-        setIsScraping(false)
-      }
-    } catch {
-      alert("Error triggering deep update process.")
-      setIsScraping(false)
-    }
-  }
+    setIsScraping(true); setScrapingStatus('Spawning deep update worker...'); setLiveLogs('Initializing browser context for deep listing harvesting...'); setScrapingProgress({ phase: 'starting', current: 0, total: 100, status: 'Spawning deep update worker...' });
+    try { const res = await fetch('/api/scrape/update-all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId: currentCampaignId }) }); if (!res.ok) { alert('Failed to start deep update.'); setIsScraping(false); } }
+    catch { alert('Error triggering deep update process.'); setIsScraping(false); }
+  };
 
-  // Trigger AI Matching Process
   const handleStartProcess = async () => {
-    setIsProcessing(true)
-    setProcessingStatus("Launching AI Matcher checklist evaluation and deal scoring...")
+    setIsProcessing(true); setProcessingStatus('Launching AI Matcher checklist evaluation and deal scoring...');
     try {
-      const res = await fetch('/api/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignId: currentCampaignId })
-      })
-      if (res.ok) {
-        setProcessingStatus("AI matching completed! Updating Deal Matcher results...")
-        setTimeout(() => {
-          refreshAll()
-          setIsProcessing(false)
-        }, 4000)
-      } else {
-        alert("Failed to launch AI Matcher.")
-        setIsProcessing(false)
-      }
-    } catch {
-      alert("Error contacting AI Matching backend.")
-      setIsProcessing(false)
-    }
-  }
+      const res = await fetch('/api/process', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignId: currentCampaignId }) });
+      if (res.ok) { setProcessingStatus('AI matching completed! Updating Deal Matcher results...'); setTimeout(() => { refreshAll(); setIsProcessing(false); }, 4000); }
+      else { alert('Failed to launch AI Matcher.'); setIsProcessing(false); }
+    } catch { alert('Error contacting AI Matching backend.'); setIsProcessing(false); }
+  };
 
-
-
-
-
-
-  // Filter listings based on currentCampaignId
-  const filteredListings = listings.filter(l => {
-    const targetSearch = searches.find(s => s.id === l.search_id)
-    const matchesCampaign = !currentCampaignId || (targetSearch && targetSearch.campaign_id === currentCampaignId)
-    const matchesSearch = selectedSearchId === 'All' || String(l.search_id) === selectedSearchId
-    const isMatched = matchesCampaign && matchesSearch
-
-    if (selectedStatusFilter === 'High Niceness') {
-      return isMatched && l.llm_processed && l.niceness_score !== null && l.niceness_score !== undefined && l.niceness_score >= 70
-    }
-    if (selectedStatusFilter === 'New') {
-      return isMatched && l.status === 'New'
-    }
-    if (selectedStatusFilter === 'Evaluate with AI') {
-      return isMatched && !l.llm_processed
-    }
-    return isMatched
-  })
-
-
+  // =========================================================================
+  // Auth screens (pre-login)
+  // =========================================================================
 
   if (authLoading) {
     return (
@@ -1141,7 +532,7 @@ export default function App() {
           <p className="text-text-secondary text-sm font-medium">{t('common.loading')}</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (!appUser) {
@@ -1151,1219 +542,271 @@ export default function App() {
           <div className="text-center">
             <img src={`${import.meta.env.BASE_URL}logo-default.svg`} alt="prismdeals Logo" className="w-64 h-auto mx-auto" />
           </div>
-
           <Card className="p-6 space-y-4">
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-sm text-text-secondary font-medium block">
-                  {t('auth.emailLabel')}
-                </label>
-                <Input
-                  type="email"
-                  value={loginEmail}
-                  onChange={e => setLoginEmail(e.target.value)}
-                  placeholder={t('auth.emailPlaceholder')}
-                  required
-                />
+                <label className="text-sm text-text-secondary font-medium block">{t('auth.emailLabel')}</label>
+                <Input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder={t('auth.emailPlaceholder')} required />
               </div>
-
               <div className="space-y-1.5">
-                <label className="text-sm text-text-secondary font-medium block">
-                  {t('auth.passwordLabel')}
-                </label>
-                <Input
-                  type="password"
-                  value={loginPassword}
-                  onChange={e => setLoginPassword(e.target.value)}
-                  placeholder={t('auth.passwordPlaceholder')}
-                  required
-                />
+                <label className="text-sm text-text-secondary font-medium block">{t('auth.passwordLabel')}</label>
+                <Input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder={t('auth.passwordPlaceholder')} required />
               </div>
-
-              {loginError && (
-                <div className="bg-status-danger/10 border border-status-danger/25 p-3 rounded-xl text-sm text-status-danger font-semibold animate-fadeIn">
-                  {loginError}
-                </div>
-              )}
-
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={isLoggingIn}
-                className="w-full py-3"
-              >
+              {loginError && <div className="bg-status-danger/10 border border-status-danger/25 p-3 rounded-xl text-sm text-status-danger font-semibold animate-fadeIn">{loginError}</div>}
+              <Button type="submit" variant="primary" disabled={isLoggingIn} className="w-full py-3">
                 {isLoggingIn ? t('auth.buttonLoggingIn') : t('auth.buttonLogin')}
               </Button>
             </form>
           </Card>
         </div>
       </div>
-    )
+    );
   }
+
+  // =========================================================================
+  // Shared campaign & nav config
+  // =========================================================================
+
+  const currentCampaign = campaigns.find(c => c.id === currentCampaignId);
+  const isRouteOrFamilyMode = !!(currentCampaign?.route_id || currentCampaign?.family_id);
+
+  const configureCurrentCampaign = () => {
+    const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
+    navigate('edit', currentCampaignId, firstTarget?.id || null);
+  };
+
+  // =========================================================================
+  // Main layout
+  // =========================================================================
 
   return (
     <div className="min-h-screen bg-brand-primary text-text-primary flex flex-col font-sans">
-      {/* Header */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Header                                                              */}
+      {/* ------------------------------------------------------------------ */}
       <header className="h-16 border-b border-border-subtle bg-bg-surface/60 backdrop-blur-md sticky top-0 z-40 px-6 flex items-center justify-between">
         <div className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate('landing', null, null)}>
           <img src={`${import.meta.env.BASE_URL}logo-icon.svg`} alt="prismdeals Icon" className="w-8 h-8 rounded-lg shadow shadow-black/30" />
-          {/* eslint-disable-next-line no-restricted-syntax -- the product's name, not copy: it reads the same in every language */}
+          {/* eslint-disable-next-line no-restricted-syntax -- product name */}
           <span className="font-bold text-xl tracking-wide text-white font-sans">prismdeals</span>
         </div>
 
-        {/* Hamburger Menu Toggle for Mobile */}
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="md:hidden p-2 text-text-muted hover:text-white transition-colors focus:outline-none min-w-[44px] min-h-[44px] flex items-center justify-center"
-          aria-label="Toggle menu"
-        >
+        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="md:hidden p-2 text-text-muted hover:text-white transition-colors focus:outline-none min-w-[44px] min-h-[44px] flex items-center justify-center" aria-label="Toggle menu">
           {isMobileMenuOpen ? <X className="w-6 h-6 animate-fade-in" /> : <Menu className="w-6 h-6 animate-fade-in" />}
         </button>
 
-        {/* Desktop Controls (Inline row) */}
         <div className="hidden md:flex items-center gap-4">
-          {/* Kleinanzeigen scraper connection status */}
+          {/* Scraper session status */}
           <div className="flex items-center gap-3 bg-bg-input border border-border-subtle rounded-xl py-1.5 px-3 shadow-inner">
             <div className="flex items-center space-x-1.5">
-              <span className={cn("w-2 h-2 rounded-full", sessionEmail ? 'bg-status-good animate-pulse' : 'bg-status-danger')} />
-              <span className="text-sm font-medium text-text-muted">
-                {sessionEmail ? t('common.sessionActive', { email: sessionEmail }) : t('common.sessionUnauth')}
-              </span>
+              <span className={cn('w-2 h-2 rounded-full', sessionEmail ? 'bg-status-good animate-pulse' : 'bg-status-danger')} />
+              <span className="text-sm font-medium text-text-muted">{sessionEmail ? t('common.sessionActive', { email: sessionEmail }) : t('common.sessionUnauth')}</span>
             </div>
-
             {!sessionEmail ? (
-              <Button
-                variant="primary"
-                size="xs"
-                onClick={handleTriggerLogin}
-                disabled={isScraping || isProcessing}
-                className="flex items-center justify-center gap-1"
-              >
-                <Key className="w-3 h-3" />
-                <span>{t('common.login')}</span>
-              </Button>
+              <Button variant="primary" size="xs" onClick={handleTriggerLogin} disabled={isScraping || isProcessing} className="flex items-center justify-center gap-1"><Key className="w-3 h-3" /><span>{t('common.login')}</span></Button>
             ) : (
-              <Button
-                variant="secondary"
-                size="xs"
-                onClick={handleTriggerLogin}
-                disabled={isScraping || isProcessing}
-                className="flex items-center justify-center gap-1 border-border-subtle"
-              >
-                <Key className="w-3 h-3 text-brand-accent" />
-                <span>{t('common.reauth')}</span>
-              </Button>
+              <Button variant="secondary" size="xs" onClick={handleTriggerLogin} disabled={isScraping || isProcessing} className="flex items-center justify-center gap-1 border-border-subtle"><Key className="w-3 h-3 text-brand-accent" /><span>{t('common.reauth')}</span></Button>
             )}
           </div>
 
-          {/* Visual separator between scraper status and app account controls */}
           <div className="h-6 w-px bg-border-subtle" />
 
-          {/* App Account Controls */}
           <div className="flex items-center gap-3">
-            {/* Language Selector Dropdown */}
             <div className="relative">
-              <Button
-                variant="badge"
-                size="sm"
-                onClick={() => setIsLangDropdownOpen(!isLangDropdownOpen)}
-                className="px-3 py-1.5 text-sm flex items-center justify-center gap-1.5 border-border-subtle"
-              >
-                <Globe className="w-3.5 h-3.5 text-text-muted" />
-                <span>{lang.toUpperCase()}</span>
-                <ChevronDown className="w-3 h-3 text-text-muted" />
+              <Button variant="badge" size="sm" onClick={() => setIsLangDropdownOpen(!isLangDropdownOpen)} className="px-3 py-1.5 text-sm flex items-center justify-center gap-1.5 border-border-subtle">
+                <Globe className="w-3.5 h-3.5 text-text-muted" /><span>{lang.toUpperCase()}</span><ChevronDown className="w-3 h-3 text-text-muted" />
               </Button>
-
               {isLangDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsLangDropdownOpen(false)} />
                   <div className="absolute right-0 mt-1.5 w-24 bg-bg-surface border border-border-subtle rounded-xl shadow-xl z-20 py-1 overflow-hidden animate-fade-in">
-                    <button
-                      onClick={() => { toggleLanguage(); setIsLangDropdownOpen(false); }}
-                      className="w-full text-left px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-surface-hover font-medium transition-colors min-h-[44px] flex items-center"
-                    >
+                    <button onClick={() => { toggleLanguage(); setIsLangDropdownOpen(false); }} className="w-full text-left px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-surface-hover font-medium transition-colors min-h-[44px] flex items-center">
                       {lang === 'en' ? 'DEUTSCH' : 'ENGLISH'}
                     </button>
                   </div>
                 </>
               )}
             </div>
-
-            <Button
-              variant="icon"
-              size="sm"
-              onClick={() => {
-                if (view !== 'settings') {
-                  setView('settings');
-                }
-              }}
-              title={t('common.globalSettings')}
-              className="p-2 border-border-subtle hover:border-brand-accent/30"
-            >
+            <Button variant="icon" size="sm" onClick={() => { if (view !== 'settings') setView('settings'); }} title={t('common.globalSettings')} className="p-2 border-border-subtle hover:border-brand-accent/30">
               <Settings className="w-4.5 h-4.5 text-text-muted hover:text-brand-accent transition-all duration-300" />
             </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={handleLogout}
-              className="px-3 py-1.5 text-sm flex items-center justify-center gap-1.5 text-center"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>{t('auth.logout')}</span>
+            <Button variant="danger" size="sm" onClick={handleLogout} className="px-3 py-1.5 text-sm flex items-center justify-center gap-1.5 text-center">
+              <LogOut className="w-3.5 h-3.5" /><span>{t('auth.logout')}</span>
             </Button>
           </div>
         </div>
       </header>
 
-      {/* Mobile Navigation Drawer Sheet (slide-out overlay) */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Mobile navigation drawer                                            */}
+      {/* ------------------------------------------------------------------ */}
       {isMobileMenuOpen && (
         <>
-          <div 
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden animate-fade-in" 
-            onClick={() => setIsMobileMenuOpen(false)} 
-          />
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden animate-fade-in" onClick={() => setIsMobileMenuOpen(false)} />
           <div className="fixed top-0 right-0 bottom-0 w-72 bg-bg-surface border-l border-border-subtle p-6 z-50 flex flex-col gap-6 md:hidden animate-slide-left shadow-2xl">
             <div className="flex items-center justify-between border-b border-border-subtle pb-4">
               <span className="font-bold text-base text-text-primary tracking-wide">{t('common.navigation')}</span>
-              <button 
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="p-1 rounded-lg border border-border-subtle text-text-muted hover:text-white min-w-[44px] min-h-[44px] flex items-center justify-center"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <button onClick={() => setIsMobileMenuOpen(false)} className="p-1 rounded-lg border border-border-subtle text-text-muted hover:text-white min-w-[44px] min-h-[44px] flex items-center justify-center"><X className="w-4 h-4" /></button>
             </div>
-
-            {/* Kleinanzeigen scraper connection status */}
             <div className="flex flex-col gap-3 bg-bg-input border border-border-subtle rounded-xl p-3 shadow-inner">
               <div className="flex items-center space-x-1.5">
-                <span className={cn("w-2 h-2 rounded-full", sessionEmail ? 'bg-status-good animate-pulse' : 'bg-status-danger')} />
-                <span className="text-sm font-medium text-text-muted">
-                  {sessionEmail ? t('common.sessionActive', { email: sessionEmail }) : t('common.sessionUnauth')}
-                </span>
+                <span className={cn('w-2 h-2 rounded-full', sessionEmail ? 'bg-status-good animate-pulse' : 'bg-status-danger')} />
+                <span className="text-sm font-medium text-text-muted">{sessionEmail ? t('common.sessionActive', { email: sessionEmail }) : t('common.sessionUnauth')}</span>
               </div>
-
               {!sessionEmail ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }}
-                  disabled={isScraping || isProcessing}
-                  className="w-full flex items-center justify-center gap-1.5"
-                >
-                  <Key className="w-3.5 h-3.5" />
-                  <span>{t('common.login')}</span>
-                </Button>
+                <Button variant="primary" size="sm" onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }} disabled={isScraping || isProcessing} className="w-full flex items-center justify-center gap-1.5"><Key className="w-3.5 h-3.5" /><span>{t('common.login')}</span></Button>
               ) : (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }}
-                  disabled={isScraping || isProcessing}
-                  className="w-full flex items-center justify-center gap-1.5 border-border-subtle"
-                >
-                  <Key className="w-3.5 h-3.5 text-brand-accent" />
-                  <span>{t('common.reauth')}</span>
-                </Button>
+                <Button variant="secondary" size="sm" onClick={() => { handleTriggerLogin(); setIsMobileMenuOpen(false); }} disabled={isScraping || isProcessing} className="w-full flex items-center justify-center gap-1.5 border-border-subtle"><Key className="w-3.5 h-3.5 text-brand-accent" /><span>{t('common.reauth')}</span></Button>
               )}
             </div>
-
-            {/* Language toggle button for Mobile */}
             <div className="space-y-1">
               <span className="text-sm font-medium text-text-secondary block">{t('common.language')}</span>
-              <Button
-                variant="badge"
-                size="sm"
-                onClick={toggleLanguage}
-                className="w-full justify-between px-3 border-border-subtle"
-              >
-                <span className="flex items-center gap-2">
-                  <Globe className="w-4.5 h-4.5 text-text-muted" />
-                  <span>{lang === 'en' ? 'ENGLISH' : 'DEUTSCH'}</span>
-                </span>
+              <Button variant="badge" size="sm" onClick={toggleLanguage} className="w-full justify-between px-3 border-border-subtle">
+                <span className="flex items-center gap-2"><Globe className="w-4.5 h-4.5 text-text-muted" /><span>{lang === 'en' ? 'ENGLISH' : 'DEUTSCH'}</span></span>
                 <span className="text-sm text-brand-accent font-semibold">{t('common.switchTo', { lang: lang === 'en' ? 'DE' : 'EN' })}</span>
               </Button>
             </div>
-
-            {/* Actions list */}
             <div className="space-y-3 mt-auto">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setView('settings');
-                  setIsMobileMenuOpen(false);
-                }}
-                className="w-full justify-start gap-2.5"
-              >
-                <Settings className="w-4.5 h-4.5 text-text-muted" />
-                <span>{t('common.globalSettings')}</span>
-              </Button>
-
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
-                className="w-full justify-start gap-2.5"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>{t('auth.logout')}</span>
-              </Button>
+              <Button variant="secondary" size="sm" onClick={() => { setView('settings'); setIsMobileMenuOpen(false); }} className="w-full justify-start gap-2.5"><Settings className="w-4.5 h-4.5 text-text-muted" /><span>{t('common.globalSettings')}</span></Button>
+              <Button variant="danger" size="sm" onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} className="w-full justify-start gap-2.5"><LogOut className="w-4 h-4" /><span>{t('auth.logout')}</span></Button>
             </div>
           </div>
         </>
       )}
 
-
-      {/* Main Container */}
-      {/* p-3 on a phone, p-6 from sm up.
-          p-6 resolves to 27px here because --spacing is 0.28rem, so on a 390px
-          screen it took 54px of width -- one seventh of the display -- and 27px
-          off the top of a fold that was already entirely chrome. */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Main content — one screen component per view                        */}
+      {/* ------------------------------------------------------------------ */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 flex flex-col justify-start">
-        {/* VIEW 1: LANDING VIEW - CAMPAIGN HUB GRID */}
         {view === 'landing' && (
-          <div className="space-y-3 sm:space-y-6 animate-fadeIn w-full">
-            <div className="flex justify-between items-center pb-4 border-b border-border-subtle w-full mb-6">
-              <div>
-                <h1 className="text-2xl font-bold text-text-primary tracking-tight">{t('landing.title')}</h1>
-                <p className="text-base text-text-secondary mt-1">{t('landing.subtitle')}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {campaigns.map(c => {
-                const campaignSearches = searches.filter(s => s.campaign_id === c.id)
-                const campaignListings = listings.filter(l => {
-                  const s = searches.find(x => x.id === l.search_id)
-                  return s && s.campaign_id === c.id
-                })
-                const unprocessedCount = campaignListings.filter(l => !l.llm_processed).length
-                const firstListingWithImages = campaignListings.find(l => l.images && l.images.length > 0)
-                const firstImg = firstListingWithImages?.images?.[0]
-
-                return (
-                  <Card
-                    interactive
-                    key={c.id}
-                    onClick={() => {
-                      const campaignSearches = searches.filter(s => s.campaign_id === c.id);
-                      if (campaignSearches.length === 0) {
-                        navigate('edit', c.id, null);
-                      } else {
-                        navigate('dashboard', c.id);
-                      }
-                    }}
-                    className="p-4 justify-between space-y-4"
-                  >
-                    {firstImg ? (
-                      <div className="w-full aspect-[21/9] rounded-xl overflow-hidden relative border border-border-subtle shadow-inner">
-                        <img
-                          src={firstImg}
-                          alt={c.name}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-bg-base via-bg-base/20 to-transparent" />
-                      </div>
-                    ) : (
-                      <div className="w-full aspect-[21/9] rounded-xl relative border border-border-subtle bg-bg-surface flex items-center justify-center overflow-hidden">
-                        <span className="text-sm font-medium text-text-muted">{t('landing.noListings')}</span>
-                      </div>
-                    )}
-
-                    <div className="flex-1 flex flex-col justify-between pt-1">
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h3 className="text-xl font-bold text-text-primary group-hover:text-brand-accent transition-colors tracking-tight line-clamp-1">{c.name}</h3>
-                            <p className="text-sm text-text-secondary mt-0.5">{t('landing.profileType')}</p>
-                          </div>
-
-                          <div className="flex items-center shrink-0">
-                            <Button
-                              variant="icon"
-                              size="xs"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const firstTarget = searches.find(s => s.campaign_id === c.id);
-                                navigate('edit', c.id, firstTarget?.id || null);
-                              }}
-                              title={t('landing.configureTooltip')}
-                              aria-label={t('landing.configureTooltip')}
-                              className="w-11 h-11 flex items-center justify-center rounded-xl"
-                            >
-                              <Settings className="w-5 h-5 transition-transform duration-500 hover:rotate-90 text-text-muted hover:text-brand-accent" />
-                            </Button>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-1.5 text-sm font-medium">
-                          <span className="bg-bg-input text-text-secondary border border-border-subtle px-2.5 py-1 rounded-md">
-                            {campaignSearches.length} {campaignSearches.length === 1 ? t('landing.target') : t('landing.targets')}
-                          </span>
-                          <span className="bg-bg-input text-text-primary border border-border-subtle px-2.5 py-1 rounded-md font-semibold">
-                            {campaignListings.length} {t('landing.matches')}
-                          </span>
-                          {unprocessedCount > 0 && (
-                            <span className="bg-brand-accent/15 text-brand-accent border border-brand-accent/25 px-2.5 py-1 rounded-md font-semibold">
-                              {unprocessedCount} {t('landing.new')}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="border-t border-border-subtle mt-4 pt-3 flex justify-between items-center text-base font-semibold">
-                        <span className="text-text-secondary group-hover:text-brand-accent transition-colors">
-                          {t('landing.openDashboard')}
-                        </span>
-                        <Button
-                          variant="icon"
-                          size="xs"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteCampaign(c.id, c.name, campaignSearches.length, campaignListings.length);
-                          }}
-                          title={t('landing.deleteTooltip')}
-                          aria-label={t('landing.deleteTooltip')}
-                          className="w-11 h-11 flex items-center justify-center rounded-xl text-text-muted hover:text-status-danger transition-colors"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                               strokeLinecap="round" strokeLinejoin="round"
-                               className="w-5 h-5"
-                               aria-hidden="true">
-                            <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                          </svg>
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
-                )
-              })}
-
-              {/* "+" Add Search Card */}
-              <Card
-                interactive
-                onClick={() => setView('create-campaign')}
-                className="bg-bg-surface/20 border-dashed border-border-subtle hover:border-brand-accent/50 hover:bg-brand-accent/[0.02] p-6 items-center justify-center space-y-4 h-full min-h-[220px]"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-brand-accent/10 text-brand-accent flex items-center justify-center font-bold text-3xl group-hover:bg-brand-accent group-hover:text-bg-base transition-all shadow-inner">
-                  +
-                </div>
-                <div className="text-center">
-                  <h3 className="text-base font-bold text-text-primary group-hover:text-brand-accent transition-colors">{t('landing.createCampaign')}</h3>
-                  <p className="text-sm text-text-muted mt-1 max-w-[200px]">{t('landing.createSubtitle')}</p>
-                </div>
-              </Card>
-            </div>
-          </div>
+          <LandingScreen
+            campaigns={campaigns}
+            searches={searches}
+            listings={listings}
+            onOpenCampaign={(c) => {
+              const campaignSearches = searches.filter(s => s.campaign_id === c.id);
+              navigate(campaignSearches.length === 0 ? 'edit' : 'dashboard', c.id, null);
+            }}
+            onConfigureCampaign={(c) => {
+              const firstTarget = searches.find(s => s.campaign_id === c.id);
+              navigate('edit', c.id, firstTarget?.id || null);
+            }}
+            onDeleteCampaign={handleDeleteCampaign}
+            onCreateCampaign={() => setView('create-campaign')}
+          />
         )}
 
-        {/* VIEW 2: CAMPAIGN DASHBOARD - FEED LISTINGS VIEW */}
         {view === 'dashboard' && (
-          (campaigns.find(c => c.id === currentCampaignId)?.route_id || campaigns.find(c => c.id === currentCampaignId)?.family_id) ? (
-            <div className="flex flex-col space-y-3 sm:space-y-6 animate-fadeIn w-full">
-              <div className="flex items-center space-x-3">
-                <Button
-                  variant="badge"
-                  size="sm"
-                  onClick={() => navigate('landing', null, null)}
-                  className="px-3 py-1.5"
-                >
-                  <span className="mr-1">←</span>
-                  <span>{t('common.backToCampaigns')}</span>
-                </Button>
-                <div className="w-[1px] h-5 bg-border-subtle" />
-                <Button
-                  variant="icon"
-                  size="xs"
-                  onClick={() => {
-                    const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
-                    setEditTab('terms');
-                    navigate('edit', currentCampaignId, firstTarget?.id || null);
-                  }}
-                  title={t('landing.configureTooltip')}
-                  className="p-1.5 border-border-subtle hover:border-brand-accent/30"
-                >
-                  <Settings className="w-4 h-4 transition-transform duration-500 hover:rotate-90 text-text-muted hover:text-brand-accent" />
-                </Button>
-              </div>
-
-              <RouteResultsView
-                campaignId={currentCampaignId || 0}
-                campaignName={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
-                familyId={campaigns.find(c => c.id === currentCampaignId)?.family_id ?? undefined}
-                onEvaluateWithAi={() => {
-                  const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
-                  setEditTab('guidelines');
-                  navigate('edit', currentCampaignId, firstTarget?.id || null);
-                }}
-                isScraping={isScraping}
-                onStartScrape={handleStartScrape}
-                scrapingStatus={scrapingStatus}
-                scrapingProgress={scrapingProgress}
-                liveLogs={liveLogs}
-                showLogConsole={showLogConsole}
-                setShowLogConsole={setShowLogConsole}
-                onEditFamily={() => {
-                  setSearchTargetMode('family');
-                  setEditTab('terms');
-                  navigate('edit', currentCampaignId, null);
-                }}
-              />
-            </div>
-          ) : (
-          <div className="flex flex-col space-y-3 sm:space-y-6 animate-fadeIn w-full">
-
-            {/* Campaign Breadcrumb Headers & Filters */}
-            <Card className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 md:p-5">
-              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-                <Button
-                  variant="badge"
-                  size="sm"
-                  onClick={() => {
-                    navigate('landing', null, null);
-                  }}
-                  className="px-3 py-1.5"
-                >
-                  <span className="mr-1">←</span>
-                  <span>{t('common.backToCampaigns')}</span>
-                </Button>
-                <span className="text-text-muted hidden sm:inline">|</span>
-                <div className="flex items-center space-x-2">
-                  <h2 className="text-xl font-bold text-white">
-                    {campaigns.find(c => c.id === currentCampaignId)?.name} {t('listing.dashboardTitle')}
-                  </h2>
-
-                  <Button
-                    variant="icon"
-                    size="xs"
-                    onClick={() => {
-                      const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
-                      navigate('edit', currentCampaignId, firstTarget?.id || null);
-                    }}
-                    title={t('landing.configureTooltip')}
-                    className="p-1.5 border-border-subtle hover:border-brand-accent/30"
-                  >
-                    <Settings className="w-4 h-4 transition-transform duration-500 hover:rotate-90 text-text-muted hover:text-brand-accent" />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex flex-col lg:flex-row lg:items-center gap-4 w-full md:w-auto">
-                {/* Crawler and AI control actions */}
-                {/* Wraps rather than dividing the row into exact thirds. As a
-                    three-column grid each cell was narrower than its own label,
-                    and the buttons -- which must not break their text mid-word --
-                    overflowed and printed on top of each other. */}
-                <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-                  <Button
-                    variant="action-emerald"
-                    size="sm"
-                    onClick={handleStartScrape}
-                    disabled={isScraping || isProcessing}
-                    className="min-w-[9.5rem] py-2.5 px-3 text-center flex items-center justify-center gap-1.5"
-                  >
-                    <Search className="w-3.5 h-3.5" />
-                    <span>{t('dashboard.fetchFresh')}</span>
-                  </Button>
-                  <Button
-                    variant="action-sky"
-                    size="sm"
-                    onClick={handleStartDeepUpdate}
-                    disabled={isScraping || isProcessing}
-                    className="min-w-[9.5rem] py-2.5 px-3 text-center flex items-center justify-center gap-1.5"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>{t('dashboard.updateDesc')}</span>
-                  </Button>
-                  <Button
-                    variant="action-indigo"
-                    size="sm"
-                    onClick={handleStartProcess}
-                    disabled={isScraping || isProcessing}
-                    className="min-w-[9.5rem] py-2.5 px-3 text-center flex items-center justify-center gap-1.5"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>{t('dashboard.autoAi')}</span>
-                  </Button>
-                </div>
-
-                {/* Filter dropdowns */}
-                <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-                  {/* Target search filter */}
-                  <Select
-                    value={selectedSearchId}
-                    onChange={setSelectedSearchId}
-                    options={[
-                      { value: 'All', label: t('dashboard.filterAllSearches') },
-                      ...searches
-                        .filter(s => s.campaign_id === currentCampaignId)
-                        .map(s => ({ value: String(s.id), label: s.name }))
-                    ]}
-                    className="w-full sm:w-44"
-                  />
-
-                  <Select
-                    value={selectedStatusFilter}
-                    onChange={val => setSelectedStatusFilter(val as 'All' | 'High Niceness' | 'New' | 'Evaluate with AI')}
-                    options={[
-                      { value: 'All', label: t('dashboard.statusAll') },
-                      { value: 'High Niceness', label: `${t('dashboard.statusMatches')} (70+)` },
-                      { value: 'Evaluate with AI', label: t('dashboard.statusPending') },
-                      { value: 'New', label: t('dashboard.statusEvaluated') }
-                    ]}
-                    className="w-full sm:w-44"
-                  />
-                </div>
-
-              </div>
-            </Card>
-
-            <ScraperProgressCard
-              isScraping={isScraping}
-              scrapingStatus={scrapingStatus}
-              scrapingProgress={scrapingProgress}
-              liveLogs={liveLogs}
-              showLogConsole={showLogConsole}
-              setShowLogConsole={setShowLogConsole}
-            />
-
-            {isProcessing && (
-              <div className="bg-brand-accent/5 border border-brand-accent/20 p-4 rounded-2xl flex items-center space-x-3 text-sm text-brand-accent">
-                <div className="animate-pulse w-3 h-3 rounded-full bg-brand-accent" />
-                <span className="font-semibold">{processingStatus}</span>
-              </div>
-            )}
-
-            {/* Grid/Split of Matched Listings */}
-            {filteredListings.length === 0 ? (
-              <div className="bg-bg-surface/20 border border-dashed border-border-subtle rounded-2xl p-16 text-center shadow-inner">
-                <span className="text-base text-text-muted font-semibold block mb-1">{t('common.noMatchingListings')}</span>
-                <span className="text-sm text-text-muted block">{t('common.dashboardEmptyHint')}</span>
-              </div>
-            ) : (
-              <div className="flex flex-col lg:flex-row gap-6 items-start w-full relative">
-                
-                {/* Left Master List / Mobile Grid */}
-                <div className={cn(
-                  "w-full flex-1 flex flex-col gap-4",
-                  "lg:w-[380px] lg:max-w-[380px] lg:flex-initial lg:max-h-[calc(100vh-220px)] lg:overflow-y-auto lg:pr-2 scrollbar-thin"
-                )}>
-                  {/* Grid on mobile, vertical list on desktop */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
-                    {filteredListings.map(l => (
-                      <ListingDetailCard
-                        key={l.id}
-                        l={l}
-                        activeProcessingListingIds={activeProcessingListingIds}
-                        handleProcessSingleListing={handleProcessSingleListing}
-                        selectedListingId={selectedListingId}
-                        setSelectedListingId={setSelectedListingId}
-                        mode="list"
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                {/* Right Detail Inspector (Desktop) */}
-                <div className="hidden lg:block lg:flex-1 lg:sticky lg:top-24 bg-bg-surface border border-border-subtle rounded-2xl p-6 shadow-xl max-h-[calc(100vh-220px)] overflow-y-auto scrollbar-thin w-full">
-                  {selectedListingId ? (
-                    (() => {
-                      const selectedListing = listings.find(l => l.id === selectedListingId);
-                      return selectedListing ? (
-                        <ListingDetailCard
-                          l={selectedListing}
-                          activeProcessingListingIds={activeProcessingListingIds}
-                          handleProcessSingleListing={handleProcessSingleListing}
-                          selectedListingId={selectedListingId}
-                          setSelectedListingId={setSelectedListingId}
-                          mode="detail"
-                        />
-                      ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-center p-8 text-text-muted">
-                          <p className="text-sm font-semibold">{t('common.listingNotFound')}</p>
-                        </div>
-                      );
-                    })()
-                  ) : (
-                    <div className="h-[350px] flex flex-col items-center justify-center text-center p-8 text-text-muted border border-dashed border-border-subtle rounded-xl bg-bg-input/20">
-                      <Sparkles className="w-8 h-8 text-brand-accent/40 mb-3 animate-pulse" />
-                      <p className="text-sm font-semibold">{t('listing.selectListingPrompt') || 'Select a listing from the list to view its full AI evaluation, specs, and outreach drafts.'}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Mobile Drawer Overlay / Dialog Modal for Details (lg:hidden) */}
-                {selectedListingId && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:hidden animate-fade-in">
-                    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedListingId(null)} />
-                    <div className="bg-bg-surface border border-border-subtle w-full max-w-lg max-h-[85vh] rounded-2xl overflow-y-auto p-5 relative z-10 shadow-2xl animate-slide-up">
-                      <button
-                        onClick={() => setSelectedListingId(null)}
-                        className="absolute right-4 top-4 text-text-muted hover:text-white p-1 rounded-lg border border-border-subtle bg-bg-input"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                      {(() => {
-                        const selectedListing = listings.find(l => l.id === selectedListingId);
-                        return selectedListing ? (
-                          <div className="mt-4">
-                            <ListingDetailCard
-                              l={selectedListing}
-                              activeProcessingListingIds={activeProcessingListingIds}
-                              handleProcessSingleListing={handleProcessSingleListing}
-                              selectedListingId={selectedListingId}
-                              setSelectedListingId={setSelectedListingId}
-                              mode="detail"
-                            />
-                          </div>
-                        ) : null;
-                      })()}
-                    </div>
-                  </div>
-                )}
-
-              </div>
-            )}
-          </div>
-          )
+          <DashboardScreen
+            campaign={currentCampaign}
+            searches={searches}
+            listings={listings}
+            selectedSearchId={selectedSearchId}
+            setSelectedSearchId={setSelectedSearchId}
+            selectedStatusFilter={selectedStatusFilter}
+            setSelectedStatusFilter={setSelectedStatusFilter}
+            selectedListingId={selectedListingId}
+            setSelectedListingId={setSelectedListingId}
+            activeProcessingListingIds={activeProcessingListingIds}
+            handleProcessSingleListing={handleProcessSingleListing}
+            isScraping={isScraping}
+            isProcessing={isProcessing}
+            processingStatus={processingStatus}
+            scrapingStatus={scrapingStatus}
+            scrapingProgress={scrapingProgress}
+            liveLogs={liveLogs}
+            showLogConsole={showLogConsole}
+            setShowLogConsole={setShowLogConsole}
+            onBack={() => navigate('landing', null, null)}
+            onConfigure={configureCurrentCampaign}
+            onStartScrape={handleStartScrape}
+            onStartDeepUpdate={handleStartDeepUpdate}
+            onStartProcess={handleStartProcess}
+            isRouteOrFamilyMode={isRouteOrFamilyMode}
+            onEvaluateWithAi={() => {
+              const firstTarget = searches.find(s => s.campaign_id === currentCampaignId);
+              navigate('edit', currentCampaignId, firstTarget?.id || null);
+            }}
+            onEditFamily={() => navigate('edit', currentCampaignId, null)}
+          />
         )}
-            {/* VIEW 3: CAMPAIGN TARGETS & GUIDELINES EDITOR */}
+
         {view === 'edit' && (
-          <div className="flex flex-col space-y-6 w-full animate-fadeIn max-w-6xl mx-auto py-2">
-
-            {/* Sub Header */}
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center items-start gap-3 pb-4 border-b border-border-subtle w-full">
-              <div className="flex flex-col sm:flex-row sm:items-center items-start gap-3 w-full sm:w-auto">
-                <Button
-                  variant="badge"
-                  size="sm"
-                  onClick={() => navigate('dashboard', currentCampaignId, null)}
-                  className="shrink-0"
-                >
-                  <span>← {t('common.backToDashboard')}</span>
-                </Button>
-                <div className="hidden sm:block w-[1px] h-5 bg-border-subtle shrink-0" />
-                <div className="flex flex-col min-w-0">
-                  {isEditingCampaignName ? (
-                    <div className="flex items-center space-x-2">
-                      <Input
-                        type="text"
-                        value={campaigns.find(c => c.id === currentCampaignId)?.name || ''}
-                        onChange={e => handleUpdateCampaignName(e.target.value)}
-                        onBlur={() => setIsEditingCampaignName(false)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') {
-                            setIsEditingCampaignName(false);
-                          }
-                        }}
-                        className="py-1 text-sm rounded-lg"
-                        autoFocus
-                      />
-                      <Button
-                        variant="primary"
-                        size="xs"
-                        onClick={() => setIsEditingCampaignName(false)}
-                      >
-                        {t('common.done')}
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center space-x-2 group">
-                      <h1 className="text-xl font-bold text-text-primary truncate">
-                        {campaigns.find(c => c.id === currentCampaignId)?.name} {t('common.settings')}
-                      </h1>
-                      <Button
-                        variant="icon"
-                        size="xs"
-                        onClick={() => setIsEditingCampaignName(true)}
-                        title={t('common.renameCampaign')}
-                        className="p-1 shrink-0"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                          <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
-                      </Button>
-                    </div>
-                  )}
-                  <p className="text-sm text-text-secondary mt-0.5">{t('common.targetsAndGuidelines')}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Tabs for Settings Workspace */}
-            {/* max-w-3xl, not max-w-xl: three labels of this length wrapped to two
-                lines inside 576px even on a 1440px screen, which put the icon on
-                the seam between the lines -- the same defect that had just been
-                fixed on the action buttons below. */}
-            <div className="flex items-center gap-1 p-1 bg-bg-input border border-border-subtle rounded-xl max-w-3xl overflow-x-auto">
-              <button
-                type="button"
-                onClick={() => setEditTab('terms')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
-                  editTab === 'terms'
-                    ? 'bg-brand-accent/15 text-brand-accent shadow-sm'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                <Layers className="w-4 h-4 shrink-0" />
-                <span className="sm:hidden">{t('campaignSettings.tabTermsShort')}</span><span className="hidden sm:inline">{t('campaignSettings.tabTerms')}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditTab('geometry')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
-                  editTab === 'geometry'
-                    ? 'bg-brand-accent/15 text-brand-accent shadow-sm'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                <MapPin className="w-4 h-4 shrink-0" />
-                <span className="sm:hidden">{t('campaignSettings.tabGeometryShort')}</span><span className="hidden sm:inline">{t('campaignSettings.tabGeometry')}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditTab('guidelines')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
-                  editTab === 'guidelines'
-                    ? 'bg-brand-accent/15 text-brand-accent shadow-sm'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                <Sparkles className="w-4 h-4 shrink-0" />
-                <span className="sm:hidden">{t('campaignSettings.tabGuidelinesShort')}</span><span className="hidden sm:inline">{t('campaignSettings.tabGuidelines')}</span>
-              </button>
-            </div>
-
-            {/* TAB 1: SEARCH TERMS & MODELS */}
-            {editTab === 'terms' && (
-              <div className="w-full space-y-3 sm:space-y-6 animate-fadeIn">
-                {campaigns.find(c => c.id === currentCampaignId)?.family_id || searchTargetMode === 'family' ? (
-                  <div className="max-w-3xl mx-auto w-full space-y-4">
-                    <SearchFamilyEditor
-                      campaignId={currentCampaignId}
-                      familyId={campaigns.find(c => c.id === currentCampaignId)?.family_id ?? undefined}
-                      initialBaseUrl={newTargetUrl || (activeSearches[0]?.url || '')}
-                      onSave={(savedFamily) => {
-                        if (currentCampaignId) {
-                          setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, family_id: savedFamily.id } : c));
-                        }
-                        refreshAll();
-                      }}
-                      onCancel={() => {
-                        if (!campaigns.find(c => c.id === currentCampaignId)?.family_id) {
-                          setSearchTargetMode('point');
-                        }
-                        navigate('dashboard', currentCampaignId, null);
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="max-w-3xl mx-auto w-full space-y-6">
-                    {/* Add Single Search Target Card */}
-                    <Card className="p-6 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h2 className="text-lg font-bold text-text-primary">{t('common.pasteSearchUrl')}</h2>
-                          <p className="text-xs text-text-secondary">{t('wizard.targetsDescription')}</p>
-                        </div>
-                        <Button
-                          variant="secondary"
-                          size="xs"
-                          onClick={() => setSearchTargetMode('family')}
-                          className="flex items-center gap-1 text-brand-accent font-semibold"
-                        >
-                          <Layers className="w-3.5 h-3.5 shrink-0" />
-                          <span>{t('campaignSettings.btnCreateFamily')}</span>
-                        </Button>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex gap-2">
-                          <Input
-                            type="text"
-                            value={newTargetUrl}
-                            onChange={e => setNewTargetUrl(e.target.value)}
-                            placeholder={t('common.searchUrlPlaceholder')}
-                            className="font-mono text-sm flex-1"
-                          />
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            disabled={!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl)}
-                            onClick={handleAddSearchTarget}
-                            className="shrink-0"
-                          >
-                            <Plus className="w-4 h-4 mr-1" />
-                            <span>{t('common.add')}</span>
-                          </Button>
-                        </div>
-
-                        {newTargetUrl && (
-                          <div className="bg-bg-input border border-border-subtle rounded-xl p-3 text-xs space-y-1.5 font-mono">
-                            <div className="flex items-center justify-between">
-                              <span className="text-text-muted">{t('common.urlStatus')}:</span>
-                              {isValidKleinanzeigenUrl(newTargetUrl) ? (
-                                <span className="text-status-good font-bold">{t('common.validUrl')}</span>
-                              ) : (
-                                <span className="text-status-danger font-bold">{t('common.invalidUrl')}</span>
-                              )}
-                            </div>
-                            {suggestTitleFromUrl(newTargetUrl) && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-text-muted">{t('common.suggestedName')}:</span>
-                                <span className="text-text-primary font-semibold">{suggestTitleFromUrl(newTargetUrl)}</span>
-                              </div>
-                            )}
-                            {previewLoading && (
-                              <div className="text-text-muted flex items-center gap-1.5">
-                                <span className="w-2 h-2 rounded-full bg-brand-accent animate-ping" />
-                                <span>{t('common.processing')}</span>
-                              </div>
-                            )}
-                            {previewCount !== null && (
-                              <div className="text-status-good font-semibold">
-                                {t('common.foundCount', { count: previewCount })}
-                              </div>
-                            )}
-                            {previewError && (
-                              <div className="text-status-danger font-semibold">
-                                {previewError}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </Card>
-
-                    {/* Active Searches List */}
-                    <div className="space-y-3">
-                      <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider">
-                        {t('campaignSettings.singleSearchesTitle')} ({activeSearches.length})
-                      </h3>
-                      {activeSearches.length === 0 ? (
-                        <Card className="p-8 text-center text-text-muted text-sm border-dashed">
-                          {t('campaignSettings.noSearchesYet')}
-                        </Card>
-                      ) : (
-                        <div className="space-y-2">
-                          {activeSearches.map(s => (
-                            <Card key={s.id} className="p-3.5 flex items-center justify-between gap-3">
-                              <div className="min-w-0 flex-1">
-                                <h4 className="text-sm font-bold text-text-primary truncate">{s.name || s.url}</h4>
-                                <p className="text-xs text-text-muted font-mono truncate">{s.url}</p>
-                              </div>
-                              <Button
-                                variant="icon"
-                                size="xs"
-                                onClick={() => s.id && handleDeleteSearch(s.id)}
-                                title={t('common.delete')}
-                                className="text-text-muted hover:text-status-danger"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </Card>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* TAB 2: GEOMETRY & LOCATION */}
-            {editTab === 'geometry' && (
-              <div className="max-w-3xl mx-auto w-full space-y-3 sm:space-y-6 animate-fadeIn">
-                {/* Geometry Header Card */}
-                <div className="space-y-1">
-                  <h2 className="text-xl font-bold text-text-primary tracking-tight font-heading">
-                    {t('campaignSettings.geometryTitle')}
-                  </h2>
-                  <p className="text-sm text-text-secondary leading-relaxed">
-                    {t('campaignSettings.geometrySubtitle')}
-                  </p>
-                </div>
-
-                {geometrySuccessMsg && (
-                  <div className="bg-status-good/10 text-status-good px-4 py-2.5 rounded-xl border border-status-good/20 text-sm font-semibold flex items-center gap-2 animate-fadeIn">
-                    <Check className="w-4 h-4 shrink-0" />
-                    <span>{geometrySuccessMsg}</span>
-                  </div>
-                )}
-
-                {/* Status Card */}
-                {campaigns.find(c => c.id === currentCampaignId)?.route_id ? (
-                  /* Route Corridor Active */
-                  <Card className="p-6 space-y-5 border-brand-accent/30 bg-bg-surface">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border-subtle pb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-brand-accent/15 border border-border-brand flex items-center justify-center text-brand-accent shrink-0">
-                          <Navigation className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-brand-accent/15 text-brand-accent border border-border-brand">
-                              {t('campaignSettings.activeModeRoute')}
-                            </span>
-                          </div>
-                          <p className="text-xs text-text-muted mt-1">
-                            {t('campaignSettings.currentRouteNotice')}
-                          </p>
-                        </div>
-                      </div>
-
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleRemoveRoute}
-                        className="text-status-danger border-status-danger/30 hover:bg-status-danger/10 shrink-0 font-semibold"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 mr-1" />
-                        <span>{t('campaignSettings.btnSwitchToLocation')}</span>
-                      </Button>
-                    </div>
-
-                    {routeResult && (
-                      <div className="text-sm bg-status-good/10 text-status-good px-3.5 py-2.5 rounded-xl border border-status-good/20 font-semibold animate-fadeIn">
-                        {t('common.corridorPlanned', { count: routeResult.count, width: routeResult.width })}
-                      </div>
-                    )}
-
-                    {campaignRouteData?.route && (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                          <div className="bg-bg-input p-3 rounded-xl border border-border-subtle">
-                            <span className="text-text-muted block">{t('common.routeFrom')} → {t('common.routeTo')}</span>
-                            <span className="font-bold text-text-primary text-sm mt-0.5 block truncate">
-                              {campaignRouteData.route.origin} → {campaignRouteData.route.destination}
-                            </span>
-                          </div>
-                          <div className="bg-bg-input p-3 rounded-xl border border-border-subtle">
-                            <span className="text-text-muted block">{t('corridor.radiusLabel', { km: campaignRouteData.route.radius_km })}</span>
-                            <span className="font-bold text-text-primary text-sm mt-0.5 block">
-                              {campaignRouteData.route.radius_km} km
-                            </span>
-                          </div>
-                          <div className="bg-bg-input p-3 rounded-xl border border-border-subtle">
-                            <span className="text-text-muted block">{t('corridor.halfWidthLabel', { km: campaignRouteData.route.half_width_km })}</span>
-                            <span className="font-bold text-text-primary text-sm mt-0.5 block">
-                              ±{campaignRouteData.route.half_width_km} km ({campaignRouteData.route.half_width_km * 2} km {t('corridor.totalWidth')})
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Corridor Tuner */}
-                        <div className="pt-2 border-t border-border-subtle">
-                          <h4 className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-3">
-                            {t('corridor.editSettings')}
-                          </h4>
-                          <CorridorPlanner
-                            baseUrl={campaignRouteData.route.base_url || newTargetUrl || (activeSearches[0]?.url || 'https://www.kleinanzeigen.de/s-multimedia-elektronik/c161')}
-                            origin={campaignRouteData.route.origin}
-                            destination={campaignRouteData.route.destination}
-                            originName={campaignRouteData.route.origin}
-                            destinationName={campaignRouteData.route.destination}
-                            radiusKm={campaignRouteData.route.radius_km}
-                            corridorKm={campaignRouteData.route.half_width_km}
-                            onRadiusChange={(r) => handleUpdateCorridor(r, campaignRouteData.route.half_width_km)}
-                            onCorridorChange={(c) => handleUpdateCorridor(campaignRouteData.route.radius_km, c)}
-                            onCommit={() => handleUpdateCorridor(campaignRouteData.route.radius_km, campaignRouteData.route.half_width_km)}
-                            committing={loadingRouteData}
-                            commitLabel={t('corridor.commitChange')}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </Card>
-                ) : (
-                  /* Single Location Active */
-                  <div className="space-y-6">
-                    <Card className="p-6 space-y-4 bg-bg-surface border-border-subtle">
-                      <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-status-good/15 border border-status-good/20 flex items-center justify-center text-status-good shrink-0">
-                          <MapPin className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-status-good/15 text-status-good border border-status-good/20">
-                            {t('campaignSettings.activeModeLocation')}
-                          </span>
-                          <p className="text-xs text-text-muted mt-1 leading-relaxed">
-                            {t('campaignSettings.currentLocationNotice')}
-                          </p>
-                        </div>
-                      </div>
-                    </Card>
-
-                    {/* Switch to Route Form */}
-                    <Card className="p-6 space-y-4 bg-bg-surface border-border-subtle">
-                      <div>
-                        <h3 className="text-base font-bold text-text-primary">
-                          {t('campaignSettings.switchToRoutePrompt')}
-                        </h3>
-                        <p className="text-xs text-text-secondary mt-0.5">
-                          {t('common.routeExplainer')}
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <PlaceInput
-                          label={t('common.routeFrom')}
-                          placeholder={t('common.routePlaceholder')}
-                          value={routeFrom}
-                          onChange={setRouteFrom}
-                          emptyHint={t('common.routeNoMatches')}
-                        />
-                        <PlaceInput
-                          label={t('common.routeTo')}
-                          placeholder={t('common.routePlaceholder')}
-                          value={routeTo}
-                          onChange={setRouteTo}
-                          emptyHint={t('common.routeNoMatches')}
-                        />
-                      </div>
-
-                      {/* Corridor Planner */}
-                      {routeFrom && routeTo ? (
-                        <CorridorPlanner
-                          baseUrl={newTargetUrl || activeSearches[0]?.url || 'https://www.kleinanzeigen.de/s-multimedia-elektronik/c161'}
-                          origin={routeFrom.postal_code}
-                          destination={routeTo.postal_code}
-                          originName={routeFrom.name}
-                          destinationName={routeTo.name}
-                          radiusKm={routeRadiusKm}
-                          corridorKm={routeCorridorKm}
-                          onRadiusChange={setRouteRadiusKm}
-                          onCorridorChange={setRouteCorridorKm}
-                          onCommit={handlePlanCorridor}
-                          committing={routePlanning}
-                          commitLabel={t('campaignSettings.btnSwitchToRoute')}
-                        />
-                      ) : (
-                        <p className="text-xs text-text-muted text-center py-2">
-                          {!routeFrom && !routeTo
-                            ? t('common.routeNeedsBoth')
-                            : !routeFrom
-                              ? t('common.routeNeedsFrom')
-                              : t('common.routeNeedsTo')}
-                        </p>
-                      )}
-
-                      {routeError && (
-                        <div className="text-xs bg-status-danger/10 text-status-danger px-3.5 py-2 rounded-xl border border-status-danger/20 font-semibold animate-fadeIn">
-                          {routeError}
-                        </div>
-                      )}
-                    </Card>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* TAB 3: AI GUIDELINES */}
-            {editTab === 'guidelines' && (
-              <div className="w-full animate-fadeIn space-y-4">
-                {activeSearchTarget ? (
-                  <GuidelinesWizard
-                    activeSearchTarget={activeSearchTarget}
-                    marketMemo={marketMemo}
-                    setMarketMemo={setMarketMemo}
-                    sampledListings={sampledListings}
-                    sampledListingsLoading={sampledListingsLoading}
-                    fetchSampleListings={fetchSampleListings}
-                    researcherOutput={researcherOutput}
-                    setResearcherOutput={setResearcherOutput}
-                    researchPromptTemplate={researchPromptTemplate}
-                    marketPromptTemplate={marketPromptTemplate}
-                    profilePromptTemplate={profilePromptTemplate}
-                    editKsError={editKsError}
-                    wizardStep={wizardStep}
-                    setWizardStep={setWizardStep}
-                    handleSaveKnowledgeSet={handleSaveKnowledgeSet}
-                    parsedExpertKnowledge={parsedExpertKnowledge}
-                    parsedGoodRef={parsedGoodRef}
-                    parsedBadRef={parsedBadRef}
-                    parsedDemoMsg={parsedDemoMsg}
-                    parsedItemJson={parsedItemJson}
-                    isScraping={isScraping}
-                    scrapingStatus={scrapingStatus}
-                    scrapingProgress={scrapingProgress}
-                  />
-                ) : (
-                  <Card className="p-8 text-center space-y-3">
-                    <p className="text-text-muted text-sm">{t('campaignSettings.noSearchesYet')}</p>
-                    <Button variant="primary" size="sm" onClick={() => setEditTab('terms')}>
-                      {t('campaignSettings.tabTerms')} →
-                    </Button>
-                  </Card>
-                )}
-              </div>
-            )}
-          </div>
+          <EditScreen
+            campaign={currentCampaign}
+            searches={searches}
+            knowledgeSets={knowledgeSets}
+            activeSearchTarget={activeSearchTarget}
+            campaignRouteData={campaignRouteData}
+            loadingRouteData={loadingRouteData}
+            geometrySuccessMsg={geometrySuccessMsg}
+            newTargetUrl={newTargetUrl}
+            setNewTargetUrl={setNewTargetUrl}
+            searchTargetMode={searchTargetMode}
+            setSearchTargetMode={setSearchTargetMode}
+            routeFrom={routeFrom}
+            setRouteFrom={setRouteFrom}
+            routeTo={routeTo}
+            setRouteTo={setRouteTo}
+            routeRadiusKm={routeRadiusKm}
+            setRouteRadiusKm={setRouteRadiusKm}
+            routeCorridorKm={routeCorridorKm}
+            setRouteCorridorKm={setRouteCorridorKm}
+            routePlanning={routePlanning}
+            routeError={routeError}
+            routeResult={routeResult}
+            marketMemo={marketMemo}
+            setMarketMemo={setMarketMemo}
+            sampledListings={sampledListings}
+            sampledListingsLoading={sampledListingsLoading}
+            fetchSampleListings={fetchSampleListings}
+            researcherOutput={researcherOutput}
+            setResearcherOutput={setResearcherOutput}
+            researchPromptTemplate={researchPromptTemplate}
+            marketPromptTemplate={marketPromptTemplate}
+            profilePromptTemplate={profilePromptTemplate}
+            editKsError={editKsError}
+            wizardStep={wizardStep}
+            setWizardStep={setWizardStep}
+            handleSaveKnowledgeSet={handleSaveKnowledgeSet}
+            parsedExpertKnowledge={parsedExpertKnowledge}
+            parsedGoodRef={parsedGoodRef}
+            parsedBadRef={parsedBadRef}
+            parsedDemoMsg={parsedDemoMsg}
+            parsedItemJson={parsedItemJson}
+            isScraping={isScraping}
+            scrapingStatus={scrapingStatus}
+            scrapingProgress={scrapingProgress}
+            onBack={() => navigate('dashboard', currentCampaignId, null)}
+            onAddSearchTarget={handleAddSearchTarget}
+            onDeleteSearch={handleDeleteSearch}
+            onPlanCorridor={handlePlanCorridor}
+            onRemoveRoute={handleRemoveRoute}
+            onUpdateCorridor={handleUpdateCorridor}
+            onSaveFamily={(savedFamily) => {
+              if (currentCampaignId) setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, family_id: savedFamily.id } : c));
+              refreshAll();
+            }}
+            isValidKleinanzeigenUrl={isValidKleinanzeigenUrl}
+            suggestTitleFromUrl={suggestTitleFromUrl}
+            previewLoading={previewLoading}
+            previewCount={previewCount}
+            previewError={previewError}
+            onUpdateCampaignName={handleUpdateCampaignName}
+          />
         )}
 
-        {/* VIEW 4: CREATE NEW CAMPAIGN VIEW */}
         {view === 'create-campaign' && (
-          <div className="flex flex-col items-center justify-center space-y-6 w-full animate-fadeIn py-12 max-w-lg mx-auto">
-            <Card className="p-8 w-full relative overflow-hidden">
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="badge"
-                    size="xs"
-                    onClick={() => setView('landing')}
-                  >
-                    <span>← {t('common.back')}</span>
-                  </Button>
-                </div>
-                <h2 className="text-2xl font-bold text-text-primary font-sans tracking-tight">{t('wizard.createCampaignTitle')}</h2>
-                <p className="text-base text-text-secondary leading-relaxed font-normal">{t('wizard.createCampaignDesc')}</p>
-              </div>
-
-              <div className="space-y-4 pt-2">
-                <div className="space-y-1.5">
-                  <label className="text-sm text-text-secondary font-medium block">{t('wizard.campaignNameLabel')}</label>
-                  <Input
-                    type="text"
-                    value={newCampaignName}
-                    onChange={e => setNewCampaignName(e.target.value)}
-                    placeholder={t('wizard.campaignNamePlaceholder')}
-                    onKeyDown={async (e) => {
-                      if (e.key === 'Enter' && newCampaignName.trim()) {
-                        const newId = await handleCreateCampaign();
-                        if (newId) {
-                          navigate('edit', newId, null);
-                        }
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex space-x-3 pt-4">
-                <Button
-                  variant="secondary"
-                  onClick={() => setView('landing')}
-                  className="flex-1 py-3"
-                >
-                  {t('common.cancel')}
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={async () => {
-                    if (!newCampaignName.trim()) return;
-                    const newId = await handleCreateCampaign();
-                    if (newId) {
-                      navigate('edit', newId, null);
-                    }
-                  }}
-                  className="flex-1 py-3"
-                >
-                  {t('common.save')}
-                </Button>
-              </div>
-            </Card>
-          </div>
+          <CreateCampaignScreen
+            newCampaignName={newCampaignName}
+            setNewCampaignName={setNewCampaignName}
+            onSave={async () => {
+              if (!newCampaignName.trim()) return;
+              const newId = await handleCreateCampaign();
+              if (newId) navigate('edit', newId, null);
+            }}
+            onCancel={() => setView('landing')}
+          />
         )}
 
         {view === 'settings' && (
@@ -2371,5 +814,5 @@ export default function App() {
         )}
       </main>
     </div>
-  )
+  );
 }
