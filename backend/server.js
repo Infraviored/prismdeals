@@ -1339,11 +1339,13 @@ if not parts or not parts.get('location'):
     sys.exit(0)
 
 location = parts['location']
-headers = {
-    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
-}
+# The scraper's own headers, not a fourth copy of them.
+#
+# This probe fires up to 39 requests from the same address, often seconds after
+# the crawler's. Announcing a different browser than the crawler does is worse
+# against a bot protection that already trips after a handful of fetches, not
+# better -- and PROPOSALS F-3 already counts three copies of this string.
+from scraper import HEADERS as headers
 
 radius_totals = {r: 0 for r in radii}
 term_details = []
