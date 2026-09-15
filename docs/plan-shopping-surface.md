@@ -108,6 +108,108 @@ läuft Phase 5 für jede Suche außer einer ins Leere.
 
 ---
 
+## Die Oberfläche wird ersetzt, nicht erweitert
+
+*Nachgetragen, nachdem der Eigentümer sich die ausgelieferte Drucker-Suche
+Bildschirm für Bildschirm angesehen hat. Dieser Abschnitt gilt für alle Phasen
+darunter: sie werden in die neue Hülle gebaut, nicht in die alte.*
+
+### Der Befund
+
+Auf **einem** Bildschirm — Kampagne „Drucker", null Treffer:
+
+- „No listings found within 30 km" steht oben in der Kopfkarte
+- „0 listings in search radius" steht als Plakette darunter
+- „No listings found within 30 km" steht nochmal als Überschrift
+
+Dreimal dieselbe Tatsache. Dazu dreimal derselbe Einstieg: das Zahnrad oben,
+„Family settings" neben der Modellliste, „Family settings" unten. Ein Knopf sagt
+„Search **corridor** now", obwohl dort kein Korridor ist. Ein Zeitstempel steht
+als `2026-09-15 00:40:57` da. Der Umschalter „Listings (0) / Map" schaltet
+zwischen nichts und nichts.
+
+### Warum Flicken nicht hilft
+
+Das ist keine Schlamperei, sondern die Signatur einer Komponente, die sechsmal
+durch einen weiteren Zweig erweitert wurde.
+
+`frontend/src/App.tsx` hat **2371 Zeilen** und über **35** `useState`; alle fünf
+Ansichten liegen darin, in verschachtelten Bedingungen.
+`frontend/src/components/RouteResultsView.tsx` hat über **1000 Zeilen** und macht
+sechs Dinge gleichzeitig: Trefferliste, Karte, mobile Umschaltung, Leerzustand,
+Radius-Diagnose, Familien-Dialog, Korridor-Schublade.
+
+Drei Zweige rendern jeweils ihre eigene Fassung von „nichts gefunden", weil
+niemand mehr den ganzen Renderbaum überblickt. Drei Zweige stellen jeweils ihren
+eigenen Einstellungsknopf hin. **Jeder Flicken ist ein weiterer Zweig** — zuletzt
+nachweisbar daran, dass eine Korrektur der umbrechenden Knopfschrift die
+Reiterleiste zum Überlaufen brachte und sie mitten im Wort abschnitt.
+
+### Die drei Regeln, aus denen der Rest folgt
+
+1. **Ein Zustand, eine Komponente.** Eine Stelle entscheidet, in welchem Zustand
+   eine Suche ist — *nie gesucht*, *gesucht und leer*, *hat Treffer* — und pro
+   Zustand gibt es genau **eine** Komponente. Dann *kann* eine Tatsache nicht
+   dreimal dastehen.
+2. **Ein Bildschirm, eine Aktionsliste.** Die Aktionen eines Bildschirms werden
+   an einer Stelle definiert und dort gerendert. Dann *kann* ein Knopf nicht
+   dreimal auftauchen.
+3. **Keine Maschinenzeichenketten in der Oberfläche.** Keine rohe URL, kein
+   ISO-Zeitstempel, kein Feldname aus der Datenbank.
+
+### Die Basis-Such-URL verschwindet
+
+Sie steht heute als abgeschnittenes Textfeld in den Einstellungen, und der
+Nutzer soll daran den Radius ablesen. Das ist die Arbeit, die das Werkzeug
+abnehmen soll.
+
+Eine offene Such-API gibt es nicht — `api.kleinanzeigen.de` antwortet mit 401,
+das steht in `docs/ROADMAP.md` und ist gemessen. Sie wird aber auch nicht
+gebraucht: Radius, Preisspanne und Kategorie sind alles nur Segmente derselben
+URL, und `scraper/search_url.py` setzt sie bereits zusammen. Für Orte gibt es
+einen offenen Vorschlags-Endpunkt (`s-ort-empfehlungen.json`), den die
+Korridorplanung seit P10 benutzt.
+
+Also: **fragen, was gesucht wird, wo, in welchem Umkreis und bis zu welchem
+Preis** — und die Adresse daraus bauen. Die URL wird zu einem Detail, das man
+höchstens noch in einer Fußzeile für Fortgeschrittene sieht.
+
+### Was bleibt
+
+Alles unterhalb der Oberfläche. Das Datenmodell und `db/schema.sql`, der
+komplette `scraper/` mit URL-Grammatik, Ergebnisparser, Korridor-Geometrie und
+Umweg-Definition, die Preis- und Frischearbeit, `backend/server.js` als
+Schnittstelle, die Gestaltungs-Token in `index.css`, das Übersetzungssystem und
+die rund 480 Tests. Ebenso `scripts/ui_shots.py` — ohne diese Messung wäre keiner
+der Befunde oben belegbar gewesen.
+
+Ersetzt wird die Sicht-Schicht: die Ansichtsverteilung in `App.tsx` und
+`RouteResultsView.tsx`, zerlegt in Bildschirme mit je einer Aufgabe.
+
+### Abnahme — die Beobachtungen des Eigentümers als Prüfliste
+
+Jeder Punkt ist an einem Bildschirmfoto bei 390 px nachzuweisen, nicht zu
+behaupten:
+
+1. Keine Tatsache steht zweimal auf einem Bildschirm. Konkret: „nichts gefunden"
+   erscheint **genau einmal**.
+2. Keine Aktion hat zwei Einstiege. Konkret: zu den Familien-Einstellungen führt
+   **genau ein** Weg.
+3. Kein Wort ist abgeschnitten, keine Beschriftung überläuft ihren Rahmen — bei
+   390 px geprüft.
+4. Ein Umschalter, dessen beide Seiten leer wären, wird nicht angezeigt.
+5. Das Wort „Korridor" erscheint nur, wenn eine Route existiert.
+6. Kein ISO-Zeitstempel in der Oberfläche; Zeiten stehen als „vor 2 Stunden".
+7. Keine rohe Such-URL in der Oberfläche. Radius und Preisspanne sind Bedienele-
+   mente, keine Zeichenkette.
+8. Wer in den Einstellungen landet, landet oben und sieht, wo er ist — nicht
+   mitten in einem Formular.
+9. Die Reiterleiste zeigt bei 390 px alle Reiter vollständig.
+10. Der erste Treffer steht bei **höchstens 420 px**. Gemessen: vor diesem Plan
+    745, nach dem Dichte-Durchgang 527.
+
+---
+
 ## Phase 0 — Die Trennlinie zur Quelle
 
 *ROADMAP P0, bisher offen. Zuerst, damit alles Folgende dagegen gebaut wird.*
