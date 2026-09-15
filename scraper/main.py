@@ -570,7 +570,8 @@ def main():
                                 search_id, last_seen_at
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ON CONFLICT(id) DO UPDATE SET
-                                last_seen_at = excluded.last_seen_at
+                                last_seen_at = excluded.last_seen_at,
+                                delisted_at = NULL
                         """,
                             (
                                 listing_id,

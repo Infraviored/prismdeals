@@ -240,7 +240,13 @@ def as_canonical(parsed) -> CanonicalListing:
     price_eur = parsed.get("price_eur")
     location = parsed.get("location") or ""
     state = parsed.get("state")
-    loc_str = f"{state} - {location}" if state and location else location
+    # Only prepend state when not already embedded (prevents "Bayern - Bayern - ..."
+    # when a previously stored location string is passed through a second time).
+    prefix = f"{state} - "
+    if state and location and not location.startswith(prefix):
+        loc_str = prefix + location
+    else:
+        loc_str = location
 
     raw_price = parsed.get("price")
     if raw_price is not None:
@@ -264,7 +270,7 @@ def as_canonical(parsed) -> CanonicalListing:
         price=price_str,
         price_eur=price_eur,
         location=loc_str,
-        place=parsed.get("location") or parsed.get("place"),
+        place=parsed.get("place") or parsed.get("location"),
         state=state,
         url=parsed.get("url") or "",
         short_description=parsed.get("description")

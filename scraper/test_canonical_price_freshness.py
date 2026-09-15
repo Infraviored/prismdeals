@@ -82,10 +82,48 @@ def test_giveaway_parses_to_zero_and_empty_to_null():
     assert db_empty["price"] == ""
 
 
+def test_as_canonical_location_no_double_prefix():
+    """as_canonical must not double-prefix the state when location already includes it.
+
+    Guards against the bug where a DB-stored location like
+    "Bayern - Landsberg (Lech)" passed back through as_canonical produced
+    "Bayern - Bayern - Landsberg (Lech)", and where place was incorrectly
+    set to the composite string instead of the bare town name.
+    """
+    # Fresh parse: location = bare town, state = state name -> should compose
+    fresh = {
+        "id": "200",
+        "url": "https://www.kleinanzeigen.de/s-anzeige/200",
+        "price_eur": 100,
+        "location": "Landsberg (Lech)",
+        "state": "Bayern",
+    }
+    c_fresh = result_list.as_canonical(fresh)
+    assert c_fresh.location == "Bayern - Landsberg (Lech)"
+    assert c_fresh.place == "Landsberg (Lech)"
+
+    # Round-trip: pass the already-composed location back through as_canonical
+    stored = {
+        "id": "200",
+        "url": "https://www.kleinanzeigen.de/s-anzeige/200",
+        "price_eur": 100,
+        "location": "Bayern - Landsberg (Lech)",  # as stored in DB
+        "state": "Bayern",
+        "place": "Landsberg (Lech)",  # as stored in DB
+    }
+    c_stored = result_list.as_canonical(stored)
+    assert c_stored.location == "Bayern - Landsberg (Lech)", (
+        f"Double-prefix detected: got '{c_stored.location}'"
+    )
+    assert c_stored.place == "Landsberg (Lech)", (
+        f"place should be bare town, got '{c_stored.place}'"
+    )
+
+
 def test_upsert_preserves_title_and_price_and_updates_last_seen(tmp_path):
     """The core contract of Phase 2b:
     Known listings MUST NOT overwrite title, price, or description on rediscoveries.
-    Only last_seen_at is updated.
+    Only last_seen_at is updated, and delisted_at is cleared (listing is alive again).
     """
     db_path = tmp_path / "upsert_test.db"
     conn = db_schema.connect(str(db_path))
@@ -101,17 +139,19 @@ def test_upsert_preserves_title_and_price_and_updates_last_seen(tmp_path):
 
     t1 = "2026-01-01T12:00:00+00:00"
     t2 = "2026-01-02T15:30:00+00:00"
+    t_delisted = "2026-01-01T23:00:00+00:00"
 
-    # Initial insert
+    # Initial insert - listing also has a delisted_at stamp (was flagged gone)
     cursor.execute(
         """
         INSERT INTO listings (
             id, source, source_id, title, price, price_eur,
             location, url, short_description, detailed_description,
-            search_id, last_seen_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            search_id, last_seen_at, delisted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
-            last_seen_at = excluded.last_seen_at
+            last_seen_at = excluded.last_seen_at,
+            delisted_at = NULL
     """,
         (
             "ad-100",
@@ -126,11 +166,13 @@ def test_upsert_preserves_title_and_price_and_updates_last_seen(tmp_path):
             "Detailed",
             1,
             t1,
+            t_delisted,
         ),
     )
     conn.commit()
 
-    # Second insert of the same ID with conflicting title and price
+    # Second insert of the same ID with conflicting title and price;
+    # simulates re-discovering the listing in a later crawl.
     cursor.execute(
         """
         INSERT INTO listings (
@@ -139,7 +181,8 @@ def test_upsert_preserves_title_and_price_and_updates_last_seen(tmp_path):
             search_id, last_seen_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
-            last_seen_at = excluded.last_seen_at
+            last_seen_at = excluded.last_seen_at,
+            delisted_at = NULL
     """,
         (
             "ad-100",
@@ -159,7 +202,7 @@ def test_upsert_preserves_title_and_price_and_updates_last_seen(tmp_path):
     conn.commit()
 
     cursor.execute(
-        "SELECT title, price, price_eur, location, search_id, last_seen_at FROM listings WHERE id = ?",
+        "SELECT title, price, price_eur, location, search_id, last_seen_at, delisted_at FROM listings WHERE id = ?",
         ("ad-100",),
     )
     row = cursor.fetchone()
@@ -170,6 +213,7 @@ def test_upsert_preserves_title_and_price_and_updates_last_seen(tmp_path):
     assert row[3] == "Berlin", "Location was overwritten on conflict!"
     assert row[4] == 1, "search_id was overwritten on conflict!"
     assert row[5] == t2, "last_seen_at was not updated!"
+    assert row[6] is None, "delisted_at was not cleared on rediscovery!"
     conn.close()
 
 

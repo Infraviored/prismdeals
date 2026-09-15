@@ -67,13 +67,17 @@ function backfillCanonicalListings(db) {
   );
 
   // Phase 2a: Numeric price_eur backfill.
-  // Guarded by WHERE price_eur IS NULL AND price IS NOT NULL AND TRIM(price) != ''
-  // so empty/ambiguous strings remain null and subsequent startups find 0 rows.
+  // WHERE clause is scoped to price strings that parsePriceEur can resolve:
+  //   - prices containing '€' (e.g. "60 €", "150 € VB", "330 € VB360 €")
+  //   - prices matching 'Zu verschenken'
+  // Rows with genuinely unparseable prices (e.g. 'VB', 'Preis auf Anfrage') are
+  // excluded by design so they never loop on subsequent startups.
   db.all(
     `SELECT id, price FROM listings
       WHERE price_eur IS NULL
         AND price IS NOT NULL
-        AND TRIM(price) != ''`,
+        AND TRIM(price) != ''
+        AND (LOWER(price) LIKE '%€%' OR LOWER(price) LIKE '%verschenken%')`,
     (err, rows) => {
       if (err) {
         console.error('Querying listings for price_eur backfill failed:', err);
@@ -82,6 +86,7 @@ function backfillCanonicalListings(db) {
       if (!rows || rows.length === 0) return;
 
       db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
         const stmt = db.prepare('UPDATE listings SET price_eur = ? WHERE id = ?');
         let updatedCount = 0;
         let giveawayCount = 0;
@@ -111,11 +116,18 @@ function backfillCanonicalListings(db) {
         stmt.finalize(finalizeErr => {
           if (finalizeErr) {
             console.error('Finalizing price_eur backfill statement failed:', finalizeErr);
+            db.run('ROLLBACK');
           } else {
-            console.log(
-              `[backfill] Successfully backfilled price_eur for ${updatedCount} listings ` +
-              `(${giveawayCount} free / 0 €, ${compositeCount} composite prices resolved).`
-            );
+            db.run('COMMIT', commitErr => {
+              if (commitErr) {
+                console.error('Committing price_eur backfill failed:', commitErr);
+              } else {
+                console.log(
+                  `[backfill] Successfully backfilled price_eur for ${updatedCount} listings ` +
+                  `(${giveawayCount} free / 0 €, ${compositeCount} composite prices resolved).`
+                );
+              }
+            });
           }
         });
       });
