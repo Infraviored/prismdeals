@@ -87,6 +87,8 @@ function seedDefaultUser() {
   });
 
   backfillListingTimestamps();
+  const { backfillCanonicalListings } = require('./db/backfill');
+  backfillCanonicalListings(db);
 }
 
 /**
@@ -1198,17 +1200,332 @@ app.get('/api/search-families/:id', async (req, res) => {
       listings: Number(t.listings || 0)
     }));
 
+    // Determine whether this family has been crawled (listings found or target scraped in scraper.log)
+    let has_crawled = false;
+    let last_crawled_at = null;
+
+    const totalListings = terms.reduce((acc, t) => acc + (t.listings || 0), 0);
+    if (totalListings > 0) {
+      has_crawled = true;
+      const hitTimeRow = await get(
+        `SELECT MAX(lsh.first_seen_at) as last_hit
+           FROM search_family_searches sfs
+           JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+          WHERE sfs.family_id = ?`,
+        [fam.id]
+      );
+      if (hitTimeRow && hitTimeRow.last_hit) last_crawled_at = hitTimeRow.last_hit;
+    } else {
+      // Check data/family_crawls.json or data/scraper.log
+      const crawlsFile = path.join(__dirname, '..', 'data', 'family_crawls.json');
+      if (fs.existsSync(crawlsFile)) {
+        try {
+          const crawls = JSON.parse(fs.readFileSync(crawlsFile, 'utf8'));
+          if (crawls[fam.id]) {
+            has_crawled = true;
+            last_crawled_at = crawls[fam.id].last_crawled_at;
+          }
+        } catch (e) {}
+      }
+
+      if (!has_crawled) {
+        const searchRows = await query(
+          `SELECT s.url FROM searches s
+             JOIN search_family_searches sfs ON sfs.search_id = s.id
+            WHERE sfs.family_id = ?`,
+          [fam.id]
+        );
+        const searchUrls = searchRows.map(r => r.url).filter(Boolean);
+        const logPath = path.join(__dirname, '..', 'data', 'scraper.log');
+        if (fs.existsSync(logPath) && searchUrls.length > 0) {
+          try {
+            const logContent = fs.readFileSync(logPath, 'utf8');
+            for (const url of searchUrls) {
+              if (logContent.includes(url)) {
+                has_crawled = true;
+                const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})[^\n]*${escaped}`);
+                const match = logContent.match(regex);
+                last_crawled_at = match ? match[1] : new Date().toISOString();
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
+    // Read cached radius diagnosis if available
+    let radius_diagnosis = null;
+    const diagPath = path.join(__dirname, '..', 'data', `radius_diagnosis_${fam.id}.json`);
+    if (fs.existsSync(diagPath)) {
+      try {
+        radius_diagnosis = JSON.parse(fs.readFileSync(diagPath, 'utf8'));
+      } catch (e) {}
+    }
+
     res.json({
       id: fam.id,
       name: fam.name,
       base_url: fam.base_url,
       enabled: Boolean(fam.enabled),
       route_search_id,
-      terms
+      terms,
+      has_crawled,
+      last_crawled_at,
+      radius_diagnosis
     });
   } catch (error) {
     console.error('Error fetching search family:', error);
     res.status(500).json({ error: 'Failed to fetch search family' });
+  }
+});
+
+// API: Diagnose listings counts for the same family terms across larger search radii.
+//
+// When a crawl returns zero listings in a small radius (e.g. 30 km in Landsberg),
+// telling "0 listings found" is a dead end. This endpoint executes a rate-limited
+// (>= 1.05s per request) probe across candidate radii (e.g. 30 km, 100 km, 200 km),
+// providing genuine measured data so the user can make an informed radius decision.
+app.post('/api/search-families/:id/diagnose-radius', async (req, res) => {
+  try {
+    const fam = await get('SELECT id, name, base_url FROM search_families WHERE id = ?', [req.params.id]);
+    if (!fam) return res.status(404).json({ error: 'Search family not found' });
+
+    const diagPath = path.join(__dirname, '..', 'data', `radius_diagnosis_${fam.id}.json`);
+    const { refresh, radii } = req.body || {};
+
+    if (!refresh && fs.existsSync(diagPath)) {
+      try {
+        const cached = JSON.parse(fs.readFileSync(diagPath, 'utf8'));
+        return res.json(cached);
+      } catch (e) {}
+    }
+
+    const termsRows = await query(
+      'SELECT id, term, label FROM search_family_terms WHERE family_id = ? AND enabled = 1 ORDER BY position, id',
+      [fam.id]
+    );
+    if (!termsRows || termsRows.length === 0) {
+      return res.status(400).json({ error: 'No active terms in search family to diagnose' });
+    }
+
+    const rMatch = fam.base_url.match(/r(\d+)$/);
+    const currentRadius = rMatch ? parseInt(rMatch[1], 10) : 30;
+    const testRadii = Array.isArray(radii) && radii.length > 0 ? radii : [currentRadius, 100, 200];
+    const uniqueRadii = Array.from(new Set(testRadii)).map(Number).filter(r => r > 0).sort((a, b) => a - b);
+
+    const payload = {
+      base_url: fam.base_url,
+      terms: termsRows.map(t => ({ id: t.id, term: t.term, label: t.label || t.term })),
+      radii: uniqueRadii,
+      current_radius: currentRadius
+    };
+
+    const pythonScript = `
+import sys, os, time, json, requests
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scraper'))
+import result_list, search_url
+
+payload = json.loads(sys.argv[1])
+base_url = payload['base_url']
+terms = payload['terms']
+radii = payload['radii']
+current_radius = payload['current_radius']
+
+parts = search_url.parse_tail(base_url)
+if not parts or not parts.get('location'):
+    print('__RADIUS_PROBE_ERROR__:Could not parse location from base URL')
+    sys.exit(0)
+
+location = parts['location']
+# The scraper's own headers, not a fourth copy of them.
+#
+# This probe fires up to 39 requests from the same address, often seconds after
+# the crawler's. Announcing a different browser than the crawler does is worse
+# against a bot protection that already trips after a handful of fetches, not
+# better -- and PROPOSALS F-3 already counts three copies of this string.
+from scraper import HEADERS as headers
+
+radius_totals = {r: 0 for r in radii}
+term_details = []
+
+for term_info in terms:
+    t_term = term_info['term']
+    t_label = term_info.get('label') or t_term
+    term_counts = {}
+    for r in radii:
+        time.sleep(1.05)
+        url = search_url.with_location(search_url.with_query(base_url, t_term), location, r)
+        try:
+            resp = requests.get(url, headers=headers, timeout=12)
+            resp.encoding = 'utf-8'
+            if result_list.is_empty_result_page(resp.text):
+                cnt = 0
+            else:
+                tot = result_list.total_results(resp.text)
+                cnt = tot if tot is not None else len(result_list.parse(resp.text))
+        except Exception:
+            cnt = 0
+        term_counts[str(r)] = cnt
+        radius_totals[r] += cnt
+    term_details.append({
+        'id': term_info.get('id'),
+        'term': t_term,
+        'label': t_label,
+        'counts': term_counts
+    })
+
+options = [{'radius': r, 'count': radius_totals[r]} for r in radii]
+result = {
+    'current_radius': current_radius,
+    'measured_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+    'options': options,
+    'terms': term_details
+}
+print('__RADIUS_PROBE__:' + json.dumps(result))
+`;
+
+    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const python = spawn(
+      pythonExecutable,
+      ['-c', pythonScript, JSON.stringify(payload)],
+      {
+        env: {
+          ...process.env,
+          PYTHONPATH: path.join(__dirname, '..', 'scraper')
+        }
+      }
+    );
+
+    if (res) {
+      res.on('close', () => {
+        if (!res.writableFinished) python.kill();
+      });
+    }
+
+    let stdout = '';
+    let stderr = '';
+    python.stdout.on('data', data => { stdout += data; });
+    python.stderr.on('data', data => { stderr += data; });
+
+    python.on('close', (code) => {
+      const errMarker = readMarker(stdout, 'RADIUS_PROBE_ERROR');
+      if (errMarker) return res.status(400).json({ error: errMarker });
+
+      const probeMarker = readMarker(stdout, 'RADIUS_PROBE');
+      if (!probeMarker) {
+        console.error('Radius probe failed:', stdout, stderr);
+        return res.status(500).json({ error: 'Radius probe returned no results' });
+      }
+
+      try {
+        const data = JSON.parse(probeMarker);
+        try {
+          const dir = path.dirname(diagPath);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(diagPath, JSON.stringify(data, null, 2));
+        } catch (e) {}
+        res.json(data);
+      } catch (err) {
+        console.error('Failed to parse radius probe output:', err);
+        res.status(500).json({ error: 'Invalid radius probe output' });
+      }
+    });
+
+  } catch (error) {
+    console.error('Error in radius diagnosis:', error);
+    res.status(500).json({ error: 'Failed to diagnose radius' });
+  }
+});
+
+// API: Update the radius for an existing search family and all its attached search URLs.
+app.put('/api/search-families/:id/radius', async (req, res) => {
+  try {
+    const fam = await get('SELECT id, name, base_url FROM search_families WHERE id = ?', [req.params.id]);
+    if (!fam) return res.status(404).json({ error: 'Search family not found' });
+
+    const newRadius = parseInt(req.body.radius, 10);
+    if (!newRadius || newRadius < 1 || newRadius > 500) {
+      return res.status(400).json({ error: 'Invalid radius value. Must be between 1 and 500 km.' });
+    }
+
+    const pythonScript = `
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scraper'))
+import search_url
+
+base_url = sys.argv[1]
+new_radius = int(sys.argv[2])
+parts = search_url.parse_tail(base_url)
+if not parts or not parts.get('location'):
+    print('__RADIUS_UPDATE_ERROR__:Invalid base URL format')
+    sys.exit(0)
+
+new_base = search_url.with_location(base_url, parts['location'], new_radius)
+print('__RADIUS_BASE_URL__:' + new_base)
+`;
+
+    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const child = spawn(
+      pythonExecutable,
+      ['-c', pythonScript, fam.base_url, String(newRadius)],
+      { env: { ...process.env, PYTHONPATH: path.join(__dirname, '..', 'scraper') } }
+    );
+
+    let stdout = '';
+    child.stdout.on('data', d => { stdout += d; });
+    child.on('close', async (code) => {
+      const errMarker = readMarker(stdout, 'RADIUS_UPDATE_ERROR');
+      if (errMarker) return res.status(400).json({ error: errMarker });
+
+      const newBaseUrl = readMarker(stdout, 'RADIUS_BASE_URL');
+      if (!newBaseUrl) return res.status(500).json({ error: 'Failed to compute new base URL' });
+
+      // Update search_families base_url
+      await run('UPDATE search_families SET base_url = ? WHERE id = ?', [newBaseUrl, fam.id]);
+
+      // Update all terms' searches
+      const searchesRows = await query(
+        `SELECT sfs.family_id, sfs.term_id, sfs.search_id, s.url, t.term, t.label
+           FROM search_family_searches sfs
+           JOIN searches s ON s.id = sfs.search_id
+           JOIN search_family_terms t ON t.id = sfs.term_id
+          WHERE sfs.family_id = ?`,
+        [fam.id]
+      );
+
+      for (const row of searchesRows) {
+        const newSearchUrl = row.url.replace(/r\d+$/, 'r' + newRadius);
+        const existing = await get('SELECT id FROM searches WHERE url = ?', [newSearchUrl]);
+        if (existing) {
+          await run(
+            'UPDATE search_family_searches SET search_id = ? WHERE family_id = ? AND term_id = ? AND search_id = ?',
+            [existing.id, fam.id, row.term_id, row.search_id]
+          );
+        } else {
+          await run('UPDATE searches SET url = ? WHERE id = ?', [newSearchUrl, row.search_id]);
+        }
+      }
+
+      // Invalidate cached diagnosis
+      const diagPath = path.join(__dirname, '..', 'data', `radius_diagnosis_${fam.id}.json`);
+      if (fs.existsSync(diagPath)) {
+        try { fs.unlinkSync(diagPath); } catch (e) {}
+      }
+
+      res.json({
+        success: true,
+        id: fam.id,
+        base_url: newBaseUrl,
+        radius: newRadius,
+        updated_searches: searchesRows.length
+      });
+    });
+
+  } catch (error) {
+    console.error('Error updating family radius:', error);
+    res.status(500).json({ error: 'Failed to update family radius' });
   }
 });
 

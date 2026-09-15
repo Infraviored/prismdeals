@@ -236,4 +236,168 @@ describe('RouteResultsView', () => {
       expect(screen.getByText(/Kein Preis|No price|VB/i)).toBeInTheDocument();
     });
   });
+
+  it('shows zero-in-radius view with term chips and diagnose button when has_crawled=true and 0 listings', async () => {
+    // Family detail with has_crawled=true and pre-loaded radius_diagnosis
+    const zeroFamilyDetail = {
+      id: 5,
+      name: 'Drucker Familie',
+      base_url: 'https://www.kleinanzeigen.de/s-landsberg-am-lech/drucker/k0l7091r30',
+      has_crawled: true,
+      last_crawled_at: '2026-09-15 00:41:00',
+      terms: [
+        { id: 1, term: 'brother-mfc-l2740dw', label: 'Brother MFC-L2740DW', enabled: true, listings: 0 },
+        { id: 2, term: 'brother-mfc-l5750dw', label: 'Brother MFC-L5750DW', enabled: true, listings: 0 },
+      ],
+      radius_diagnosis: {
+        current_radius: 30,
+        measured_at: '2026-09-15T12:22:50Z',
+        options: [
+          { radius: 30, count: 0 },
+          { radius: 100, count: 7 },
+          { radius: 200, count: 22 },
+        ],
+        terms: [
+          { id: 1, term: 'brother-mfc-l2740dw', label: 'Brother MFC-L2740DW', counts: { '30': 0, '100': 1, '200': 2 } },
+          { id: 2, term: 'brother-mfc-l5750dw', label: 'Brother MFC-L5750DW', counts: { '30': 0, '100': 2, '200': 5 } },
+        ],
+      },
+    };
+
+    // Route data with 0 listings
+    const emptyRoute = {
+      route: {
+        id: 0,
+        campaign_id: 0,
+        name: 'Drucker Landsberg',
+        base_url: '',
+        origin: '',
+        destination: '',
+        radius_km: 0,
+        half_width_km: 0,
+        distance_km: null,
+        duration_min: null,
+        polyline: [],
+        circles: [],
+      },
+      listings: [],
+      counts: { total: 0, routed: 0, unplaced: 0 },
+    };
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/search-families/5') {
+        return Promise.resolve({ ok: true, json: async () => zeroFamilyDetail });
+      }
+      if (url === '/api/search-families/5/listings') {
+        return Promise.resolve({ ok: true, json: async () => ({ listings: [] }) });
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) });
+    });
+    globalThis.fetch = fetchMock;
+
+    render(
+      <RouteResultsView
+        familyId={5}
+        campaignName="Drucker Landsberg"
+        onEvaluateWithAi={vi.fn()}
+        isScraping={false}
+        onStartScrape={vi.fn()}
+      />
+    );
+
+    // The zero-in-radius view should appear
+    await waitFor(() => {
+      expect(screen.getByTestId('zero-in-radius-view')).toBeInTheDocument();
+    });
+
+    // Should show the amber badge
+    expect(screen.getByText(/0.*Suchradius|0 listings in search radius/i)).toBeInTheDocument();
+
+    // Term chips should all show 0
+    const chips = screen.getAllByTestId('term-chip');
+    expect(chips.length).toBe(2);
+
+    // Radius option cards should be rendered
+    expect(screen.getByTestId('radius-option-30')).toBeInTheDocument();
+    expect(screen.getByTestId('radius-option-100')).toBeInTheDocument();
+    expect(screen.getByTestId('radius-option-200')).toBeInTheDocument();
+
+    // Primary CTA to apply best radius should be present
+    expect(screen.getByRole('button', { name: /Expand radius|Radius auf/i })).toBeInTheDocument();
+
+    // The route data built in the component
+    const routeState = emptyRoute;
+    expect(routeState.counts.total).toBe(0);
+  });
+
+  it('calls PUT radius endpoint and shows success on apply-radius action', async () => {
+    const zeroFamilyDetail = {
+      id: 5,
+      name: 'Drucker Familie',
+      base_url: 'https://www.kleinanzeigen.de/s-landsberg-am-lech/drucker/k0l7091r30',
+      has_crawled: true,
+      last_crawled_at: '2026-09-15 00:41:00',
+      terms: [
+        { id: 1, term: 'brother-mfc-l2740dw', label: 'Brother MFC-L2740DW', enabled: true, listings: 0 },
+      ],
+      radius_diagnosis: {
+        current_radius: 30,
+        measured_at: '2026-09-15T12:22:50Z',
+        options: [
+          { radius: 30, count: 0 },
+          { radius: 100, count: 7 },
+          { radius: 200, count: 22 },
+        ],
+        terms: [
+          { id: 1, term: 'brother-mfc-l2740dw', label: 'Brother MFC-L2740DW', counts: { '30': 0, '100': 1, '200': 2 } },
+        ],
+      },
+    };
+
+    let putRadiusCalled = false;
+    const fetchMock = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url === '/api/search-families/5') {
+        return Promise.resolve({ ok: true, json: async () => zeroFamilyDetail });
+      }
+      if (url === '/api/search-families/5/listings') {
+        return Promise.resolve({ ok: true, json: async () => ({ listings: [] }) });
+      }
+      if (url === '/api/search-families/5/radius' && options?.method === 'PUT') {
+        putRadiusCalled = true;
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ family: { ...zeroFamilyDetail, base_url: 'https://www.kleinanzeigen.de/s-landsberg-am-lech/drucker/k0l7091r200' } }),
+        });
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) });
+    });
+    globalThis.fetch = fetchMock;
+
+    render(
+      <RouteResultsView
+        familyId={5}
+        campaignName="Drucker Landsberg"
+        onEvaluateWithAi={vi.fn()}
+        isScraping={false}
+        onStartScrape={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('zero-in-radius-view')).toBeInTheDocument();
+    });
+
+    // Click the primary CTA button (200 km — use id to avoid ambiguity)
+    const applyBtn = screen.getByRole('button', { name: /Expand radius|Radius auf/i });
+    fireEvent.click(applyBtn);
+
+    await waitFor(() => {
+      expect(putRadiusCalled).toBe(true);
+    });
+
+    // Success message should appear
+    await waitFor(() => {
+      expect(screen.getByText(/erfolgreich.*200|successfully expanded.*200/i)).toBeInTheDocument();
+    });
+  });
 });

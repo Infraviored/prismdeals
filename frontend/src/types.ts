@@ -167,6 +167,28 @@ export interface SearchFamily {
   terms?: SearchFamilyTerm[];
   searches?: number;
   listings?: number;
+  has_crawled?: boolean;
+  last_crawled_at?: string | null;
+  radius_diagnosis?: RadiusDiagnosis | null;
+}
+
+export interface RadiusDiagnosisOption {
+  radius: number;
+  count: number;
+}
+
+export interface RadiusDiagnosisTerm {
+  id?: number;
+  term: string;
+  label: string;
+  counts: Record<string, number>;
+}
+
+export interface RadiusDiagnosis {
+  current_radius: number;
+  measured_at: string;
+  options: RadiusDiagnosisOption[];
+  terms: RadiusDiagnosisTerm[];
 }
 
 export interface SearchFamilyPreview {
