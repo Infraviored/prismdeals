@@ -1415,10 +1415,14 @@ export default function App() {
 
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col justify-start">
+      {/* p-3 on a phone, p-6 from sm up.
+          p-6 resolves to 27px here because --spacing is 0.28rem, so on a 390px
+          screen it took 54px of width -- one seventh of the display -- and 27px
+          off the top of a fold that was already entirely chrome. */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 flex flex-col justify-start">
         {/* VIEW 1: LANDING VIEW - CAMPAIGN HUB GRID */}
         {view === 'landing' && (
-          <div className="space-y-6 animate-fadeIn w-full">
+          <div className="space-y-3 sm:space-y-6 animate-fadeIn w-full">
             <div className="flex justify-between items-center pb-4 border-b border-border-subtle w-full mb-6">
               <div>
                 <h1 className="text-2xl font-bold text-text-primary tracking-tight">{t('landing.title')}</h1>
@@ -1556,7 +1560,7 @@ export default function App() {
         {/* VIEW 2: CAMPAIGN DASHBOARD - FEED LISTINGS VIEW */}
         {view === 'dashboard' && (
           (campaigns.find(c => c.id === currentCampaignId)?.route_id || campaigns.find(c => c.id === currentCampaignId)?.family_id) ? (
-            <div className="flex flex-col space-y-6 animate-fadeIn w-full">
+            <div className="flex flex-col space-y-3 sm:space-y-6 animate-fadeIn w-full">
               <div className="flex items-center space-x-3">
                 <Button
                   variant="badge"
@@ -1607,7 +1611,7 @@ export default function App() {
               />
             </div>
           ) : (
-          <div className="flex flex-col space-y-6 animate-fadeIn w-full">
+          <div className="flex flex-col space-y-3 sm:space-y-6 animate-fadeIn w-full">
 
             {/* Campaign Breadcrumb Headers & Filters */}
             <Card className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 md:p-5">
@@ -1933,7 +1937,7 @@ export default function App() {
 
             {/* TAB 1: SEARCH TERMS & MODELS */}
             {editTab === 'terms' && (
-              <div className="w-full space-y-6 animate-fadeIn">
+              <div className="w-full space-y-3 sm:space-y-6 animate-fadeIn">
                 {campaigns.find(c => c.id === currentCampaignId)?.family_id || searchTargetMode === 'family' ? (
                   <div className="max-w-3xl mx-auto w-full space-y-4">
                     <SearchFamilyEditor
@@ -2070,7 +2074,7 @@ export default function App() {
 
             {/* TAB 2: GEOMETRY & LOCATION */}
             {editTab === 'geometry' && (
-              <div className="max-w-3xl mx-auto w-full space-y-6 animate-fadeIn">
+              <div className="max-w-3xl mx-auto w-full space-y-3 sm:space-y-6 animate-fadeIn">
                 {/* Geometry Header Card */}
                 <div className="space-y-1">
                   <h2 className="text-xl font-bold text-text-primary tracking-tight font-heading">
