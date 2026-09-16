@@ -37,9 +37,8 @@
   --text-4xl--line-height: 1.1;
 
   /* Larger type needs more room around it, or the layout tightens as the text
-   * grows. One step up in the spacing unit widens every gap, pad and inset
-   * together, which is why they were all written against it. */
-  --spacing: 0.28rem;
+   * grows. Adjusted to standard 0.25rem (P1 foundation). */
+  --spacing: 0.25rem;
   --color-brand-primary: #011F1F;
   --color-brand-accent: #E87967;
   
@@ -47,13 +46,16 @@
   --color-bg-surface: #012828;
   --color-bg-surface-hover: #013333;
   --color-bg-input: #001414;
-  --color-border-subtle: rgba(255, 255, 255, 0.1);
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
   --color-border-brand: rgba(232, 121, 103, 0.2);
-  --color-text-primary: #FFFFFF;
-  --color-text-secondary: #E2EAEA;
-  --color-text-muted: #9BB1B1;
+  --color-text-primary: #F2F5F4;
+  --color-text-secondary: #9FB3B0;
+  --color-text-muted: #9FB3B0;
 
   --color-status-good: #10B981;
+  --color-status-onroute: #10B981;
+  --color-status-stale: #D9A441;
+  --color-status-away: #8A9694;
   --color-status-danger: #EF4444;
 
   --animate-slide-left: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -79,11 +81,19 @@
 }
 
 body {
-  background-color: var(--color-brand-primary);
-  color: #F1F5F9;
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
   font-family: var(--font-body);
   margin: 0;
   min-height: 100vh;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.surface-row-text {
+  line-height: 1.3;
 }
 
 button, input, select, textarea {

@@ -493,6 +493,14 @@ def walk(driver, base, out_dir, width, height, db_path=None):
         # results, ...) and finds nothing.
         back_to_landing(driver)
 
+    # Photograph P1 surface foundation preview
+    try:
+        driver.execute_script("window.location.hash = '#surface-preview';")
+        time.sleep(1.5)
+        shoot(driver, out_dir, f"10-surface-foundation-preview-{width}")
+    except Exception as exc:
+        print(f"  ! could not capture surface foundation preview: {exc}")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

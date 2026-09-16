@@ -12,6 +12,7 @@ import LandingScreen from './screens/LandingScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import EditScreen from './screens/EditScreen';
 import CreateCampaignScreen from './screens/CreateCampaignScreen';
+import SurfacePreviewScreen from './screens/SurfacePreviewScreen';
 import { isValidKleinanzeigenUrl, suggestTitleFromUrl } from './utils/urlHelpers';
 import { Globe, ChevronDown, LogOut, Key, Menu, X, Settings } from 'lucide-react';
 import { Button } from './components/ui/Button';
@@ -362,6 +363,10 @@ export default function App() {
 
         {view === 'settings' && (
           <SettingsView onBack={() => setView(previousView)} />
+        )}
+
+        {view === 'surface-preview' && (
+          <SurfacePreviewScreen onBack={() => navigate('landing', null, null)} />
         )}
       </main>
     </div>
