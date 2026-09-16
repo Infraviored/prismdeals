@@ -49,6 +49,7 @@ export default function LandingScreen({
             <Card
               interactive
               key={c.id}
+              data-testid={`campaign-card-${c.id}`}
               onClick={() => onOpenCampaign(c)}
               className="p-4 justify-between space-y-4"
             >

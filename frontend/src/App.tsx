@@ -64,7 +64,6 @@ export default function App() {
   // --- Guidelines wizard state & actions ---
   const guidelines = useGuidelinesWizard({
     activeSearchTarget,
-    searches: appData.searches,
     knowledgeSets: appData.knowledgeSets,
     setWizardStep,
     refreshAll: appData.refreshAll,
@@ -118,7 +117,7 @@ export default function App() {
     <div className="min-h-screen bg-brand-primary text-text-primary flex flex-col font-sans">
       {/* Header */}
       <header className="h-16 border-b border-border-subtle bg-bg-surface/60 backdrop-blur-md sticky top-0 z-40 px-6 flex items-center justify-between">
-        <div className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate('landing', null, null)}>
+        <div data-testid="header-logo" className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate('landing', null, null)}>
           <img src={`${import.meta.env.BASE_URL}logo-icon.svg`} alt="prismdeals Icon" className="w-8 h-8 rounded-lg shadow shadow-black/30" />
           {/* eslint-disable-next-line no-restricted-syntax -- product name */}
           <span className="font-bold text-xl tracking-wide text-white font-sans">prismdeals</span>
