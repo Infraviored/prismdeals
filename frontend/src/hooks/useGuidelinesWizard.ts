@@ -3,7 +3,6 @@ import type { KnowledgeSet, SearchTarget, SampleListing } from '../types';
 
 interface UseGuidelinesWizardProps {
   activeSearchTarget: SearchTarget | undefined;
-  searches: SearchTarget[];
   knowledgeSets: KnowledgeSet[];
   setWizardStep: (step: 1 | 2 | 3) => void;
   refreshAll: () => void;
@@ -13,7 +12,6 @@ interface UseGuidelinesWizardProps {
 
 export function useGuidelinesWizard({
   activeSearchTarget,
-  searches,
   knowledgeSets,
   setWizardStep,
   refreshAll,
@@ -111,7 +109,7 @@ export function useGuidelinesWizard({
       setEditKsError('');
       setWizardStep(1);
     }
-  }, [activeSearchTarget, searches, knowledgeSets, setWizardStep]);
+  }, [activeSearchTarget?.id, activeSearchTarget?.knowledge_set_id, knowledgeSets, setWizardStep]);
 
   const handleSaveKnowledgeSet = async () => {
     if (!editKsName.trim()) {

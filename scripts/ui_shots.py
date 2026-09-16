@@ -110,21 +110,39 @@ def build_driver(width, height):
 
 
 def shoot(driver, out_dir, name, settle=1.0):
-    """The whole page, not just what happens to fit above the fold."""
+    """The whole page, not just what happens to fit above the fold.
+
+    The previous implementation grew the window to the full page height before
+    calling save_screenshot. That worked visually, but corrupted Chrome's JS
+    event dispatch after every shot: the DOM stayed live and fields accepted
+    input, but click events never reached React's synthetic event listener
+    delegation again. The workaround (reloading before every click) added
+    ~5s of round-trips per campaign.
+
+    Chrome DevTools Protocol's Page.captureScreenshot supports
+    captureBeyondViewport=True, which captures the full document without
+    touching the window size. The renderer stays healthy and the session
+    stays authenticated.
+    """
+    import base64
+
     time.sleep(settle)
-    width = driver.get_window_size()["width"]
-    height = driver.execute_script(
-        "return Math.max(document.body.scrollHeight,"
-        " document.documentElement.scrollHeight, 700)"
-    )
-    driver.set_window_size(width, min(int(height) + 100, 4000))
-    time.sleep(0.35)
     path = os.path.join(out_dir, f"{name}.png")
-    driver.save_screenshot(path)
+    try:
+        data = driver.execute_cdp_cmd(
+            "Page.captureScreenshot",
+            {"format": "png", "captureBeyondViewport": True, "fromSurface": True},
+        )
+        with open(path, "wb") as fh:
+            fh.write(base64.b64decode(data["data"]))
+    except Exception:
+        # CDP unavailable (older ChromeDriver / non-Chrome); fall back to the
+        # viewport-only screenshot so the walk still produces *something*.
+        driver.save_screenshot(path)
     print(f"  {name}.png")
 
 
-def open_campaign(driver, name, settle=2.5):
+def open_campaign(driver, campaign_id, name, settle=2.5):
     """Click the campaign card, the way a person reaches a campaign.
 
     Two URL-driven approaches failed before this one, and both failed silently
@@ -133,25 +151,106 @@ def open_campaign(driver, name, settle=2.5):
     navigation at all in headless Chrome; assigning `location.hash` is undone
     within milliseconds by the app writing the hash back out of its own state.
     Clicking is also the more honest test -- it exercises the path a user takes.
+
+    The card has `data-testid="campaign-card-{id}"` (added to LandingScreen.tsx
+    as a single-line product-code change expressly allowed for stable automation
+    selectors), so we can address each card with a direct CSS attribute selector
+    that is unique, stable, and immune to DOM traversal order.
     """
     from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
 
+    # Primary: direct testid selector (campaign-card-{id})
+    testid = f"campaign-card-{campaign_id}"
+    try:
+        card = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, f"[data-testid='{testid}']"))
+        )
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
+        time.sleep(0.3)
+        hash_before = driver.execute_script("return window.location.hash;")
+        # Use JS dispatch rather than Selenium's coordinate-based click: the
+        # sticky header sits at the top of the viewport and can silently
+        # intercept the native pointer event when scrollIntoView centres the card
+        # near the top. JS .click() bypasses the visual hit-test layer entirely.
+        driver.execute_script("arguments[0].click();", card)
+        time.sleep(settle)
+        hash_after = driver.execute_script("return window.location.hash;")
+        print(f"    [{testid}] hash {hash_before!r} -> {hash_after!r}")
+        return True
+    except Exception as exc:
+        print(f"    ! primary click failed: {exc}")
+        pass
+
+    # Fallback: scan all testid-anchored cards for the one whose text contains
+    # the campaign name (covers the case where testid attr is absent in the build).
     for card in driver.find_elements(
-        By.CSS_SELECTOR, "div.cursor-pointer, [class*='cursor-pointer']"
+        By.CSS_SELECTOR, "[data-testid^='campaign-card-']"
     ):
         try:
             if name and name.lower() in (card.text or "").lower():
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});", card
+                )
+                time.sleep(0.2)
                 driver.execute_script("arguments[0].click();", card)
                 time.sleep(settle)
                 return True
         except Exception:
             continue
+
     return False
 
 
 def back_to_landing(driver, settle=2.0):
-    from selenium.webdriver.common.by import By
+    """Navigate to the landing page from anywhere in the app.
 
+    Clicks the logo in the app header, which calls navigate('landing', null, null)
+    and is available on every authenticated screen. Single-step landing, regardless
+    of the current depth (Dashboard → Landing, Edit → Landing, etc.).
+
+    Fallback: if the logo cannot be found, try the first 'back to' button (which
+    at most takes us one step up, not all the way to landing).
+    """
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
+
+    # The logo div has data-testid="header-logo" and calls navigate('landing', null, null).
+    try:
+        logo = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-testid='header-logo']"))
+        )
+        driver.execute_script("arguments[0].click();", logo)
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "[data-testid^='campaign-card-']")
+            )
+        )
+        time.sleep(settle)
+        return True
+    except Exception:
+        pass
+
+    try:
+        logo = WebDriverWait(driver, 3).until(
+            EC.element_to_be_clickable(
+                (By.XPATH, "//header//span[normalize-space()='prismdeals']")
+            )
+        )
+        driver.execute_script("arguments[0].click();", logo)
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "[data-testid^='campaign-card-']")
+            )
+        )
+        time.sleep(settle)
+        return True
+    except Exception:
+        pass
+
+    # Fallback: a 'back to' button (may only go one level up)
     for btn in driver.find_elements(By.CSS_SELECTOR, "button"):
         txt = (btn.text or "").lower()
         if "back to" in txt or "zurück" in txt or "zuruck" in txt:
@@ -206,6 +305,17 @@ def walk(driver, base, out_dir, width, height, db_path=None):
             )
         )
         wait.until(EC.presence_of_element_located((By.TAG_NAME, "header")))
+        # Also wait for campaign cards: they appear only after refreshAll() has
+        # completed and both campaigns and searches are in the React state. The
+        # header renders immediately on mount, before the data is loaded, so the
+        # old wait was a race -- the onOpenCampaign handler fired with an empty
+        # searches list and navigated to 'edit' instead of 'dashboard', while
+        # the concurrent refreshAll completion reset the hash back to 'landing'.
+        wait.until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "[data-testid^='campaign-card-']")
+            )
+        )
     except Exception:
         print("  ! still unauthenticated - the shots below are the logged-out view")
     driver.set_window_size(width, height)
@@ -259,7 +369,7 @@ def walk(driver, base, out_dir, width, height, db_path=None):
         has_family = bool(campaign.get("family_id"))
 
         name = campaign.get("name")
-        if not open_campaign(driver, name):
+        if not open_campaign(driver, identifier, name):
             print(f"  ! could not open campaign {name!r}; skipping it")
             back_to_landing(driver)
             continue
@@ -267,16 +377,24 @@ def walk(driver, base, out_dir, width, height, db_path=None):
 
         # Settings via the gear, the way a person gets there.
         opened_settings = False
-        for btn in driver.find_elements(By.CSS_SELECTOR, "button"):
-            cls = btn.get_attribute("class") or ""
-            if not (btn.text or "").strip() and "p-1.5" in cls:
-                try:
-                    driver.execute_script("arguments[0].click();", btn)
-                    time.sleep(2)
-                    opened_settings = True
-                    break
-                except Exception:
-                    continue
+        try:
+            settings_btn = driver.find_element(
+                By.CSS_SELECTOR, "[data-testid='campaign-settings-btn']"
+            )
+            driver.execute_script("arguments[0].click();", settings_btn)
+            time.sleep(2)
+            opened_settings = True
+        except Exception:
+            for btn in driver.find_elements(By.CSS_SELECTOR, "button"):
+                cls = btn.get_attribute("class") or ""
+                if not (btn.text or "").strip() and ("p-1" in cls or "p-2" in cls):
+                    try:
+                        driver.execute_script("arguments[0].click();", btn)
+                        time.sleep(2)
+                        opened_settings = True
+                        break
+                    except Exception:
+                        continue
         if opened_settings:
             shoot(driver, out_dir, f"03-campaign-{identifier}")
 
@@ -295,7 +413,7 @@ def walk(driver, base, out_dir, width, height, db_path=None):
         if has_route or has_family:
             # Also capture the corridor dashboard view
             back_to_landing(driver)
-            open_campaign(driver, name)
+            open_campaign(driver, identifier, name)
             time.sleep(2)
             shoot(driver, out_dir, f"04-corridor-dashboard-{identifier}")
 
@@ -368,6 +486,12 @@ def walk(driver, base, out_dir, width, height, db_path=None):
                         driver, out_dir, f"09-route-dropdown-{identifier}", settle=1.6
                     )
                 break
+
+        # Return to the landing page before the next campaign iteration.
+        # Without this, the subsequent open_campaign call looks for a campaign
+        # card on whatever view is currently active (dashboard, edit, corridor
+        # results, ...) and finds nothing.
+        back_to_landing(driver)
 
 
 def main():

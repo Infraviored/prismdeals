@@ -523,6 +523,7 @@ export default function ResultsScreen({
                 <Button
                   variant="icon"
                   size="xs"
+                  data-testid="campaign-settings-btn"
                   onClick={onConfigure}
                   title={t('landing.configureTooltip')}
                   className="p-1 border-border-subtle hover:border-brand-accent/30 shrink-0"

@@ -250,6 +250,7 @@ export default function DashboardScreen({
             <Button
               variant="icon"
               size="xs"
+              data-testid="campaign-settings-btn"
               onClick={onConfigure}
               title={t('landing.configureTooltip')}
               className="p-1.5 border-border-subtle hover:border-brand-accent/30"
