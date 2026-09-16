@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Campaign, SearchTarget, Listing } from '../types';
-import type { RouteCorridorData } from '../screens/ResultsScreen';
+import type { Campaign, SearchTarget, Listing, RouteCorridorData } from '../types';
 import type { Place } from '../components/PlaceInput';
 import { useTranslation } from './useTranslation';
 import { isValidKleinanzeigenUrl, suggestTitleFromUrl } from '../utils/urlHelpers';

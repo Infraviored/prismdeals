@@ -217,21 +217,22 @@ def back_to_landing(driver, settle=2.0):
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import WebDriverWait
 
-    # The logo div has data-testid="header-logo" and calls navigate('landing', null, null).
-    try:
-        logo = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-testid='header-logo']"))
-        )
-        driver.execute_script("arguments[0].click();", logo)
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "[data-testid^='campaign-card-']")
+    # Support both surface-bar-back (FundeScreen) and legacy header-logo
+    for selector in ("[data-testid='surface-bar-back']", "[data-testid='header-logo']"):
+        try:
+            elem = WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
             )
-        )
-        time.sleep(settle)
-        return True
-    except Exception:
-        pass
+            driver.execute_script("arguments[0].click();", elem)
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "[data-testid^='campaign-card-']")
+                )
+            )
+            time.sleep(settle)
+            return True
+        except Exception:
+            pass
 
     try:
         logo = WebDriverWait(driver, 3).until(

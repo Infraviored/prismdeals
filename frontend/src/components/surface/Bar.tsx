@@ -27,9 +27,9 @@ export const Bar: React.FC<BarProps> = ({
   return (
     <header
       data-testid="surface-bar"
-      className={`sticky top-0 z-30 h-12 min-h-[48px] max-h-[48px] w-full bg-[#012828] border-b border-white/[0.08] px-3 sm:px-4 flex items-center justify-between gap-2.5 backdrop-blur-md ${className}`}
+      className={`sticky top-0 z-30 h-12 min-h-[48px] max-h-[48px] w-full bg-[#012828] border-b border-white/[0.08] px-3 sm:px-4 flex items-center justify-between gap-2 backdrop-blur-md ${className}`}
     >
-      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+      <div className="flex items-center gap-2 shrink-0 max-w-[45%] sm:max-w-none min-w-0">
         {onBack && (
           <button
             type="button"
@@ -55,7 +55,7 @@ export const Bar: React.FC<BarProps> = ({
         )}
 
         {title && (
-          <div className="flex items-baseline gap-2 min-w-0 truncate">
+          <div className="flex items-baseline gap-1.5 min-w-0">
             <h1 className="text-sm sm:text-base font-semibold text-[#F2F5F4] font-heading truncate">
               {title}
             </h1>
@@ -77,7 +77,7 @@ export const Bar: React.FC<BarProps> = ({
       </div>
 
       {(actions || children) && (
-        <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar justify-end pl-1">
           {actions}
           {children}
         </div>

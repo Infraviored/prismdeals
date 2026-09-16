@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import type { Campaign, KnowledgeSet, SearchTarget, Listing } from '../types';
-import type { RouteCorridorData } from '../screens/ResultsScreen';
+import type { Campaign, KnowledgeSet, SearchTarget, Listing, RouteCorridorData } from '../types';
 import { transformListing } from '../utils/listingTransformer';
 
 interface UseAppDataProps {

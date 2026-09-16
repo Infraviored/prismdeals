@@ -470,7 +470,24 @@ export const translations = {
       noMatchesInRadius: "No matches within {{radius}} km",
       noMatches: "No matches",
       dealsOnly: "Deals only",
-      staleTag: "{{days}}d old"
+      staleTag: "{{days}}d old",
+      loadMore: "Load more",
+      loading: "Loading...",
+      map: "Map",
+      list: "List",
+      sort: "Sort",
+      sortPriceAsc: "Price lowest",
+      sortPriceDesc: "Price highest",
+      sortNewest: "Newest",
+      sortScore: "Top score",
+      sortDetour: "Detour",
+      openInKleinanzeigen: "Open on Kleinanzeigen",
+      resetFilter: "Reset filters",
+      fetchListings: "Fetch listings",
+      settings: "Settings",
+      allModels: "All models",
+      evaluated: "Evaluated",
+      scoreValue: "Score {{score}}"
     }
   },
   de: {
@@ -942,7 +959,24 @@ export const translations = {
       noMatchesInRadius: "Keine Treffer in {{radius}} km",
       noMatches: "Keine Treffer",
       dealsOnly: "Nur Schnäppchen",
-      staleTag: "vor {{days}} Tagen"
+      staleTag: "vor {{days}} Tagen",
+      loadMore: "Mehr laden",
+      loading: "Laden...",
+      map: "Karte",
+      list: "Liste",
+      sort: "Sortierung",
+      sortPriceAsc: "Günstigste zuerst",
+      sortPriceDesc: "Teuerste zuerst",
+      sortNewest: "Neueste zuerst",
+      sortScore: "Beste Bewertung",
+      sortDetour: "Kürzester Umweg",
+      openInKleinanzeigen: "Bei Kleinanzeigen öffnen",
+      resetFilter: "Filter zurücksetzen",
+      fetchListings: "Funde abrufen",
+      settings: "Einstellungen",
+      allModels: "Alle Modelle",
+      evaluated: "Ausgewertet",
+      scoreValue: "Bewertung {{score}}"
     }
   }
 } as const;

@@ -14,9 +14,12 @@ function getPillStateStyles(disabled: boolean, active: boolean, variant: 'defaul
   }
   if (active) {
     if (variant === 'accent') {
-      return 'bg-[#E87967]/15 text-[#E87967] border-[#E87967]/30 shadow-sm';
+      return 'bg-[#E87967]/20 text-[#E87967] border-[#E87967]/60 ring-1 ring-[#E87967]/30 shadow-sm font-semibold';
     }
-    return 'bg-white/[0.14] text-[#F2F5F4] border-white/20 shadow-sm';
+    return 'bg-white/[0.14] text-[#F2F5F4] border-white/20 shadow-sm font-semibold';
+  }
+  if (variant === 'accent') {
+    return 'bg-white/[0.05] text-[#9FB3B0] border-white/10 hover:bg-white/[0.09] hover:border-white/20 hover:text-[#F2F5F4]';
   }
   return 'bg-white/[0.05] text-[#9FB3B0] border-transparent hover:bg-white/[0.09] hover:text-[#F2F5F4]';
 }
