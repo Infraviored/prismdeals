@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import type { Campaign, SearchTarget, KnowledgeSet, SampleListing } from '../types'
-import type { RouteCorridorData } from '../screens/ResultsScreen'
+import type { Campaign, KnowledgeSet, SearchTarget, SampleListing, RouteCorridorData } from '../types'
 import type { Place } from '../components/PlaceInput'
 import { useTranslation } from '../hooks/useTranslation'
 import { Button } from '../components/ui/Button'

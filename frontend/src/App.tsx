@@ -9,7 +9,7 @@ import { useGuidelinesWizard } from './hooks/useGuidelinesWizard';
 import AuthScreen from './components/AuthScreen';
 import SettingsView from './components/SettingsView';
 import LandingScreen from './screens/LandingScreen';
-import DashboardScreen from './screens/DashboardScreen';
+import FundeScreen from './screens/FundeScreen';
 import EditScreen from './screens/EditScreen';
 import CreateCampaignScreen from './screens/CreateCampaignScreen';
 import SurfacePreviewScreen from './screens/SurfacePreviewScreen';
@@ -20,9 +20,9 @@ import { cn } from './utils/cn';
 
 export default function App() {
   const {
-    view, currentCampaignId, currentSearchId, selectedListingId, wizardStep,
+    view, currentCampaignId, currentSearchId, wizardStep,
     previousView, setView, setCurrentCampaignId, setCurrentSearchId,
-    setSelectedListingId, setWizardStep, navigate,
+    setWizardStep, navigate,
   } = useHashRouter();
 
   const { t, lang, toggleLanguage } = useTranslation();
@@ -30,10 +30,6 @@ export default function App() {
   // --- UI chrome state ---
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
-
-  // --- Dashboard filters ---
-  const [selectedSearchId, setSelectedSearchId] = useState<string>('All');
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'All' | 'High Niceness' | 'New' | 'Evaluate with AI'>('All');
 
   // --- Scraper / Worker control ---
   const scraper = useScraperControl({
@@ -107,12 +103,25 @@ export default function App() {
   }
 
   const currentCampaign = appData.campaigns.find(c => c.id === currentCampaignId);
-  const isRouteOrFamilyMode = !!(currentCampaign?.route_id || currentCampaign?.family_id);
 
   const configureCurrentCampaign = () => {
     const firstTarget = appData.searches.find(s => s.campaign_id === currentCampaignId);
     navigate('edit', currentCampaignId, firstTarget?.id || null);
   };
+
+  if (view === 'dashboard') {
+    return (
+      <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col font-sans">
+        <FundeScreen
+          campaign={currentCampaign}
+          onBack={() => navigate('landing', null, null)}
+          onConfigure={configureCurrentCampaign}
+          onStartScrape={() => scraper.handleStartScrape(currentCampaignId)}
+          isScraping={scraper.isScraping}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-brand-primary text-text-primary flex flex-col font-sans">
@@ -243,41 +252,6 @@ export default function App() {
             }}
             onDeleteCampaign={campaignEdit.handleDeleteCampaign}
             onCreateCampaign={() => setView('create-campaign')}
-          />
-        )}
-
-        {view === 'dashboard' && (
-          <DashboardScreen
-            campaign={currentCampaign}
-            searches={appData.searches}
-            listings={appData.listings}
-            selectedSearchId={selectedSearchId}
-            setSelectedSearchId={setSelectedSearchId}
-            selectedStatusFilter={selectedStatusFilter}
-            setSelectedStatusFilter={setSelectedStatusFilter}
-            selectedListingId={selectedListingId}
-            setSelectedListingId={setSelectedListingId}
-            activeProcessingListingIds={scraper.activeProcessingListingIds}
-            handleProcessSingleListing={scraper.handleProcessSingleListing}
-            isScraping={scraper.isScraping}
-            isProcessing={scraper.isProcessing}
-            processingStatus={scraper.processingStatus}
-            scrapingStatus={scraper.scrapingStatus}
-            scrapingProgress={scraper.scrapingProgress}
-            liveLogs={scraper.liveLogs}
-            showLogConsole={scraper.showLogConsole}
-            setShowLogConsole={scraper.setShowLogConsole}
-            onBack={() => navigate('landing', null, null)}
-            onConfigure={configureCurrentCampaign}
-            onStartScrape={() => scraper.handleStartScrape(currentCampaignId)}
-            onStartDeepUpdate={() => scraper.handleStartDeepUpdate(currentCampaignId)}
-            onStartProcess={() => scraper.handleStartProcess(currentCampaignId)}
-            isRouteOrFamilyMode={isRouteOrFamilyMode}
-            onEvaluateWithAi={() => {
-              const firstTarget = appData.searches.find(s => s.campaign_id === currentCampaignId);
-              navigate('edit', currentCampaignId, firstTarget?.id || null);
-            }}
-            onEditFamily={() => navigate('edit', currentCampaignId, null)}
           />
         )}
 

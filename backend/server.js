@@ -357,38 +357,113 @@ app.get('/api/external-prompt', (req, res) => {
   }
 });
 
-// API: Get all listings
+// API: Get listings with optional filtering, sorting, pagination, and campaign scoping
 app.get('/api/listings', async (req, res) => {
   try {
-    const { campaign_id, search_id } = req.query;
-    let rows;
+    const { campaign_id, search_id, limit: limitParam, offset: offsetParam, sort, q } = req.query;
+    const isPaginated = limitParam !== undefined || offsetParam !== undefined || sort !== undefined || q !== undefined;
+
     if (search_id) {
-      rows = await query(`
-        SELECT l.*, s.name as item_name, c.name as campaign_name 
+      const rows = await query(`
+        SELECT l.*, s.name as item_name, c.name as campaign_name,
+               MAX(lsh.first_seen_at) as first_seen_at
         FROM listings l 
         LEFT JOIN searches s ON l.search_id = s.id 
         LEFT JOIN campaigns c ON s.campaign_id = c.id
+        LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = l.search_id
         WHERE l.search_id = ? 
+        GROUP BY l.id
         ORDER BY l.niceness_score DESC
       `, [search_id]);
-    } else if (campaign_id) {
-      rows = await query(`
-        SELECT l.*, s.name as item_name, c.name as campaign_name 
-        FROM listings l 
-        LEFT JOIN searches s ON l.search_id = s.id 
-        LEFT JOIN campaigns c ON s.campaign_id = c.id
-        WHERE s.campaign_id = ? 
-        ORDER BY l.niceness_score DESC
-      `, [campaign_id]);
-    } else {
-      rows = await query(`
-        SELECT l.*, s.name as item_name, c.name as campaign_name 
-        FROM listings l 
-        LEFT JOIN searches s ON l.search_id = s.id 
-        LEFT JOIN campaigns c ON s.campaign_id = c.id
-        ORDER BY l.niceness_score DESC
-      `);
+
+      const listings = rows.map(r => ({
+        ...r,
+        llm_processed: !!r.llm_processed,
+        full_info_obtained: !!r.full_info_obtained,
+        extracted_facts: JSON.parse(r.extracted_facts || '{}'),
+        details: JSON.parse(r.details || '{}'),
+        images: JSON.parse(r.images || '[]')
+      }));
+
+      return res.json(listings);
     }
+
+    if (campaign_id) {
+      const whereConditions = ['s.campaign_id = ?'];
+      const whereParams = [campaign_id];
+
+      if (q && q.trim() !== '') {
+        const qVal = `%${q.trim()}%`;
+        whereConditions.push('(l.title LIKE ? OR l.location LIKE ?)');
+        whereParams.push(qVal, qVal);
+      }
+
+      const whereSql = 'WHERE ' + whereConditions.join(' AND ');
+
+      const countRow = await get(`
+        SELECT COUNT(DISTINCT l.id) as total
+        FROM listings l
+        JOIN searches s ON l.search_id = s.id
+        ${whereSql}
+      `, whereParams);
+      const total = countRow ? Number(countRow.total || 0) : 0;
+
+      let orderBy = 'l.niceness_score DESC, l.id DESC';
+      if (sort === 'price_asc') {
+        orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+      } else if (sort === 'price_desc') {
+        orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, l.id DESC';
+      } else if (sort === 'newest' || sort === 'freshness') {
+        orderBy = 'first_seen_at DESC, l.id DESC';
+      } else if (sort === 'score') {
+        orderBy = '(l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
+      }
+
+      const limit = Math.max(1, parseInt(limitParam, 10) || 50);
+      const offset = offsetParam ? Math.max(0, parseInt(offsetParam, 10) || 0) : 0;
+
+      const paginationSql = isPaginated ? 'LIMIT ? OFFSET ?' : '';
+      const queryParams = isPaginated ? [...whereParams, limit, offset] : whereParams;
+
+      const rows = await query(`
+        SELECT l.*, s.name as item_name, c.name as campaign_name,
+               MAX(lsh.first_seen_at) as first_seen_at
+        FROM listings l 
+        JOIN searches s ON l.search_id = s.id 
+        LEFT JOIN campaigns c ON s.campaign_id = c.id
+        LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = l.search_id
+        ${whereSql}
+        GROUP BY l.id
+        ORDER BY ${orderBy}
+        ${paginationSql}
+      `, queryParams);
+
+      const listings = rows.map(r => ({
+        ...r,
+        llm_processed: !!r.llm_processed,
+        full_info_obtained: !!r.full_info_obtained,
+        extracted_facts: JSON.parse(r.extracted_facts || '{}'),
+        details: JSON.parse(r.details || '{}'),
+        images: JSON.parse(r.images || '[]'),
+        matched_terms: []
+      }));
+
+      if (isPaginated) {
+        return res.json({ total, offset, limit, listings });
+      }
+      return res.json(listings);
+    }
+
+    const rows = await query(`
+      SELECT l.*, s.name as item_name, c.name as campaign_name,
+             MAX(lsh.first_seen_at) as first_seen_at
+      FROM listings l 
+      LEFT JOIN searches s ON l.search_id = s.id 
+      LEFT JOIN campaigns c ON s.campaign_id = c.id
+      LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = l.search_id
+      GROUP BY l.id
+      ORDER BY l.niceness_score DESC
+    `);
     
     // Parse JSON string fields back to objects
     const listings = rows.map(r => ({
@@ -934,7 +1009,9 @@ async function getRouteCorridorPayload(route, options = {}) {
   const whereSql = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
 
   const totalCountSql = `
-    SELECT COUNT(DISTINCT l.id) AS total
+    SELECT COUNT(DISTINCT l.id) AS total,
+           COUNT(DISTINCT CASE WHEN g.detour_min IS NOT NULL THEN l.id END) AS routed,
+           COUNT(DISTINCT CASE WHEN g.lat IS NULL THEN l.id END) AS unplaced
       FROM listings l
       JOIN route_search_circles c ON c.search_id = l.search_id
       JOIN searches s ON l.search_id = s.id
@@ -945,6 +1022,8 @@ async function getRouteCorridorPayload(route, options = {}) {
   `;
   const totalRow = await get(totalCountSql, [route.id, ...whereParams]);
   const total = totalRow ? Number(totalRow.total || 0) : 0;
+  const routed = totalRow ? Number(totalRow.routed || 0) : 0;
+  const unplaced = totalRow ? Number(totalRow.unplaced || 0) : 0;
 
   let orderBy = '';
   const sort = options.sort;
@@ -1011,7 +1090,7 @@ async function getRouteCorridorPayload(route, options = {}) {
         `SELECT DISTINCT lsh.listing_id, t.id AS term_id, COALESCE(t.label, t.term) AS label
            FROM search_family_searches sfs
            JOIN search_family_terms t ON t.id = sfs.term_id
-           JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+           JOIN listing_search_hits lsh ON lsh.listing_id = lsh.listing_id AND lsh.search_id = sfs.search_id
           WHERE sfs.family_id = ? AND lsh.listing_id IN (${placeholders})
           ORDER BY t.position ASC, t.id ASC`,
         [route.family_id, ...chunk]
@@ -1055,8 +1134,8 @@ async function getRouteCorridorPayload(route, options = {}) {
     listings: parsedListings,
     counts: {
       total,
-      routed: parsedListings.filter(l => l.detour_min !== null).length,
-      unplaced: parsedListings.filter(l => l.lat === null).length,
+      routed,
+      unplaced,
     }
   };
 }

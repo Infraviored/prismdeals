@@ -196,6 +196,14 @@ async function main() {
     assert(routeRes.data.total === 6, `route filtered total should be 6, got ${routeRes.data.total}`);
     assert(routeRes.data.listings.length === 6, `route listings length 6`);
 
+    console.log('--- TEST 8b: counts.routed reflects total result when limit is small (limit=5) ---');
+    const routeLimitRes = await request('/api/campaigns/1/route?limit=5');
+    assert(routeLimitRes.status === 200, `status ${routeLimitRes.status}`);
+    assert(routeLimitRes.data.listings.length === 5, `page listings length should be 5, got ${routeLimitRes.data.listings.length}`);
+    assert(routeLimitRes.data.counts.total === 60, `total should be 60, got ${routeLimitRes.data.counts.total}`);
+    // 40 listings have detour_min (i <= 20 has detour, i <= 40 has detour)
+    assert(routeLimitRes.data.counts.routed === 40, `counts.routed should be 40, got ${routeLimitRes.data.counts.routed}`);
+
     console.log('--- TEST 9: Field set parity check between both endpoints ---');
     const famListingSample = famListRes.data.listings[0];
     const routeListingSample = routeRes.data.listings[0];

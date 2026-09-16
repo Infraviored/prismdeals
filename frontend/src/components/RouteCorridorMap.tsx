@@ -264,11 +264,11 @@ export default function RouteCorridorMap({
   const bounds = useMemo(() => {
     const latLngs: L.LatLngExpression[] = [];
 
-    polyline.forEach(([lat, lon]) => {
+    (polyline || []).forEach(([lat, lon]) => {
       latLngs.push([lat, lon]);
     });
 
-    circles.forEach((circle) => {
+    (circles || []).forEach((circle) => {
       if (circle.lat !== null && circle.lon !== null) {
         latLngs.push([circle.lat, circle.lon]);
       }
