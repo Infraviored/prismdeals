@@ -124,6 +124,43 @@ def shoot(driver, out_dir, name, settle=1.0):
     print(f"  {name}.png")
 
 
+def open_campaign(driver, name, settle=2.5):
+    """Click the campaign card, the way a person reaches a campaign.
+
+    Two URL-driven approaches failed before this one, and both failed silently
+    by leaving the landing page on screen under a filename that claimed
+    otherwise. `driver.get` on a URL differing only by its fragment performs no
+    navigation at all in headless Chrome; assigning `location.hash` is undone
+    within milliseconds by the app writing the hash back out of its own state.
+    Clicking is also the more honest test -- it exercises the path a user takes.
+    """
+    from selenium.webdriver.common.by import By
+
+    for card in driver.find_elements(
+        By.CSS_SELECTOR, "div.cursor-pointer, [class*='cursor-pointer']"
+    ):
+        try:
+            if name and name.lower() in (card.text or "").lower():
+                driver.execute_script("arguments[0].click();", card)
+                time.sleep(settle)
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def back_to_landing(driver, settle=2.0):
+    from selenium.webdriver.common.by import By
+
+    for btn in driver.find_elements(By.CSS_SELECTOR, "button"):
+        txt = (btn.text or "").lower()
+        if "back to" in txt or "zurück" in txt or "zuruck" in txt:
+            driver.execute_script("arguments[0].click();", btn)
+            time.sleep(settle)
+            return True
+    return False
+
+
 def walk(driver, base, out_dir, width, height, db_path=None):
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support import expected_conditions as EC
@@ -196,11 +233,12 @@ def walk(driver, base, out_dir, width, height, db_path=None):
             campaigns = [
                 {
                     "id": row["id"],
+                    "name": row["name"],
                     "route_id": row["route_id"],
                     "family_id": row["family_id"],
                 }
                 for row in conn.execute(
-                    "SELECT c.id,"
+                    "SELECT c.id, c.name,"
                     " (SELECT r.id FROM route_searches r WHERE r.campaign_id = c.id"
                     "  ORDER BY r.id DESC LIMIT 1) AS route_id,"
                     " (SELECT f.id FROM search_families f WHERE f.campaign_id = c.id"
@@ -220,9 +258,27 @@ def walk(driver, base, out_dir, width, height, db_path=None):
         has_route = bool(campaign.get("route_id"))
         has_family = bool(campaign.get("family_id"))
 
-        driver.get(f"{base}/#edit?campaignId={identifier}")
-        time.sleep(2)
-        shoot(driver, out_dir, f"03-campaign-{identifier}")
+        name = campaign.get("name")
+        if not open_campaign(driver, name):
+            print(f"  ! could not open campaign {name!r}; skipping it")
+            back_to_landing(driver)
+            continue
+        shoot(driver, out_dir, f"04-dashboard-{identifier}")
+
+        # Settings via the gear, the way a person gets there.
+        opened_settings = False
+        for btn in driver.find_elements(By.CSS_SELECTOR, "button"):
+            cls = btn.get_attribute("class") or ""
+            if not (btn.text or "").strip() and "p-1.5" in cls:
+                try:
+                    driver.execute_script("arguments[0].click();", btn)
+                    time.sleep(2)
+                    opened_settings = True
+                    break
+                except Exception:
+                    continue
+        if opened_settings:
+            shoot(driver, out_dir, f"03-campaign-{identifier}")
 
         if has_family:
             try:
@@ -238,7 +294,8 @@ def walk(driver, base, out_dir, width, height, db_path=None):
 
         if has_route or has_family:
             # Also capture the corridor dashboard view
-            driver.get(f"{base}/#dashboard?campaignId={identifier}")
+            back_to_landing(driver)
+            open_campaign(driver, name)
             time.sleep(2)
             shoot(driver, out_dir, f"04-corridor-dashboard-{identifier}")
 
