@@ -31,6 +31,7 @@ export default function ListingRow({ listing: l, isSelected, onSelect }: Listing
       href={l.url}
       target="_blank"
       rel="noopener noreferrer"
+      data-testid="listing-row"
       onClick={() => onSelect(l.id)}
       className={cn(
         'group min-h-[76px] p-2.5 sm:p-3 rounded-2xl border transition-all flex items-center gap-3 cursor-pointer no-underline',

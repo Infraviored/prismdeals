@@ -1,8 +1,8 @@
 /**
  * ResultsScreen — the results view for route/family campaigns.
  *
- * Replaces RouteResultsView.tsx. Key differences:
- *   - searchState decides which child renders. No `counts.total > 0` scatter.
+ * Modular results screen for route and family campaigns.
+ *   - searchState decides which child renders.
  *   - Actions are defined once here, rendered by ScreenActionBar.
  *   - No ISO timestamps visible anywhere.
  *   - The Listings/Map tab toggle is hidden when both sides would be empty.
@@ -27,7 +27,7 @@ import EmptyStateView from '../components/results/EmptyStateView';
 import ZeroInRadiusView from '../components/results/ZeroInRadiusView';
 import type { RouteCircle, RouteListingGeo } from '../components/RouteCorridorMap';
 import type { ScraperProgressCardProps, SearchFamilyTerm, SearchFamily, RadiusDiagnosis } from '../types';
-import { Search, Sparkles, SlidersHorizontal, ListFilter, MapPin, X } from 'lucide-react';
+import { Search, Sparkles, SlidersHorizontal, ListFilter, MapPin, X, Navigation, Settings } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,6 +60,8 @@ interface ResultsScreenProps {
   campaignId?: number;
   familyId?: number;
   campaignName: string;
+  onBack?: () => void;
+  onConfigure?: () => void;
   onEvaluateWithAi: () => void;
   isScraping: boolean;
   onStartScrape: () => void;
@@ -123,6 +125,8 @@ export default function ResultsScreen({
   campaignId,
   familyId,
   campaignName,
+  onBack,
+  onConfigure,
   onEvaluateWithAi,
   isScraping,
   onStartScrape,
@@ -450,7 +454,7 @@ export default function ResultsScreen({
 
   // Resolve state from the single source of truth
   const searchPhase = resolveSearchState({
-    hasCrawled: hasCrawled || counts.total > 0,
+    hasCrawled,
     isScraping,
     listingCount: counts.total,
   });
@@ -488,7 +492,7 @@ export default function ResultsScreen({
       labelKey: 'routeResults.evaluateWithAi',
       icon: Sparkles,
       handler: onEvaluateWithAi,
-      visible: counts.total > 0 && routeData.listings.some((l) => !l.llm_processed),
+      visible: searchPhase === 'has_results' && routeData.listings.some((l) => !l.llm_processed),
       variant: 'action-indigo',
     },
   ];
@@ -497,27 +501,60 @@ export default function ResultsScreen({
   const showMobileToggle = searchPhase === 'has_results' && hasCorridor;
 
   return (
-    <div className="flex flex-col space-y-4 animate-fadeIn w-full">
+    <div className="flex flex-col space-y-1.5 sm:space-y-4 animate-fadeIn w-full">
       {/* Top card: headline + action bar */}
-      <Card className="p-4 sm:p-5 relative overflow-hidden bg-bg-surface border-border-subtle">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <h1 className="text-lg sm:text-xl font-extrabold text-text-primary tracking-tight font-heading">
-              {counts.total === 1
-                ? t('routeResults.listingsFoundSingular')
-                : counts.total > 1
-                ? t('routeResults.listingsFound', { count: counts.total })
-                : t('routeResults.noListingsFound')}
-            </h1>
+      <Card className="p-2 sm:p-5 relative overflow-hidden bg-bg-surface border-border-subtle">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-1.5 sm:gap-4">
+          <div className="space-y-0.5 sm:space-y-1">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              {onBack && (
+                <Button
+                  variant="badge"
+                  size="xs"
+                  onClick={onBack}
+                  className="px-2 py-0.5 text-2xs font-semibold shrink-0"
+                  aria-label={t('common.backToCampaigns')}
+                >
+                  <span className="mr-0.5">←</span>
+                  <span>{t('common.backToCampaigns')}</span>
+                </Button>
+              )}
+              {onConfigure && (
+                <Button
+                  variant="icon"
+                  size="xs"
+                  onClick={onConfigure}
+                  title={t('landing.configureTooltip')}
+                  className="p-1 border-border-subtle hover:border-brand-accent/30 shrink-0"
+                >
+                  <Settings className="w-3.5 h-3.5 transition-transform duration-500 hover:rotate-90 text-text-muted hover:text-brand-accent" />
+                </Button>
+              )}
+              <h1 className="text-base sm:text-xl font-extrabold text-text-primary tracking-tight font-heading truncate">
+                {searchPhase === 'has_results'
+                  ? counts.total === 1
+                    ? t('routeResults.listingsFoundSingular')
+                    : t('routeResults.listingsFound', { count: counts.total })
+                  : campaignName}
+              </h1>
+            </div>
 
-            <div className="flex items-center gap-x-2.5 gap-y-1 text-2xs sm:text-xs text-text-muted whitespace-nowrap overflow-x-auto sm:whitespace-normal sm:flex-wrap">
-              <span className="shrink-0">
-                <strong className="font-semibold text-text-secondary">{campaignName}</strong>
-                {route.origin && route.destination ? `: ${route.origin} → ${route.destination}` : ''}
-              </span>
+            <div className="flex items-center gap-x-2 gap-y-0.5 text-2xs sm:text-xs text-text-muted whitespace-nowrap overflow-x-auto sm:whitespace-normal sm:flex-wrap">
+              {searchPhase === 'has_results' && (
+                <span className="shrink-0">
+                  <strong className="font-semibold text-text-secondary">{campaignName}</strong>
+                  {route.origin && route.destination ? `: ${route.origin} → ${route.destination}` : ''}
+                </span>
+              )}
+              {searchPhase !== 'has_results' && route.origin && route.destination && (
+                <span className="shrink-0">
+                  {route.origin} → {route.destination}
+                </span>
+              )}
               {route.distance_km && route.duration_min ? (
                 <span className="flex items-center gap-1 shrink-0">
                   <span className="text-text-muted/60">·</span>
+                  <Navigation className="w-3 h-3 text-brand-accent shrink-0 inline" />
                   {t('routeResults.routeStats', {
                     distance: route.distance_km,
                     duration: route.duration_min,
@@ -596,29 +633,29 @@ export default function ResultsScreen({
 
       {/* Mobile tab toggle — ONLY when there are results and a map */}
       {showMobileToggle && (
-        <div className="lg:hidden flex p-1 rounded-xl bg-bg-input border border-border-subtle">
+        <div className="lg:hidden flex p-0.5 rounded-xl bg-bg-input border border-border-subtle">
           <button
             type="button"
             onClick={() => setMobileTab('list')}
-            className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 min-h-[36px] py-1 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
               mobileTab === 'list'
-                ? 'bg-bg-surface text-text-primary shadow-md border border-border-subtle'
+                ? 'bg-bg-surface text-text-primary shadow-sm border border-border-subtle'
                 : 'text-text-muted hover:text-text-secondary'
             }`}
           >
-            <ListFilter className="w-4 h-4" />
+            <ListFilter className="w-3.5 h-3.5" />
             <span>{t('routeResults.tabListings', { count: counts.total })}</span>
           </button>
           <button
             type="button"
             onClick={() => setMobileTab('map')}
-            className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 min-h-[36px] py-1 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
               mobileTab === 'map'
-                ? 'bg-bg-surface text-text-primary shadow-md border border-border-subtle'
+                ? 'bg-bg-surface text-text-primary shadow-sm border border-border-subtle'
                 : 'text-text-muted hover:text-text-secondary'
             }`}
           >
-            <MapPin className="w-4 h-4" />
+            <MapPin className="w-3.5 h-3.5" />
             <span>{t('routeResults.tabMap')}</span>
           </button>
         </div>
@@ -627,7 +664,7 @@ export default function ResultsScreen({
       {/* State routing — one state, one component */}
       {searchPhase === 'searching' && null /* ScraperProgressCard above handles feedback */}
 
-      {(searchPhase === 'never_searched' || (searchPhase === 'empty' && !hasCrawled)) && (
+      {searchPhase === 'never_searched' && (
         <EmptyStateView
           familyTerms={familyTerms}
           hasCorridor={hasCorridor}
@@ -641,23 +678,36 @@ export default function ResultsScreen({
         />
       )}
 
-      {searchPhase === 'empty' && hasCrawled && isSearchFamily && (
-        <ZeroInRadiusView
-          familyTerms={familyTerms}
-          radiusDiagnosis={radiusDiagnosis}
-          diagnosing={diagnosing}
-          diagnoseError={diagnoseError}
-          applyingRadius={applyingRadius}
-          radiusSuccessMsg={radiusSuccessMsg}
-          isScraping={isScraping}
-          currentRadius={currentRadius}
-          locationName={locationName}
-          lastCrawledAt={familyDetail?.last_crawled_at}
-          onDiagnose={handleDiagnoseRadius}
-          onApplyRadius={handleApplyRadius}
-          onStartScrape={onStartScrape}
-          onEditFamily={onEditFamily}
-        />
+      {searchPhase === 'empty' && (
+        isSearchFamily ? (
+          <ZeroInRadiusView
+            familyTerms={familyTerms}
+            radiusDiagnosis={radiusDiagnosis}
+            diagnosing={diagnosing}
+            diagnoseError={diagnoseError}
+            applyingRadius={applyingRadius}
+            radiusSuccessMsg={radiusSuccessMsg}
+            isScraping={isScraping}
+            currentRadius={currentRadius}
+            locationName={locationName}
+            lastCrawledAt={familyDetail?.last_crawled_at}
+            onDiagnose={handleDiagnoseRadius}
+            onApplyRadius={handleApplyRadius}
+            onStartScrape={onStartScrape}
+          />
+        ) : (
+          <EmptyStateView
+            familyTerms={familyTerms}
+            hasCorridor={hasCorridor}
+            circles={route.circles}
+            polyline={route.polyline}
+            origin={route.origin}
+            destination={route.destination}
+            isScraping={isScraping}
+            onStartScrape={onStartScrape}
+            isDesktop={isDesktop}
+          />
+        )
       )}
 
       {searchPhase === 'has_results' && (

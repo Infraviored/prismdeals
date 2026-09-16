@@ -6,7 +6,7 @@
  * tab is active. No map, no empty-state handling — those are in sibling
  * components.
  *
- * Rule: no `counts.total > 0` or `hasListings` guard here. The parent
+ * Rule: no listing count guards here. The parent
  * (ResultsScreen) only mounts this component when the search phase is
  * `has_results`. Visibility decisions are made exactly once, in searchState.ts.
  */
@@ -112,9 +112,9 @@ export default function ListingsPane({
       )}
 
       {/* Search + Sort + Detour filter — 2 rows max on 390 px */}
-      <Card className="p-2 sm:p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-3 bg-bg-surface border-border-subtle">
+      <Card className="p-1.5 sm:p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-1.5 md:gap-3 bg-bg-surface border-border-subtle">
         {/* Detour filter chips */}
-        <div className="flex items-center gap-1.5 sm:gap-2 md:flex-wrap min-w-0">
+        <div className="flex items-center gap-1 sm:gap-2 md:flex-wrap min-w-0">
           <span className="hidden md:flex text-2xs text-text-muted font-bold uppercase tracking-wider items-center gap-1 mr-1 shrink-0">
             <Filter className="w-3 h-3 text-text-muted" />
             {t('routeResults.detourFilterLabel')}:
@@ -137,7 +137,7 @@ export default function ListingsPane({
                 key={choice}
                 type="button"
                 onClick={() => setSelectedDetourMax(choice)}
-                className={`min-h-[36px] px-2 sm:px-3 py-1 rounded-lg text-2xs font-semibold transition-colors flex items-center justify-center shrink-0 whitespace-nowrap ${
+                className={`min-h-[30px] sm:min-h-[36px] px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg text-2xs font-semibold transition-colors flex items-center justify-center shrink-0 whitespace-nowrap ${
                   active
                     ? 'bg-brand-accent/20 text-brand-accent border border-brand-accent/40 font-bold'
                     : 'bg-bg-input text-text-muted hover:text-text-secondary border border-border-subtle'
@@ -149,18 +149,18 @@ export default function ListingsPane({
           })}
         </div>
 
-        <div className="flex flex-row items-center gap-2">
+        <div className="flex flex-row items-center gap-1.5 sm:gap-2">
           <div className="relative flex-1 min-w-0 sm:w-56 sm:flex-none">
             <Input
               type="text"
               placeholder={t('routeResults.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="text-xs py-1.5 bg-bg-input border-border-subtle"
+              className="text-xs py-1 sm:py-1.5 bg-bg-input border-border-subtle"
             />
           </div>
 
-          <div className="w-[7.5rem] shrink-0 sm:w-44">
+          <div className="w-[7.2rem] shrink-0 sm:w-44">
             <Select
               value={sortBy}
               onChange={(val) => setSortBy(val as 'detour' | 'price')}

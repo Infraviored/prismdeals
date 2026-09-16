@@ -153,16 +153,15 @@ describe('ResultsScreen', () => {
       expect(screen.getByTestId('zero-in-radius-view')).toBeInTheDocument();
     });
 
-    // "0 listings in search radius" badge appears
-    expect(screen.getByText(/0.*Suchradius|0 listings in search radius/i)).toBeInTheDocument();
+    // The h1 in the header says the campaign name — it does NOT announce "No listings found"
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Drucker Landsberg');
 
-    // The h1 in the header says "No listings found" — that's the one announcement.
-    // There must NOT be a second occurrence of the headline inside the view.
-    const allZeroHeadlines = screen.queryAllByText(/Keine Treffer im|No listings found within/i);
-    // The zero-in-radius headline "No listings found within 30 km" is the
-    // explanation text inside the card, NOT a duplicate h1. The badge + the
-    // explanation text together count as one conceptual statement.
-    expect(allZeroHeadlines.length).toBeLessThanOrEqual(1);
+    // Generic "No listings found" does NOT appear in the header card
+    expect(screen.queryByText(/^Keine Treffer gefunden$|^No listings found$/i)).not.toBeInTheDocument();
+
+    // Exactly one "nothing found" statement appears on the entire screen (the badge in ZeroInRadiusView)
+    const zeroBadges = screen.getAllByText(/0.*Suchradius|0 listings in search radius/i);
+    expect(zeroBadges.length).toBe(1);
   });
 
   // ---- Acceptance criterion 2: family settings has exactly one entry point ----
