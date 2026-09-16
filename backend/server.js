@@ -580,6 +580,8 @@ app.get('/api/places/suggest', (req, res) => {
   });
 });
 
+app.use(require('./location_resolver'));
+
 /**
  * Runs scraper/main.py and collects everything it said.
  *

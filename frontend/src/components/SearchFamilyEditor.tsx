@@ -4,10 +4,11 @@ import { Card } from './ui/Card';
 import { Input } from './ui/Input';
 import { useTranslation } from '../hooks/useTranslation';
 import type { SearchFamilyTerm, SearchFamilyPreview } from '../types';
-import { parseLinesToTerms } from '../utils/searchFamily';
 import SearchFamilyPreviewBanner from './SearchFamilyPreviewBanner';
-import SearchFamilyTermItem from './SearchFamilyTermItem';
-import { Plus, Layers } from 'lucide-react';
+import SearchFamilyTermList from './SearchFamilyTermList';
+import SearchComposerFields from './SearchComposerFields';
+import { useSearchFamilyComposer } from '../hooks/useSearchFamilyComposer';
+import { Layers } from 'lucide-react';
 
 export interface SearchFamilyEditorProps {
   familyId?: number;
@@ -34,11 +35,40 @@ export default function SearchFamilyEditor({
 }: SearchFamilyEditorProps) {
   const { t } = useTranslation();
 
-  const [name, setName] = useState(initialName);
-  const [baseUrl, setBaseUrl] = useState(initialBaseUrl);
-  const [terms, setTerms] = useState<SearchFamilyTerm[]>(initialTerms);
-  const [pasteText, setPasteText] = useState('');
-  const [additionalText, setAdditionalText] = useState('');
+  const {
+    name,
+    setName,
+    baseUrl,
+    terms,
+    setTerms,
+    pasteText,
+    setPasteText,
+    additionalText,
+    setAdditionalText,
+    place,
+    locationId,
+    locationSlug,
+    radius,
+    minPrice,
+    maxPrice,
+    loadingFamily,
+    activeTerms,
+    handlePlaceChange,
+    handleRadiusChange,
+    handleMinPriceChange,
+    handleMaxPriceChange,
+    handleApplyPaste,
+    handleAddAdditional,
+    handleToggleTerm,
+    handleDeleteTerm,
+    handleToggleAll,
+    handleClearAll,
+  } = useSearchFamilyComposer({
+    familyId,
+    initialName,
+    initialBaseUrl,
+    initialTerms,
+  });
 
   const [preview, setPreview] = useState<SearchFamilyPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -46,79 +76,8 @@ export default function SearchFamilyEditor({
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [loadingFamily, setLoadingFamily] = useState(false);
-
-  useEffect(() => {
-    if (!familyId) return;
-    if (initialTerms.length > 0 && initialName && initialBaseUrl) return;
-    setLoadingFamily(true);
-    fetch(`/api/search-families/${familyId}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!data) return;
-        if (data.name) setName(data.name);
-        if (data.base_url) setBaseUrl(data.base_url);
-        if (Array.isArray(data.terms)) {
-          setTerms(
-            data.terms.map((t: { id?: number; term: string; label?: string; enabled?: boolean | number }) => ({
-              id: t.id,
-              term: t.term,
-              label: t.label || t.term,
-              enabled: t.enabled !== 0 && t.enabled !== false,
-            }))
-          );
-        }
-      })
-      .catch((err) => console.error('Failed to load search family data:', err))
-      .finally(() => setLoadingFamily(false));
-  }, [familyId]);
-
   const requestId = useRef(0);
 
-  const handleApplyPaste = useCallback(() => {
-    if (!pasteText.trim()) return;
-    const newItems = parseLinesToTerms(pasteText);
-    if (newItems.length > 0) {
-      setTerms(newItems);
-      setPasteText('');
-    }
-  }, [pasteText]);
-
-  const handleAddAdditional = useCallback(() => {
-    if (!additionalText.trim()) return;
-    const newItems = parseLinesToTerms(additionalText);
-    if (newItems.length > 0) {
-      setTerms((prev) => [...prev, ...newItems]);
-      setAdditionalText('');
-    }
-  }, [additionalText]);
-
-  const handleToggleTerm = useCallback((index: number) => {
-    setTerms((prev) =>
-      prev.map((term, i) => (i === index ? { ...term, enabled: !term.enabled } : term))
-    );
-  }, []);
-
-  const handleDeleteTerm = useCallback((index: number) => {
-    setTerms((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const handleToggleAll = useCallback(() => {
-    setTerms((prev) => {
-      const someDisabled = prev.some((term) => !term.enabled);
-      return prev.map((term) => ({ ...term, enabled: someDisabled }));
-    });
-  }, []);
-
-  const handleClearAll = useCallback(() => {
-    setTerms([]);
-    setPasteText('');
-  }, []);
-
-  const activeTerms = useMemo(() => terms.filter((t) => t.enabled), [terms]);
-  // Keyed on `term`, not on `label`, for the same reason the preview request is:
-  // the two differ for every saved family, and keying on the label would skip the
-  // refetch when only the search term changed.
   const activeTermLabelsKey = useMemo(
     () => activeTerms.map((t) => t.term || t.label).join('|'),
     [activeTerms]
@@ -143,11 +102,6 @@ export default function SearchFamilyEditor({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           base_url: trimmedUrl,
-          // `term` is what becomes the URL; `label` is only what the human reads.
-          // Saving sends `term`, so previewing the label made the two disagree:
-          // for a family whose labels differ from its terms, the preview reported
-          // "8 new, 5 reused" where saving would have done "0 new, 13 reused" —
-          // wrong in exactly the number the preview exists to show.
           terms: activeTerms.map((t) => t.term || t.label),
           route_search_id: routeSearchId ?? undefined,
         }),
@@ -181,12 +135,15 @@ export default function SearchFamilyEditor({
 
   const disabledReason = useMemo(() => {
     if (!name.trim()) return t('searchFamily.saveDisabledNoName');
+    if (!place && !locationId && !locationSlug && !baseUrl.trim()) {
+      return t('searchFamily.saveDisabledNoLocation');
+    }
     if (!baseUrl.trim()) return t('searchFamily.saveDisabledNoUrl');
     if (terms.length === 0 || activeTerms.length === 0) return t('searchFamily.saveDisabledNoTerms');
     if (previewLoading) return t('searchFamily.saveDisabledPreviewLoading');
     if (previewError) return t('searchFamily.saveDisabledPreviewError');
     return null;
-  }, [name, baseUrl, terms.length, activeTerms.length, previewLoading, previewError, t]);
+  }, [name, place, locationId, locationSlug, baseUrl, terms.length, activeTerms.length, previewLoading, previewError, t]);
 
   const isSaveDisabled = disabledReason !== null || saving;
 
@@ -268,143 +225,35 @@ export default function SearchFamilyEditor({
           />
         </div>
 
-        <div className="space-y-1.5">
-          <label htmlFor="family-base-url" className="text-xs sm:text-sm font-semibold text-text-secondary">
-            {t('searchFamily.baseUrlLabel')}
-          </label>
-          <Input
-            id="family-base-url"
-            type="text"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder={t('searchFamily.baseUrlPlaceholder')}
-            className="w-full text-sm font-mono bg-bg-input border-border-subtle"
-          />
-        </div>
-      </div>
+        {/* 1. MODELS / SEARCH TERMS */}
+        <SearchFamilyTermList
+          terms={terms}
+          activeTerms={activeTerms}
+          pasteText={pasteText}
+          onPasteTextChange={setPasteText}
+          onApplyPaste={handleApplyPaste}
+          additionalText={additionalText}
+          onAdditionalTextChange={setAdditionalText}
+          onAddAdditional={handleAddAdditional}
+          onToggleTerm={handleToggleTerm}
+          onDeleteTerm={handleDeleteTerm}
+          onToggleAll={handleToggleAll}
+          onClearAll={handleClearAll}
+          onSetTerms={setTerms}
+        />
 
-      <div className="space-y-3 pt-1">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <label htmlFor="family-models-textarea" className="text-xs sm:text-sm font-semibold text-text-secondary">
-            {t('searchFamily.modelsLabel')}
-          </label>
-          {terms.length > 0 && (
-            <div className="flex items-center gap-3 text-2xs text-text-muted">
-              <span>
-                {t('searchFamily.activeCount', {
-                  active: activeTerms.length,
-                  total: terms.length,
-                })}
-              </span>
-              <button
-                type="button"
-                onClick={handleToggleAll}
-                className="hover:text-text-primary underline cursor-pointer"
-              >
-                {t('searchFamily.toggleTermActive')}
-              </button>
-              <button
-                type="button"
-                onClick={handleClearAll}
-                className="hover:text-status-danger underline cursor-pointer"
-              >
-                {t('searchFamily.clearAll')}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {terms.length === 0 ? (
-          <div className="space-y-2">
-            <textarea
-              id="family-models-textarea"
-              rows={5}
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-              onPaste={(e) => {
-                const pasted = e.clipboardData.getData('text');
-                if (pasted.includes('\n')) {
-                  e.preventDefault();
-                  const parsed = parseLinesToTerms(pasted);
-                  if (parsed.length > 0) {
-                    setTerms(parsed);
-                    setPasteText('');
-                  }
-                }
-              }}
-              placeholder={t('searchFamily.modelsPlaceholder')}
-              className="w-full p-3 rounded-xl border border-border-subtle bg-bg-input text-text-primary text-sm font-mono focus:outline-none focus:border-brand-accent/50 transition-colors"
-            />
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-2xs text-text-muted">{t('searchFamily.modelsHelp')}</p>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={handleApplyPaste}
-                disabled={!pasteText.trim()}
-                className="font-semibold text-xs py-1.5"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" />
-                {t('searchFamily.parseButton')}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-2.5">
-            <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
-              {terms.map((term, index) => (
-                <SearchFamilyTermItem
-                  key={`${term.term}-${index}`}
-                  term={term}
-                  index={index}
-                  onToggle={handleToggleTerm}
-                  onDelete={handleDeleteTerm}
-                  toggleLabel={t('searchFamily.toggleTermActive')}
-                  deleteLabel={t('searchFamily.deleteTerm')}
-                />
-              ))}
-            </div>
-
-            <div className="flex gap-2 pt-1">
-              <Input
-                type="text"
-                value={additionalText}
-                onChange={(e) => setAdditionalText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddAdditional();
-                  }
-                }}
-                onPaste={(e) => {
-                  const pasted = e.clipboardData.getData('text');
-                  if (pasted.includes('\n')) {
-                    e.preventDefault();
-                    const parsed = parseLinesToTerms(pasted);
-                    if (parsed.length > 0) {
-                      setTerms((prev) => [...prev, ...parsed]);
-                      setAdditionalText('');
-                    }
-                  }
-                }}
-                placeholder={t('searchFamily.addModelPlaceholder')}
-                className="flex-1 text-xs bg-bg-input border-border-subtle font-mono"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={handleAddAdditional}
-                disabled={!additionalText.trim()}
-                className="shrink-0 text-xs px-3"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" />
-                {t('searchFamily.addModelButton')}
-              </Button>
-            </div>
-          </div>
-        )}
+        {/* 2. LOCATION, 3. RADIUS, 4. PRICE RANGE & COLLAPSED ADVANCED URL */}
+        <SearchComposerFields
+          place={place}
+          onPlaceChange={handlePlaceChange}
+          radius={radius}
+          onRadiusChange={handleRadiusChange}
+          minPrice={minPrice}
+          onMinPriceChange={handleMinPriceChange}
+          maxPrice={maxPrice}
+          onMaxPriceChange={handleMaxPriceChange}
+          baseUrl={baseUrl}
+        />
       </div>
 
       <SearchFamilyPreviewBanner
