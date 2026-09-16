@@ -453,6 +453,24 @@ export const translations = {
       btnCreateFamily: "Create Search Family",
       singleSearchesTitle: "Active Search Targets",
       noSearchesYet: "No search targets configured yet. Add a Kleinanzeigen search URL or create a search family."
+    },
+    surface: {
+      onRoute: "on route",
+      minDetour: "+{{min}}m",
+      kmDistance: "{{km}} km",
+      hoursAgo: "{{hours}}h ago",
+      daysAgo: "{{days}}d ago",
+      yesterday: "yesterday",
+      today: "today",
+      noLocation: "No location",
+      noPrice: "VB",
+      noImage: "No image",
+      back: "Back",
+      close: "Close",
+      noMatchesInRadius: "No matches within {{radius}} km",
+      noMatches: "No matches",
+      dealsOnly: "Deals only",
+      staleTag: "{{days}}d old"
     }
   },
   de: {
@@ -907,6 +925,24 @@ export const translations = {
       btnCreateFamily: "Suchfamilie anlegen",
       singleSearchesTitle: "Aktive Suchziele",
       noSearchesYet: "Noch keine Suchziele hinterlegt. Fügen Sie eine Kleinanzeigen-Such-URL hinzu oder erstellen Sie eine Suchfamilie."
+    },
+    surface: {
+      onRoute: "on route",
+      minDetour: "+{{min}}m",
+      kmDistance: "{{km}} km",
+      hoursAgo: "vor {{hours}} Std",
+      daysAgo: "vor {{days}} Tagen",
+      yesterday: "gestern",
+      today: "heute",
+      noLocation: "Ohne Ort",
+      noPrice: "VB",
+      noImage: "Kein Bild",
+      back: "Zurück",
+      close: "Schließen",
+      noMatchesInRadius: "Keine Treffer in {{radius}} km",
+      noMatches: "Keine Treffer",
+      dealsOnly: "Nur Schnäppchen",
+      staleTag: "vor {{days}} Tagen"
     }
   }
 } as const;

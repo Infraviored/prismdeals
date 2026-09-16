@@ -863,20 +863,20 @@ function thin(points, limit = 400) {
   return out;
 }
 
-async function getRouteCorridorPayload(route) {
+async function getRouteCorridorPayload(route, options = {}) {
   let plan = {};
-  try {
-    plan = JSON.parse(route.plan_json || '{}');
-  } catch (e) {
-    console.error('Failed to parse route plan_json:', e);
+  if (route.plan_json) {
+    try {
+      plan = JSON.parse(route.plan_json);
+    } catch (e) {
+      console.error('Failed to parse route plan_json:', e);
+    }
   }
 
   const circles = await query(
-    `SELECT c.route_search_id, c.search_id, c.location_id, c.label, c.radius_km,
-            s.name as search_name, s.url
-       FROM route_search_circles c
-       JOIN searches s ON s.id = c.search_id
-      WHERE c.route_search_id = ?`,
+    `SELECT search_id, radius_km, label, location_id
+       FROM route_search_circles
+      WHERE route_search_id = ?`,
     [route.id]
   );
 
@@ -901,43 +901,141 @@ async function getRouteCorridorPayload(route) {
     };
   });
 
-  // Scoped by the route's own circles, not by the campaign. Two reasons, both
-  // of which produce a wrong list rather than an error:
-  //
-  //   A route search may have no campaign (campaign_id is nullable), and
-  //   `s.campaign_id = NULL` is never true in SQL, so the corridor would come
-  //   back empty while plainly having circles and listings.
-  //
-  //   A campaign may hold ordinary searches alongside the corridor. Those
-  //   listings have no row in listing_route_geo, so they arrive with a null
-  //   detour and get shown as corridor finds that could not be placed.
-  //
-  // The Python side already scopes it this way (scraper/route_store.py).
-  const listings = await query(
-    `SELECT l.id, l.title, l.price, l.location, l.url, l.images,
-            l.extracted_facts, l.niceness_score, l.llm_processed, l.search_id,
-            s.name as search_name,
-            g.lat, g.lon, g.offroute_km, g.detour_min, g.status as geo_status
-       FROM listings l
-       JOIN route_search_circles c
-         ON c.search_id = l.search_id AND c.route_search_id = ?
-       JOIN searches s ON l.search_id = s.id
-       LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
-      ORDER BY (g.detour_min IS NULL) ASC, g.detour_min ASC, l.id DESC`,
-    [route.id, route.id]
-  );
+  // Scoped by the route's own circles, not by the campaign.
+  const whereConditions = ['c.route_search_id = ?'];
+  const whereParams = [route.id];
+
+  if (options.maxDetour !== undefined && options.maxDetour !== '') {
+    const maxDetour = parseFloat(options.maxDetour);
+    if (!isNaN(maxDetour)) {
+      whereConditions.push('g.detour_min IS NOT NULL AND g.detour_min <= ?');
+      whereParams.push(maxDetour);
+    }
+  }
+
+  if (options.q !== undefined && options.q.trim() !== '') {
+    const qVal = `%${options.q.trim()}%`;
+    whereConditions.push('(l.title LIKE ? OR l.location LIKE ?)');
+    whereParams.push(qVal, qVal);
+  }
+
+  if (options.term !== undefined && options.term !== '') {
+    const termVal = options.term;
+    const termNum = parseInt(termVal, 10);
+    if (!isNaN(termNum) && String(termNum) === String(termVal).trim()) {
+      whereConditions.push('(sfs.term_id = ? OR t.term = ? OR t.label = ?)');
+      whereParams.push(termNum, termVal, termVal);
+    } else {
+      whereConditions.push('(t.term = ? OR t.label = ?)');
+      whereParams.push(termVal, termVal);
+    }
+  }
+
+  const whereSql = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+
+  const totalCountSql = `
+    SELECT COUNT(DISTINCT l.id) AS total
+      FROM listings l
+      JOIN route_search_circles c ON c.search_id = l.search_id
+      JOIN searches s ON l.search_id = s.id
+      LEFT JOIN search_family_searches sfs ON sfs.search_id = l.search_id
+      LEFT JOIN search_family_terms t ON t.id = sfs.term_id
+      LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
+     ${whereSql}
+  `;
+  const totalRow = await get(totalCountSql, [route.id, ...whereParams]);
+  const total = totalRow ? Number(totalRow.total || 0) : 0;
+
+  let orderBy = '';
+  const sort = options.sort;
+  if (sort === 'price_asc') {
+    orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+  } else if (sort === 'price_desc') {
+    orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, l.id DESC';
+  } else if (sort === 'newest' || sort === 'freshness') {
+    orderBy = 'first_seen_at DESC, l.id DESC';
+  } else if (sort === 'score') {
+    orderBy = '(l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
+  } else {
+    orderBy = '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
+  }
+
+  const limit = Math.max(1, parseInt(options.limit, 10) || 50);
+  const offset = options.offset ? Math.max(0, parseInt(options.offset, 10) || 0) : 0;
+
+  const listingsSql = `
+    SELECT l.id, l.title, l.price, l.price_eur, l.location, l.url,
+           l.short_description, l.detailed_description, l.details,
+           l.extracted_facts, l.niceness_score, l.llm_processed,
+           l.llm_processed_time, l.full_info_obtained, l.status,
+           l.search_id, l.images, l.last_description_changed_at,
+           l.last_ai_evaluated_at, l.last_seen_at, l.delisted_at,
+           l.source, l.source_id,
+           MAX(lsh.first_seen_at) AS first_seen_at,
+           s.name as search_name,
+           g.lat, g.lon, g.offroute_km, g.detour_min, g.status as geo_status
+      FROM listings l
+      JOIN route_search_circles c ON c.search_id = l.search_id
+      JOIN searches s ON l.search_id = s.id
+      LEFT JOIN search_family_searches sfs ON sfs.search_id = l.search_id
+      LEFT JOIN search_family_terms t ON t.id = sfs.term_id
+      LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = c.search_id
+      LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
+     ${whereSql}
+     GROUP BY l.id
+     ORDER BY ${orderBy}
+     LIMIT ? OFFSET ?
+  `;
+
+  const listings = await query(listingsSql, [route.id, ...whereParams, limit, offset]);
 
   const parsedListings = listings.map(l => ({
     ...l,
     images: JSON.parse(l.images || '[]'),
+    details: JSON.parse(l.details || '{}'),
     extracted_facts: JSON.parse(l.extracted_facts || '{}'),
     llm_processed: !!l.llm_processed,
+    full_info_obtained: !!l.full_info_obtained,
+    matched_terms: []
   }));
+
+  if (parsedListings.length > 0 && route.family_id) {
+    const listingIds = parsedListings.map(l => l.id);
+    const termsByListing = {};
+    const CHUNK_SIZE = 500;
+
+    for (let i = 0; i < listingIds.length; i += CHUNK_SIZE) {
+      const chunk = listingIds.slice(i, i + CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(',');
+      const termsRows = await query(
+        `SELECT DISTINCT lsh.listing_id, t.id AS term_id, COALESCE(t.label, t.term) AS label
+           FROM search_family_searches sfs
+           JOIN search_family_terms t ON t.id = sfs.term_id
+           JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+          WHERE sfs.family_id = ? AND lsh.listing_id IN (${placeholders})
+          ORDER BY t.position ASC, t.id ASC`,
+        [route.family_id, ...chunk]
+      );
+
+      for (const tr of termsRows) {
+        if (!termsByListing[tr.listing_id]) termsByListing[tr.listing_id] = [];
+        termsByListing[tr.listing_id].push({
+          id: tr.term_id,
+          label: tr.label
+        });
+      }
+    }
+
+    for (const l of parsedListings) {
+      l.matched_terms = termsByListing[l.id] || [];
+    }
+  }
 
   return {
     route: {
       id: route.id,
       campaign_id: route.campaign_id,
+      family_id: route.family_id || null,
       name: route.name,
       // The search this corridor re-aims. Sent so the corridor can be redrawn
       // from the results without asking for it again.
@@ -951,9 +1049,12 @@ async function getRouteCorridorPayload(route) {
       polyline: thin(plan.polyline),
       circles: enrichedCircles,
     },
+    total,
+    offset,
+    limit,
     listings: parsedListings,
     counts: {
-      total: parsedListings.length,
+      total,
       routed: parsedListings.filter(l => l.detour_min !== null).length,
       unplaced: parsedListings.filter(l => l.lat === null).length,
     }
@@ -970,7 +1071,7 @@ app.get('/api/campaigns/:id/route', async (req, res) => {
     if (!route) {
       return res.status(404).json({ error: 'No route corridor found for this campaign.' });
     }
-    const data = await getRouteCorridorPayload(route);
+    const data = await getRouteCorridorPayload(route, req.query);
     res.json(data);
   } catch (error) {
     console.error('Error fetching campaign route:', error);
@@ -985,7 +1086,7 @@ app.get('/api/route-searches/:id', async (req, res) => {
     if (!route) {
       return res.status(404).json({ error: 'Route search not found.' });
     }
-    const data = await getRouteCorridorPayload(route);
+    const data = await getRouteCorridorPayload(route, req.query);
     res.json(data);
   } catch (error) {
     console.error('Error fetching route search:', error);
@@ -1643,46 +1744,100 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     );
     const routeId = route ? route.id : null;
 
-    const totalRow = await get(
-      `SELECT COUNT(DISTINCT l.id) AS total
-         FROM search_family_searches sfs
-         JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-         JOIN listings l ON l.id = lsh.listing_id
-        WHERE sfs.family_id = ?`,
-      [fam.id]
-    );
+    const whereConditions = ['sfs.family_id = ?'];
+    const whereParams = [fam.id];
+
+    // Filter by term
+    if (req.query.term !== undefined && req.query.term !== '') {
+      const termVal = req.query.term;
+      const termNum = parseInt(termVal, 10);
+      if (!isNaN(termNum) && String(termNum) === String(termVal).trim()) {
+        whereConditions.push('(sfs.term_id = ? OR t.term = ? OR t.label = ?)');
+        whereParams.push(termNum, termVal, termVal);
+      } else {
+        whereConditions.push('(t.term = ? OR t.label = ?)');
+        whereParams.push(termVal, termVal);
+      }
+    }
+
+    // Filter by maxDetour
+    if (req.query.maxDetour !== undefined && req.query.maxDetour !== '') {
+      const maxDetour = parseFloat(req.query.maxDetour);
+      if (!isNaN(maxDetour)) {
+        whereConditions.push('g.detour_min IS NOT NULL AND g.detour_min <= ?');
+        whereParams.push(maxDetour);
+      }
+    }
+
+    // Filter by search query q
+    if (req.query.q !== undefined && req.query.q.trim() !== '') {
+      const qVal = `%${req.query.q.trim()}%`;
+      whereConditions.push('(l.title LIKE ? OR l.location LIKE ?)');
+      whereParams.push(qVal, qVal);
+    }
+
+    const whereSql = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+
+    // Total count query after filters
+    const totalCountSql = `
+      SELECT COUNT(DISTINCT l.id) AS total
+        FROM search_family_searches sfs
+        LEFT JOIN search_family_terms t ON t.id = sfs.term_id
+        JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+        JOIN listings l ON l.id = lsh.listing_id
+        LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
+       ${whereSql}
+    `;
+    const totalRow = await get(totalCountSql, [routeId, ...whereParams]);
     const total = totalRow ? Number(totalRow.total || 0) : 0;
 
-    let sql = `
-      SELECT l.*,
-             s.name as search_name,
-             g.lat, g.lon, g.offroute_km, g.detour_min, g.status as geo_status
-        FROM (
-          SELECT DISTINCT lsh.listing_id
-            FROM search_family_searches sfs
-            JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-           WHERE sfs.family_id = ?
-        ) hits
-        JOIN listings l ON l.id = hits.listing_id
+    // Sorting
+    let orderBy = '';
+    const sort = req.query.sort;
+    if (sort === 'price_asc') {
+      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+    } else if (sort === 'price_desc') {
+      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, l.id DESC';
+    } else if (sort === 'newest' || sort === 'freshness') {
+      orderBy = 'first_seen_at DESC, l.id DESC';
+    } else if (sort === 'score') {
+      orderBy = '(l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
+    } else if (sort === 'detour' || sort === 'route') {
+      orderBy = '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
+    } else if (routeId) {
+      orderBy = '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
+    } else {
+      orderBy = 'l.niceness_score DESC, l.id DESC';
+    }
+
+    // Pagination (default limit 50, offset 0)
+    const limit = Math.max(1, parseInt(req.query.limit, 10) || 50);
+    const offset = req.query.offset ? Math.max(0, parseInt(req.query.offset, 10) || 0) : 0;
+
+    const listingsSql = `
+      SELECT l.id, l.title, l.price, l.price_eur, l.location, l.url,
+             l.short_description, l.detailed_description, l.details,
+             l.extracted_facts, l.niceness_score, l.llm_processed,
+             l.llm_processed_time, l.full_info_obtained, l.status,
+             l.search_id, l.images, l.last_description_changed_at,
+             l.last_ai_evaluated_at, l.last_seen_at, l.delisted_at,
+             l.source, l.source_id,
+             MAX(lsh.first_seen_at) AS first_seen_at,
+             s.name AS search_name,
+             g.lat, g.lon, g.offroute_km, g.detour_min, g.status AS geo_status
+        FROM search_family_searches sfs
+        LEFT JOIN search_family_terms t ON t.id = sfs.term_id
+        JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+        JOIN listings l ON l.id = lsh.listing_id
         LEFT JOIN searches s ON s.id = l.search_id
         LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
+       ${whereSql}
+       GROUP BY l.id
+       ORDER BY ${orderBy}
+       LIMIT ? OFFSET ?
     `;
-    const params = [fam.id, routeId];
 
-    if (routeId) {
-      sql += ' ORDER BY (g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
-    } else {
-      sql += ' ORDER BY l.niceness_score DESC, l.id DESC';
-    }
-
-    if (req.query.limit !== undefined && req.query.limit !== '') {
-      const limit = Math.max(1, parseInt(req.query.limit, 10) || 50);
-      const offset = req.query.offset ? Math.max(0, parseInt(req.query.offset, 10) || 0) : 0;
-      sql += ' LIMIT ? OFFSET ?';
-      params.push(limit, offset);
-    }
-
-    const rows = await query(sql, params);
+    const rows = await query(listingsSql, [routeId, ...whereParams, limit, offset]);
 
     const listings = rows.map(r => ({
       ...r,
@@ -1726,7 +1881,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
       }
     }
 
-    res.json({ total, listings });
+    res.json({ total, offset, limit, listings });
   } catch (error) {
     console.error('Error fetching family listings:', error);
     res.status(500).json({ error: 'Failed to fetch family listings' });
