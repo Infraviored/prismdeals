@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import type { Campaign, KnowledgeSet, SearchTarget, Listing } from '../types';
-import type { RouteCorridorData } from '../components/RouteResultsView';
+import type { RouteCorridorData } from '../screens/ResultsScreen';
 import { transformListing } from '../utils/listingTransformer';
 
 interface UseAppDataProps {
@@ -50,25 +50,34 @@ export function useAppData({
       setSearches(searchesData);
       setKnowledgeSets(ksData);
       setListings(listingsData.map((l: Listing) => transformListing(l, searchesData, ksData)));
-      if (campaignsData.length > 0 && currentCampaignId === null) {
+      const hashCid = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.hash.split('?')[1] || '').get('campaignId')
+        : null;
+      if (campaignsData.length > 0 && currentCampaignId === null && !hashCid) {
         setCurrentCampaignId(campaignsData[0].id);
       }
     }).catch(err => console.error('Error refreshing:', err));
   }, [currentCampaignId, setCurrentCampaignId]);
 
+  const refreshAllRef = React.useRef(refreshAll);
   useEffect(() => {
-    if (!appUser) return;
-    refreshAll();
-  }, [appUser, refreshAll]);
+    refreshAllRef.current = refreshAll;
+  }, [refreshAll]);
 
   useEffect(() => {
-    if (currentCampaignId && view === 'dashboard') {
+    if (!appUser) return;
+    refreshAllRef.current();
+  }, [appUser]);
+
+  useEffect(() => {
+    if (currentCampaignId && view === 'dashboard' && searches.length > 0) {
       const campaignSearches = searches.filter(s => s.campaign_id === currentCampaignId);
-      if (campaignSearches.length === 0) {
+      const c = campaigns.find(item => item.id === currentCampaignId);
+      if (campaignSearches.length === 0 && !c?.route_id && !c?.family_id) {
         navigate('edit', currentCampaignId, null);
       }
     }
-  }, [currentCampaignId, searches, view, navigate]);
+  }, [currentCampaignId, searches, campaigns, view, navigate]);
 
   useEffect(() => {
     if (!currentCampaignId) {

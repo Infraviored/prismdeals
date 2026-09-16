@@ -349,7 +349,12 @@ export const translations = {
       resetFilters: "Reset filters",
       matchedModel: "Model: {{model}}",
       allModels: "All models ({{count}})",
-      filterByModel: "Models:"
+      filterByModel: "Models:",
+      ageSinceMinutes: "{{n}} min ago",
+      ageSinceHours: "{{n}} h ago",
+      ageSinceDays: "{{n}} d ago",
+      ageSinceWeeks: "{{n}} w ago",
+      modelsOverflow: "+ {{n}} more"
     },
     searchFamily: {
       editorTitle: "Search Family",
@@ -800,7 +805,12 @@ export const translations = {
       resetFilters: "Filter zurücksetzen",
       matchedModel: "Modell: {{model}}",
       allModels: "Alle Modelle ({{count}})",
-      filterByModel: "Modelle:"
+      filterByModel: "Modelle:",
+      ageSinceMinutes: "vor {{n}} Min.",
+      ageSinceHours: "vor {{n}} Std.",
+      ageSinceDays: "vor {{n}} T.",
+      ageSinceWeeks: "vor {{n}} W.",
+      modelsOverflow: "+ {{n}} weitere"
     },
     searchFamily: {
       editorTitle: "Suchfamilie",

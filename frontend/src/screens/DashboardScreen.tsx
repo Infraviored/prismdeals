@@ -47,7 +47,7 @@ interface DashboardScreenProps {
   onStartScrape: () => void
   onStartDeepUpdate: () => void
   onStartProcess: () => void
-  // Route/Family mode (shows RouteResultsView)
+  // Route/Family mode (shows ResultsScreen)
   isRouteOrFamilyMode: boolean
   onEvaluateWithAi: () => void
   onEditFamily: () => void

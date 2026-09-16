@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { ScraperProgressCardProps } from '../types';
 
 interface UseScraperControlProps {
@@ -18,6 +18,13 @@ export function useScraperControl({
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('');
   const [activeProcessingListingIds, setActiveProcessingListingIds] = useState<string[]>([]);
+
+  const refreshAllRef = useRef(refreshAll);
+  const onScrapeCompletedRef = useRef(onScrapeCompleted);
+  useEffect(() => {
+    refreshAllRef.current = refreshAll;
+    onScrapeCompletedRef.current = onScrapeCompleted;
+  }, [refreshAll, onScrapeCompleted]);
 
   // Scraper polling
   useEffect(() => {
@@ -39,8 +46,8 @@ export function useScraperControl({
           setIsScraping(false);
           setScrapingProgress(null);
           setScrapingStatus('Scraping completed!');
-          refreshAll();
-          onScrapeCompleted?.();
+          refreshAllRef.current();
+          onScrapeCompletedRef.current?.();
         }
       } catch {
         // silent
@@ -49,7 +56,7 @@ export function useScraperControl({
     check();
     const id = setInterval(check, 1500);
     return () => clearInterval(id);
-  }, [isScraping, refreshAll, onScrapeCompleted]);
+  }, [isScraping]);
 
   // AI processing polling
   useEffect(() => {
@@ -60,7 +67,7 @@ export function useScraperControl({
         const data = await res.json();
         setActiveProcessingListingIds(prev => {
           const finished = prev.filter(id => !data.active.includes(id));
-          if (finished.length > 0) refreshAll();
+          if (finished.length > 0) refreshAllRef.current();
           return data.active;
         });
       } catch {
@@ -70,7 +77,7 @@ export function useScraperControl({
     check();
     const id = setInterval(check, 2000);
     return () => clearInterval(id);
-  }, [refreshAll]);
+  }, []);
 
   const handleStartScrape = async (campaignId: number | null) => {
     setIsScraping(true);
