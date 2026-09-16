@@ -5,7 +5,6 @@ interface RouteModeViewProps {
   campaign: Campaign | undefined
   campaignId: number | null
   onBack: () => void
-  onConfigure: () => void
   onEvaluateWithAi: () => void
   isScraping: boolean
   onStartScrape: () => void
@@ -21,7 +20,6 @@ export default function RouteModeView({
   campaign,
   campaignId,
   onBack,
-  onConfigure,
   onEvaluateWithAi,
   isScraping,
   onStartScrape,
@@ -38,7 +36,6 @@ export default function RouteModeView({
       campaignName={campaign?.name || ''}
       familyId={campaign?.family_id ?? undefined}
       onBack={onBack}
-      onConfigure={onConfigure}
       onEvaluateWithAi={onEvaluateWithAi}
       isScraping={isScraping}
       onStartScrape={onStartScrape}

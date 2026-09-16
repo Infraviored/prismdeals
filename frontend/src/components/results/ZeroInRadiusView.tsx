@@ -353,9 +353,6 @@ export default function ZeroInRadiusView({
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-xs text-text-secondary leading-relaxed">
-              {t('searchFamily.diagnosePrompt')}
-            </p>
             <Button
               id="btn-diagnose-radius"
               variant="primary"

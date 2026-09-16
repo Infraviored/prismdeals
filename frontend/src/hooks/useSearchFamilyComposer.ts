@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { SearchFamilyTerm } from '../types';
 import type { Place } from '../components/PlaceInput';
 import { decomposeSearchUrl, composeSearchUrl, slugify } from '../utils/searchUrl';
@@ -28,6 +28,7 @@ export function useSearchFamilyComposer({
   const [locationId, setLocationId] = useState<string | null>(null);
   const [locationSlug, setLocationSlug] = useState<string | null>(null);
   const [radius, setRadius] = useState<number>(30);
+  const lookupSeq = useRef(0);
   const [minPrice, setMinPrice] = useState<number | null>(null);
   const [maxPrice, setMaxPrice] = useState<number | null>(null);
   const [query, setQuery] = useState<string | null>(null);
@@ -126,30 +127,34 @@ export function useSearchFamilyComposer({
       if (!newPlace) {
         setLocationId(null);
         setLocationSlug(null);
+        setBaseUrl('');
         return;
       }
 
+      const seq = ++lookupSeq.current;
       const slug = slugify(newPlace.name);
       setLocationSlug(slug);
 
-      let resolvedId = locationId;
+      let resolvedId: string | null = null;
       try {
         const queryParam = newPlace.postal_code || newPlace.name;
         const res = await fetch(`/api/locations/resolve?postal_code=${encodeURIComponent(queryParam)}`);
+        if (seq !== lookupSeq.current) return;
         if (res.ok) {
           const data = await res.json();
           if (data && data.location_id) {
-            resolvedId = data.location_id;
-            setLocationId(resolvedId);
+            resolvedId = String(data.location_id);
           }
         }
       } catch {
-        // Fall back to existing location ID
+        // Fall back to null on failure
       }
 
+      if (seq !== lookupSeq.current) return;
+      setLocationId(resolvedId);
       recompose(slug, resolvedId, radius, minPrice, maxPrice);
     },
-    [locationId, radius, minPrice, maxPrice, recompose]
+    [radius, minPrice, maxPrice, recompose]
   );
 
   const handleRadiusChange = useCallback(

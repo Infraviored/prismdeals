@@ -81,7 +81,7 @@ describe('searchUrl utilities', () => {
         radius: 20,
         minPrice: 100,
         maxPrice: 600,
-        query: 'muenchen',
+        query: 'laptop',
         category: '278',
       });
     });

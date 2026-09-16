@@ -133,8 +133,15 @@ export default function SearchFamilyEditor({
     return () => clearTimeout(timer);
   }, [baseUrl, activeTermLabelsKey, routeSearchId, loadPreview]);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, []);
+
   const disabledReason = useMemo(() => {
     if (!name.trim()) return t('searchFamily.saveDisabledNoName');
+    if (minPrice !== null && maxPrice !== null && minPrice > maxPrice) {
+      return t('searchFamily.invalidPriceRange');
+    }
     if (!place && !locationId && !locationSlug && !baseUrl.trim()) {
       return t('searchFamily.saveDisabledNoLocation');
     }
@@ -143,7 +150,7 @@ export default function SearchFamilyEditor({
     if (previewLoading) return t('searchFamily.saveDisabledPreviewLoading');
     if (previewError) return t('searchFamily.saveDisabledPreviewError');
     return null;
-  }, [name, place, locationId, locationSlug, baseUrl, terms.length, activeTerms.length, previewLoading, previewError, t]);
+  }, [name, minPrice, maxPrice, place, locationId, locationSlug, baseUrl, terms.length, activeTerms.length, previewLoading, previewError, t]);
 
   const isSaveDisabled = disabledReason !== null || saving;
 

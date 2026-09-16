@@ -2,6 +2,14 @@ const express = require('express');
 const assert = require('assert');
 const router = require('./location_resolver');
 
+// Mock external HTTP requests for hermetic unit testing (Finding 10)
+router._setFetchJsonForTest(async (url) => {
+  if (url.includes('86899') || url.includes('Landsberg')) {
+    return { _0: 'Deutschland', _7091: '86899 Landsberg (Lech)' };
+  }
+  return {};
+});
+
 async function test() {
   const app = express();
   app.use(router);
@@ -27,6 +35,10 @@ async function test() {
     // Test 3: Missing parameter returns 400
     const resBad = await fetch(`http://localhost:${port}/api/locations/resolve`);
     assert.strictEqual(resBad.status, 400, 'Expected 400 for empty query');
+
+    // Test 4: Unknown slug returns 404 (Finding 11)
+    const resUnknownSlug = await fetch(`http://localhost:${port}/api/locations/resolve?slug=unknown-city-xyz`);
+    assert.strictEqual(resUnknownSlug.status, 404, 'Expected 404 for unknown slug');
 
     console.log('All backend location resolver tests passed.');
   } finally {

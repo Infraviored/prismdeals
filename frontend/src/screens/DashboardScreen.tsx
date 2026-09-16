@@ -163,7 +163,6 @@ export default function DashboardScreen({
         campaign={campaign}
         campaignId={campaignId}
         onBack={onBack}
-        onConfigure={onConfigure}
         onEvaluateWithAi={onEvaluateWithAi}
         isScraping={isScraping}
         onStartScrape={onStartScrape}
@@ -225,6 +224,13 @@ export default function DashboardScreen({
       disabled: isScraping || isProcessing,
       variant: 'action-indigo',
     },
+    {
+      id: 'campaign-settings',
+      labelKey: 'landing.configureTooltip',
+      icon: Settings,
+      handler: onConfigure,
+      variant: 'secondary',
+    },
   ]
 
   return (
@@ -246,17 +252,6 @@ export default function DashboardScreen({
             <h2 className="text-xl font-bold text-white">
               {campaign?.name} {t('listing.dashboardTitle')}
             </h2>
-            {/* Single settings entry point — no duplicate gear icons */}
-            <Button
-              variant="icon"
-              size="xs"
-              data-testid="campaign-settings-btn"
-              onClick={onConfigure}
-              title={t('landing.configureTooltip')}
-              className="p-1.5 border-border-subtle hover:border-brand-accent/30"
-            >
-              <Settings className="w-4 h-4 transition-transform duration-500 hover:rotate-90 text-text-muted hover:text-brand-accent" />
-            </Button>
           </div>
         </div>
 

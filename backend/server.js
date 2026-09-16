@@ -1543,6 +1543,10 @@ app.put('/api/search-families/:id', async (req, res) => {
       return res.status(404).json({ error: 'Search family not found' });
     }
 
+    if (req.body && req.body.base_url && !isValidScrapeUrl(req.body.base_url)) {
+      return res.status(400).json({ error: 'Only kleinanzeigen.de search URLs are supported' });
+    }
+
     const args = [
       '--mode', 'family-update',
       '--family-id', String(req.params.id),

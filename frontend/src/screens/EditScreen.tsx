@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { Campaign, SearchTarget, KnowledgeSet, SampleListing } from '../types'
 import type { RouteCorridorData } from '../screens/ResultsScreen'
 import type { Place } from '../components/PlaceInput'
@@ -148,6 +148,10 @@ export default function EditScreen({
   const { t } = useTranslation()
   const [editTab, setEditTab] = useState<EditTab>('terms')
   const [isEditingCampaignName, setIsEditingCampaignName] = useState(false)
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+  }, [editTab])
 
   const campaignId = campaign?.id ?? null
   const activeSearches = searches.filter(s => s.campaign_id === campaignId)

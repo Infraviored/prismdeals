@@ -20,6 +20,7 @@ export default function ScreenActionBar({ actions, className }: ScreenActionBarP
           return (
             <Button
               key={action.id}
+              data-testid={`screen-action-${action.id}`}
               variant={action.variant || 'primary'}
               size="sm"
               onClick={action.handler}

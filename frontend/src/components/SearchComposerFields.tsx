@@ -142,15 +142,21 @@ export default function SearchComposerFields({
               />
             </div>
           </div>
-          <p className="text-2xs text-text-muted leading-tight">
-            {minPrice !== null && maxPrice !== null
-              ? t('searchFamily.priceRange', { min: minPrice, max: maxPrice })
-              : maxPrice !== null
-              ? t('searchFamily.priceUpTo', { max: maxPrice })
-              : minPrice !== null
-              ? t('searchFamily.priceFrom', { min: minPrice })
-              : t('searchFamily.noPriceLimit')}
-          </p>
+          {minPrice !== null && maxPrice !== null && minPrice > maxPrice ? (
+            <p className="text-2xs text-status-danger font-semibold leading-tight">
+              {t('searchFamily.invalidPriceRange')}
+            </p>
+          ) : (
+            <p className="text-2xs text-text-muted leading-tight">
+              {minPrice !== null && maxPrice !== null
+                ? t('searchFamily.priceRange', { min: minPrice, max: maxPrice })
+                : maxPrice !== null
+                ? t('searchFamily.priceUpTo', { max: maxPrice })
+                : minPrice !== null
+                ? t('searchFamily.priceFrom', { min: minPrice })
+                : t('searchFamily.noPriceLimit')}
+            </p>
+          )}
         </div>
       </div>
 

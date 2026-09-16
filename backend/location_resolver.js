@@ -5,7 +5,7 @@
 // which returns mappings like {"_0": "Deutschland", "_7091": "86899 Landsberg (Lech)"}.
 //
 // This module caches queries in memory and enforces a strict rate limit
-// (at most one request per 1.05 seconds) to respect the origin site.
+// (at most one request per 1.05 seconds) via serialized promise queue.
 
 const express = require('express');
 const https = require('https');
@@ -14,8 +14,17 @@ const places = require('./places');
 const router = express.Router();
 
 const cache = new Map();
+const MAX_CACHE_ENTRIES = 500;
 let lastRequestTime = 0;
 const MIN_INTERVAL_MS = 1050;
+
+function setCached(key, val) {
+  if (cache.size >= MAX_CACHE_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    cache.delete(oldestKey);
+  }
+  cache.set(key, val);
+}
 
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0',
@@ -27,7 +36,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function fetchJson(url) {
+let fetchJsonImpl = function defaultFetchJson(url) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: BROWSER_HEADERS, timeout: 10000 }, (res) => {
       if (res.statusCode !== 200) {
@@ -51,6 +60,22 @@ function fetchJson(url) {
       reject(new Error('Request timeout'));
     });
   });
+};
+
+let queuePromise = Promise.resolve();
+
+function scheduleSerialized(fn) {
+  const run = queuePromise.then(async () => {
+    const now = Date.now();
+    const waitMs = Math.max(0, MIN_INTERVAL_MS - (now - lastRequestTime));
+    if (waitMs > 0) {
+      await sleep(waitMs);
+    }
+    lastRequestTime = Date.now();
+    return fn();
+  });
+  queuePromise = run.catch(() => {});
+  return run;
 }
 
 async function queryOrtEmpfehlungen(query) {
@@ -62,36 +87,35 @@ async function queryOrtEmpfehlungen(query) {
     return cache.get(cacheKey);
   }
 
-  const now = Date.now();
-  const waitMs = Math.max(0, MIN_INTERVAL_MS - (now - lastRequestTime));
-  if (waitMs > 0) {
-    await sleep(waitMs);
-  }
-  lastRequestTime = Date.now();
+  return scheduleSerialized(async () => {
+    if (cache.has(cacheKey)) {
+      return cache.get(cacheKey);
+    }
 
-  const url = `https://www.kleinanzeigen.de/s-ort-empfehlungen.json?query=${encodeURIComponent(q)}`;
-  try {
-    const data = await fetchJson(url);
-    if (!data || typeof data !== 'object') {
+    const url = `https://www.kleinanzeigen.de/s-ort-empfehlungen.json?query=${encodeURIComponent(q)}`;
+    try {
+      const data = await fetchJsonImpl(url);
+      if (!data || typeof data !== 'object') {
+        return null;
+      }
+
+      let resolved = null;
+      for (const [key, label] of Object.entries(data)) {
+        const id = key.replace(/^_/, '');
+        if (id === '0' || !/^\d+$/.test(id)) continue;
+        resolved = { location_id: id, label: String(label) };
+        break;
+      }
+
+      if (resolved) {
+        setCached(cacheKey, resolved);
+      }
+      return resolved;
+    } catch (err) {
+      console.error('Failed to query s-ort-empfehlungen.json:', err.message);
       return null;
     }
-
-    let resolved = null;
-    for (const [key, label] of Object.entries(data)) {
-      const id = key.replace(/^_/, '');
-      if (id === '0' || !/^\d+$/.test(id)) continue;
-      resolved = { location_id: id, label: String(label) };
-      break;
-    }
-
-    if (resolved) {
-      cache.set(cacheKey, resolved);
-    }
-    return resolved;
-  } catch (err) {
-    console.error('Failed to query s-ort-empfehlungen.json:', err.message);
-    return null;
-  }
+  });
 }
 
 router.get('/api/locations/resolve', async (req, res) => {
@@ -110,6 +134,7 @@ router.get('/api/locations/resolve', async (req, res) => {
         label: resolved ? resolved.label : top.label,
       });
     }
+    return res.status(404).json({ error: `Location slug not found: ${slug}` });
   }
 
   if (!query) {
@@ -123,5 +148,9 @@ router.get('/api/locations/resolve', async (req, res) => {
 
   res.json(resolved);
 });
+
+router._setFetchJsonForTest = (mockFn) => {
+  fetchJsonImpl = mockFn;
+};
 
 module.exports = router;

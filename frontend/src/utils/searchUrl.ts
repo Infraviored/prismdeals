@@ -5,7 +5,7 @@
  * https://www.kleinanzeigen.de/s-<ort-slug>/[preis:a:b/][<suchbegriff-slug>/]k0[c<kategorie>]l<ort-id>r<radius>
  */
 
-const TAIL_REGEX = /(?:k0)?(?:c(?<cat>\d+))?(?:l(?<loc>\d+))?(?:r(?<rad>\d+))?$/;
+const TAIL_REGEX = /^(?:k\d+)(?:c(?<cat>\d+))?(?:l(?<loc>\d+))?(?:r(?<rad>\d+))?$/;
 const PRICE_REGEX = /^preis:(\d*(?:\.\d+)?)?:(\d*(?:\.\d+)?)?$/;
 
 export interface DecomposedSearchUrl {
@@ -56,18 +56,10 @@ export function parseTail(url: string): {
     if (segments.length === 0) return null;
 
     const tailSeg = segments[segments.length - 1];
-    if (!tailSeg.includes('k0') && !tailSeg.includes('l') && !tailSeg.includes('r') && !tailSeg.includes('c')) {
-      return null;
-    }
-
     const match = TAIL_REGEX.exec(tailSeg);
     if (!match || !match.groups) return null;
 
     const { cat, loc, rad } = match.groups;
-    if (!cat && !loc && !rad && !tailSeg.startsWith('k0')) {
-      return null;
-    }
-
     return {
       category: cat || null,
       location: loc ? `l${loc}` : null,
@@ -122,7 +114,6 @@ export function decomposeSearchUrl(url: string): DecomposedSearchUrl | null {
       const seg = segments[i];
       if (!seg.includes(':') && seg !== tailSeg) {
         query = seg;
-        break;
       }
     }
 
@@ -146,6 +137,7 @@ function formatPriceSegment(minPrice?: number | null, maxPrice?: number | null):
   const pMin = minPrice !== null && minPrice !== undefined && !isNaN(Number(minPrice)) ? Math.round(Number(minPrice)) : null;
   const pMax = maxPrice !== null && maxPrice !== undefined && !isNaN(Number(maxPrice)) ? Math.round(Number(maxPrice)) : null;
   if (pMin === null && pMax === null) return null;
+  if (pMin !== null && pMax !== null && pMin > pMax) return null;
   return `preis:${pMin !== null ? pMin : ''}:${pMax !== null ? pMax : ''}`;
 }
 

@@ -189,8 +189,9 @@ def with_price(url, min_price=None, max_price=None):
         if price_idx is not None:
             segments[price_idx] = price_segment
         else:
-            # Insert right after root slug (e.g. /s-landsberg-am-lech/ -> index 2)
-            segments.insert(2, price_segment)
+            # Insert right after root slug if present, otherwise before tail
+            insert_idx = min(2, max(1, len(segments) - 1))
+            segments.insert(insert_idx, price_segment)
 
     new_path = "/".join(segments)
     return urllib.parse.urlunsplit(split._replace(path=new_path))
@@ -275,7 +276,11 @@ def compose_search_url(
     kw = "k0"
     cat = f"c{category}" if category else ""
     loc = f"l{str(location_id).lstrip('l')}" if location_id else ""
-    rad = f"r{int(round(radius))}" if radius else ""
+    rad = (
+        f"r{int(round(float(radius)))}"
+        if radius is not None and str(radius).strip() != ""
+        else ""
+    )
     tail = f"{kw}{cat}{loc}{rad}"
     segments.append(tail)
 

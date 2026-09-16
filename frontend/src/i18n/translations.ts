@@ -420,7 +420,7 @@ export const translations = {
       termHits: "{{count}} listings",
       termZeroHits: "0 listings",
       diagnosisCardTitle: "Way out with larger radius",
-      diagnosisCardSubtitle: "Genuine measured listings for the same models with wider search radius:",
+      diagnosisCardSubtitle: "Genuine measured listings for the same models at 100 km and 200 km.",
       diagnoseRadiusBtn: "Check larger radius (100 km · 200 km)",
       diagnosingRadius: "Measuring listings at 100 km and 200 km...",
       reDiagnoseRadiusBtn: "Re-measure radii",
@@ -436,6 +436,7 @@ export const translations = {
       listingCountSingular: "1 listing",
       listingCount: "{{count}} listings",
       diagnosePrompt: "Do you want to automatically check how many listings are available for these models at a search radius of 100 km and 200 km?",
+      invalidPriceRange: "Minimum price cannot be greater than maximum price",
       termTableHeader: "Model"
     },
     campaignSettings: {
@@ -891,7 +892,7 @@ export const translations = {
       termHits: "{{count}} Treffer",
       termZeroHits: "0 Treffer",
       diagnosisCardTitle: "Ausweg durch größeren Radius",
-      diagnosisCardSubtitle: "Echte gemessene Trefferzahlen derselben Modelle bei größerem Suchradius:",
+      diagnosisCardSubtitle: "Echte gemessene Trefferzahlen derselben Modelle bei 100 km und 200 km.",
       diagnoseRadiusBtn: "Größeren Radius prüfen (100 km · 200 km)",
       diagnosingRadius: "Messe Treffer bei 100 km und 200 km...",
       reDiagnoseRadiusBtn: "Erneut messen",
@@ -907,6 +908,7 @@ export const translations = {
       listingCountSingular: "1 Angebot",
       listingCount: "{{count}} Angebote",
       diagnosePrompt: "Möchten Sie automatisch prüfen, wie viele Treffer für diese Modelle bei einem Suchradius von 100 km und 200 km verfügbar sind?",
+      invalidPriceRange: "Der Mindestpreis darf nicht größer als der Höchstpreis sein",
       termTableHeader: "Modell"
     },
     campaignSettings: {

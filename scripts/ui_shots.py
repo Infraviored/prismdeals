@@ -379,7 +379,8 @@ def walk(driver, base, out_dir, width, height, db_path=None):
         opened_settings = False
         try:
             settings_btn = driver.find_element(
-                By.CSS_SELECTOR, "[data-testid='campaign-settings-btn']"
+                By.CSS_SELECTOR,
+                "[data-testid='campaign-settings-btn'], [data-testid='screen-action-family-settings'], [data-testid='screen-action-campaign-settings']",
             )
             driver.execute_script("arguments[0].click();", settings_btn)
             time.sleep(2)

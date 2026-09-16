@@ -27,7 +27,7 @@ import EmptyStateView from '../components/results/EmptyStateView';
 import ZeroInRadiusView from '../components/results/ZeroInRadiusView';
 import type { RouteCircle, RouteListingGeo } from '../components/RouteCorridorMap';
 import type { ScraperProgressCardProps, SearchFamilyTerm, SearchFamily, RadiusDiagnosis } from '../types';
-import { Search, Sparkles, SlidersHorizontal, ListFilter, MapPin, X, Navigation, Settings } from 'lucide-react';
+import { Search, Sparkles, SlidersHorizontal, ListFilter, MapPin, X, Navigation } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,7 +61,6 @@ interface ResultsScreenProps {
   familyId?: number;
   campaignName: string;
   onBack?: () => void;
-  onConfigure?: () => void;
   onEvaluateWithAi: () => void;
   isScraping: boolean;
   onStartScrape: () => void;
@@ -126,7 +125,6 @@ export default function ResultsScreen({
   familyId,
   campaignName,
   onBack,
-  onConfigure,
   onEvaluateWithAi,
   isScraping,
   onStartScrape,
@@ -482,7 +480,13 @@ export default function ResultsScreen({
       id: 'family-settings',
       labelKey: 'searchFamily.editFamily',
       icon: SlidersHorizontal,
-      handler: () => { setShowFamilyModal(true); if (onEditFamily) onEditFamily(); },
+      handler: () => {
+        if (onEditFamily) {
+          onEditFamily();
+        } else {
+          setShowFamilyModal(true);
+        }
+      },
       // Only show when a search family exists. This is the ONE entry point.
       visible: isSearchFamily,
       variant: 'secondary',
@@ -517,18 +521,6 @@ export default function ResultsScreen({
                 >
                   <span className="mr-0.5">←</span>
                   <span>{t('common.backToCampaigns')}</span>
-                </Button>
-              )}
-              {onConfigure && (
-                <Button
-                  variant="icon"
-                  size="xs"
-                  data-testid="campaign-settings-btn"
-                  onClick={onConfigure}
-                  title={t('landing.configureTooltip')}
-                  className="p-1 border-border-subtle hover:border-brand-accent/30 shrink-0"
-                >
-                  <Settings className="w-3.5 h-3.5 transition-transform duration-500 hover:rotate-90 text-text-muted hover:text-brand-accent" />
                 </Button>
               )}
               <h1 className="text-base sm:text-xl font-extrabold text-text-primary tracking-tight font-heading truncate">
