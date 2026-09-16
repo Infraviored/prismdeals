@@ -124,7 +124,7 @@ def shoot(driver, out_dir, name, settle=1.0):
     print(f"  {name}.png")
 
 
-def walk(driver, base, out_dir, width, height):
+def walk(driver, base, out_dir, width, height, db_path=None):
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import WebDriverWait
@@ -135,6 +135,23 @@ def walk(driver, base, out_dir, width, height):
     wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input")))
     print("Photographing:")
     shoot(driver, out_dir, "01-login")
+
+    # Reload before logging in, because the shot above broke the page's network.
+    #
+    # `shoot` grows the window to the full page height and saves a screenshot.
+    # After that the DOM is still live -- the fields accept input and read back
+    # correctly -- but every `fetch` from the page fails, so the login POST came
+    # back as "Network connection failed", the app stayed on the login form, and
+    # the walk gave up with "still unauthenticated" after only two images.
+    #
+    # Isolated by bisection: the same steps without the preceding `shoot` log in
+    # fine; restoring the window size afterwards does not help; navigating anew
+    # does. Whatever the screenshot does to the renderer, a fresh document
+    # survives it.
+    driver.get(base)
+    wait.until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='password']"))
+    )
 
     email = driver.find_element(By.CSS_SELECTOR, "input[type='email'], input")
     password = driver.find_element(By.CSS_SELECTOR, "input[type='password']")
@@ -158,9 +175,42 @@ def walk(driver, base, out_dir, width, height):
 
     shoot(driver, out_dir, "02-landing")
 
-    campaigns = driver.execute_script(
-        "return fetch('/api/campaigns').then(r => r.json()).catch(() => [])"
-    )
+    # Read the campaigns from the database, not through the browser.
+    #
+    # This used to be `execute_script("return fetch('/api/campaigns')...")`, which
+    # has two faults at once: `execute_script` cannot serialise the Promise it
+    # returns, so the answer arrived as None; and every in-page fetch after a
+    # `shoot` fails anyway, because saving a screenshot at full page height
+    # leaves the document alive but its network dead. Either fault alone made the
+    # walk stop with "no campaigns in the database" however many there were.
+    #
+    # We already own the database this throwaway server was pointed at, so ask it
+    # directly. No browser, nothing to break.
+    campaigns = []
+    if db_path:
+        import sqlite3
+
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            campaigns = [
+                {
+                    "id": row["id"],
+                    "route_id": row["route_id"],
+                    "family_id": row["family_id"],
+                }
+                for row in conn.execute(
+                    "SELECT c.id,"
+                    " (SELECT r.id FROM route_searches r WHERE r.campaign_id = c.id"
+                    "  ORDER BY r.id DESC LIMIT 1) AS route_id,"
+                    " (SELECT f.id FROM search_families f WHERE f.campaign_id = c.id"
+                    "  ORDER BY f.id DESC LIMIT 1) AS family_id"
+                    " FROM campaigns c ORDER BY c.id"
+                )
+            ]
+            conn.close()
+        except Exception as error:
+            print(f"  ! could not read campaigns from {db_path}: {error}")
     if not isinstance(campaigns, list) or not campaigns:
         print("  (no campaigns in the database; stopping after the landing view)")
         return
@@ -317,7 +367,7 @@ def main():
 
         driver = build_driver(args.width, args.height)
         try:
-            walk(driver, base, args.out, args.width, args.height)
+            walk(driver, base, args.out, args.width, args.height, db_path)
         finally:
             driver.quit()
 
