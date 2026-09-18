@@ -115,7 +115,6 @@ export const SurfacePreviewScreen: React.FC<SurfacePreviewScreenProps> = ({ onBa
             />
             <Pill
               label={t('surface.dealsOnly')}
-              variant="accent"
               active={dealsOnly}
               onClick={() => setDealsOnly(!dealsOnly)}
             />

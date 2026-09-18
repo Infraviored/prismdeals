@@ -124,6 +124,8 @@ button, input, select, textarea {
 .leaflet-container {
   font-family: var(--font-body) !important;
   background-color: #011f1f !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .leaflet-popup-content-wrapper {

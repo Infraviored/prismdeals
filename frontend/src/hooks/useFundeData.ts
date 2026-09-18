@@ -111,7 +111,7 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
           if (data.route) setRouteData(data as RouteCorridorData);
         }
 
-        const mapped: RowListing[] = rawListings.map((l: RouteListingGeo) => ({
+        const mapped: RowListing[] = rawListings.map((l: any) => ({
           id: String(l.id),
           title: l.title || '',
           price: l.price,
@@ -127,6 +127,13 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
           status: l.geo_status || null,
           url: l.url || undefined,
           matched_terms: Array.isArray(l.matched_terms) ? l.matched_terms : [],
+          lat: typeof l.lat === 'number' ? l.lat : null,
+          lon: typeof l.lon === 'number' ? l.lon : null,
+          description: l.detailed_description || l.short_description || l.description || null,
+          summary: l.summary || l.extracted_facts?.summary || null,
+          reference_diff: typeof l.reference_diff === 'number' ? l.reference_diff : null,
+          niceness_score: typeof l.niceness_score === 'number' ? l.niceness_score : null,
+          reference_comparison: l.reference_comparison || l.extracted_facts?.reference_comparison || null,
         }));
 
         setTotal(fetchedTotal);

@@ -15,3 +15,5 @@ export type { SheetProps } from './Sheet';
 
 export { EmptyLine } from './EmptyLine';
 export type { EmptyLineProps } from './EmptyLine';
+
+export { formatLocation } from '../../utils/formatLocation';

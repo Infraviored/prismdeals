@@ -5,7 +5,7 @@ import { FundeDetailSheet } from './FundeDetailSheet';
 import { useFundeData } from '../hooks/useFundeData';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign, SearchFamilyTerm, RadiusDiagnosis } from '../types';
-import { RefreshCw, Settings } from 'lucide-react';
+import { RefreshCw, Settings, X } from 'lucide-react';
 
 export interface FundeScreenProps {
   campaign: Campaign | undefined;
@@ -29,6 +29,8 @@ interface FundeBarActionsProps {
   termId: number | null;
   setTermId: (t: number | null) => void;
   familyTerms: SearchFamilyTerm[];
+  clusterFilterCount: number | null;
+  onClearClusterFilter: () => void;
   onStartScrape?: () => void;
   isScraping: boolean;
   onConfigure: () => void;
@@ -48,6 +50,8 @@ const FundeBarActions: React.FC<FundeBarActionsProps> = ({
   termId,
   setTermId,
   familyTerms,
+  clusterFilterCount,
+  onClearClusterFilter,
   onStartScrape,
   isScraping,
   onConfigure,
@@ -56,6 +60,17 @@ const FundeBarActions: React.FC<FundeBarActionsProps> = ({
 
   return (
     <>
+      {/* Cluster Area Filter Active Pill */}
+      {clusterFilterCount !== null && (
+        <Pill
+          label={t('surface.areaFilter', { count: clusterFilterCount })}
+          active={true}
+          icon={<X className="w-3 h-3" />}
+          onClick={onClearClusterFilter}
+          title={t('surface.clearAreaFilter')}
+        />
+      )}
+
       {/* Term / Model Filter Pills */}
       {familyTerms.length > 0 && (
         <div className="flex items-center gap-1">
@@ -86,10 +101,9 @@ const FundeBarActions: React.FC<FundeBarActionsProps> = ({
         />
       )}
 
-      {/* Deals Only Pill */}
+      {/* Deals Only Pill (Neutral active styling - NO CORAL!) */}
       <Pill
         label={t('surface.dealsOnly')}
-        variant="accent"
         active={dealsOnly}
         onClick={() => setDealsOnly(!dealsOnly)}
       />
@@ -180,6 +194,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [selectedListing, setSelectedListing] = useState<RowListing | null>(null);
+  const [clusterListingIds, setClusterListingIds] = useState<string[] | null>(null);
 
   const {
     listings,
@@ -217,7 +232,12 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   };
 
   const isCorridor = !!campaign?.route_id;
-  const hasActiveFilters = dealsOnly || termId !== null || maxDetour !== null || sort !== 'default';
+  const hasActiveFilters = dealsOnly || termId !== null || maxDetour !== null || sort !== 'default' || clusterListingIds !== null;
+
+  // Filter listings by cluster area if tapped on map
+  const activeListings = clusterListingIds
+    ? listings.filter((l) => clusterListingIds.includes(l.id))
+    : listings;
 
   const mapListings: RouteListingGeo[] = listings.map((l) => ({
     id: l.id,
@@ -225,11 +245,11 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     price: l.price || '',
     location: l.location || '',
     url: l.url || '',
-    lat: null,
-    lon: null,
+    lat: typeof l.lat === 'number' ? l.lat : null,
+    lon: typeof l.lon === 'number' ? l.lon : null,
     detour_min: l.detour_min ?? null,
     offroute_km: l.offroute_km ?? null,
-    niceness_score: null,
+    niceness_score: l.niceness_score ?? null,
     images: l.images || [],
   }));
 
@@ -241,11 +261,15 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   }));
 
   return (
-    <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col w-full">
+    <div
+      className={`w-full bg-[#011F1F] text-[#F2F5F4] flex flex-col ${
+        viewMode === 'map' ? 'h-screen overflow-hidden' : 'min-h-screen'
+      }`}
+    >
       {/* 1. Sticky Bar (48px) */}
       <Bar
         title={campaign?.name || 'Funde'}
-        count={loading && listings.length === 0 ? undefined : total}
+        count={loading && listings.length === 0 ? undefined : (clusterListingIds ? activeListings.length : total)}
         onBack={onBack}
         backLabel={t('surface.back')}
         actions={
@@ -263,6 +287,8 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             termId={termId}
             setTermId={setTermId}
             familyTerms={familyTerms}
+            clusterFilterCount={clusterListingIds ? clusterListingIds.length : null}
+            onClearClusterFilter={() => setClusterListingIds(null)}
             onStartScrape={onStartScrape}
             isScraping={isScraping}
             onConfigure={onConfigure}
@@ -282,6 +308,9 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
               const found = listings.find((l) => l.id === id);
               if (found) setSelectedListing(found);
             }}
+            onSelectCluster={(ids) => {
+              setClusterListingIds(ids);
+            }}
             originName={routeData?.route?.origin}
             destinationName={routeData?.route?.destination}
             className="w-full h-full"
@@ -289,7 +318,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         </div>
       ) : (
         <main className="w-full max-w-3xl mx-auto flex-1 flex flex-col">
-          {listings.map((listing) => (
+          {activeListings.map((listing) => (
             <Row
               key={listing.id}
               listing={listing}
@@ -298,7 +327,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
           ))}
 
           {/* Empty State */}
-          {!loading && listings.length === 0 && (
+          {!loading && activeListings.length === 0 && (
             <FundeEmptyState
               radiusDiagnosis={radiusDiagnosis}
               hasActiveFilters={hasActiveFilters}
@@ -306,13 +335,14 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
                 setDealsOnly(false);
                 setTermId(null);
                 setMaxDetour(null);
+                setClusterListingIds(null);
                 setSort('default');
               }}
             />
           )}
 
           {/* Pagination: Load More Trigger */}
-          {hasMore && (
+          {hasMore && !clusterListingIds && (
             <div className="py-4 px-4 flex justify-center items-center border-b border-white/[0.08]">
               <Pill
                 label={loadingMore ? t('surface.loading') : `${t('surface.loadMore')} (${listings.length}/${rawTotal})`}

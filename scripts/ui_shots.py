@@ -376,6 +376,40 @@ def walk(driver, base, out_dir, width, height, db_path=None):
             continue
         shoot(driver, out_dir, f"04-dashboard-{identifier}")
 
+        # Capture FundeDetailSheet by clicking the first listing row
+        try:
+            rows = driver.find_elements(By.CSS_SELECTOR, "[data-testid='listing-row']")
+            if rows:
+                driver.execute_script("arguments[0].click();", rows[0])
+                time.sleep(1.5)
+                shoot(driver, out_dir, f"04d-detail-sheet-{identifier}")
+                close_btn = driver.find_elements(
+                    By.CSS_SELECTOR, "[data-testid='surface-sheet-close']"
+                )
+                if close_btn:
+                    driver.execute_script("arguments[0].click();", close_btn[0])
+                    time.sleep(0.5)
+        except Exception as exc:
+            print(f"  ! could not open detail sheet: {exc}")
+
+        # Capture Corridor Map view by clicking the Map pill
+        if has_route:
+            try:
+                for pill in driver.find_elements(
+                    By.CSS_SELECTOR, "[data-testid='surface-pill']"
+                ):
+                    txt = (pill.text or "").strip().lower()
+                    if txt in ("karte", "map"):
+                        driver.execute_script("arguments[0].click();", pill)
+                        time.sleep(2.5)
+                        shoot(driver, out_dir, f"04c-corridor-map-{identifier}")
+                        # Switch back to list
+                        driver.execute_script("arguments[0].click();", pill)
+                        time.sleep(1)
+                        break
+            except Exception as exc:
+                print(f"  ! could not toggle map view: {exc}")
+
         # Settings via the gear, the way a person gets there.
         opened_settings = False
         try:

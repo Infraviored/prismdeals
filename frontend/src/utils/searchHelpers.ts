@@ -1,18 +1,6 @@
 import type { Campaign, SearchTarget, Listing } from '../types';
 import { formatFreshness, type TranslateFn } from './freshness';
-
-/**
- * Strips the federal state Kleinanzeigen prefixes onto a town name.
- * e.g., "Bayern - Landsberg (Lech)" -> "Landsberg (Lech)"
- */
-export function formatLocation(loc: string | null | undefined): string {
-  if (!loc) return '';
-  const dashIndex = loc.indexOf(' - ');
-  if (dashIndex !== -1) {
-    return loc.slice(dashIndex + 3).trim();
-  }
-  return loc.trim();
-}
+import { formatLocation } from './formatLocation';
 
 /**
  * Capitalizes and cleans a location slug.
