@@ -87,8 +87,9 @@ function seedDefaultUser() {
   });
 
   backfillListingTimestamps();
-  const { backfillCanonicalListings } = require('./db/backfill');
+  const { backfillCanonicalListings, backfillListingText } = require('./db/backfill');
   backfillCanonicalListings(db);
+  backfillListingText(db);
 }
 
 /**

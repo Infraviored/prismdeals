@@ -58,6 +58,23 @@ ALT_LOCATION_RE = re.compile(
 PRICE_RE = re.compile(r">\s*([\d.]+)\s*€(\s*VB)?\s*<")
 GIVEAWAY_RE = re.compile(r">\s*Zu verschenken\s*<", re.I)
 
+# Kleinanzeigen writes the Munich district names with a soft break inside them:
+# "Schwabing-<U+200B>West", "Berg-<U+200B>am-<U+200B>Laim". The character is a
+# zero-width space, so the name looks right on screen and compares wrong
+# everywhere else -- two rows that read identically do not group, a map cluster
+# splits in two, and a filter on the town misses half its rows. 489 of the 1266
+# stored listings carry one. Where the entity lost its terminating semicolon the
+# page ships the literal text "&#8203" instead, which BeautifulSoup leaves
+# standing; 56 rows show it.
+_INVISIBLE = {ord(c): None for c in "\u200b\u200c\u200d\ufeff"}
+
+
+def clean_text(value):
+    """Decodes entities and drops the invisible characters the page injects."""
+    if not value:
+        return value
+    return html_module.unescape(value).translate(_INVISIBLE).strip()
+
 
 EMPTY_RE = re.compile(
     r"Es wurden keine Ergebnisse|leider keine Ergebnisse", re.IGNORECASE
@@ -145,7 +162,7 @@ def _title_and_description(segment):
         except ValueError:
             continue
         if block.get("title"):
-            return block.get("title"), block.get("description")
+            return clean_text(block.get("title")), clean_text(block.get("description"))
     return None, None
 
 
@@ -159,8 +176,8 @@ def parse(page_html):
         match = ALT_LOCATION_RE.search(segment)
         if match:
             state, location = (
-                match.group(1),
-                html_module.unescape(match.group(2)).strip(),
+                clean_text(match.group(1)),
+                clean_text(match.group(2)),
             )
 
         price = None

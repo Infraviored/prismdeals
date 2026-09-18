@@ -354,3 +354,37 @@ def test_a_place_carries_everything_the_planner_and_the_list_need():
 def test_a_single_character_suggests_nothing():
     """Every place in the country is not a suggestion."""
     assert geo.places().suggest("L") == []
+
+
+def test_the_invisible_break_inside_a_district_name_is_removed():
+    """Munich districts arrive with a zero-width space inside the name.
+
+    "Schwabing-<U+200B>West" looks correct and compares wrong: 489 of the 1266
+    stored listings carry one, so a filter on the town misses half its rows and
+    a map cluster splits in two. Where the entity lost its semicolon the page
+    ships the literal "&#8203", which the HTML parser leaves standing -- another
+    56 rows.
+    """
+    assert result_list.clean_text("80796 Schwabing-​West") == "80796 Schwabing-West"
+    assert (
+        result_list.clean_text("80803 Schwabing-&#8203Freimann")
+        == "80803 Schwabing-Freimann"
+    )
+    assert result_list.clean_text("81673 Berg-&#8203am-​Laim") == "81673 Berg-am-Laim"
+
+
+def test_a_district_whose_real_name_contains_a_dash_keeps_its_spaces():
+    """ "Milbertshofen - Am Hart" is the district's actual name.
+
+    Only the invisible character goes; the spaced dash stays, because the town
+    name is what the buyer reads.
+    """
+    assert (
+        result_list.clean_text("80807 Milbertshofen -​ Am Hart")
+        == "80807 Milbertshofen - Am Hart"
+    )
+
+
+def test_clean_text_passes_empty_values_through():
+    assert result_list.clean_text(None) is None
+    assert result_list.clean_text("") == ""
