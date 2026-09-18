@@ -276,6 +276,7 @@ def run_family_mode(args):
                 name=payload.get("name"),
                 enabled=payload.get("enabled"),
                 terms=payload.get("terms"),
+                base_url=payload.get("base_url"),
             )
             print("__FAMILY_UPDATED__:" + json.dumps(res))
         except Exception as e:

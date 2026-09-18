@@ -561,3 +561,135 @@ def test_route_preserves_circles_on_family_delete_and_term_removal(conn):
             ).fetchone()[0]
             == 1
         )
+
+
+def test_update_family_base_url_rewrites_searches(conn):
+    """Updating base_url updates search_families and rewrites all attached search URLs."""
+    cursor = conn.cursor()
+    fam_id, count, _ = family_store.save_family(
+        conn,
+        name="Drucker Test",
+        base_url="https://www.kleinanzeigen.de/s-landsberg-am-lech/drucker/k0l7091r30",
+        terms=["Brother MFC-L2740DW"],
+    )
+    assert count == 1
+    orig_search = cursor.execute(
+        "SELECT s.id, s.url FROM searches s "
+        "JOIN search_family_searches sfs ON sfs.search_id = s.id "
+        "WHERE sfs.family_id = ?",
+        (fam_id,),
+    ).fetchone()
+    assert orig_search[1] == (
+        "https://www.kleinanzeigen.de/s-landsberg-am-lech/brother-mfc-l2740dw/k0l7091r30"
+    )
+
+    # Change radius from 30 to 50 km and add price filter preis:10:150
+    new_base = "https://www.kleinanzeigen.de/s-landsberg-am-lech/preis:10:150/drucker/k0l7091r50"
+    family_store.update_family(
+        conn,
+        fam_id,
+        base_url=new_base,
+    )
+
+    # Check search_families row
+    stored_base = cursor.execute(
+        "SELECT base_url FROM search_families WHERE id = ?", (fam_id,)
+    ).fetchone()[0]
+    assert stored_base == new_base
+
+    # Check rewritten searches row
+    new_search = cursor.execute(
+        "SELECT s.id, s.url, s.enabled FROM searches s "
+        "JOIN search_family_searches sfs ON sfs.search_id = s.id "
+        "WHERE sfs.family_id = ?",
+        (fam_id,),
+    ).fetchone()
+    assert new_search[1] == (
+        "https://www.kleinanzeigen.de/s-landsberg-am-lech/preis:10:150/brother-mfc-l2740dw/k0l7091r50"
+    )
+    assert new_search[2] == 1
+
+
+def test_route_keeps_its_own_circles_when_the_family_base_url_changes(conn):
+    """Re-aiming a family must not touch the circles the route itself owns.
+
+    update_family() gained a base_url path that detaches and re-attaches every
+    term, deleting rows from route_search_circles on the way. That is the same
+    shape as the bug which once grew route 3 from 6 circles to 12 and then
+    deleted all 12: a delete that is not scoped by provenance takes the route's
+    own circles with it. The setup screen writes a new base_url every time
+    somebody changes the town, the radius or the price, so this path now runs on
+    ordinary use rather than rarely.
+    """
+    cursor = conn.cursor()
+    circles = [
+        route_search.Circle(
+            centre=(48.0, 11.0),
+            postal_code="82266",
+            location_id="7091",
+            label="Inning",
+            snap_km=0.0,
+            radius_km=25.0,
+            url="https://www.kleinanzeigen.de/s-inning-am-ammersee/matratze-140x200/k0l7091r25",
+        ),
+        route_search.Circle(
+            centre=(48.1, 11.5),
+            postal_code="80331",
+            location_id="6411",
+            label="München",
+            snap_km=0.0,
+            radius_km=25.0,
+            url="https://www.kleinanzeigen.de/s-muenchen/matratze-140x200/k0l6411r25",
+        ),
+    ]
+    plan = route_search.RoutePlan(
+        route=MockRoute(),
+        circles=circles,
+        radius_km=25.0,
+        half_width_km=10.0,
+    )
+    route_id, _ = route_store.save_plan(
+        conn, plan, base_url=MATRATZE, origin="Inning", destination="München"
+    )
+
+    route_owned = [
+        r[0]
+        for r in cursor.execute(
+            "SELECT search_id FROM route_search_circles "
+            "WHERE route_search_id = ? AND family_id IS NULL ORDER BY search_id",
+            (route_id,),
+        ).fetchall()
+    ]
+    assert len(route_owned) == 2
+
+    fam_id, _, _ = family_store.save_family(
+        conn,
+        name="Matratzen & Drucker",
+        base_url=MATRATZE,
+        terms=["matratze 140x200", "Brother MFC-L2740DW"],
+        route_search_id=route_id,
+    )
+
+    family_store.update_family(
+        conn,
+        fam_id,
+        base_url="https://www.kleinanzeigen.de/s-landsberg-am-lech/preis::150/matratze-140x200/k0l7091r50",
+    )
+
+    still_owned = [
+        r[0]
+        for r in cursor.execute(
+            "SELECT search_id FROM route_search_circles "
+            "WHERE route_search_id = ? AND family_id IS NULL ORDER BY search_id",
+            (route_id,),
+        ).fetchall()
+    ]
+    assert still_owned == route_owned, "the route lost circles it owns"
+
+    for sid in route_owned:
+        assert (
+            cursor.execute(
+                "SELECT enabled FROM searches WHERE id = ?", (sid,)
+            ).fetchone()[0]
+            == 1
+        ), "a route-owned search was switched off by a family edit"

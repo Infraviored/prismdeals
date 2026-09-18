@@ -13,14 +13,13 @@ import FundeScreen from './screens/FundeScreen';
 import EditScreen from './screens/EditScreen';
 import CreateCampaignScreen from './screens/CreateCampaignScreen';
 import SurfacePreviewScreen from './screens/SurfacePreviewScreen';
-import { isValidKleinanzeigenUrl, suggestTitleFromUrl } from './utils/urlHelpers';
 import { Globe, ChevronDown, LogOut, Key, Menu, X, Settings } from 'lucide-react';
 import { Button } from './components/ui/Button';
 import { cn } from './utils/cn';
 
 export default function App() {
   const {
-    view, currentCampaignId, currentSearchId, wizardStep,
+    view, currentCampaignId, currentSearchId,
     previousView, setView, setCurrentCampaignId, setCurrentSearchId,
     setWizardStep, navigate,
   } = useHashRouter();
@@ -135,6 +134,29 @@ export default function App() {
           onConfigure={configureCurrentCampaign}
           onStartScrape={() => scraper.handleStartScrape(currentCampaignId)}
           isScraping={scraper.isScraping}
+        />
+      </div>
+    );
+  }
+
+  if (view === 'edit') {
+    return (
+      <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col font-sans">
+        <EditScreen
+          campaign={currentCampaign}
+          searches={appData.searches}
+          onBack={() => navigate('dashboard', currentCampaignId, null)}
+          onSaved={(savedFamily) => {
+            if (currentCampaignId) {
+              appData.setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, family_id: savedFamily.id } : c));
+            }
+            appData.refreshAll();
+            navigate('dashboard', currentCampaignId, null);
+          }}
+          onDelete={(camp) => {
+            campaignEdit.handleDeleteCampaign(camp);
+            navigate('landing', null, null);
+          }}
         />
       </div>
     );
@@ -256,72 +278,6 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 flex flex-col justify-start">
 
 
-        {view === 'edit' && (
-          <EditScreen
-            campaign={currentCampaign}
-            searches={appData.searches}
-            knowledgeSets={appData.knowledgeSets}
-            activeSearchTarget={activeSearchTarget}
-            campaignRouteData={appData.campaignRouteData}
-            loadingRouteData={appData.loadingRouteData}
-            geometrySuccessMsg={appData.geometrySuccessMsg}
-            newTargetUrl={campaignEdit.newTargetUrl}
-            setNewTargetUrl={campaignEdit.setNewTargetUrl}
-            searchTargetMode={campaignEdit.searchTargetMode}
-            setSearchTargetMode={campaignEdit.setSearchTargetMode}
-            routeFrom={campaignEdit.routeFrom}
-            setRouteFrom={campaignEdit.setRouteFrom}
-            routeTo={campaignEdit.routeTo}
-            setRouteTo={campaignEdit.setRouteTo}
-            routeRadiusKm={campaignEdit.routeRadiusKm}
-            setRouteRadiusKm={campaignEdit.setRouteRadiusKm}
-            routeCorridorKm={campaignEdit.routeCorridorKm}
-            setRouteCorridorKm={campaignEdit.setRouteCorridorKm}
-            routePlanning={campaignEdit.routePlanning}
-            routeError={campaignEdit.routeError}
-            routeResult={campaignEdit.routeResult}
-            marketMemo={guidelines.marketMemo}
-            setMarketMemo={guidelines.setMarketMemo}
-            sampledListings={guidelines.sampledListings}
-            sampledListingsLoading={guidelines.sampledListingsLoading}
-            fetchSampleListings={guidelines.fetchSampleListings}
-            researcherOutput={guidelines.researcherOutput}
-            setResearcherOutput={guidelines.setResearcherOutput}
-            researchPromptTemplate={guidelines.researchPromptTemplate}
-            marketPromptTemplate={guidelines.marketPromptTemplate}
-            profilePromptTemplate={guidelines.profilePromptTemplate}
-            editKsError={guidelines.editKsError}
-            wizardStep={wizardStep}
-            setWizardStep={setWizardStep}
-            handleSaveKnowledgeSet={guidelines.handleSaveKnowledgeSet}
-            parsedExpertKnowledge={guidelines.parsedExpertKnowledge}
-            parsedGoodRef={guidelines.parsedGoodRef}
-            parsedBadRef={guidelines.parsedBadRef}
-            parsedDemoMsg={guidelines.parsedDemoMsg}
-            parsedItemJson={guidelines.parsedItemJson}
-            isScraping={scraper.isScraping}
-            scrapingStatus={scraper.scrapingStatus}
-            scrapingProgress={scraper.scrapingProgress}
-            onBack={() => navigate('dashboard', currentCampaignId, null)}
-            onAddSearchTarget={campaignEdit.handleAddSearchTarget}
-            onDeleteSearch={campaignEdit.handleDeleteSearch}
-            onPlanCorridor={campaignEdit.handlePlanCorridor}
-            onRemoveRoute={campaignEdit.handleRemoveRoute}
-            onUpdateCorridor={campaignEdit.handleUpdateCorridor}
-            onSaveFamily={(savedFamily) => {
-              if (currentCampaignId) {
-                appData.setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, family_id: savedFamily.id } : c));
-              }
-              appData.refreshAll();
-            }}
-            isValidKleinanzeigenUrl={isValidKleinanzeigenUrl}
-            suggestTitleFromUrl={suggestTitleFromUrl}
-            previewLoading={campaignEdit.previewLoading}
-            previewCount={campaignEdit.previewCount}
-            previewError={campaignEdit.previewError}
-            onUpdateCampaignName={campaignEdit.handleUpdateCampaignName}
-          />
-        )}
 
         {view === 'create-campaign' && (
           <CreateCampaignScreen

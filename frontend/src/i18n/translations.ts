@@ -87,7 +87,6 @@ export const translations = {
       matches: "Matches",
       new: "New",
       openDashboard: "Open Dashboard",
-      profileType: "Search Profile",
       configureTooltip: "Configure Searches & Guidelines",
       deleteTooltip: "Delete search",
       deleteConfirm: "Delete the search \"{{name}}\"?",
@@ -493,7 +492,19 @@ export const translations = {
       newSearch: "New search",
       radiusAround: "{{radius}} km around {{location}}",
       corridorRoute: "Corridor {{from}}→{{to}}",
-      corridor: "Corridor"
+      corridor: "Corridor",
+      what: "What",
+      whatPlaceholder: "e.g. Laser printer",
+      where: "Where",
+      wherePlaceholder: "City or postal code",
+      howFar: "How far",
+      maxPrice: "Up to how much",
+      deleteSearch: "Delete search",
+      deleteConfirmSearch: "Delete this search?",
+      setupTitle: "{{name}} setup",
+      addModel: "Add model",
+      save: "Save",
+      saving: "Saving...",
     }
   },
   de: {
@@ -584,7 +595,6 @@ export const translations = {
       matches: "Treffer",
       new: "Neu",
       openDashboard: "Dashboard öffnen",
-      profileType: "Suchprofil",
       configureTooltip: "Suchen & Richtlinien konfigurieren",
       deleteTooltip: "Suche löschen",
       deleteConfirm: "Suche \"{{name}}\" löschen?",
@@ -988,7 +998,19 @@ export const translations = {
       newSearch: "Neue Suche",
       radiusAround: "{{radius}} km um {{location}}",
       corridorRoute: "Korridor {{from}}→{{to}}",
-      corridor: "Korridor"
+      corridor: "Korridor",
+      what: "Was",
+      whatPlaceholder: "z.B. Laserdrucker",
+      where: "Wo",
+      wherePlaceholder: "Ort oder PLZ",
+      howFar: "Wie weit",
+      maxPrice: "Bis wie viel",
+      deleteSearch: "Suche löschen",
+      deleteConfirmSearch: "Diese Suche löschen?",
+      setupTitle: "{{name}} einrichten",
+      addModel: "Modell hinzufügen",
+      save: "Speichern",
+      saving: "Speichert...",
     }
   }
 } as const;
