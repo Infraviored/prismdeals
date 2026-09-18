@@ -595,6 +595,9 @@ app.delete('/api/campaigns/:id/route', async (req, res) => {
   }
 });
 
+app.use(require('./location_resolver'));
+
+
 // API: Get search items
 app.get('/api/search-urls', async (req, res) => {
   try {
@@ -1719,6 +1722,10 @@ app.put('/api/search-families/:id', async (req, res) => {
     const fam = await get('SELECT id FROM search_families WHERE id = ?', [req.params.id]);
     if (!fam) {
       return res.status(404).json({ error: 'Search family not found' });
+    }
+
+    if (req.body && req.body.base_url && !isValidScrapeUrl(req.body.base_url)) {
+      return res.status(400).json({ error: 'Only kleinanzeigen.de search URLs are supported' });
     }
 
     const args = [

@@ -487,7 +487,19 @@ export const translations = {
       settings: "Settings",
       allModels: "All models",
       evaluated: "Evaluated",
-      scoreValue: "Score {{score}}"
+      scoreValue: "Score {{score}}",
+      what: "What",
+      whatPlaceholder: "e.g. Laser printer",
+      where: "Where",
+      wherePlaceholder: "City or postal code",
+      howFar: "How far",
+      maxPrice: "Up to how much",
+      deleteSearch: "Delete search",
+      deleteConfirmSearch: "Delete this search?",
+      setupTitle: "{{name}} setup",
+      addModel: "Add model",
+      save: "Save",
+      saving: "Saving...",
     }
   },
   de: {
@@ -976,7 +988,19 @@ export const translations = {
       settings: "Einstellungen",
       allModels: "Alle Modelle",
       evaluated: "Ausgewertet",
-      scoreValue: "Bewertung {{score}}"
+      scoreValue: "Bewertung {{score}}",
+      what: "Was",
+      whatPlaceholder: "z.B. Laserdrucker",
+      where: "Wo",
+      wherePlaceholder: "Ort oder PLZ",
+      howFar: "Wie weit",
+      maxPrice: "Bis wie viel",
+      deleteSearch: "Suche löschen",
+      deleteConfirmSearch: "Diese Suche löschen?",
+      setupTitle: "{{name}} einrichten",
+      addModel: "Modell hinzufügen",
+      save: "Speichern",
+      saving: "Speichert...",
     }
   }
 } as const;

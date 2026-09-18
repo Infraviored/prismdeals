@@ -561,3 +561,50 @@ def test_route_preserves_circles_on_family_delete_and_term_removal(conn):
             ).fetchone()[0]
             == 1
         )
+
+
+def test_update_family_base_url_rewrites_searches(conn):
+    """Updating base_url updates search_families and rewrites all attached search URLs."""
+    cursor = conn.cursor()
+    fam_id, count, _ = family_store.save_family(
+        conn,
+        name="Drucker Test",
+        base_url="https://www.kleinanzeigen.de/s-landsberg-am-lech/drucker/k0l7091r30",
+        terms=["Brother MFC-L2740DW"],
+    )
+    assert count == 1
+    orig_search = cursor.execute(
+        "SELECT s.id, s.url FROM searches s "
+        "JOIN search_family_searches sfs ON sfs.search_id = s.id "
+        "WHERE sfs.family_id = ?",
+        (fam_id,),
+    ).fetchone()
+    assert orig_search[1] == (
+        "https://www.kleinanzeigen.de/s-landsberg-am-lech/brother-mfc-l2740dw/k0l7091r30"
+    )
+
+    # Change radius from 30 to 50 km and add price filter preis:10:150
+    new_base = "https://www.kleinanzeigen.de/s-landsberg-am-lech/preis:10:150/drucker/k0l7091r50"
+    family_store.update_family(
+        conn,
+        fam_id,
+        base_url=new_base,
+    )
+
+    # Check search_families row
+    stored_base = cursor.execute(
+        "SELECT base_url FROM search_families WHERE id = ?", (fam_id,)
+    ).fetchone()[0]
+    assert stored_base == new_base
+
+    # Check rewritten searches row
+    new_search = cursor.execute(
+        "SELECT s.id, s.url, s.enabled FROM searches s "
+        "JOIN search_family_searches sfs ON sfs.search_id = s.id "
+        "WHERE sfs.family_id = ?",
+        (fam_id,),
+    ).fetchone()
+    assert new_search[1] == (
+        "https://www.kleinanzeigen.de/s-landsberg-am-lech/preis:10:150/brother-mfc-l2740dw/k0l7091r50"
+    )
+    assert new_search[2] == 1

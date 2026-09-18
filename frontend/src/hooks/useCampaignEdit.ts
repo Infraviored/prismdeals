@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import type { Campaign, SearchTarget, Listing, RouteCorridorData } from '../types';
 import type { Place } from '../components/PlaceInput';
 import { useTranslation } from './useTranslation';
@@ -16,10 +16,10 @@ interface UseCampaignEditProps {
   setGeometrySuccessMsg: (msg: string | null) => void;
   refreshAll: () => void;
   setCurrentSearchId: (id: number | null) => void;
-  setIsScraping: (v: boolean) => void;
-  setScrapingStatus: (s: string) => void;
-  setLiveLogs: (logs: string) => void;
-  setScrapingProgress: (progress: { phase: string; current: number; total: number; status: string } | null) => void;
+  setIsScraping?: (v: boolean) => void;
+  setScrapingStatus?: (s: string) => void;
+  setLiveLogs?: (logs: string) => void;
+  setScrapingProgress?: (progress: { phase: string; current: number; total: number; status: string } | null) => void;
 }
 
 export function useCampaignEdit({
@@ -34,10 +34,6 @@ export function useCampaignEdit({
   setGeometrySuccessMsg,
   refreshAll,
   setCurrentSearchId,
-  setIsScraping,
-  setScrapingStatus,
-  setLiveLogs,
-  setScrapingProgress,
 }: UseCampaignEditProps) {
   const { t } = useTranslation();
 
@@ -52,82 +48,11 @@ export function useCampaignEdit({
   const [routePlanning, setRoutePlanning] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [routeResult, setRouteResult] = useState<{ count: number; width: number } | null>(null);
-  const [isRegisteringTarget, setIsRegisteringTarget] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewCount, setPreviewCount] = useState<number | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewLoading] = useState(false);
+  const [previewCount] = useState<number | null>(null);
+  const [previewError] = useState<string | null>(null);
 
-  // URL preview debounce
-  useEffect(() => {
-    if (searchTargetMode === 'family' || campaigns.find(c => c.id === currentCampaignId)?.route_id) return;
-    if (!newTargetUrl || !isValidKleinanzeigenUrl(newTargetUrl)) return;
-    const campaignSearches = searches.filter(s => s.campaign_id === currentCampaignId);
-    if (!(campaignSearches.length === 0 || isRegisteringTarget)) return;
 
-    const timer = setTimeout(async () => {
-      const suggested = suggestTitleFromUrl(newTargetUrl) || 'New Search';
-      setPreviewLoading(true);
-      setPreviewError(null);
-      setPreviewCount(null);
-      try {
-        const countRes = await fetch('/api/searches/preview', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: newTargetUrl }),
-        });
-        if (countRes.ok) {
-          const d = await countRes.json();
-          setPreviewCount(d.count);
-        }
-        const ksRes = await fetch('/api/knowledge-sets', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: `${suggested} Guidelines`,
-            expert_knowledge: '',
-            item_json: {},
-          }),
-        });
-        const boundKsId = ksRes.ok ? (await ksRes.json()).id : null;
-        const searchRes = await fetch('/api/searches', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            campaign_id: currentCampaignId,
-            name: suggested,
-            url: newTargetUrl,
-            knowledge_set_id: boundKsId,
-          }),
-        });
-        if (searchRes.ok) {
-          const sd = await searchRes.json();
-          setNewTargetUrl('');
-          setPreviewCount(null);
-          setIsRegisteringTarget(false);
-          setCurrentSearchId(sd.id);
-          setIsScraping(true);
-          setScrapingStatus('Spawning targeted crawler...');
-          setLiveLogs('Starting targeted Chrome headless scraper session...');
-          setScrapingProgress({
-            phase: 'starting',
-            current: 0,
-            total: 100,
-            status: 'Spawning scraper worker...',
-          });
-          await fetch(`/api/searches/${sd.id}/scrape`, { method: 'POST' });
-          refreshAll();
-        } else {
-          const e = await searchRes.json();
-          setPreviewError(e.error || 'Failed to auto-register search target.');
-        }
-      } catch {
-        setPreviewError('Failed to auto-register search query due to connection issues.');
-      } finally {
-        setPreviewLoading(false);
-      }
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [newTargetUrl, currentCampaignId, searches, isRegisteringTarget, searchTargetMode, refreshAll, setCurrentSearchId, setIsScraping, setScrapingStatus, setLiveLogs, setScrapingProgress, campaigns]);
 
   const handleDeleteCampaign = useCallback(async (c: Campaign) => {
     const campaignSearches = searches.filter(s => s.campaign_id === c.id);
@@ -295,7 +220,6 @@ export function useCampaignEdit({
       setNewTargetUrl('');
       setRouteFrom(null);
       setRouteTo(null);
-      setIsRegisteringTarget(false);
       if (data.searches?.length) setCurrentSearchId(data.searches[0].id);
       if (data.route_id && currentCampaignId) {
         setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, route_id: data.route_id } : c));
