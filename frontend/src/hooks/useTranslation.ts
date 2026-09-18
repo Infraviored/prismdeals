@@ -5,11 +5,14 @@ import type { Language, TranslationPath } from '../i18n/translations';
 // Keep a list of active listeners to sync state across all components simultaneously
 const listeners = new Set<(lang: Language) => void>();
 
+// Every listing, price and town this product shows is German. Defaulting the
+// interface to English put "No matches within 30 km" above a list of Bavarian
+// villages. A stored choice still wins; the browser decides when there is none.
 let globalLang: Language = (() => {
-  if (typeof window !== 'undefined') {
-    return (localStorage.getItem('ui-lang') as Language) || 'en';
-  }
-  return 'en';
+  if (typeof window === 'undefined') return 'en';
+  const stored = localStorage.getItem('ui-lang') as Language | null;
+  if (stored) return stored;
+  return navigator.language?.toLowerCase().startsWith('de') ? 'de' : 'en';
 })();
 
 export function useTranslation() {

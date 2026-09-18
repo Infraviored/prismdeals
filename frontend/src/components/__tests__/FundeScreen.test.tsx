@@ -134,9 +134,11 @@ describe('FundeScreen', () => {
     render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
 
     expect(await screen.findByText('Federkern-Matratze Ikea 140x200')).toBeInTheDocument();
-    const dealsPill = screen.getByText('Deals only');
 
-    fireEvent.click(dealsPill);
+    // The toggle moved into the filter sheet: seven controls did not fit across
+    // 390 px, and the corridor pill rendered clipped as "rridor".
+    fireEvent.click(screen.getByText('Filter'));
+    fireEvent.click(screen.getByText('Deals only'));
 
     // Only 1 deal listing in mock data
     expect(screen.getByTestId('surface-bar-count')).toHaveTextContent('1');

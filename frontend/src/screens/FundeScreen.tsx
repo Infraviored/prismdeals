@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Bar, Row, Pill, EmptyLine, type RowListing } from '../components/surface';
 import RouteCorridorMap, { type RouteCircle, type RouteListingGeo } from '../components/RouteCorridorMap';
 import { FundeDetailSheet } from './FundeDetailSheet';
+import { FundeModelsSheet } from './FundeModelsSheet';
+import { FundeFilterSheet } from './FundeFilterSheet';
 import { useFundeData } from '../hooks/useFundeData';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign, SearchFamilyTerm, RadiusDiagnosis } from '../types';
@@ -23,11 +25,11 @@ interface FundeBarActionsProps {
   cycleSort: () => void;
   sortLabel: string;
   dealsOnly: boolean;
-  setDealsOnly: (d: boolean) => void;
   maxDetour: number | null;
-  setMaxDetour: (d: number | null) => void;
+  onOpenFilter: () => void;
   termId: number | null;
-  setTermId: (t: number | null) => void;
+  activeTermLabel: string | null;
+  onOpenModels: () => void;
   familyTerms: SearchFamilyTerm[];
   clusterFilterCount: number | null;
   onClearClusterFilter: () => void;
@@ -44,11 +46,11 @@ const FundeBarActions: React.FC<FundeBarActionsProps> = ({
   cycleSort,
   sortLabel,
   dealsOnly,
-  setDealsOnly,
   maxDetour,
-  setMaxDetour,
+  onOpenFilter,
   termId,
-  setTermId,
+  activeTermLabel,
+  onOpenModels,
   familyTerms,
   clusterFilterCount,
   onClearClusterFilter,
@@ -71,41 +73,25 @@ const FundeBarActions: React.FC<FundeBarActionsProps> = ({
         />
       )}
 
-      {/* Term / Model Filter Pills */}
+      {/* One pill, not one per model. The model names belong to the setup
+          screen; on a results bar they were the "Checked Models" list the owner
+          asked to have removed, and three of them alone put the button count
+          over budget. */}
       {familyTerms.length > 0 && (
-        <div className="flex items-center gap-1">
-          {termId !== null && (
-            <Pill
-              label={t('surface.allModels')}
-              active={false}
-              onClick={() => setTermId(null)}
-            />
-          )}
-          {familyTerms.slice(0, 3).map((term) => (
-            <Pill
-              key={term.id}
-              label={term.label || term.term}
-              active={termId === term.id}
-              onClick={() => setTermId(termId === term.id ? null : (term.id ?? null))}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Corridor Max Detour Filter */}
-      {isCorridor && (
         <Pill
-          label={maxDetour ? `≤ ${maxDetour} min` : 'Korridor'}
-          active={maxDetour !== null}
-          onClick={() => setMaxDetour(maxDetour === 10 ? null : (maxDetour === null ? 10 : null))}
+          label={activeTermLabel || t('surface.models')}
+          active={termId !== null}
+          onClick={onOpenModels}
+          title={t('surface.models')}
         />
       )}
 
-      {/* Deals Only Pill (Neutral active styling - NO CORAL!) */}
+      {/* One filter pill. Seven controls did not fit across 390 px -- the
+          corridor pill rendered as "rridor", clipped mid-word. */}
       <Pill
-        label={t('surface.dealsOnly')}
-        active={dealsOnly}
-        onClick={() => setDealsOnly(!dealsOnly)}
+        label={t('surface.filter')}
+        active={dealsOnly || maxDetour !== null}
+        onClick={onOpenFilter}
       />
 
       {/* Sort Pill */}
@@ -217,6 +203,11 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     routeData,
   } = useFundeData({ campaign, isScraping });
 
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const activeTerm = familyTerms.find((term) => term.id === termId);
+  const activeTermLabel = activeTerm ? (activeTerm.label || activeTerm.term) : null;
+
   const cycleSort = () => {
     const sortCycle = ['default', 'price_asc', 'price_desc', 'newest', 'score'];
     const nextIdx = (sortCycle.indexOf(sort) + 1) % sortCycle.length;
@@ -281,11 +272,11 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             cycleSort={cycleSort}
             sortLabel={getSortLabel()}
             dealsOnly={dealsOnly}
-            setDealsOnly={setDealsOnly}
             maxDetour={maxDetour}
-            setMaxDetour={setMaxDetour}
+            onOpenFilter={() => setFilterOpen(true)}
             termId={termId}
-            setTermId={setTermId}
+            activeTermLabel={activeTermLabel}
+            onOpenModels={() => setModelsOpen(true)}
             familyTerms={familyTerms}
             clusterFilterCount={clusterListingIds ? clusterListingIds.length : null}
             onClearClusterFilter={() => setClusterListingIds(null)}
@@ -356,6 +347,24 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
       )}
 
       {/* 3. Detail Sheet */}
+      <FundeFilterSheet
+        isOpen={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        dealsOnly={dealsOnly}
+        setDealsOnly={setDealsOnly}
+        isCorridor={isCorridor}
+        maxDetour={maxDetour}
+        setMaxDetour={setMaxDetour}
+      />
+
+      <FundeModelsSheet
+        isOpen={modelsOpen}
+        onClose={() => setModelsOpen(false)}
+        terms={familyTerms}
+        termId={termId}
+        onSelect={setTermId}
+      />
+
       <FundeDetailSheet
         listing={selectedListing}
         onClose={() => setSelectedListing(null)}
