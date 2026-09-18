@@ -4,6 +4,9 @@ export type { BarProps } from './Bar';
 export { Row } from './Row';
 export type { RowProps, RowListing } from './Row';
 
+export { SearchRow } from './SearchRow';
+export type { SearchRowProps } from './SearchRow';
+
 export { Pill } from './Pill';
 export type { PillProps } from './Pill';
 

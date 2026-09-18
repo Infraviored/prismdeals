@@ -64,10 +64,13 @@ export interface Listing {
   id: string
   title: string
   price: string
+  price_eur?: number | null
   location: string
   url: string
   short_description: string
   detailed_description: string
+  first_seen_at?: string | null
+  last_seen_at?: string | null
   extracted_facts: Record<string, unknown>
   niceness_score?: number | null
   status: string

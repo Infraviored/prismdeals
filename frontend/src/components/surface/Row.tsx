@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
-import type { TranslationPath } from '../../i18n/translations';
+import { formatFreshness, type TranslateFn } from '../../utils/freshness';
 
 /** Strips the federal state Kleinanzeigen prefixes onto a town name.
  *
@@ -46,41 +46,6 @@ export interface RowProps {
   className?: string;
 }
 
-type TranslateFn = (path: TranslationPath, params?: Record<string, string | number>) => string;
-
-function formatFreshness(
-  timestamp: string | null | undefined,
-  t: TranslateFn
-): { label: string; isStale: boolean } | null {
-  if (!timestamp) return null;
-
-  try {
-    const date = new Date(timestamp);
-    if (isNaN(date.getTime())) return null;
-
-    const diffMs = Date.now() - date.getTime();
-    if (diffMs < 0) return { label: t('surface.today'), isStale: false };
-
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffHours < 1) {
-      return { label: t('surface.today'), isStale: false };
-    }
-    if (diffHours < 24) {
-      return { label: t('surface.hoursAgo', { hours: diffHours }), isStale: false };
-    }
-    if (diffDays === 1) {
-      return { label: t('surface.yesterday'), isStale: false };
-    }
-    return {
-      label: t('surface.daysAgo', { days: diffDays }),
-      isStale: diffDays >= 7,
-    };
-  } catch {
-    return null;
-  }
-}
 
 function formatPrice(
   priceEur: number | null | undefined,
