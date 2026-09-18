@@ -487,7 +487,16 @@ export const translations = {
       settings: "Settings",
       allModels: "All models",
       evaluated: "Evaluated",
-      scoreValue: "Score {{score}}"
+      scoreValue: "Score {{score}}",
+      belowReference: "{{amount}} € below reference",
+      aboveReference: "+{{amount}} € above reference",
+      dealBadge: "Deal",
+      photoCount: "Photo {{current}} / {{total}}",
+      minDetourFull: "{{min}} min detour",
+      onRouteFull: "on route",
+      areaFilter: "Area ({{count}})",
+      clearAreaFilter: "Clear area filter",
+      detailTitle: "Find"
     }
   },
   de: {
@@ -976,7 +985,16 @@ export const translations = {
       settings: "Einstellungen",
       allModels: "Alle Modelle",
       evaluated: "Ausgewertet",
-      scoreValue: "Bewertung {{score}}"
+      scoreValue: "Bewertung {{score}}",
+      belowReference: "{{amount}} € unter Referenz",
+      aboveReference: "+{{amount}} € über Referenz",
+      dealBadge: "Schnäppchen",
+      photoCount: "Foto {{current}} / {{total}}",
+      minDetourFull: "{{min}} min Umweg",
+      onRouteFull: "auf Route",
+      areaFilter: "Bereich ({{count}})",
+      clearAreaFilter: "Bereichsfilter aufheben",
+      detailTitle: "Fund"
     }
   }
 } as const;

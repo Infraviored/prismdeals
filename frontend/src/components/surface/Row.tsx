@@ -2,24 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import type { TranslationPath } from '../../i18n/translations';
 
-/** Strips the federal state Kleinanzeigen prefixes onto a town name.
- *
- * "Bayern - Landsberg (Lech)" is not where the thing is; "Landsberg (Lech)" is.
- * 181 of the 1266 stored listings carry that prefix, and on a corridor through
- * Baden-Württemberg almost every row does -- the second line then reads
- * "Baden-Württemberg …" and tells the buyer nothing.
- *
- * This lived in RouteResultsView until that file was replaced, and was lost with
- * it. It belongs to the row, not to a screen.
- */
-function formatLocation(loc: string | null | undefined): string {
-  if (!loc) return '';
-  const dashIndex = loc.indexOf(' - ');
-  if (dashIndex !== -1) {
-    return loc.slice(dashIndex + 3).trim();
-  }
-  return loc;
-}
+import { formatLocation } from './formatLocation';
 
 export interface RowListing {
   id: string;
@@ -37,6 +20,13 @@ export interface RowListing {
   status?: string | null;
   url?: string;
   matched_terms?: Array<{ id: number; label: string }>;
+  lat?: number | null;
+  lon?: number | null;
+  description?: string | null;
+  summary?: string | null;
+  reference_diff?: number | null;
+  niceness_score?: number | null;
+  reference_comparison?: { closer_to: 'good' | 'bad' | 'mixed'; reasoning: string } | null;
 }
 
 export interface RowProps {
