@@ -487,7 +487,13 @@ export const translations = {
       settings: "Settings",
       allModels: "All models",
       evaluated: "Evaluated",
-      scoreValue: "Score {{score}}"
+      scoreValue: "Score {{score}}",
+      searches: "Searches",
+      noSearches: "No searches yet",
+      newSearch: "New search",
+      radiusAround: "{{radius}} km around {{location}}",
+      corridorRoute: "Corridor {{from}}→{{to}}",
+      corridor: "Corridor"
     }
   },
   de: {
@@ -976,7 +982,13 @@ export const translations = {
       settings: "Einstellungen",
       allModels: "Alle Modelle",
       evaluated: "Ausgewertet",
-      scoreValue: "Bewertung {{score}}"
+      scoreValue: "Bewertung {{score}}",
+      searches: "Suchen",
+      noSearches: "Noch keine Suche",
+      newSearch: "Neue Suche",
+      radiusAround: "{{radius}} km um {{location}}",
+      corridorRoute: "Korridor {{from}}→{{to}}",
+      corridor: "Korridor"
     }
   }
 } as const;

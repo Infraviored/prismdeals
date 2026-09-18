@@ -109,6 +109,23 @@ export default function App() {
     navigate('edit', currentCampaignId, firstTarget?.id || null);
   };
 
+  if (view === 'landing') {
+    return (
+      <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col font-sans">
+        <LandingScreen
+          campaigns={appData.campaigns}
+          searches={appData.searches}
+          listings={appData.listings}
+          onOpenCampaign={(c) => {
+            const campaignSearches = appData.searches.filter(s => s.campaign_id === c.id);
+            navigate(campaignSearches.length === 0 ? 'edit' : 'dashboard', c.id, null);
+          }}
+          onCreateCampaign={() => setView('create-campaign')}
+        />
+      </div>
+    );
+  }
+
   if (view === 'dashboard') {
     return (
       <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col font-sans">
@@ -237,23 +254,7 @@ export default function App() {
 
       {/* Main content — one screen component per view */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 flex flex-col justify-start">
-        {view === 'landing' && (
-          <LandingScreen
-            campaigns={appData.campaigns}
-            searches={appData.searches}
-            listings={appData.listings}
-            onOpenCampaign={(c) => {
-              const campaignSearches = appData.searches.filter(s => s.campaign_id === c.id);
-              navigate(campaignSearches.length === 0 ? 'edit' : 'dashboard', c.id, null);
-            }}
-            onConfigureCampaign={(c) => {
-              const firstTarget = appData.searches.find(s => s.campaign_id === c.id);
-              navigate('edit', c.id, firstTarget?.id || null);
-            }}
-            onDeleteCampaign={campaignEdit.handleDeleteCampaign}
-            onCreateCampaign={() => setView('create-campaign')}
-          />
-        )}
+
 
         {view === 'edit' && (
           <EditScreen
