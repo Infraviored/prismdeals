@@ -49,6 +49,7 @@ Thumbs.db
 **/logs/
 
 # Local databases and chrome profiles
-data/
+data/*
+!data/kleinanzeigen_taxonomy.json
 extension/test_data/
 .wt/
