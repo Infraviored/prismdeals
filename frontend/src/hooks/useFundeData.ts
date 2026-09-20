@@ -123,7 +123,11 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
           offroute_km: typeof l.offroute_km === 'number' ? l.offroute_km : null,
           first_seen_at: l.first_seen_at || l.last_seen_at || null,
           last_seen_at: l.last_seen_at || null,
-          is_deal: !!(l.is_deal || (l.niceness_score && l.niceness_score >= 85)),
+          // The server decides this now, from the median price of the same
+          // search. The old rule asked niceness_score >= 85, and 10 of 1266
+          // listings have a score at all -- so the accent never once appeared.
+          is_deal: !!l.is_deal,
+          price_delta_eur: typeof l.price_delta_eur === 'number' ? l.price_delta_eur : null,
           status: l.geo_status || null,
           url: l.url || undefined,
           matched_terms: Array.isArray(l.matched_terms) ? l.matched_terms : [],
@@ -131,7 +135,7 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
           lon: typeof l.lon === 'number' ? l.lon : null,
           description: l.detailed_description || l.short_description || l.description || null,
           summary: l.summary || l.extracted_facts?.summary || null,
-          reference_diff: typeof l.reference_diff === 'number' ? l.reference_diff : null,
+
           niceness_score: typeof l.niceness_score === 'number' ? l.niceness_score : null,
           reference_comparison: l.reference_comparison || l.extracted_facts?.reference_comparison || null,
         }));

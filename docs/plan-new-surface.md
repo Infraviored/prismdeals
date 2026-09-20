@@ -375,6 +375,10 @@ ehrliche Antwort nein ist, ist das Paket nicht fertig, egal was die Zahlen sagen
 - `buildlock` für `pytest` und schwere `npm`-Läufe.
 - Jeder neue Test einmal gegen absichtlich kaputt gemachten Code, bevor er
   behalten wird.
-- Keine Datei über 400 Zeilen.
+- **Etwa 400 Zeilen je Datei** — als Frage, nicht als Schranke. Sie soll dazu
+  bringen, nachzusehen, ob eine Datei zwei Dinge tut. Wenn sie zwei tut, trennen;
+  wenn sie eines tut und dafür 500 Zeilen braucht, bleiben sie stehen, und im
+  Kopf der Datei steht in einem Satz, warum. Eine Naht zu erfinden, damit eine
+  Zahl stimmt, macht den Code schlechter, nicht besser.
 - Ausliefern: **Backend zuerst, dann Frontend.** Umgekehrt entstand heute ein
   gespaltener Live-Zustand, in dem das Frontend Endpunkte rief, die es nicht gab.

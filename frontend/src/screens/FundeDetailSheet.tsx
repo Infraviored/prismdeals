@@ -117,13 +117,13 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
               </span>
 
               {/* Reference price distance signal - ONLY Coral element */}
-              {typeof listing.reference_diff === 'number' && listing.reference_diff > 0 ? (
+              {typeof listing.price_delta_eur === 'number' && listing.price_delta_eur > 0 ? (
                 <span className="text-sm font-semibold text-[#E87967] tabular-nums whitespace-nowrap">
-                  {t('surface.belowReference', { amount: listing.reference_diff })}
+                  {t('surface.belowReference', { amount: listing.price_delta_eur })}
                 </span>
-              ) : typeof listing.reference_diff === 'number' && listing.reference_diff < 0 ? (
+              ) : typeof listing.price_delta_eur === 'number' && listing.price_delta_eur < 0 ? (
                 <span className="text-sm font-semibold text-[#9FB3B0] tabular-nums whitespace-nowrap">
-                  {t('surface.aboveReference', { amount: Math.abs(listing.reference_diff) })}
+                  {t('surface.aboveReference', { amount: Math.abs(listing.price_delta_eur) })}
                 </span>
               ) : listing.is_deal ? (
                 <span className="text-sm font-semibold text-[#E87967] whitespace-nowrap">

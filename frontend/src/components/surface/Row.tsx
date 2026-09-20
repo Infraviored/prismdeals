@@ -24,7 +24,7 @@ export interface RowListing {
   lon?: number | null;
   description?: string | null;
   summary?: string | null;
-  reference_diff?: number | null;
+  price_delta_eur?: number | null;
   niceness_score?: number | null;
   reference_comparison?: { closer_to: 'good' | 'bad' | 'mixed'; reasoning: string } | null;
 }

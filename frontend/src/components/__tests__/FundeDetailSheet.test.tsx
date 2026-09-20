@@ -8,7 +8,7 @@ const mockListing: RowListing = {
   title: 'Federkern-Matratze Ikea Vestmarka 140x200x15cm',
   price: '90 €',
   price_eur: 90,
-  reference_diff: 35,
+  price_delta_eur: 35,
   location: 'Bayern - Landsberg (Lech)',
   detour_min: 12,
   images: [

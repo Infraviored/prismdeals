@@ -1,4 +1,5 @@
 const express = require('express');
+const { annotateDeals } = require('./db/reference_price');
 const fs = require('fs');
 const path = require('path');
 
@@ -1135,7 +1136,7 @@ async function getRouteCorridorPayload(route, options = {}) {
     total,
     offset,
     limit,
-    listings: parsedListings,
+    listings: await annotateDeals(query, parsedListings),
     counts: {
       total,
       routed,
@@ -1967,6 +1968,8 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
         l.matched_terms = termsByListing[l.id] || [];
       }
     }
+
+    await annotateDeals(query, listings);
 
     res.json({ total, offset, limit, listings });
   } catch (error) {
