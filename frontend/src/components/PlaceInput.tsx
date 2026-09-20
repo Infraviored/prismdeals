@@ -173,9 +173,10 @@ export default function PlaceInput({ label, placeholder, value, onChange, emptyH
         placeholder={placeholder}
       />
 
-      {value ? (
-        <p className="text-sm text-status-good font-semibold">{value.label}</p>
-      ) : text.trim().length >= 2 && !searching && matches.length === 0 ? (
+      {/* The chosen place stood a second time underneath the field, in green,
+          repeating what the field already said. The field is the answer; only
+          the absence of one needs a line of its own. */}
+      {!value && text.trim().length >= 2 && !searching && matches.length === 0 ? (
         <p className="text-sm text-text-muted">{emptyHint}</p>
       ) : null}
 

@@ -35,11 +35,18 @@ export const ModelPillGroup: React.FC<ModelPillGroupProps> = ({
           key={`${term.term}-${idx}`}
           className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-white/[0.05] text-[#F2F5F4] border border-white/10 select-none"
         >
-          <span className="truncate max-w-[180px]">{term.label || term.term}</span>
+          <span className="max-w-[180px]" style={{ direction: 'rtl', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {/* Cut the head, keep the tail. Four printers all ended as
+                "HP LaserJet Pro MFP M42...", which names none of them; the
+                model number at the end is the only part that distinguishes
+                them. The bidi isolate stops the reversed direction from
+                reordering the text itself. */}
+            <bdi>{term.label || term.term}</bdi>
+          </span>
           <button
             type="button"
             onClick={() => onRemove(idx)}
-            className="text-[#9FB3B0] hover:text-[#F2F5F4] -mr-1 p-0.5 rounded cursor-pointer leading-none text-sm"
+            className="flex items-center justify-center min-h-[36px] min-w-[36px] -mr-2 text-[#9FB3B0] hover:text-[#F2F5F4] rounded-full cursor-pointer leading-none text-base"
             aria-label={`Remove ${term.label || term.term}`}
           >
             ×
@@ -72,7 +79,7 @@ export const ModelPillGroup: React.FC<ModelPillGroupProps> = ({
         <button
           type="button"
           onClick={() => setIsAdding(true)}
-          className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/[0.05] hover:bg-white/[0.1] text-[#9FB3B0] hover:text-[#F2F5F4] border border-white/10 text-base cursor-pointer transition-colors"
+          className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-white/[0.05] hover:bg-white/[0.1] text-[#9FB3B0] hover:text-[#F2F5F4] border border-white/10 text-base cursor-pointer transition-colors"
           title={addTitle}
           aria-label={addTitle}
         >

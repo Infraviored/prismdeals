@@ -31,7 +31,7 @@ export const Pill: React.FC<PillProps> = ({
 }) => {
   const content = label ?? children;
   const baseStyles =
-    'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium cursor-pointer transition-all border select-none focus:outline-none focus:ring-1 focus:ring-white/30 shrink-0';
+    'inline-flex items-center justify-center gap-1.5 px-3 min-h-[36px] rounded-full text-xs font-medium cursor-pointer transition-all border select-none focus:outline-none focus:ring-1 focus:ring-white/30 shrink-0';
   const stateStyles = getPillStateStyles(disabled, active);
 
   return (

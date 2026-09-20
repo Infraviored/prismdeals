@@ -35,7 +35,7 @@ export const Bar: React.FC<BarProps> = ({
             type="button"
             data-testid="surface-bar-back"
             onClick={onBack}
-            className="flex items-center gap-1 text-[#9FB3B0] hover:text-[#F2F5F4] p-1 -ml-1 rounded transition-colors text-sm font-medium shrink-0 cursor-pointer"
+            className="flex items-center justify-center gap-1 min-h-[36px] min-w-[36px] text-[#9FB3B0] hover:text-[#F2F5F4] px-1 -ml-1 rounded transition-colors text-sm font-medium shrink-0 cursor-pointer"
             aria-label={backLabel || t('surface.back')}
           >
             <svg

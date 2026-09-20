@@ -77,12 +77,15 @@ describe('EditScreen', () => {
     // 2. Wo / Where
     expect(screen.getByText(/WO|WHERE/i)).toBeInTheDocument();
 
-    // 3. Wie weit / How far (Radius pills)
+    // 3. Wie weit / How far -- a slider and a typed number, not four presets.
+    //    10, 30, 50 and 100 km are not the distances people live at: Landsberg
+    //    to Augsburg is 38, to Munich 57.
     expect(screen.getByText(/WIE WEIT|HOW FAR/i)).toBeInTheDocument();
-    expect(screen.getByText('10 km')).toBeInTheDocument();
-    expect(screen.getByText('30 km')).toBeInTheDocument();
-    expect(screen.getByText('50 km')).toBeInTheDocument();
-    expect(screen.getByText('100 km')).toBeInTheDocument();
+    const slider = screen.getByRole('slider');
+    expect(slider).toHaveAttribute('max', '200');
+    expect(slider).toHaveValue('30');
+    expect(screen.getByRole('spinbutton', { name: '' })).toHaveValue(30);
+    expect(screen.getByText('km')).toBeInTheDocument();
 
     // 4. Bis wie viel / Up to how much (Price)
     expect(screen.getByText(/BIS WIE VIEL|UP TO HOW MUCH/i)).toBeInTheDocument();

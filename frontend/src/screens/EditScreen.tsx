@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { RadiusField } from '../components/RadiusField';
 import { Bar, Pill } from '../components/surface';
 import PlaceInput, { type Place } from '../components/PlaceInput';
 import ModelPillGroup from '../components/ModelPillGroup';
@@ -221,7 +222,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
       <main className="w-full max-w-xl mx-auto px-4 py-6 flex-1 flex flex-col space-y-6">
         {/* Field 1: Was (What) */}
         <div className="space-y-2">
-          <label htmlFor="setup-what" className="block text-xs font-semibold text-[#9FB3B0] uppercase tracking-wider">
+          <label htmlFor="setup-what" className="block text-xs font-medium text-[#9FB3B0]">
             {t('surface.what')}
           </label>
           <input
@@ -245,7 +246,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
         {/* Field 2: Wo (Where) */}
         <div className="space-y-2">
-          <label className="block text-xs font-semibold text-[#9FB3B0] uppercase tracking-wider">
+          <label className="block text-xs font-medium text-[#9FB3B0]">
             {t('surface.where')}
           </label>
           <PlaceInput
@@ -259,24 +260,15 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
         {/* Field 3: Wie weit (How far) */}
         <div className="space-y-2">
-          <label className="block text-xs font-semibold text-[#9FB3B0] uppercase tracking-wider">
+          <label className="block text-xs font-medium text-[#9FB3B0]">
             {t('surface.howFar')}
           </label>
-          <div className="flex flex-wrap gap-2">
-            {[10, 30, 50, 100].map((r) => (
-              <Pill
-                key={r}
-                label={`${r} km`}
-                active={radius === r}
-                onClick={() => setRadius(r)}
-              />
-            ))}
-          </div>
+          <RadiusField value={radius} onChange={setRadius} />
         </div>
 
         {/* Field 4: Bis wie viel (Max price) */}
         <div className="space-y-2">
-          <label htmlFor="setup-price" className="block text-xs font-semibold text-[#9FB3B0] uppercase tracking-wider">
+          <label htmlFor="setup-price" className="block text-xs font-medium text-[#9FB3B0]">
             {t('surface.maxPrice')}
           </label>
           <div className="relative w-36">
@@ -305,11 +297,14 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
         {/* Quiet delete button at the bottom */}
         {campaign && (
-          <div className="pt-8 pb-4 flex justify-end">
+          <div className="pt-10 pb-6">
+            {/* A destructive action rendered as bare grey text is indistinguishable
+                from a caption. It gets a border and a hit area like any control,
+                and stays quiet in colour rather than in affordance. */}
             <button
               type="button"
               onClick={handleDelete}
-              className="text-xs text-[#9FB3B0] hover:text-[#F2F5F4] transition-colors cursor-pointer bg-transparent border-0 p-0"
+              className="w-full px-4 py-3 rounded-xl border border-white/[0.12] text-sm text-[#9FB3B0] hover:text-[#F2F5F4] hover:border-white/30 transition-colors cursor-pointer bg-transparent"
             >
               {t('surface.deleteSearch')}
             </button>
