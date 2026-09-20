@@ -11,11 +11,13 @@ import hashlib
 import json
 import logging
 import os
-import re
+import sys
 import time
-import urllib.parse
 import requests
-from bs4 import BeautifulSoup
+
+from taxonomy_parse import extract_categories_from_html, parse_category_page
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
@@ -72,258 +74,12 @@ class TaxonomyHarvester:
             f.write(resp.text)
         return resp.text
 
-    def extract_categories_from_html(self, html):
-        """Finds all /s-.../c<id> category links in page HTML."""
-        if not html:
-            return {}
-        soup = BeautifulSoup(html, "html.parser")
-        cats = {}
-
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-            m = re.search(r"^/s-([^/]+(?:/[^/]+)*)/c(\d+)$", href)
-            if m:
-                slug, cid = m.group(1), m.group(2)
-                name = a.get_text(strip=True)
-                clean_name = re.sub(r"\s*\([\d\.]+\)$", "", name).strip()
-                if clean_name and clean_name != "Alle Kategorien":
-                    cats[cid] = {
-                        "id": cid,
-                        "name": clean_name,
-                        "slug": slug,
-                        "url_path": href,
-                    }
-        return cats
-
-    def parse_category_page(self, cid, cat_info, html):
-        """Parses breadcrumbs, parent relations, and filters for a category page."""
-        if not html:
-            return cat_info
-
-        soup = BeautifulSoup(html, "html.parser")
-
-        # 1. Parent detection via category navigation box
-        cat_sec = soup.find("details", attrs={"data-filter-section": "cat"})
-        parent_id = None
-        parent_name = None
-        is_top_level = False
-
-        if cat_sec:
-            links = []
-            for a in cat_sec.find_all("a", href=True):
-                t = re.sub(r"\s*\([\d\.]+\)$", "", a.get_text(strip=True)).strip()
-                if t and t != "Alle Kategorien":
-                    m = re.search(r"/c(\d+)$", a["href"])
-                    if m:
-                        links.append((t, m.group(1)))
-
-            if len(links) > 2 and any(l[1] != cid for l in links):
-                is_top_level = True
-                parent_id = None
-                parent_name = None
-            elif len(links) >= 1:
-                parent_name, parent_id = links[0]
-
-        cat_info["parent_id"] = parent_id
-        cat_info["parent_name"] = parent_name
-        cat_info["is_top_level"] = is_top_level
-
-        # 2. Filter sections parsing
-        sections = soup.find_all("details", class_="collapsible-filter-section")
-        filters = []
-
-        for sec in sections:
-            sec_id = sec.get("data-filter-section", "")
-            if sec_id in ("cat", "loc"):
-                continue
-
-            summary = sec.find("summary")
-            h3 = summary.find("h3") if summary else None
-            title = (
-                h3.get_text(strip=True)
-                if h3
-                else (summary.get_text(strip=True) if summary else sec_id)
-            )
-
-            entries = self._build_filter_entries(sec, sec_id, title)
-            filters.extend(entries)
-
-        cat_info["filters"] = filters
-        return cat_info
-
-    def _build_filter_entries(self, sec, sec_id, title):
-        """Builds all filter entries (enums, ranges, boolean flags, path facets) for a section."""
-        entries = []
-        options_dict = {}
-
-        # 1. Astro island options
-        for astro in sec.find_all("astro-island"):
-            if astro.get("props"):
-                try:
-                    props = json.loads(astro["props"])
-                    self._extract_astro_items(props, options_dict)
-                except Exception:
-                    pass
-
-        # 2. Anchor tag options
-        for a in sec.find_all("a", href=True):
-            href = a["href"]
-            if href in ("#", "/s-suchen.html") or href.startswith("https://"):
-                continue
-            label = re.sub(r"\s*\([\d\.]+\)$", "", a.get_text(strip=True)).strip()
-            if label and href not in options_dict:
-                options_dict[href] = {"label": label, "url": href}
-
-        # 3. Checkboxes (clickable boolean options)
-        labels_with_inputs = sec.find_all("label")
-        checkboxes_found = False
-        for lbl in labels_with_inputs:
-            chk = lbl.find("input", type="checkbox")
-            if not chk:
-                chk = lbl.find("input", attrs={"name": "clickableOptions"})
-            if chk:
-                checkboxes_found = True
-                chk_id = chk.get("id", "")
-                lbl_text = re.sub(
-                    r"\s*\([\d\.]+\)$", "", lbl.get_text(strip=True)
-                ).strip()
-                m_chk = re.search(r"checkbox-([a-zA-Z0-9_\.]+)", chk_id)
-                key = m_chk.group(1) if m_chk else chk_id
-                entries.append(
-                    {
-                        "key": key,
-                        "label": lbl_text or title,
-                        "group": title,
-                        "type": "attribute_boolean",
-                        "location": "tail",
-                        "url_syntax": f"+{key}:true",
-                    }
-                )
-
-        if checkboxes_found:
-            return entries
-
-        # 4. Range / numeric inputs
-        inputs = [
-            i
-            for i in sec.find_all("input")
-            if i.get("type") not in ("hidden", "submit", "checkbox")
-        ]
-        if inputs:
-            inp_ids = [i.get("id", "") for i in inputs]
-            range_keys = set()
-            for iid in inp_ids:
-                m_rng = re.search(r"brwse-attr-([a-zA-Z0-9_\.]+)-(min|max)", iid)
-                if m_rng:
-                    range_keys.add(m_rng.group(1))
-            for rk in sorted(range_keys):
-                entries.append(
-                    {
-                        "key": rk,
-                        "label": title,
-                        "type": "attribute_range",
-                        "location": "tail",
-                        "url_syntax": f"+{rk}:{{min}},{{max}}",
-                    }
-                )
-            if sec_id == "price":
-                entries.append(
-                    {
-                        "key": "preis",
-                        "label": "Preis",
-                        "type": "path_range",
-                        "location": "path",
-                        "url_syntax": "/preis:{min}:{max}/",
-                    }
-                )
-            if entries:
-                return entries
-
-        # 5. Options (Attribute enum or path facet)
-        options = list(options_dict.values())
-        if options:
-            sample_url = options[0]["url"]
-            attr_match = re.search(r"\+([a-zA-Z0-9_\.]+):", sample_url)
-            facet_match = re.search(r"/([a-zA-Z0-9_]+):([^/]+)/", sample_url)
-
-            if attr_match:
-                attr_key = attr_match.group(1)
-                opts = []
-                for o in options:
-                    m_val = re.search(rf"\+{re.escape(attr_key)}:([^/]+)", o["url"])
-                    val = m_val.group(1) if m_val else o.get("key")
-                    if val:
-                        val = urllib.parse.unquote(val)
-                    opts.append({"value": val, "label": o["label"]})
-                entries.append(
-                    {
-                        "key": attr_key,
-                        "label": title,
-                        "type": "attribute_enum",
-                        "location": "tail",
-                        "url_syntax": f"+{attr_key}:{{value}}",
-                        "options": opts,
-                    }
-                )
-            elif facet_match:
-                facet_name = facet_match.group(1)
-                opts = []
-                for o in options:
-                    m_val = re.search(rf"/{re.escape(facet_name)}:([^/]+)/", o["url"])
-                    val = m_val.group(1) if m_val else o["label"].lower()
-                    opts.append({"value": val, "label": o["label"]})
-                entries.append(
-                    {
-                        "key": facet_name,
-                        "label": title,
-                        "type": "path_facet",
-                        "location": "path",
-                        "url_syntax": f"/{facet_name}:{{value}}/",
-                        "options": opts,
-                    }
-                )
-            else:
-                entries.append(
-                    {
-                        "key": sec_id,
-                        "label": title,
-                        "type": "link",
-                        "location": "path",
-                        "options": [
-                            {"value": o["url"], "label": o["label"]} for o in options
-                        ],
-                    }
-                )
-
-        return entries
-
-    def _extract_astro_items(self, obj, out_dict):
-        """Recursively extracts localizedName and url from Astro props."""
-        if isinstance(obj, dict):
-            if "localizedName" in obj and "url" in obj:
-                name = (
-                    obj["localizedName"][1]
-                    if isinstance(obj["localizedName"], list)
-                    else obj["localizedName"]
-                )
-                url = obj["url"][1] if isinstance(obj["url"], list) else obj["url"]
-                key = obj.get("key")
-                if isinstance(key, list):
-                    key = key[1]
-                if url and url not in out_dict:
-                    out_dict[url] = {"label": name, "url": url, "key": key}
-            for v in obj.values():
-                self._extract_astro_items(v, out_dict)
-        elif isinstance(obj, list):
-            for v in obj:
-                self._extract_astro_items(v, out_dict)
-
     def harvest_all(self):
         """Harvests full category taxonomy and filters."""
         logger.info("Starting Kleinanzeigen taxonomy harvest...")
 
         home_html = self.fetch(BASE_URL + "/")
-        all_cats = self.extract_categories_from_html(home_html)
+        all_cats = extract_categories_from_html(home_html)
         logger.info(f"Discovered {len(all_cats)} categories on homepage.")
 
         queue = list(all_cats.keys())
@@ -339,7 +95,7 @@ class TaxonomyHarvester:
             url = BASE_URL + cat_info["url_path"]
             html = self.fetch(url)
 
-            discovered = self.extract_categories_from_html(html)
+            discovered = extract_categories_from_html(html)
             for d_id, d_cat in discovered.items():
                 if d_id not in all_cats:
                     all_cats[d_id] = d_cat
@@ -354,7 +110,7 @@ class TaxonomyHarvester:
         for cid, cat_info in sorted(all_cats.items(), key=lambda x: int(x[0])):
             url = BASE_URL + cat_info["url_path"]
             html = self.fetch(url)
-            parsed = self.parse_category_page(cid, cat_info, html)
+            parsed = parse_category_page(cid, cat_info, html)
             results.append(parsed)
 
         cat_by_id = {c["id"]: c for c in results}
