@@ -114,6 +114,22 @@ class App:
         self.driver.get(f"{self.base}/#{route}")
         time.sleep(settle)
 
+    def click(self, css, settle=1.0):
+        """Clicks the first match, or says it was not there.
+
+        Screens that only exist after an interaction -- the find sheet, the
+        models sheet -- were never measured or audited, because a URL cannot
+        reach them.
+        """
+        from selenium.webdriver.common.by import By
+
+        elements = self.driver.find_elements(By.CSS_SELECTOR, css)
+        if not elements:
+            return False
+        self.driver.execute_script("arguments[0].click();", elements[0])
+        time.sleep(settle)
+        return True
+
     def shot(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         self.driver.save_screenshot(path)

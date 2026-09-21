@@ -58,7 +58,10 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
     >
       <div className="flex flex-col min-h-full">
         {/* Scrollable upper content */}
-        <div className="flex-1 space-y-4 pb-4">
+        {/* The pinned action is sticky, so the description scrolls behind it.
+            Without room to clear it the last lines of a listing sit under the
+            button and cannot be read at all. */}
+        <div className={`flex-1 space-y-4 ${listing.url ? 'pb-24' : 'pb-4'}`}>
           {/* 1. Large Image Carousel / Viewer */}
           <div className="relative w-full h-52 sm:h-64 rounded-lg bg-black/40 overflow-hidden shrink-0 border border-white/[0.08] flex items-center justify-center select-none">
             {totalImages > 0 ? (
@@ -83,7 +86,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
                       type="button"
                       onClick={prevImage}
                       aria-label="Previous photo"
-                      className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#011F1F]/70 hover:bg-[#011F1F] border border-white/[0.12] text-[#F2F5F4] flex items-center justify-center transition-colors cursor-pointer"
+                      className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-[#011F1F]/70 hover:bg-[#011F1F] border border-white/[0.12] text-[#F2F5F4] flex items-center justify-center transition-colors cursor-pointer"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
@@ -91,7 +94,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
                       type="button"
                       onClick={nextImage}
                       aria-label="Next photo"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#011F1F]/70 hover:bg-[#011F1F] border border-white/[0.12] text-[#F2F5F4] flex items-center justify-center transition-colors cursor-pointer"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-[#011F1F]/70 hover:bg-[#011F1F] border border-white/[0.12] text-[#F2F5F4] flex items-center justify-center transition-colors cursor-pointer"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -118,7 +121,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
 
               {/* Reference price distance signal - ONLY Coral element */}
               {typeof listing.price_delta_eur === 'number' && listing.price_delta_eur > 0 ? (
-                <span className="text-sm font-semibold text-[#E87967] tabular-nums whitespace-nowrap">
+                <span data-price-signal className="text-sm font-semibold text-[#E87967] tabular-nums whitespace-nowrap">
                   {t('surface.belowReference', { amount: listing.price_delta_eur })}
                 </span>
               ) : typeof listing.price_delta_eur === 'number' && listing.price_delta_eur < 0 ? (
@@ -126,7 +129,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
                   {t('surface.aboveReference', { amount: Math.abs(listing.price_delta_eur) })}
                 </span>
               ) : listing.is_deal ? (
-                <span className="text-sm font-semibold text-[#E87967] whitespace-nowrap">
+                <span data-price-signal className="text-sm font-semibold text-[#E87967] whitespace-nowrap">
                   {t('surface.dealBadge')}
                 </span>
               ) : null}

@@ -65,7 +65,7 @@ export const Sheet: React.FC<SheetProps> = ({
             data-testid="surface-sheet-close"
             onClick={onClose}
             aria-label={t('surface.close')}
-            className="text-[#9FB3B0] hover:text-[#F2F5F4] p-1.5 -mr-1.5 rounded transition-colors cursor-pointer"
+            className="flex items-center justify-center min-w-[36px] min-h-[36px] -mr-1.5 text-[#9FB3B0] hover:text-[#F2F5F4] rounded transition-colors cursor-pointer"
           >
             <svg
               className="w-4 h-4"

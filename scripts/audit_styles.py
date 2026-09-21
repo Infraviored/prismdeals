@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app_harness import ROOT, running_app  # noqa: E402
 
+# (label, route, optional selector to click once the route has settled)
 SCREENS = [
     ("suchen", "landing"),
     ("funde-laptops", "dashboard?campaignId=1"),
@@ -26,6 +27,9 @@ SCREENS = [
     ("einrichten", "edit?campaignId=6"),
     ("app", "settings"),
     ("neue-suche", "create-campaign"),
+    # The sheet a buying decision is made on. No URL reaches it, so it was
+    # never measured and never audited.
+    ("fund", "dashboard?campaignId=1", '[data-testid="listing-row"]'),
 ]
 
 # The one colour with a reserved meaning: the price is a signal. A button, a
@@ -159,9 +163,19 @@ return findings;
 def audit(width):
     results = []
     with running_app(width) as app:
-        for label, route in SCREENS:
+        for entry in SCREENS:
+            label, route = entry[0], entry[1]
+            opener = entry[2] if len(entry) > 2 else None
             app.goto(route)
-            app.shot_full(os.path.join(ROOT, "logs", "audit", f"{label}-{width}px.png"))
+            if opener and not app.click(opener):
+                print(f"  ! {label}: nichts zum Anklicken ({opener})")
+                continue
+            # A sheet is fixed to the viewport while the list behind it stays
+            # 4,500 px tall, so a full-page capture shows both and reads as if
+            # the sheet covered nothing. For an overlay the window is the
+            # honest frame.
+            out = os.path.join(ROOT, "logs", "audit", f"{label}-{width}px.png")
+            app.shot(out) if opener else app.shot_full(out)
             for finding in app.driver.execute_script(AUDIT_JS):
                 finding["screen"] = label
                 results.append(finding)
