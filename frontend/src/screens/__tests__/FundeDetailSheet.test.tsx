@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { FundeDetailSheet } from '../../screens/FundeDetailSheet';
-import type { RowListing } from '../surface';
+import { FundeDetailSheet } from '../FundeDetailSheet';
+import type { RowListing } from '../../components/surface';
 
 const mockListing: RowListing = {
   id: 'listing-101',

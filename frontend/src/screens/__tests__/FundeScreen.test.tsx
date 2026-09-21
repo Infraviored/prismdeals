@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import FundeScreen from '../../screens/FundeScreen';
+import FundeScreen from '../FundeScreen';
 import type { Campaign } from '../../types';
 
-vi.mock('../RouteCorridorMap', () => ({
+vi.mock('../../components/RouteCorridorMap', () => ({
   default: () => <div data-testid="mock-route-corridor-map" />,
 }));
 

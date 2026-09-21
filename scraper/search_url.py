@@ -25,7 +25,16 @@ import re
 import urllib.parse
 
 # k<keyword flag> c<category> l<location> r<radius>, any of the last three absent.
-TAIL_RE = re.compile(r"(k\d+)(c\d+)?(l\d+)?(r\d+)?$")
+# Category attribute filters hang off the END of the tail, after location and
+# radius, joined by '+': k0c278l6411r30+notebooks.brand_s:apple
+#
+# The order is not a guess. Put the same filter BEFORE the location and
+# kleinanzeigen.de redirects the request and drops the location entirely --
+# /s-muenchen/notebook/k0c278+notebooks.brand_s:applel6411r30 came back as
+# /s-notebooks/notebook/k0c278, a nationwide search wearing the same URL. After
+# the radius the location survives and the filter bites: measured on Munich
+# within 30 km, 25 notebooks unfiltered, 22 Lenovo, 2 Apple.
+TAIL_RE = re.compile(r"(k\d+)(c\d+)?(l\d+)?(r\d+)?((?:\+[\w.]+:[^+/]+)*)$")
 
 
 def parse_tail(url):
@@ -40,12 +49,16 @@ def parse_tail(url):
     match = TAIL_RE.fullmatch(last)
     if not match:
         return None
-    keyword, category, location, radius = match.groups()
+    keyword, category, location, radius, attributes = match.groups()
     return {
         "keyword": keyword,
         "category": category,
         "location": location,
         "radius": int(radius[1:]) if radius else None,
+        # Kept as written, including their order: the site accepts the same key
+        # twice to mean "either of these", so de-duplicating would change the
+        # search.
+        "attributes": [a for a in (attributes or "").split("+") if a],
     }
 
 
@@ -66,7 +79,8 @@ def with_location(url, location_id, radius_km):
         location = "l" + location.lstrip("_")
 
     radius = max(1, int(round(radius_km)))
-    tail = f"{parts['keyword']}{parts['category'] or ''}{location}r{radius}"
+    attrs = "".join(f"+{a}" for a in parts["attributes"])
+    tail = f"{parts['keyword']}{parts['category'] or ''}{location}r{radius}{attrs}"
 
     split = urllib.parse.urlsplit(url)
     path = split.path.rstrip("/")
@@ -237,6 +251,7 @@ def decompose_search_url(url):
         "max_price": price["max"] if price else None,
         "query": query,
         "category": cat_id,
+        "attributes": parts.get("attributes") or [],
     }
 
 
@@ -248,6 +263,7 @@ def compose_search_url(
     max_price=None,
     query=None,
     category=None,
+    attributes=None,
     origin="https://www.kleinanzeigen.de",
 ):
     """Constructs a canonical Kleinanzeigen search URL from the four composer fields."""
@@ -283,7 +299,8 @@ def compose_search_url(
         if radius is not None and str(radius).strip() != ""
         else ""
     )
-    tail = f"{kw}{cat}{loc}{rad}"
+    attrs = "".join(f"+{a}" for a in (attributes or []) if a)
+    tail = f"{kw}{cat}{loc}{rad}{attrs}"
     segments.append(tail)
 
     path = "/".join(segments)

@@ -147,6 +147,7 @@ def test_compose_and_decompose_search_url():
         "max_price": None,
         "query": "drucker",
         "category": None,
+        "attributes": [],
     }
 
     recomposed = search_url.compose_search_url(
@@ -177,4 +178,86 @@ def test_compose_and_decompose_search_url():
         "max_price": 150,
         "query": "drucker",
         "category": None,
+        "attributes": [],
     }
+
+
+# --- Category attribute filters -------------------------------------------
+#
+# Measured against the live site, because the order inside the tail decides
+# whether the search happens where you asked. See the comment on TAIL_RE.
+
+APPLE_IN_MUNICH = (
+    "https://www.kleinanzeigen.de/s-muenchen/notebook/"
+    "k0c278l6411r30+notebooks.brand_s:apple"
+)
+
+
+def test_attribute_filters_are_read_off_the_tail():
+    parts = search_url.parse_tail(APPLE_IN_MUNICH)
+    assert parts["category"] == "c278"
+    assert parts["location"] == "l6411"
+    assert parts["radius"] == 30
+    assert parts["attributes"] == ["notebooks.brand_s:apple"]
+
+
+def test_several_attributes_keep_their_order():
+    """The site reads a repeated key as "either of these", so order and
+    repetition are part of the search, not noise to tidy away."""
+    url = (
+        "https://www.kleinanzeigen.de/s-muenchen/notebook/"
+        "k0c278l6411r30+notebooks.brand_s:apple+notebooks.brand_s:lenovo"
+        "+notebooks.ram_s:16gb"
+    )
+    assert search_url.parse_tail(url)["attributes"] == [
+        "notebooks.brand_s:apple",
+        "notebooks.brand_s:lenovo",
+        "notebooks.ram_s:16gb",
+    ]
+
+
+def test_re_aiming_a_search_keeps_its_filters():
+    """Moving a search to another town must not quietly widen it.
+
+    A family expands one base URL across many places; if with_location dropped
+    the attribute filters, every circle but the first would search for any
+    notebook instead of an Apple one.
+    """
+    moved = search_url.with_location(APPLE_IN_MUNICH, 7091, 25)
+    assert moved.endswith("k0c278l7091r25+notebooks.brand_s:apple")
+
+
+def test_changing_the_term_keeps_its_filters():
+    moved = search_url.with_query(APPLE_IN_MUNICH, "macbook air")
+    assert "notebooks.brand_s:apple" in moved
+    assert "/macbook-air/" in moved
+
+
+def test_a_price_filter_and_an_attribute_filter_live_in_different_places():
+    """Price is a path segment before the term; attributes ride the tail."""
+    priced = search_url.with_price(APPLE_IN_MUNICH, 100, 800)
+    assert "/preis:100:800/" in priced
+    assert priced.endswith("k0c278l6411r30+notebooks.brand_s:apple")
+
+
+def test_composing_puts_attributes_after_the_radius():
+    """Before the location, the site redirects and drops the location: the
+    Munich search came back as a nationwide one wearing the same URL."""
+    url = search_url.compose_search_url(
+        "muenchen",
+        6411,
+        radius=30,
+        query="notebook",
+        category="278",
+        attributes=["notebooks.brand_s:apple", "notebooks.ram_s:16gb"],
+    )
+    assert url == (
+        "https://www.kleinanzeigen.de/s-muenchen/notebook/"
+        "k0c278l6411r30+notebooks.brand_s:apple+notebooks.ram_s:16gb"
+    )
+
+
+def test_a_url_without_filters_still_parses_and_round_trips():
+    plain = "https://www.kleinanzeigen.de/s-muenchen/notebook/k0c278l6411r30"
+    assert search_url.parse_tail(plain)["attributes"] == []
+    assert search_url.with_location(plain, 6411, 30) == plain
