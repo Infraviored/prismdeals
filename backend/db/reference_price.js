@@ -120,9 +120,46 @@ async function annotateDeals(query, listings) {
   return listings;
 }
 
+
+/**
+ * The ids of every listing in these searches that is a deal.
+ *
+ * "Deals only" filtered the fifty rows already on screen and then reported that
+ * count as the size of the search: 1,266 listings, 50 loaded, the header read
+ * "2", implying the whole search held two. Filtering has to happen where the
+ * counting happens, which is the server.
+ *
+ * @param {(sql: string, params: any[]) => Promise<any[]>} query
+ * @param {number[]} searchIds
+ * @returns {Promise<string[]>} listing ids
+ */
+async function dealListingIds(query, searchIds) {
+  const references = await referencePrices(query, searchIds);
+  const usable = [...references.entries()].filter(([, r]) => r.count >= MIN_GROUP_SIZE);
+  if (usable.length === 0) return [];
+
+  const ids = [];
+  for (const [searchId, reference] of usable) {
+    const rows = await query(
+      `SELECT DISTINCT l.id AS id, l.price_eur AS price_eur
+         FROM listing_search_hits lsh
+         JOIN listings l ON l.id = lsh.listing_id
+        WHERE lsh.search_id = ?
+          AND l.price_eur IS NOT NULL
+          AND l.price_eur > 0`,
+      [searchId]
+    );
+    for (const row of rows) {
+      if (judge(Number(row.price_eur), reference).isDeal) ids.push(String(row.id));
+    }
+  }
+  return ids;
+}
+
 module.exports = {
   judge,
   referencePrices,
+  dealListingIds,
   annotateDeals,
   DEAL_PERCENTILE,
   DEAL_RATIO,

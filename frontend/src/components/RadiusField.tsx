@@ -32,7 +32,13 @@ export const RadiusField: React.FC<RadiusFieldProps> = ({
       setDraft(String(value));
       return;
     }
-    onChange(Math.min(max, Math.max(min, parsed)));
+    const clamped = Math.min(max, Math.max(min, parsed));
+    // Resync here rather than leaving it to the effect. When the clamp lands on
+    // the value the parent already holds, onChange changes nothing, React bails
+    // out and the effect never runs -- so at the 200 km maximum, typing 999 and
+    // leaving the field kept 999 on screen while the search saved at 200.
+    setDraft(String(clamped));
+    onChange(clamped);
   };
 
   return (

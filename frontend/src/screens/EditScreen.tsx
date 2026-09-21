@@ -39,6 +39,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const lookupSeq = useRef(0);
+  const [resolveFailed, setResolveFailed] = useState(false);
 
   const applyDecomposedUrl = useCallback((url: string) => {
     const dec = decomposeSearchUrl(url);
@@ -61,9 +62,18 @@ export const EditScreen: React.FC<EditScreenProps> = ({
     }
   }, []);
 
-  // Initialize data from family or active search
+  // Initialize data from family or active search.
+  //
+  // Once per campaign, never again. `campaign` and `searches` are rebuilt by
+  // useAppData on every refreshAll(), and the scrape poller calls that every
+  // two seconds -- so with these in the dependency list the form reset itself
+  // mid-edit: a half-typed name snapped back and radius, price, category and
+  // filters all reverted.
+  const initialisedFor = useRef<number | null>(null);
   useEffect(() => {
     if (!campaign) return;
+    if (initialisedFor.current === campaign.id) return;
+    initialisedFor.current = campaign.id;
     if (campaign.name) setName(campaign.name);
 
     if (campaign.family_id) {
@@ -91,7 +101,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
         applyDecomposedUrl(activeSearches[0].url);
       }
     }
-  }, [campaign, searches, applyDecomposedUrl]);
+  }, [campaign, searches, applyDecomposedUrl]);   
 
   const handlePlaceChange = useCallback(async (newPlace: Place | null) => {
     setPlace(newPlace);
@@ -104,6 +114,11 @@ export const EditScreen: React.FC<EditScreenProps> = ({
     const seq = ++lookupSeq.current;
     const slug = slugify(newPlace.name);
     setLocationSlug(slug);
+    // Drop the previous town's id first. Kept while the new one resolves, a
+    // failed lookup left the screen showing one place and the search aimed at
+    // another -- silently, in both directions.
+    setLocationId(null);
+    setResolveFailed(false);
 
     try {
       const queryParam = newPlace.postal_code || newPlace.name;
@@ -115,8 +130,9 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           setLocationId(String(data.location_id));
         }
       }
+      if (!res.ok) setResolveFailed(true);
     } catch {
-      // Fallback silently if offline or unresolvable
+      setResolveFailed(true);
     }
   }, []);
 
@@ -142,7 +158,11 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
     const composedBaseUrl = composeSearchUrl({
       locationSlug: place ? slugify(place.name) : locationSlug,
-      locationId: locationId || (place?.postal_code ? place.postal_code : null),
+      // Only a resolved Kleinanzeigen location id, never a postal code: they
+      // are different namespaces, and l86899 is not Landsberg (7091). Writing
+      // the PLZ into the tail produced a URL the scraper crawled somewhere
+      // else entirely, with nothing to show for it.
+      locationId,
       radius,
       maxPrice,
       query: trimmedName ? slugify(trimmedName) : undefined,
@@ -250,6 +270,10 @@ export const EditScreen: React.FC<EditScreenProps> = ({
             addTitle={t('surface.addModel')}
           />
         </div>
+
+        {resolveFailed && (
+          <p className="text-sm text-[#D9A441]">{t('surface.placeUnresolved')}</p>
+        )}
 
         <CategoryFilters
           categoryId={categoryId}

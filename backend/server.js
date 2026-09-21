@@ -1,5 +1,5 @@
 const express = require('express');
-const { annotateDeals } = require('./db/reference_price');
+const { annotateDeals, dealListingIds } = require('./db/reference_price');
 const fs = require('fs');
 const path = require('path');
 
@@ -1835,6 +1835,21 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
 
     const whereConditions = ['sfs.family_id = ?'];
     const whereParams = [fam.id];
+
+    // Deals only, decided here rather than in the browser. Filtering the fifty
+    // loaded rows and reporting that count as the search's size told the buyer
+    // a 1,266-listing search held two deals.
+    if (req.query.dealsOnly === '1' || req.query.dealsOnly === 'true') {
+      const searchIds = (
+        await query('SELECT search_id FROM search_family_searches WHERE family_id = ?', [fam.id])
+      ).map(r => Number(r.search_id));
+      const dealIds = await dealListingIds(query, searchIds);
+      if (dealIds.length === 0) {
+        return res.json({ total: 0, offset: 0, limit: 0, listings: [] });
+      }
+      whereConditions.push(`l.id IN (${dealIds.map(() => '?').join(',')})`);
+      whereParams.push(...dealIds);
+    }
 
     // Filter by term
     if (req.query.term !== undefined && req.query.term !== '') {

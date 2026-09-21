@@ -84,6 +84,7 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
         if (maxDetour !== null) queryParams.set('maxDetour', String(maxDetour));
         if (termId !== null) queryParams.set('term', String(termId));
         if (searchQuery.trim()) queryParams.set('q', searchQuery.trim());
+        if (dealsOnly) queryParams.set('dealsOnly', '1');
 
         let url = '';
         if (routeId) {
@@ -156,7 +157,7 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
         setLoadingMore(false);
       }
     },
-    [campaignId, routeId, familyId, limit, sort, maxDetour, termId, searchQuery]
+    [campaignId, routeId, familyId, limit, sort, maxDetour, termId, searchQuery, dealsOnly]
   );
 
   // Trigger initial or filter-reset fetch
@@ -164,11 +165,20 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
     fetchPage(0, false);
   }, [fetchPage]);
 
-  // Refetch when scraping finishes
+  // Refetch when scraping finishes -- on the transition, not on every render
+  // while it is false.
+  //
+  // With `fetchPage` in this effect's dependencies, both effects fired for the
+  // same change. The second aborted the first, but the first's `finally` still
+  // ran setLoading(false) after the second had set it true, so opening the
+  // screen and every filter change flashed the "no matches" empty state, and
+  // every page was fetched twice.
+  const wasScraping = useRef(isScraping);
   useEffect(() => {
-    if (!isScraping) {
+    if (wasScraping.current && !isScraping) {
       fetchPage(0, false);
     }
+    wasScraping.current = isScraping;
   }, [isScraping, fetchPage]);
 
   const loadMore = useCallback(() => {
@@ -178,8 +188,10 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
     }
   }, [loading, loadingMore, listings.length, total, offset, limit, fetchPage]);
 
-  const displayedListings = dealsOnly ? listings.filter((l) => l.is_deal) : listings;
-  const displayedCount = dealsOnly ? displayedListings.length : total;
+  // The server decides and counts. Filtering here meant the header reported the
+  // number of deals among the fifty loaded rows as the size of the search.
+  const displayedListings = listings;
+  const displayedCount = total;
 
   return {
     listings: displayedListings,

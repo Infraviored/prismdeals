@@ -35,8 +35,14 @@ export function parseSearchUrlLocationAndRadius(urlStr: string): { location: str
     const path = url.pathname;
 
     // Tail radius extraction: e.g., ...k0l6411r30 -> radius = 30
+    //
+    // The radius is no longer always last: a search with category filters reads
+    // k0c278l6411r30+notebooks.brand_s:apple. Anchored to the end of the
+    // segment, this returned null for every such search, so "30 km um München"
+    // degraded to "München" on the search list. parseTail in searchUrl.ts knows
+    // the whole grammar and is the one place that should.
     const lastSeg = path.split('/').filter(Boolean).pop() || '';
-    const radiusMatch = lastSeg.match(/r(\d+)(?:$|\?)/);
+    const radiusMatch = lastSeg.match(/r(\d+)(?=$|\+)/);
     const radius = radiusMatch ? parseInt(radiusMatch[1], 10) : null;
 
     // Path location extraction: look for /s-<slug>/ or /s-<category>/<slug>/

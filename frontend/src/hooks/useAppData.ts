@@ -68,12 +68,24 @@ export function useAppData({
     refreshAllRef.current();
   }, [appUser]);
 
+  // A campaign with nothing to search is sent to the setup screen -- once.
+  //
+  // Without the guard this is a trap rather than a convenience: the setup
+  // screen's Back button goes to the results, the campaign still has no
+  // search because nothing was saved, and the redirect fires again. There was
+  // no way out but editing the hash by hand.
+  const redirectedFor = React.useRef<number | null>(null);
   useEffect(() => {
     if (currentCampaignId && view === 'dashboard' && searches.length > 0) {
       const campaignSearches = searches.filter(s => s.campaign_id === currentCampaignId);
       const c = campaigns.find(item => item.id === currentCampaignId);
-      if (campaignSearches.length === 0 && !c?.route_id && !c?.family_id) {
+      const empty = campaignSearches.length === 0 && !c?.route_id && !c?.family_id;
+      if (empty && redirectedFor.current !== currentCampaignId) {
+        redirectedFor.current = currentCampaignId;
         navigate('edit', currentCampaignId, null);
+      } else if (!empty) {
+        // Configured since: a later emptying deserves the nudge again.
+        redirectedFor.current = null;
       }
     }
   }, [currentCampaignId, searches, campaigns, view, navigate]);

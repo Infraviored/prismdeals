@@ -72,7 +72,18 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(d => {
         setCategoryName(d.name || null);
-        setFilters((d.filters || []).filter((f: TaxonomyFilter) => f.location === 'tail'));
+        // Only what this screen can actually set. 626 of the site's 957 tail
+        // filters carry no options: 556 are booleans, which are a switch
+        // rather than a list, and 70 are numeric ranges with no field here
+        // yet. Offered as sheets they were dead buttons -- Damenbekleidung
+        // grew 106 of them, 100 opening a sheet with nothing in it.
+        setFilters(
+          (d.filters || []).filter(
+            (f: TaxonomyFilter) =>
+              f.location === 'tail' &&
+              (f.type === 'attribute_boolean' || (f.options || []).length > 0)
+          )
+        );
       })
       .catch(() => {
         setFilters([]);
@@ -129,6 +140,27 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
 
       {filters.map(filter => {
         const current = valueOf(filter.key);
+
+        // A boolean has one useful state: on. The site writes it as
+        // `+key:true` and offers no second value to choose from.
+        if (filter.type === 'attribute_boolean') {
+          const on = current === 'true';
+          return (
+            <button
+              key={filter.key}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setValue(filter.key, on ? null : 'true')}
+              className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-between gap-3 text-sm hover:border-white/30 transition-colors"
+            >
+              <span className="text-[#9FB3B0]">{filter.label}</span>
+              <span className={on ? 'text-[#F2F5F4]' : 'text-[#9FB3B0]/50'}>
+                {on ? '✓' : t('surface.anyValue')}
+              </span>
+            </button>
+          );
+        }
+
         const label = filter.options?.find(o => o.value === current)?.label || current;
         return (
           <button

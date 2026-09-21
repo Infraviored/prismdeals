@@ -145,3 +145,31 @@ describe('category attribute filters', () => {
     ).toBe(APPLE_IN_MUNICH);
   });
 });
+
+describe('the search list reads a filtered URL', () => {
+  // The radius stopped being the last thing in the tail when category filters
+  // arrived. Anchored to the end of the segment, the subtitle regex returned
+  // null and "30 km um München" silently became "München".
+  it('finds the radius even when filters follow it', async () => {
+    const { getSearchLocationSubtitle } = await import('../searchHelpers');
+    const campaign = { id: 1, name: 'Laptops' };
+    const t = ((key: string, params?: Record<string, string | number>) =>
+      key === 'surface.radiusAround'
+        ? `${params?.radius} km around ${params?.location}`
+        : key) as never;
+
+    const search = (url: string) => [{ id: 1, campaign_id: 1, name: 'Laptops', url }];
+    const base = 'https://www.kleinanzeigen.de/s-muenchen/laptop/k0c278l6411r30';
+
+    const filtered = getSearchLocationSubtitle(
+      campaign as never,
+      search(`${base}+notebooks.brand_s:apple`) as never,
+      [],
+      t
+    );
+    const plain = getSearchLocationSubtitle(campaign as never, search(base) as never, [], t);
+
+    expect(filtered).toBe(plain);
+    expect(filtered).toContain('30 km');
+  });
+});

@@ -10,6 +10,7 @@ parsing can be exercised against a saved page without touching the network.
 import json
 import logging
 import re
+import urllib.parse
 
 from bs4 import BeautifulSoup
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import FundeScreen from '../FundeScreen';
 import type { Campaign } from '../../types';
 
@@ -130,7 +130,10 @@ describe('FundeScreen', () => {
     expect(screen.getByText('15 km')).toBeInTheDocument();
   });
 
-  it('filters by deals only and live updates count in Bar', async () => {
+  it('asks the server for deals rather than filtering the loaded page', async () => {
+    // Filtering the fifty rows on screen and reporting that count as the
+    // search's size told the buyer a 1,266-listing search held two deals.
+    // Filtering has to happen where the counting happens.
     render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
 
     expect(await screen.findByText('Federkern-Matratze Ikea 140x200')).toBeInTheDocument();
@@ -140,10 +143,12 @@ describe('FundeScreen', () => {
     fireEvent.click(screen.getByText('Filter'));
     fireEvent.click(screen.getByText('Deals only'));
 
-    // Only 1 deal listing in mock data
-    expect(screen.getByTestId('surface-bar-count')).toHaveTextContent('1');
-    expect(screen.queryByText('Federkern-Matratze Ikea 140x200')).not.toBeInTheDocument();
-    expect(screen.getByText('Novilla Matratzentopper 180x200')).toBeInTheDocument();
+    await waitFor(() => {
+      const asked = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+        .map(c => String(c[0]))
+        .some(u => u.includes('dealsOnly=1'));
+      expect(asked).toBe(true);
+    });
   });
 
   it('opens detail Sheet when clicking a listing row', async () => {
