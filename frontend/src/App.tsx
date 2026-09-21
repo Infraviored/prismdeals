@@ -5,23 +5,21 @@ import { useAuthSession } from './hooks/useAuthSession';
 import { useAppData } from './hooks/useAppData';
 import { useScraperControl } from './hooks/useScraperControl';
 import { useCampaignEdit } from './hooks/useCampaignEdit';
-import { useGuidelinesWizard } from './hooks/useGuidelinesWizard';
 import AuthScreen from './components/AuthScreen';
 import SettingsView from './components/SettingsView';
 import LandingScreen from './screens/LandingScreen';
 import FundeScreen from './screens/FundeScreen';
 import EditScreen from './screens/EditScreen';
 import CreateCampaignScreen from './screens/CreateCampaignScreen';
-import SurfacePreviewScreen from './screens/SurfacePreviewScreen';
 import { Globe, ChevronDown, LogOut, Key, Menu, X, Settings } from 'lucide-react';
 import { Button } from './components/ui/Button';
 import { cn } from './utils/cn';
 
 export default function App() {
   const {
-    view, currentCampaignId, currentSearchId,
+    view, currentCampaignId,
     previousView, setView, setCurrentCampaignId, setCurrentSearchId,
-    setWizardStep, navigate,
+    navigate,
   } = useHashRouter();
 
   const { t, lang, toggleLanguage } = useTranslation();
@@ -33,9 +31,6 @@ export default function App() {
   // --- Scraper / Worker control ---
   const scraper = useScraperControl({
     refreshAll: () => appData.refreshAll(),
-    onScrapeCompleted: () => {
-      if (activeSearchTarget?.id) guidelines.fetchSampleListings(activeSearchTarget.id);
-    },
   });
 
   // --- Kleinanzeigen & app auth ---
@@ -54,18 +49,6 @@ export default function App() {
     appUser: auth.appUser,
   });
 
-  const activeSearches = appData.searches.filter(s => s.campaign_id === currentCampaignId);
-  const activeSearchTarget = appData.searches.find(s => s.id === currentSearchId) || activeSearches[0];
-
-  // --- Guidelines wizard state & actions ---
-  const guidelines = useGuidelinesWizard({
-    activeSearchTarget,
-    knowledgeSets: appData.knowledgeSets,
-    setWizardStep,
-    refreshAll: appData.refreshAll,
-    setView,
-    appUser: auth.appUser,
-  });
 
   // --- Campaign target editing & corridor planning ---
   const campaignEdit = useCampaignEdit({
@@ -294,10 +277,6 @@ export default function App() {
 
         {view === 'settings' && (
           <SettingsView onBack={() => setView(previousView)} />
-        )}
-
-        {view === 'surface-preview' && (
-          <SurfacePreviewScreen onBack={() => navigate('landing', null, null)} />
         )}
       </main>
     </div>

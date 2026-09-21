@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export type ViewState = 'landing' | 'dashboard' | 'edit' | 'create-campaign' | 'settings' | 'surface-preview';
+export type ViewState = 'landing' | 'dashboard' | 'edit' | 'create-campaign' | 'settings';
 
 export interface RouteState {
   view: ViewState;
@@ -17,7 +17,7 @@ const parseHash = (hashStr: string): RouteState => {
   const path = match[1];
   const queryParams = new URLSearchParams(match[2] || '');
 
-  if (['landing', 'dashboard', 'edit', 'create-campaign', 'settings', 'surface-preview'].includes(path)) {
+  if (['landing', 'dashboard', 'edit', 'create-campaign', 'settings'].includes(path)) {
     const view = path as ViewState;
     const campaignIdStr = queryParams.get('campaignId');
     const campaignId = campaignIdStr ? parseInt(campaignIdStr, 10) : null;
