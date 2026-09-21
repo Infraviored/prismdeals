@@ -33,6 +33,8 @@ export interface RowProps {
   listing: RowListing;
   onClick?: (listing: RowListing) => void;
   isDeal?: boolean;
+  isKept?: boolean;
+  onToggleKeep?: (listingId: string) => void;
   className?: string;
 }
 
@@ -80,6 +82,8 @@ export const Row: React.FC<RowProps> = ({
   listing,
   onClick,
   isDeal: propIsDeal,
+  isKept = false,
+  onToggleKeep,
   className = '',
 }) => {
   const { t } = useTranslation();
@@ -160,6 +164,35 @@ export const Row: React.FC<RowProps> = ({
           )}
         </div>
       </div>
+
+      {/* Keeping a find. Quiet until it is on -- a row full of marks would
+          compete with the price, which is the thing that decides. */}
+      {onToggleKeep && (
+        <button
+          type="button"
+          data-testid="keep-toggle"
+          aria-pressed={isKept}
+          aria-label={isKept ? 'Nicht mehr merken' : 'Merken'}
+          onClick={event => {
+            event.stopPropagation();
+            onToggleKeep(listing.id);
+          }}
+          className={`shrink-0 flex items-center justify-center min-w-[36px] min-h-[36px] rounded-full transition-colors ${
+            isKept ? 'text-[#F2F5F4]' : 'text-[#9FB3B0]/40 hover:text-[#9FB3B0]'
+          }`}
+        >
+          <svg
+            className="w-4 h-4"
+            viewBox="0 0 24 24"
+            fill={isKept ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            strokeWidth={1.8}
+            aria-hidden="true"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 4h12a1 1 0 011 1v15l-7-4-7 4V5a1 1 0 011-1z" />
+          </svg>
+        </button>
+      )}
 
       {/* Right column: Price hero + quiet Detour underneath */}
       <div className="shrink-0 text-right flex flex-col justify-center items-end pl-2 min-w-[72px]">

@@ -5,6 +5,7 @@ import { FundeDetailSheet } from './FundeDetailSheet';
 import { FundeModelsSheet } from './FundeModelsSheet';
 import { FundeFilterSheet } from './FundeFilterSheet';
 import { useFundeData } from '../hooks/useFundeData';
+import { useKept } from '../hooks/useKept';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign, SearchFamilyTerm, RadiusDiagnosis } from '../types';
 import { RefreshCw, Settings, X } from 'lucide-react';
@@ -27,6 +28,9 @@ interface FundeBarActionsProps {
   dealsOnly: boolean;
   maxDetour: number | null;
   onOpenFilter: () => void;
+  keptOnly: boolean;
+  keptCount: number;
+  onToggleKeptOnly: () => void;
   termId: number | null;
   activeTermLabel: string | null;
   onOpenModels: () => void;
@@ -48,6 +52,9 @@ const FundeBarActions: React.FC<FundeBarActionsProps> = ({
   dealsOnly,
   maxDetour,
   onOpenFilter,
+  keptOnly,
+  keptCount,
+  onToggleKeptOnly,
   termId,
   activeTermLabel,
   onOpenModels,
@@ -83,6 +90,14 @@ const FundeBarActions: React.FC<FundeBarActionsProps> = ({
           active={termId !== null}
           onClick={onOpenModels}
           title={t('surface.models')}
+        />
+      )}
+
+      {keptCount > 0 && (
+        <Pill
+          label={t('surface.kept')}
+          active={keptOnly}
+          onClick={onToggleKeptOnly}
         />
       )}
 
@@ -203,6 +218,8 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     routeData,
   } = useFundeData({ campaign, isScraping });
 
+  const { kept, toggle: toggleKeep } = useKept();
+  const [keptOnly, setKeptOnly] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const activeTerm = familyTerms.find((term) => term.id === termId);
@@ -226,9 +243,14 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   const hasActiveFilters = dealsOnly || termId !== null || maxDetour !== null || sort !== 'default' || clusterListingIds !== null;
 
   // Filter listings by cluster area if tapped on map
-  const activeListings = clusterListingIds
+  const inArea = clusterListingIds
     ? listings.filter((l) => clusterListingIds.includes(l.id))
     : listings;
+
+  // Kept finds are filtered here rather than on the server: a shortlist is a
+  // handful of rows the buyer has already seen, so there is nothing to page
+  // through and nothing to be wrong about in a count.
+  const activeListings = keptOnly ? inArea.filter((l) => kept.has(l.id)) : inArea;
 
   const mapListings: RouteListingGeo[] = listings.map((l) => ({
     id: l.id,
@@ -260,7 +282,13 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
       {/* 1. Sticky Bar (48px) */}
       <Bar
         title={campaign?.name || 'Funde'}
-        count={loading && listings.length === 0 ? undefined : (clusterListingIds ? activeListings.length : total)}
+        count={
+          loading && listings.length === 0
+            ? undefined
+            : clusterListingIds || keptOnly
+            ? activeListings.length
+            : total
+        }
         onBack={onBack}
         backLabel={t('surface.back')}
         actions={
@@ -274,6 +302,9 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             dealsOnly={dealsOnly}
             maxDetour={maxDetour}
             onOpenFilter={() => setFilterOpen(true)}
+            keptOnly={keptOnly}
+            keptCount={kept.size}
+            onToggleKeptOnly={() => setKeptOnly((v) => !v)}
             termId={termId}
             activeTermLabel={activeTermLabel}
             onOpenModels={() => setModelsOpen(true)}
@@ -313,6 +344,8 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             <Row
               key={listing.id}
               listing={listing}
+              isKept={kept.has(listing.id)}
+              onToggleKeep={toggleKeep}
               onClick={(l) => setSelectedListing(l)}
             />
           ))}

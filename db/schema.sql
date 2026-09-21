@@ -238,3 +238,20 @@ ALTER TABLE listings ADD COLUMN delisted_at TEXT;
 -- owner for the enabled rule, so the scraper leaves it alone, and the history
 -- it found is still reachable.
 ALTER TABLE search_family_searches ADD COLUMN active INTEGER NOT NULL DEFAULT 1;
+
+-- Keeping a find.
+--
+-- A hunt through a thousand laptops turns up three worth a second look, and
+-- until now there was nowhere to put them: the list is sorted by something
+-- else the moment you change a filter, and the only way back to a listing was
+-- to find it again. A kept find is the buyer's own shortlist, not a property
+-- of the listing, so it lives in its own table rather than a column.
+CREATE TABLE IF NOT EXISTS kept_listings (
+    listing_id TEXT NOT NULL,
+    user_id    INTEGER NOT NULL,
+    kept_at    TEXT NOT NULL,
+    note       TEXT,
+    PRIMARY KEY (listing_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_kept_listings_user ON kept_listings(user_id, kept_at DESC);

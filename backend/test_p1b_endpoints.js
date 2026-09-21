@@ -94,6 +94,9 @@ async function main() {
     const db = new sqlite3.Database(TEST_DB);
 
     // Create Campaign
+    // The shortlist is per user, so there has to be one.
+    await runDb(db, `INSERT OR IGNORE INTO users (id, email, password_hash, role) VALUES (1, 'test@localhost', 'x', 'admin')`);
+
     await runDb(db, `INSERT INTO campaigns (id, name) VALUES (1, 'Matratzen Jagd')`);
 
     // Create Search Family & Terms
@@ -250,6 +253,39 @@ async function main() {
     // No parameters at all still answers the old way, because callers depend on it.
     const plain = await request('/api/listings?search_id=101');
     assert(Array.isArray(plain.data), 'an unparameterised request still answers with an array');
+
+    console.log('--- TEST 11: keeping a find ---');
+    // Browsing a thousand laptops turns up three worth a second look, and
+    // until now there was nowhere to put them.
+    const empty = await request('/api/kept');
+    assert(empty.status === 200, `status ${empty.status}`);
+    assert(empty.data.kept.length === 0, 'nothing kept to begin with');
+
+    const keepId = famListRes.data.listings[0].id;
+    const kept = await request(`/api/kept/${keepId}`, { method: 'PUT', body: JSON.stringify({ note: 'zweiter Blick' }) });
+    assert(kept.status === 200, `keep status ${kept.status}`);
+
+    const afterKeep = await request('/api/kept');
+    assert(afterKeep.data.kept.length === 1, `one kept, got ${afterKeep.data.kept.length}`);
+    assert(afterKeep.data.kept[0].listing_id === String(keepId), 'the right one');
+    assert(afterKeep.data.kept[0].note === 'zweiter Blick', 'the note survives');
+
+    // Keeping twice is keeping once. A double tap must not produce two rows or
+    // an error the buyer cannot act on.
+    const again = await request(`/api/kept/${keepId}`, { method: 'PUT', body: JSON.stringify({ note: 'doch nicht' }) });
+    assert(again.status === 200, `second keep status ${again.status}`);
+    const afterTwice = await request('/api/kept');
+    assert(afterTwice.data.kept.length === 1, 'still one row');
+    assert(afterTwice.data.kept[0].note === 'doch nicht', 'the note is updated');
+
+    // An id that names nothing is refused rather than stored as a row nobody
+    // can explain later.
+    const ghost = await request('/api/kept/does-not-exist', { method: 'PUT', body: '{}' });
+    assert(ghost.status === 404, `unknown listing should 404, got ${ghost.status}`);
+
+    const released = await request(`/api/kept/${keepId}`, { method: 'DELETE' });
+    assert(released.status === 200, `release status ${released.status}`);
+    assert((await request('/api/kept')).data.kept.length === 0, 'released');
 
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
   } finally {
