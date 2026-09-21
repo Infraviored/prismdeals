@@ -24,6 +24,8 @@ SCREENS = [
     ("funde-matratze", "dashboard?campaignId=5"),
     ("funde-drucker", "dashboard?campaignId=6"),
     ("einrichten", "edit?campaignId=6"),
+    ("app", "settings"),
+    ("neue-suche", "create-campaign"),
 ]
 
 # The one colour with a reserved meaning: the price is a signal. A button, a

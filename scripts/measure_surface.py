@@ -13,6 +13,8 @@ SCREENS = [
     ("funde-matratze", "dashboard?campaignId=5"),
     ("funde-drucker", "dashboard?campaignId=6"),
     ("einrichten", "edit?campaignId=6"),
+    ("app", "settings"),
+    ("neue-suche", "create-campaign"),
 ]
 
 # "Where does the content begin" means the first thing a person can read or

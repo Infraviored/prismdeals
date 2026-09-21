@@ -1,7 +1,5 @@
+import { Bar, Pill } from '../components/surface'
 import { useTranslation } from '../hooks/useTranslation'
-import { Button } from '../components/ui/Button'
-import { Card } from '../components/ui/Card'
-import { Input } from '../components/ui/Input'
 
 interface CreateCampaignScreenProps {
   newCampaignName: string
@@ -10,6 +8,12 @@ interface CreateCampaignScreenProps {
   onCancel: () => void
 }
 
+/** Naming a new hunt. One field, one save.
+ *
+ * Everything else about a search -- what, where, how far, up to how much --
+ * belongs to the setup screen this leads into, so asking for it twice would
+ * only be a second chance to contradict yourself.
+ */
 export default function CreateCampaignScreen({
   newCampaignName,
   setNewCampaignName,
@@ -17,58 +21,35 @@ export default function CreateCampaignScreen({
   onCancel,
 }: CreateCampaignScreenProps) {
   const { t } = useTranslation()
+  const canSave = newCampaignName.trim().length > 0
 
   return (
-    <div className="flex flex-col items-center justify-center space-y-6 w-full animate-fadeIn py-12 max-w-lg mx-auto">
-      <Card className="p-8 w-full relative overflow-hidden">
-        <div className="space-y-2">
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="badge"
-              size="xs"
-              onClick={onCancel}
-            >
-              <span>← {t('common.back')}</span>
-            </Button>
-          </div>
-          <h2 className="text-2xl font-bold text-text-primary font-sans tracking-tight">{t('wizard.createCampaignTitle')}</h2>
-          <p className="text-base text-text-secondary leading-relaxed font-normal">{t('wizard.createCampaignDesc')}</p>
-        </div>
+    <div className="w-full bg-[#011F1F] text-[#F2F5F4] flex flex-col min-h-screen">
+      <Bar
+        title={t('wizard.createCampaignTitle')}
+        onBack={onCancel}
+        actions={
+          <Pill label={t('surface.save')} active={canSave} onClick={canSave ? onSave : undefined} />
+        }
+      />
 
-        <div className="space-y-4 pt-2">
-          <div className="space-y-1.5">
-            <label className="text-sm text-text-secondary font-medium block">{t('wizard.campaignNameLabel')}</label>
-            <Input
-              type="text"
-              value={newCampaignName}
-              onChange={e => setNewCampaignName(e.target.value)}
-              placeholder={t('wizard.campaignNamePlaceholder')}
-              onKeyDown={async (e) => {
-                if (e.key === 'Enter' && newCampaignName.trim()) {
-                  onSave()
-                }
-              }}
-            />
-          </div>
-        </div>
-
-        <div className="flex space-x-3 pt-4">
-          <Button
-            variant="secondary"
-            onClick={onCancel}
-            className="flex-1 py-3"
-          >
-            {t('common.cancel')}
-          </Button>
-          <Button
-            variant="primary"
-            onClick={onSave}
-            className="flex-1 py-3"
-          >
-            {t('common.save')}
-          </Button>
-        </div>
-      </Card>
+      <main className="flex-1 px-4 py-5 space-y-2 max-w-xl w-full">
+        <label htmlFor="campaign-name" className="block text-xs font-medium text-[#9FB3B0]">
+          {t('wizard.campaignNameLabel')}
+        </label>
+        <input
+          id="campaign-name"
+          autoFocus
+          type="text"
+          value={newCampaignName}
+          onChange={e => setNewCampaignName(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && canSave) onSave()
+          }}
+          placeholder={t('wizard.campaignNamePlaceholder')}
+          className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-[#F2F5F4] placeholder-[#9FB3B0]/40 focus:outline-none focus:border-white/30 text-sm transition-colors"
+        />
+      </main>
     </div>
   )
 }
