@@ -160,7 +160,10 @@ def recompute_enabled(conn, search_ids, cursor=None):
     switched (resolves C-3 from PROPOSALS.md).
 
     Owners are:
-    1. search_family_searches: active when both the family and the term are enabled.
+    1. search_family_searches: active when the family and the term are enabled
+       AND the link itself is still active. A link is deactivated rather than
+       deleted when a family is re-aimed, so the searches it used to own stop
+       being scraped while the listings they found stay reachable.
     2. route_search_circles: active when the route has no family (r.family_id IS NULL).
        When a route has a family, active ownership is tracked via search_family_searches.
     """
@@ -181,7 +184,8 @@ def recompute_enabled(conn, search_ids, cursor=None):
         f"""
         SELECT sfs.search_id,
                COUNT(*) AS total,
-               SUM(CASE WHEN f.enabled = 1 AND t.enabled = 1 THEN 1 ELSE 0 END) AS active
+               SUM(CASE WHEN f.enabled = 1 AND t.enabled = 1 AND sfs.active = 1
+                        THEN 1 ELSE 0 END) AS active
         FROM search_family_searches sfs
         JOIN search_families f ON f.id = sfs.family_id
         JOIN search_family_terms t ON t.id = sfs.term_id
@@ -586,8 +590,16 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None, base_url
                         ).fetchall()
                     ]
                     affected_search_ids.update(old_sids)
+                    # Re-aimed, not removed. Deleting the link left the old
+                    # searches with no owner at all, and recompute_enabled never
+                    # switches an unowned row -- it reads one as hand-made. So
+                    # every edit of a town, a radius or a keyword permanently
+                    # added searches to the scrape schedule that nothing wanted,
+                    # and the listings they had found disappeared from the
+                    # family because listing_search_hits still pointed at them.
                     cursor.execute(
-                        "DELETE FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+                        "UPDATE search_family_searches SET active = 0 "
+                        "WHERE family_id = ? AND term_id = ?",
                         (family_id, tid),
                     )
                     if route_search_id and old_sids:
@@ -672,8 +684,10 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None, base_url
                 ).fetchall()
             ]
             affected_search_ids.update(old_sids)
+            # Re-aimed, not removed -- see the note on the slug-change path.
             cursor.execute(
-                "DELETE FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+                "UPDATE search_family_searches SET active = 0 "
+                "WHERE family_id = ? AND term_id = ?",
                 (family_id, tid),
             )
             if route_search_id and old_sids:

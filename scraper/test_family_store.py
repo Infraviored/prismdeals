@@ -318,7 +318,8 @@ def test_term_keyword_update_reattaches_searches(conn):
     )
 
     new_sid = cursor.execute(
-        "SELECT search_id FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+        "SELECT search_id FROM search_family_searches "
+        "WHERE family_id = ? AND term_id = ? AND active = 1",
         (fam_id, term_id),
     ).fetchone()[0]
     new_url = cursor.execute(
@@ -327,13 +328,21 @@ def test_term_keyword_update_reattaches_searches(conn):
     assert "mfc-l2750dw" in new_url
     assert new_sid != old_sid
 
-    # Old search is no longer owned by this family
+    # The old search is no longer run by this family -- but the link stays, so
+    # the listings it found remain reachable. Deleting it left the search row
+    # with no owner at all, and recompute_enabled never switches an unowned row:
+    # it kept being scraped forever, and the family lost its own history.
+    old_link = cursor.execute(
+        "SELECT active FROM search_family_searches WHERE search_id = ?", (old_sid,)
+    ).fetchone()
+    assert old_link is not None, "the link to the old search must survive"
+    assert old_link[0] == 0, "but it must no longer be active"
     assert (
         cursor.execute(
-            "SELECT 1 FROM search_family_searches WHERE search_id = ?", (old_sid,)
-        ).fetchone()
-        is None
-    )
+            "SELECT enabled FROM searches WHERE id = ?", (old_sid,)
+        ).fetchone()[0]
+        == 0
+    ), "and the search itself must stop being scraped"
 
 
 def test_disabled_term_on_route_family_disables_search(conn):
@@ -576,7 +585,7 @@ def test_update_family_base_url_rewrites_searches(conn):
     orig_search = cursor.execute(
         "SELECT s.id, s.url FROM searches s "
         "JOIN search_family_searches sfs ON sfs.search_id = s.id "
-        "WHERE sfs.family_id = ?",
+        "WHERE sfs.family_id = ? AND sfs.active = 1",
         (fam_id,),
     ).fetchone()
     assert orig_search[1] == (
@@ -601,7 +610,7 @@ def test_update_family_base_url_rewrites_searches(conn):
     new_search = cursor.execute(
         "SELECT s.id, s.url, s.enabled FROM searches s "
         "JOIN search_family_searches sfs ON sfs.search_id = s.id "
-        "WHERE sfs.family_id = ?",
+        "WHERE sfs.family_id = ? AND sfs.active = 1",
         (fam_id,),
     ).fetchone()
     assert new_search[1] == (
@@ -693,3 +702,61 @@ def test_route_keeps_its_own_circles_when_the_family_base_url_changes(conn):
             ).fetchone()[0]
             == 1
         ), "a route-owned search was switched off by a family edit"
+
+
+def test_re_aiming_a_family_does_not_leave_searches_running_forever(conn):
+    """Every edit of a town, a radius or a price used to add searches nobody wanted.
+
+    update_family's base_url path detached each term and attached it again under
+    the new URL. The old `searches` rows survived with no owner at all, and
+    recompute_enabled deliberately never switches an unowned row -- it reads one
+    as hand-made. So the scrape schedule grew by N on every edit, permanently,
+    while the family's own listings vanished from its results because
+    listing_search_hits still pointed at the detached rows.
+    """
+    cursor = conn.cursor()
+    fam_id, _, _ = family_store.save_family(
+        conn,
+        name="Drucker",
+        base_url="https://www.kleinanzeigen.de/s-landsberg-am-lech/drucker/k0l7091r30",
+        terms=["Brother MFC-L2740DW", "Canon i-SENSYS MF445dw"],
+    )
+
+    before = [
+        r[0]
+        for r in cursor.execute(
+            "SELECT search_id FROM search_family_searches WHERE family_id = ? AND active = 1",
+            (fam_id,),
+        ).fetchall()
+    ]
+    assert len(before) == 2
+
+    family_store.update_family(
+        conn,
+        fam_id,
+        base_url="https://www.kleinanzeigen.de/s-landsberg-am-lech/drucker/k0l7091r50",
+    )
+
+    after = [
+        r[0]
+        for r in cursor.execute(
+            "SELECT search_id FROM search_family_searches WHERE family_id = ? AND active = 1",
+            (fam_id,),
+        ).fetchall()
+    ]
+    assert len(after) == 2, "the family still runs two searches, not four"
+    assert set(after).isdisjoint(before), "and they are the re-aimed ones"
+
+    for old in before:
+        assert (
+            cursor.execute(
+                "SELECT enabled FROM searches WHERE id = ?", (old,)
+            ).fetchone()[0]
+            == 0
+        ), f"search {old} is nobody's and must not keep being scraped"
+
+    # The history stays reachable: the link is inactive, not gone.
+    kept = cursor.execute(
+        "SELECT COUNT(*) FROM search_family_searches WHERE family_id = ?", (fam_id,)
+    ).fetchone()[0]
+    assert kept == 4, "two re-aimed plus two kept for their history"

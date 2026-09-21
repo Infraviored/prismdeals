@@ -359,125 +359,92 @@ app.get('/api/external-prompt', (req, res) => {
   }
 });
 
-// API: Get listings with optional filtering, sorting, pagination, and campaign scoping
+// API: Get listings with optional filtering, sorting, pagination, and scoping.
+//
+// One query for all three scopes. It used to be three, and only the campaign
+// one consulted limit, offset, sort and q -- so ?search_id=5&limit=20 returned
+// every row of that search, ordered by score, and ?limit=20 with no scope
+// returned the whole listings table. Worse, the response shape flipped between
+// a bare array and {total, offset, limit, listings} depending on which branch
+// answered, so a client could not tell what it was holding.
 app.get('/api/listings', async (req, res) => {
   try {
     const { campaign_id, search_id, limit: limitParam, offset: offsetParam, sort, q } = req.query;
-    const isPaginated = limitParam !== undefined || offsetParam !== undefined || sort !== undefined || q !== undefined;
+    const isPaginated =
+      limitParam !== undefined || offsetParam !== undefined || sort !== undefined || q !== undefined;
+
+    const whereConditions = [];
+    const whereParams = [];
 
     if (search_id) {
-      const rows = await query(`
-        SELECT l.*, s.name as item_name, c.name as campaign_name,
-               MAX(lsh.first_seen_at) as first_seen_at
-        FROM listings l 
-        LEFT JOIN searches s ON l.search_id = s.id 
-        LEFT JOIN campaigns c ON s.campaign_id = c.id
-        LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = l.search_id
-        WHERE l.search_id = ? 
-        GROUP BY l.id
-        ORDER BY l.niceness_score DESC
-      `, [search_id]);
-
-      const listings = rows.map(r => ({
-        ...r,
-        llm_processed: !!r.llm_processed,
-        full_info_obtained: !!r.full_info_obtained,
-        extracted_facts: JSON.parse(r.extracted_facts || '{}'),
-        details: JSON.parse(r.details || '{}'),
-        images: JSON.parse(r.images || '[]')
-      }));
-
-      return res.json(listings);
+      whereConditions.push('l.search_id = ?');
+      whereParams.push(search_id);
+    } else if (campaign_id) {
+      whereConditions.push('s.campaign_id = ?');
+      whereParams.push(campaign_id);
     }
 
-    if (campaign_id) {
-      const whereConditions = ['s.campaign_id = ?'];
-      const whereParams = [campaign_id];
+    if (q && q.trim() !== '') {
+      const qVal = `%${q.trim()}%`;
+      whereConditions.push('(l.title LIKE ? OR l.location LIKE ?)');
+      whereParams.push(qVal, qVal);
+    }
 
-      if (q && q.trim() !== '') {
-        const qVal = `%${q.trim()}%`;
-        whereConditions.push('(l.title LIKE ? OR l.location LIKE ?)');
-        whereParams.push(qVal, qVal);
-      }
+    const whereSql = whereConditions.length ? 'WHERE ' + whereConditions.join(' AND ') : '';
 
-      const whereSql = 'WHERE ' + whereConditions.join(' AND ');
+    const countRow = await get(
+      `SELECT COUNT(DISTINCT l.id) as total
+         FROM listings l
+         LEFT JOIN searches s ON l.search_id = s.id
+        ${whereSql}`,
+      whereParams
+    );
+    const total = countRow ? Number(countRow.total || 0) : 0;
 
-      const countRow = await get(`
-        SELECT COUNT(DISTINCT l.id) as total
-        FROM listings l
-        JOIN searches s ON l.search_id = s.id
-        ${whereSql}
-      `, whereParams);
-      const total = countRow ? Number(countRow.total || 0) : 0;
+    let orderBy = 'l.niceness_score DESC, l.id DESC';
+    if (sort === 'price_asc') {
+      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+    } else if (sort === 'price_desc') {
+      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, l.id DESC';
+    } else if (sort === 'newest' || sort === 'freshness') {
+      orderBy = 'first_seen_at DESC, l.id DESC';
+    } else if (sort === 'score') {
+      orderBy = '(l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
+    }
 
-      let orderBy = 'l.niceness_score DESC, l.id DESC';
-      if (sort === 'price_asc') {
-        orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
-      } else if (sort === 'price_desc') {
-        orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, l.id DESC';
-      } else if (sort === 'newest' || sort === 'freshness') {
-        orderBy = 'first_seen_at DESC, l.id DESC';
-      } else if (sort === 'score') {
-        orderBy = '(l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
-      }
+    const limit = Math.max(1, parseInt(limitParam, 10) || 50);
+    const offset = offsetParam ? Math.max(0, parseInt(offsetParam, 10) || 0) : 0;
 
-      const limit = Math.max(1, parseInt(limitParam, 10) || 50);
-      const offset = offsetParam ? Math.max(0, parseInt(offsetParam, 10) || 0) : 0;
-
-      const paginationSql = isPaginated ? 'LIMIT ? OFFSET ?' : '';
-      const queryParams = isPaginated ? [...whereParams, limit, offset] : whereParams;
-
-      const rows = await query(`
-        SELECT l.*, s.name as item_name, c.name as campaign_name,
-               MAX(lsh.first_seen_at) as first_seen_at
-        FROM listings l 
-        JOIN searches s ON l.search_id = s.id 
-        LEFT JOIN campaigns c ON s.campaign_id = c.id
-        LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = l.search_id
+    const rows = await query(
+      `SELECT l.*, s.name as item_name, c.name as campaign_name,
+              MAX(lsh.first_seen_at) as first_seen_at
+         FROM listings l
+         LEFT JOIN searches s ON l.search_id = s.id
+         LEFT JOIN campaigns c ON s.campaign_id = c.id
+         LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = l.search_id
         ${whereSql}
         GROUP BY l.id
         ORDER BY ${orderBy}
-        ${paginationSql}
-      `, queryParams);
+        ${isPaginated ? 'LIMIT ? OFFSET ?' : ''}`,
+      isPaginated ? [...whereParams, limit, offset] : whereParams
+    );
 
-      const listings = rows.map(r => ({
-        ...r,
-        llm_processed: !!r.llm_processed,
-        full_info_obtained: !!r.full_info_obtained,
-        extracted_facts: JSON.parse(r.extracted_facts || '{}'),
-        details: JSON.parse(r.details || '{}'),
-        images: JSON.parse(r.images || '[]'),
-        matched_terms: []
-      }));
-
-      if (isPaginated) {
-        return res.json({ total, offset, limit, listings });
-      }
-      return res.json(listings);
-    }
-
-    const rows = await query(`
-      SELECT l.*, s.name as item_name, c.name as campaign_name,
-             MAX(lsh.first_seen_at) as first_seen_at
-      FROM listings l 
-      LEFT JOIN searches s ON l.search_id = s.id 
-      LEFT JOIN campaigns c ON s.campaign_id = c.id
-      LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = l.search_id
-      GROUP BY l.id
-      ORDER BY l.niceness_score DESC
-    `);
-    
-    // Parse JSON string fields back to objects
     const listings = rows.map(r => ({
       ...r,
       llm_processed: !!r.llm_processed,
       full_info_obtained: !!r.full_info_obtained,
       extracted_facts: JSON.parse(r.extracted_facts || '{}'),
       details: JSON.parse(r.details || '{}'),
-      images: JSON.parse(r.images || '[]')
+      images: JSON.parse(r.images || '[]'),
+      matched_terms: []
     }));
-    
-    res.json(listings);
+
+    await annotateDeals(query, listings);
+
+    if (isPaginated) {
+      return res.json({ total, offset, limit, listings });
+    }
+    return res.json(listings);
   } catch (error) {
     console.error('Error fetching listings:', error);
     res.status(500).json({ error: 'Failed to load listings data' });
@@ -1315,7 +1282,12 @@ app.get('/api/search-families', async (req, res) => {
     let sql = `
       SELECT f.id, f.name, f.enabled,
              (SELECT COUNT(*) FROM search_family_terms t WHERE t.family_id = f.id) AS terms,
-             (SELECT COUNT(DISTINCT sfs.search_id) FROM search_family_searches sfs WHERE sfs.family_id = f.id) AS searches,
+             -- Only the searches this family still runs. A re-aimed family keeps
+             -- its old links so the listings they found stay reachable, but it
+             -- does not search through them any more, and reporting them here
+             -- would grow the number on every edit of a town or a radius.
+             (SELECT COUNT(DISTINCT sfs.search_id) FROM search_family_searches sfs
+               WHERE sfs.family_id = f.id AND sfs.active = 1) AS searches,
              (SELECT COUNT(DISTINCT lsh.listing_id)
                 FROM search_family_searches sfs
                 JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id

@@ -220,6 +220,37 @@ async function main() {
       assert(f in routeListingSample, `route listing missing field: ${f}`);
     }
 
+    console.log('--- TEST 10: /api/listings honours its parameters on every scope ---');
+    // It used to honour them on one of three. ?search_id=X&limit=2 returned
+    // every row of that search ordered by score, and ?limit=2 with no scope
+    // returned the whole table -- as a bare array, so a paginating client could
+    // not even tell it had been ignored.
+    const bySearch = await request('/api/listings?search_id=101&limit=2&sort=price_asc');
+    assert(bySearch.status === 200, `status ${bySearch.status}`);
+    assert(!Array.isArray(bySearch.data), 'a paginated request answers with an object, not a bare array');
+    assert(bySearch.data.listings.length === 2, `limit honoured on search_id scope, got ${bySearch.data.listings.length}`);
+    assert(
+      bySearch.data.listings[0].price_eur <= bySearch.data.listings[1].price_eur,
+      'sort honoured on search_id scope'
+    );
+    assert(bySearch.data.total > 2, `total is the search, not the page: ${bySearch.data.total}`);
+
+    const scoped = bySearch.data.listings.every(l => l.search_id === 101);
+    assert(scoped, 'search_id actually scopes the result');
+
+    const unscoped = await request('/api/listings?limit=3');
+    assert(unscoped.status === 200, `status ${unscoped.status}`);
+    assert(unscoped.data.listings.length === 3, `limit honoured with no scope, got ${unscoped.data.listings.length}`);
+
+    const offsetPage = await request('/api/listings?search_id=101&limit=2&offset=2&sort=price_asc');
+    const firstIds = bySearch.data.listings.map(l => l.id).join(',');
+    const secondIds = offsetPage.data.listings.map(l => l.id).join(',');
+    assert(firstIds !== secondIds, `offset moves the window: ${firstIds} vs ${secondIds}`);
+
+    // No parameters at all still answers the old way, because callers depend on it.
+    const plain = await request('/api/listings?search_id=101');
+    assert(Array.isArray(plain.data), 'an unparameterised request still answers with an array');
+
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
   } finally {
     server.kill();

@@ -223,3 +223,18 @@ ALTER TABLE listings ADD COLUMN last_seen_at TEXT;
 
 ALTER TABLE listings ADD COLUMN delisted_at TEXT;
 
+
+-- Re-aiming a family left its old searches behind.
+--
+-- update_family's base_url path detaches every term and re-attaches it under
+-- the new URL. The old searches rows survived with no owner at all, and
+-- recompute_enabled deliberately never switches an unowned row -- it reads one
+-- as hand-made. So every edit of a town, a radius or a price permanently added
+-- N always-enabled searches to the scrape schedule, and the family's own
+-- listings vanished from the results because listing_search_hits still pointed
+-- at the detached rows.
+--
+-- The link is kept and marked instead of deleted: an inactive row is not an
+-- owner for the enabled rule, so the scraper leaves it alone, and the history
+-- it found is still reachable.
+ALTER TABLE search_family_searches ADD COLUMN active INTEGER NOT NULL DEFAULT 1;
