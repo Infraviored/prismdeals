@@ -25,8 +25,17 @@ export interface TaxonomyFilter {
 export interface CategoryFiltersProps {
   categoryId: string | null;
   attributes: string[];
+  /** What the buyer typed under "What", used to suggest a category. */
+  term?: string;
   onCategoryChange: (id: string | null) => void;
   onAttributesChange: (attributes: string[]) => void;
+}
+
+interface Suggestion {
+  id: string;
+  name: string;
+  filter: string | null;
+  filter_label: string | null;
 }
 
 /** Choosing a category, and then the filters that category actually offers.
@@ -42,6 +51,7 @@ export interface CategoryFiltersProps {
 export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
   categoryId,
   attributes,
+  term = '',
   onCategoryChange,
   onAttributesChange,
 }) => {
@@ -53,6 +63,39 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
   const [openFilter, setOpenFilter] = useState<TaxonomyFilter | null>(null);
   const [search, setSearch] = useState('');
   const [unavailable, setUnavailable] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+
+  // Nobody browses 161 categories to say "printer". The word a buyer already
+  // typed is enough to offer one, and the site keeps the distinction in its
+  // filter values -- so the suggestion arrives with the filter already set.
+  useEffect(() => {
+    const trimmed = term.trim();
+    if (categoryId || trimmed.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetch(`/api/taxonomy/suggest?q=${encodeURIComponent(trimmed)}`)
+        .then(r => (r.ok ? r.json() : { suggestions: [] }))
+        .then(d => {
+          if (!cancelled) setSuggestions(d.suggestions || []);
+        })
+        .catch(() => {
+          if (!cancelled) setSuggestions([]);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [term, categoryId]);
+
+  const applySuggestion = (suggestion: Suggestion) => {
+    onCategoryChange(suggestion.id);
+    onAttributesChange(suggestion.filter ? [suggestion.filter] : []);
+    setSuggestions([]);
+  };
 
   useEffect(() => {
     if (!pickerOpen || tree.length > 0) return;
@@ -137,6 +180,22 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
           <span className="text-[#9FB3B0]">{t('surface.anyCategory')}</span>
         )}
       </button>
+
+      {suggestions.length > 0 && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {suggestions.map(suggestion => (
+            <button
+              key={`${suggestion.id}-${suggestion.filter || ''}`}
+              type="button"
+              onClick={() => applySuggestion(suggestion)}
+              className="px-3 min-h-[36px] rounded-full bg-white/[0.04] border border-white/[0.08] text-xs text-[#9FB3B0] hover:text-[#F2F5F4] hover:border-white/30 transition-colors"
+            >
+              {suggestion.filter_label || suggestion.name}
+              <span className="text-[#9FB3B0]/50"> · {suggestion.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {filters.map(filter => {
         const current = valueOf(filter.key);

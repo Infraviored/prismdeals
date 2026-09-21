@@ -278,6 +278,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
         <CategoryFilters
           categoryId={categoryId}
           attributes={attributes}
+          term={name}
           onCategoryChange={setCategoryId}
           onAttributesChange={setAttributes}
         />
