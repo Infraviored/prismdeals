@@ -598,6 +598,7 @@ app.delete('/api/campaigns/:id/route', async (req, res) => {
 });
 
 app.use(require('./location_resolver'));
+app.use(require('./taxonomy'));
 
 
 // API: Get search items

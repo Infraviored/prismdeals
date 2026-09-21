@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { RadiusField } from '../components/RadiusField';
+import CategoryFilters from '../components/CategoryFilters';
 import { Bar, Pill } from '../components/surface';
 import PlaceInput, { type Place } from '../components/PlaceInput';
 import ModelPillGroup from '../components/ModelPillGroup';
@@ -30,6 +31,8 @@ export const EditScreen: React.FC<EditScreenProps> = ({
   const [locationSlug, setLocationSlug] = useState<string | null>(null);
   const [radius, setRadius] = useState<number>(30);
   const [maxPrice, setMaxPrice] = useState<number | null>(null);
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [attributes, setAttributes] = useState<string[]>([]);
   const [terms, setTerms] = useState<SearchFamilyTerm[]>([]);
 
   const [saving, setSaving] = useState(false);
@@ -42,6 +45,8 @@ export const EditScreen: React.FC<EditScreenProps> = ({
     if (!dec) return;
     if (dec.radius) setRadius(dec.radius);
     if (dec.maxPrice !== null) setMaxPrice(dec.maxPrice);
+    setCategoryId(dec.category);
+    setAttributes(dec.attributes);
     if (dec.locationId) setLocationId(dec.locationId);
     if (dec.locationSlug) {
       setLocationSlug(dec.locationSlug);
@@ -141,6 +146,8 @@ export const EditScreen: React.FC<EditScreenProps> = ({
       radius,
       maxPrice,
       query: trimmedName ? slugify(trimmedName) : undefined,
+      category: categoryId,
+      attributes,
     });
 
     const effectiveTerms =
@@ -243,6 +250,13 @@ export const EditScreen: React.FC<EditScreenProps> = ({
             addTitle={t('surface.addModel')}
           />
         </div>
+
+        <CategoryFilters
+          categoryId={categoryId}
+          attributes={attributes}
+          onCategoryChange={setCategoryId}
+          onAttributesChange={setAttributes}
+        />
 
         {/* Field 2: Wo (Where) */}
         <div className="space-y-2">

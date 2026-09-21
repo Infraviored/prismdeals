@@ -20,6 +20,7 @@ describe('searchUrl utilities', () => {
       category: null,
       location: 'l7091',
       radius: 30,
+      attributes: [],
     });
 
     const tail2 = parseTail('https://www.kleinanzeigen.de/s-notebooks/k0c278l6411');
@@ -27,6 +28,7 @@ describe('searchUrl utilities', () => {
       category: '278',
       location: 'l6411',
       radius: null,
+      attributes: [],
     });
   });
 
@@ -56,6 +58,7 @@ describe('searchUrl utilities', () => {
       maxPrice: 150,
       query: 'drucker',
       category: null,
+      attributes: [],
     });
   });
 
@@ -83,5 +86,62 @@ describe('searchUrl utilities', () => {
     expect(composed).toBe(
       'https://www.kleinanzeigen.de/s-muenchen/preis::300/k0l6411r50'
     );
+  });
+});
+
+describe('category attribute filters', () => {
+  // Measured against the live site: attributes ride the END of the tail. Put
+  // them before the location and kleinanzeigen.de redirects and drops the
+  // location -- a Munich search becomes a nationwide one wearing the same URL.
+  const APPLE_IN_MUNICH =
+    'https://www.kleinanzeigen.de/s-muenchen/notebook/k0c278l6411r30+notebooks.brand_s:apple';
+
+  it('reads attribute filters off the tail', () => {
+    expect(parseTail(APPLE_IN_MUNICH)).toEqual({
+      category: '278',
+      location: 'l6411',
+      radius: 30,
+      attributes: ['notebooks.brand_s:apple'],
+    });
+  });
+
+  it('keeps several attributes in the order they were written', () => {
+    const url =
+      'https://www.kleinanzeigen.de/s-muenchen/notebook/k0c278l6411r30' +
+      '+notebooks.brand_s:apple+notebooks.ram_s:16gb';
+    expect(parseTail(url)?.attributes).toEqual([
+      'notebooks.brand_s:apple',
+      'notebooks.ram_s:16gb',
+    ]);
+  });
+
+  it('composes them after the radius, never before the location', () => {
+    const url = composeSearchUrl({
+      locationSlug: 'muenchen',
+      locationId: '6411',
+      radius: 30,
+      query: 'notebook',
+      category: '278',
+      attributes: ['notebooks.brand_s:apple', 'notebooks.ram_s:16gb'],
+    });
+    expect(url).toBe(
+      'https://www.kleinanzeigen.de/s-muenchen/notebook/k0c278l6411r30' +
+        '+notebooks.brand_s:apple+notebooks.ram_s:16gb'
+    );
+  });
+
+  it('round-trips a filtered search unchanged', () => {
+    const dec = decomposeSearchUrl(APPLE_IN_MUNICH);
+    expect(dec?.attributes).toEqual(['notebooks.brand_s:apple']);
+    expect(
+      composeSearchUrl({
+        locationSlug: dec!.locationSlug,
+        locationId: dec!.locationId,
+        radius: dec!.radius,
+        query: dec!.query,
+        category: dec!.category,
+        attributes: dec!.attributes,
+      })
+    ).toBe(APPLE_IN_MUNICH);
   });
 });

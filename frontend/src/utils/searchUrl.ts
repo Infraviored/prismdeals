@@ -5,7 +5,11 @@
  * https://www.kleinanzeigen.de/s-<ort-slug>/[preis:a:b/][<suchbegriff-slug>/]k0[c<kategorie>]l<ort-id>r<radius>
  */
 
-const TAIL_REGEX = /^(?:k\d+)(?:c(?<cat>\d+))?(?:l(?<loc>\d+))?(?:r(?<rad>\d+))?$/;
+// Category attribute filters hang off the END of the tail, after location and
+// radius, joined by '+'. Put them before the location and kleinanzeigen.de
+// redirects and drops the location: a Munich search silently becomes a
+// nationwide one. Mirrors TAIL_RE in scraper/search_url.py.
+const TAIL_REGEX = /^(?:k\d+)(?:c(?<cat>\d+))?(?:l(?<loc>\d+))?(?:r(?<rad>\d+))?(?<attrs>(?:\+[\w.]+:[^+/]+)*)$/;
 const PRICE_REGEX = /^preis:(\d*(?:\.\d+)?)?:(\d*(?:\.\d+)?)?$/;
 
 export interface DecomposedSearchUrl {
@@ -16,6 +20,7 @@ export interface DecomposedSearchUrl {
   maxPrice: number | null;
   query: string | null;
   category: string | null;
+  attributes: string[];
 }
 
 export interface ComposeSearchUrlParams {
@@ -26,6 +31,7 @@ export interface ComposeSearchUrlParams {
   maxPrice?: number | null;
   query?: string | null;
   category?: string | null;
+  attributes?: string[] | null;
   origin?: string;
 }
 
@@ -47,6 +53,7 @@ export function parseTail(url: string): {
   category: string | null;
   location: string | null;
   radius: number | null;
+  attributes: string[];
 } | null {
   try {
     const parsed = new URL(url, 'https://www.kleinanzeigen.de');
@@ -59,11 +66,14 @@ export function parseTail(url: string): {
     const match = TAIL_REGEX.exec(tailSeg);
     if (!match || !match.groups) return null;
 
-    const { cat, loc, rad } = match.groups;
+    const { cat, loc, rad, attrs } = match.groups;
     return {
       category: cat || null,
       location: loc ? `l${loc}` : null,
       radius: rad ? parseInt(rad, 10) : null,
+      // Kept as written: the site reads a repeated key as "either of these",
+      // so order and repetition are part of the search.
+      attributes: (attrs || '').split('+').filter(Boolean),
     };
   } catch {
     return null;
@@ -127,6 +137,7 @@ export function decomposeSearchUrl(url: string): DecomposedSearchUrl | null {
       maxPrice: price ? price.max : null,
       query,
       category: tailInfo.category,
+      attributes: tailInfo.attributes,
     };
   } catch {
     return null;
@@ -141,11 +152,17 @@ function formatPriceSegment(minPrice?: number | null, maxPrice?: number | null):
   return `preis:${pMin !== null ? pMin : ''}:${pMax !== null ? pMax : ''}`;
 }
 
-function formatTailSegment(category?: string | null, locationId?: string | number | null, radius?: number | null): string {
+function formatTailSegment(
+  category?: string | null,
+  locationId?: string | number | null,
+  radius?: number | null,
+  attributes?: string[] | null
+): string {
   const cat = category ? `c${category}` : '';
   const loc = locationId ? `l${String(locationId).replace(/^l/, '')}` : '';
   const rad = radius !== null && radius !== undefined && Number(radius) > 0 ? `r${Math.round(Number(radius))}` : '';
-  return `k0${cat}${loc}${rad}`;
+  const attrs = (attributes || []).filter(Boolean).map(a => `+${a}`).join('');
+  return `k0${cat}${loc}${rad}${attrs}`;
 }
 
 export function composeSearchUrl({
@@ -156,6 +173,7 @@ export function composeSearchUrl({
   maxPrice,
   query,
   category,
+  attributes,
   origin = 'https://www.kleinanzeigen.de',
 }: ComposeSearchUrlParams): string {
   const cleanSlug = locationSlug ? slugify(locationSlug) : 'suchanfrage';
@@ -170,7 +188,7 @@ export function composeSearchUrl({
     if (qSlug) segments.push(qSlug);
   }
 
-  segments.push(formatTailSegment(category, locationId, radius));
+  segments.push(formatTailSegment(category, locationId, radius, attributes));
   const cleanOrigin = origin.replace(/\/+$/, '');
   return `${cleanOrigin}${segments.join('/')}`;
 }
