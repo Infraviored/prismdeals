@@ -15,6 +15,7 @@ SCREENS = [
     ("einrichten", "edit?campaignId=6"),
     ("app", "settings"),
     ("neue-suche", "create-campaign"),
+    ("gemerkt", "kept"),
 ]
 
 # "Where does the content begin" means the first thing a person can read or

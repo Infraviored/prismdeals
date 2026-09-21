@@ -9,6 +9,7 @@ import LandingScreen from './screens/LandingScreen';
 import FundeScreen from './screens/FundeScreen';
 import EditScreen from './screens/EditScreen';
 import CreateCampaignScreen from './screens/CreateCampaignScreen';
+import KeptScreen from './screens/KeptScreen';
 
 export default function App() {
   const {
@@ -94,6 +95,7 @@ export default function App() {
             navigate(campaignSearches.length === 0 ? 'edit' : 'dashboard', c.id, null);
           }}
           onCreateCampaign={() => setView('create-campaign')}
+          onOpenKept={() => setView('kept')}
         />
       </div>
     );
@@ -134,6 +136,10 @@ export default function App() {
         />
       </div>
     );
+  }
+
+  if (view === 'kept') {
+    return <KeptScreen onBack={() => navigate('landing', null, null)} />;
   }
 
   if (view === 'create-campaign') {

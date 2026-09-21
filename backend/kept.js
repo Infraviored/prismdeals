@@ -11,6 +11,7 @@
  */
 
 const express = require('express');
+const { annotateDeals } = require('./db/reference_price');
 
 const router = express.Router();
 
@@ -20,18 +21,54 @@ function userId(req) {
 }
 
 module.exports = (query, get, run) => {
+  // Two answers from one route. The ids alone are what a list of fifty rows
+  // needs to draw its marks; the listings themselves are what the shortlist
+  // screen needs, and asking for them always would make every results screen
+  // fetch a second copy of data it already holds.
   router.get('/api/kept', async (req, res) => {
     const uid = userId(req);
     if (!uid) return res.status(401).json({ error: 'Not signed in' });
+    const wantListings = req.query.listings === '1' || req.query.listings === 'true';
     try {
+      if (!wantListings) {
+        const rows = await query(
+          `SELECT k.listing_id, k.kept_at, k.note
+             FROM kept_listings k
+            WHERE k.user_id = ?
+            ORDER BY k.kept_at DESC`,
+          [uid]
+        );
+        return res.json({ kept: rows.map(r => ({ ...r, listing_id: String(r.listing_id) })) });
+      }
+
       const rows = await query(
-        `SELECT k.listing_id, k.kept_at, k.note
+        `SELECT l.*, s.name AS search_name, c.name AS campaign_name,
+                k.kept_at, k.note,
+                MAX(lsh.first_seen_at) AS first_seen_at
            FROM kept_listings k
+           JOIN listings l ON l.id = k.listing_id
+           LEFT JOIN searches s ON s.id = l.search_id
+           LEFT JOIN campaigns c ON c.id = s.campaign_id
+           LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = l.search_id
           WHERE k.user_id = ?
+          GROUP BY l.id
           ORDER BY k.kept_at DESC`,
         [uid]
       );
-      res.json({ kept: rows.map(r => ({ ...r, listing_id: String(r.listing_id) })) });
+
+      const listings = rows.map(r => ({
+        ...r,
+        id: String(r.id),
+        llm_processed: !!r.llm_processed,
+        full_info_obtained: !!r.full_info_obtained,
+        extracted_facts: JSON.parse(r.extracted_facts || '{}'),
+        details: JSON.parse(r.details || '{}'),
+        images: JSON.parse(r.images || '[]'),
+        matched_terms: [],
+      }));
+
+      await annotateDeals(query, listings);
+      res.json({ total: listings.length, kept: listings.map(l => ({ listing_id: l.id })), listings });
     } catch (error) {
       console.error('Error reading kept listings:', error);
       res.status(500).json({ error: 'Failed to read kept listings' });

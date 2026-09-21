@@ -94,6 +94,7 @@ describe('LandingScreen P3 Surface', () => {
         listings={mockListings}
         onOpenCampaign={vi.fn()}
         onCreateCampaign={handleCreate}
+        onOpenKept={vi.fn()}
       />
     );
 
@@ -114,6 +115,7 @@ describe('LandingScreen P3 Surface', () => {
         listings={mockListings}
         onOpenCampaign={handleOpen}
         onCreateCampaign={vi.fn()}
+        onOpenKept={vi.fn()}
       />
     );
 
@@ -135,6 +137,7 @@ describe('LandingScreen P3 Surface', () => {
         listings={[]}
         onOpenCampaign={vi.fn()}
         onCreateCampaign={handleCreate}
+        onOpenKept={vi.fn()}
       />
     );
 
@@ -154,6 +157,7 @@ describe('LandingScreen P3 Surface', () => {
         listings={mockListings}
         onOpenCampaign={vi.fn()}
         onCreateCampaign={vi.fn()}
+        onOpenKept={vi.fn()}
       />
     );
 

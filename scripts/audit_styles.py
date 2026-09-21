@@ -30,6 +30,7 @@ SCREENS = [
     # The sheet a buying decision is made on. No URL reaches it, so it was
     # never measured and never audited.
     ("fund", "dashboard?campaignId=1", '[data-testid="listing-row"]'),
+    ("gemerkt", "kept"),
 ]
 
 # The one colour with a reserved meaning: the price is a signal. A button, a

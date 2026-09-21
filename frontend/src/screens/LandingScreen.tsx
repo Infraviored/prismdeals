@@ -2,6 +2,7 @@ import React from 'react';
 import { Plus } from 'lucide-react';
 import { Bar, SearchRow, Pill, EmptyLine } from '../components/surface';
 import { useTranslation } from '../hooks/useTranslation';
+import { useKept } from '../hooks/useKept';
 import type { Campaign, SearchTarget, Listing } from '../types';
 import { getSearchLocationSubtitle, getSearchFreshnessSubtitle } from '../utils/searchHelpers';
 
@@ -11,6 +12,7 @@ export interface LandingScreenProps {
   listings: Listing[];
   onOpenCampaign: (campaign: Campaign) => void;
   onCreateCampaign: () => void;
+  onOpenKept: () => void;
 }
 
 export const LandingScreen: React.FC<LandingScreenProps> = ({
@@ -19,8 +21,10 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
   listings,
   onOpenCampaign,
   onCreateCampaign,
+  onOpenKept,
 }) => {
   const { t } = useTranslation();
+  const { kept } = useKept();
 
   return (
     <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col w-full">
@@ -66,6 +70,21 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
             />
           );
         })}
+
+        {/* Kept finds, wherever they were found. A mark inside one search
+            filters that search; a find kept three searches ago is only
+            reachable if you remember which one it was in. */}
+        {kept.size > 0 && (
+          <SearchRow
+            id={-1}
+            name={t('surface.kept')}
+            count={kept.size}
+            locationLabel={t('surface.acrossAllSearches')}
+            freshnessLabel={null}
+            imageUrl={null}
+            onClick={onOpenKept}
+          />
+        )}
 
         {/* Empty State */}
         {campaigns.length === 0 && (
