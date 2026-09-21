@@ -643,6 +643,28 @@ def main():
                     stats["from_cache"],
                     stats["identities_resolved"],
                 )
+            elif stats["listings"]:
+                # Processing nothing while listings are waiting is the state this
+                # pipeline sat in since it was written: 1266 listings stored, 10
+                # ever scored. It was invisible because nothing said so. The
+                # dominant skip reason is the whole diagnosis, so it is named.
+                worst = max(
+                    stats["skip_reasons"].items(),
+                    key=lambda kv: kv[1],
+                    default=("unknown", 0),
+                )
+                logger.warning(
+                    "Pipeline processed NONE of %d reachable listing(s). "
+                    "Most common reason: %s (%d). Scoring is not running.",
+                    stats["listings"],
+                    worst[0],
+                    worst[1],
+                )
+            else:
+                logger.warning(
+                    "Pipeline found no listings at all: every search is disabled, "
+                    "or no listing belongs to one."
+                )
             for reason, count in stats["skip_reasons"].items():
                 logger.info(
                     "Pipeline left %d listing(s) to the legacy worker (%s).",

@@ -111,6 +111,19 @@ def process_listing(
 
     intent = parse_intent(listing["item_json"])
 
+    # A knowledge set that names no fields is the normal case, not the odd one:
+    # all three stored ones are empty objects. What the buyer actually said is
+    # in the search itself -- the category they picked and the filters they set.
+    if not intent.get("fields"):
+        import intent_from_filters
+        import search_url
+
+        derived = intent_from_filters.intent_for_search(
+            playbook, listing["search_url"], search_url.parse_tail
+        )
+        if derived["fields"]:
+            intent = derived
+
     # Transitional guard. Extraction is buyer-independent and precomputing it is
     # the whole point, but while the legacy worker still runs alongside this
     # path, a listing the pipeline extracts without scoring stays
