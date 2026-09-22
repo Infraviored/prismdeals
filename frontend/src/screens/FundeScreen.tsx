@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Bar, Row, Pill, EmptyLine, type RowListing } from '../components/surface';
 import RouteCorridorMap, { type RouteCircle, type RouteListingGeo } from '../components/RouteCorridorMap';
 import { FundeDetailSheet } from './FundeDetailSheet';
@@ -31,6 +31,11 @@ interface FundeBarActionsProps {
   keptOnly: boolean;
   keptCount: number;
   onToggleKeptOnly: () => void;
+  fitOnly: boolean;
+  judgedCount: number;
+  judging: boolean;
+  onToggleFitOnly: () => void;
+  onJudge?: () => void;
   termId: number | null;
   activeTermLabel: string | null;
   onOpenModels: () => void;
@@ -55,6 +60,11 @@ const FundeBarActions: React.FC<FundeBarActionsProps> = ({
   keptOnly,
   keptCount,
   onToggleKeptOnly,
+  fitOnly,
+  judgedCount,
+  judging,
+  onToggleFitOnly,
+  onJudge,
   termId,
   activeTermLabel,
   onOpenModels,
@@ -99,6 +109,19 @@ const FundeBarActions: React.FC<FundeBarActionsProps> = ({
           active={keptOnly}
           onClick={onToggleKeptOnly}
         />
+      )}
+
+      {onJudge && (
+        <Pill
+          label={judging ? t('surface.judging') : t('surface.judge')}
+          onClick={onJudge}
+          disabled={judging}
+          title={t('surface.judgeTitle')}
+        />
+      )}
+
+      {judgedCount > 0 && (
+        <Pill label={t('surface.fitsOnly')} active={fitOnly} onClick={onToggleFitOnly} />
       )}
 
       {/* One filter pill. Seven controls did not fit across 390 px -- the
@@ -205,6 +228,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     loadingMore,
     hasMore,
     loadMore,
+    reload,
     sort,
     setSort,
     dealsOnly,
@@ -220,6 +244,24 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
 
   const { kept, toggle: toggleKeep } = useKept();
   const [keptOnly, setKeptOnly] = useState(false);
+  const [fitOnly, setFitOnly] = useState(false);
+  const [judging, setJudging] = useState(false);
+
+  // By campaign, not by search: a family expands to one search per model per
+  // place, and this screen shows all of them at once.
+  const runJudge = useCallback(async () => {
+    if (!campaign?.id) return;
+    setJudging(true);
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/judge`, {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+      if (res.ok) reload();
+    } finally {
+      setJudging(false);
+    }
+  }, [campaign?.id, reload]);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const activeTerm = familyTerms.find((term) => term.id === termId);
@@ -250,7 +292,12 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   // Kept finds are filtered here rather than on the server: a shortlist is a
   // handful of rows the buyer has already seen, so there is nothing to page
   // through and nothing to be wrong about in a count.
-  const activeListings = keptOnly ? inArea.filter((l) => kept.has(l.id)) : inArea;
+  const withKept = keptOnly ? inArea.filter((l) => kept.has(l.id)) : inArea;
+  // "Nur passende" hides what a verdict turned down. Filtered here because a
+  // verdict is on the page already -- the server sorted by it.
+  const activeListings = fitOnly
+    ? withKept.filter((l) => l.fit && l.fit.verdict !== 'no')
+    : withKept;
 
   const mapListings: RouteListingGeo[] = listings.map((l) => ({
     id: l.id,
@@ -305,6 +352,11 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             keptOnly={keptOnly}
             keptCount={kept.size}
             onToggleKeptOnly={() => setKeptOnly((v) => !v)}
+            fitOnly={fitOnly}
+            judgedCount={listings.filter((l) => l.fit).length}
+            judging={judging}
+            onToggleFitOnly={() => setFitOnly((v) => !v)}
+            onJudge={campaign?.id ? runJudge : undefined}
             termId={termId}
             activeTermLabel={activeTermLabel}
             onOpenModels={() => setModelsOpen(true)}

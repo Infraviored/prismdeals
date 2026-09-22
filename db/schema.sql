@@ -255,3 +255,25 @@ CREATE TABLE IF NOT EXISTS kept_listings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_kept_listings_user ON kept_listings(user_id, kept_at DESC);
+
+-- The verdict on one listing for one buyer's requirements.
+--
+-- It was being computed and thrown away: the title stage settles most of a
+-- search for nothing, inside the scoring pipeline, and the answer went nowhere.
+-- So a list of fifty offers looked exactly like the same list on Kleinanzeigen,
+-- with a 4x8 kit sitting between the matches.
+--
+-- Per (listing, search) rather than per listing: the same memory kit fits one
+-- buyer's requirements and fails another's.
+CREATE TABLE IF NOT EXISTS listing_fit (
+    listing_id TEXT NOT NULL,
+    search_id  INTEGER NOT NULL,
+    verdict    TEXT NOT NULL,          -- fit | no | unclear
+    reason     TEXT,
+    facts_json TEXT,                   -- what was read, so a verdict can be argued with
+    stage      TEXT NOT NULL,          -- title | description | photo
+    judged_at  TEXT NOT NULL,
+    PRIMARY KEY (listing_id, search_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_listing_fit_search ON listing_fit(search_id, verdict);

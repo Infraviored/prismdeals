@@ -401,7 +401,11 @@ app.get('/api/listings', async (req, res) => {
     );
     const total = countRow ? Number(countRow.total || 0) : 0;
 
-    let orderBy = 'l.niceness_score DESC, l.id DESC';
+    // Fit first by default. A list ordered by anything else is the same list
+    // Kleinanzeigen shows, with a 4x8 kit between the matches.
+    let orderBy =
+      "CASE fit.verdict WHEN 'fit' THEN 0 WHEN 'unclear' THEN 1 WHEN 'no' THEN 2 ELSE 1 END ASC, " +
+      '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
     if (sort === 'price_asc') {
       orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
     } else if (sort === 'price_desc') {
@@ -417,11 +421,14 @@ app.get('/api/listings', async (req, res) => {
 
     const rows = await query(
       `SELECT l.*, s.name as item_name, c.name as campaign_name,
-              MAX(lsh.first_seen_at) as first_seen_at
+              MAX(lsh.first_seen_at) as first_seen_at,
+              fit.verdict AS fit_verdict, fit.reason AS fit_reason,
+              fit.facts_json AS fit_facts, fit.stage AS fit_stage
          FROM listings l
          LEFT JOIN searches s ON l.search_id = s.id
          LEFT JOIN campaigns c ON s.campaign_id = c.id
          LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = l.search_id
+         LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = l.search_id
         ${whereSql}
         GROUP BY l.id
         ORDER BY ${orderBy}
@@ -436,7 +443,15 @@ app.get('/api/listings', async (req, res) => {
       extracted_facts: JSON.parse(r.extracted_facts || '{}'),
       details: JSON.parse(r.details || '{}'),
       images: JSON.parse(r.images || '[]'),
-      matched_terms: []
+      matched_terms: [],
+      fit: r.fit_verdict
+        ? {
+            verdict: r.fit_verdict,
+            reason: r.fit_reason,
+            stage: r.fit_stage,
+            facts: JSON.parse(r.fit_facts || '{}'),
+          }
+        : null,
     }));
 
     await annotateDeals(query, listings);
@@ -568,6 +583,7 @@ app.use(require('./location_resolver'));
 app.use(require('./taxonomy'));
 app.use(require('./kept')(query, get, run));
 app.use(require('./requirements_api')(query, get, run));
+app.use(require('./fit_api')(query, get));
 
 
 // API: Get search items

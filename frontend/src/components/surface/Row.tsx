@@ -27,6 +27,37 @@ export interface RowListing {
   price_delta_eur?: number | null;
   niceness_score?: number | null;
   reference_comparison?: { closer_to: 'good' | 'bad' | 'mixed'; reasoning: string } | null;
+  fit?: {
+    verdict: 'fit' | 'unclear' | 'no';
+    reason?: string | null;
+    stage?: string | null;
+    facts?: Record<string, unknown>;
+  } | null;
+}
+
+/** The line a verdict earns: what was checked, or why it was turned down.
+ *
+ * A rejection says the one fact that decided it -- "4 Riegel statt 2" beats a
+ * list of everything that was fine. A match says what it is, because that is
+ * what a buyer compares.
+ */
+function summariseFit(fit: NonNullable<RowListing['fit']>): string {
+  if (fit.verdict === 'no') return fit.reason || 'passt nicht';
+
+  const facts = fit.facts || {};
+  const parts: string[] = [];
+  if (facts.stickCount && facts.gbPerStick) {
+    parts.push(`${facts.stickCount}×${facts.gbPerStick} GB`);
+  }
+  if (facts.generation && facts.speedMhz) {
+    parts.push(`${String(facts.generation).toUpperCase()}-${facts.speedMhz}`);
+  } else if (facts.generation) {
+    parts.push(String(facts.generation).toUpperCase());
+  }
+  if (facts.casLatency) parts.push(`CL${facts.casLatency}`);
+
+  if (parts.length === 0) return fit.reason || '';
+  return parts.join(' · ');
 }
 
 export interface RowProps {
@@ -147,6 +178,28 @@ export const Row: React.FC<RowProps> = ({
           {listing.title || '—'}
         </h2>
 
+        {/* What was checked, where it matters more than where the thing is.
+            For a memory kit the town decides nothing and "2×16 · DDR4-3200 ·
+            CL16" decides everything, so the verdict's own facts take the line
+            when there is one. */}
+        {listing.fit ? (
+          <div className="text-2xs truncate flex items-center gap-1.5 mt-0.5">
+            <span
+              className={
+                listing.fit.verdict === 'fit'
+                  ? 'text-[#10B981] shrink-0'
+                  : listing.fit.verdict === 'no'
+                  ? 'text-[#8A9694] shrink-0'
+                  : 'text-[#D9A441] shrink-0'
+              }
+            >
+              {listing.fit.verdict === 'fit' ? '✓' : listing.fit.verdict === 'no' ? '✗' : '?'}
+            </span>
+            <span className="truncate text-[#9FB3B0]">
+              {summariseFit(listing.fit)}
+            </span>
+          </div>
+        ) : (
         <div className="text-2xs text-[#9FB3B0] truncate flex items-center gap-1.5 mt-0.5">
           {listing.location && (
             <span className="truncate">{formatLocation(listing.location)}</span>
@@ -163,6 +216,7 @@ export const Row: React.FC<RowProps> = ({
             <span className="text-[#9FB3B0]/50">—</span>
           )}
         </div>
+        )}
       </div>
 
       {/* Keeping a find. Quiet until it is on -- a row full of marks would

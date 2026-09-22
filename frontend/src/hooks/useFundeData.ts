@@ -129,6 +129,7 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
           // listings have a score at all -- so the accent never once appeared.
           is_deal: !!l.is_deal,
           price_delta_eur: typeof l.price_delta_eur === 'number' ? l.price_delta_eur : null,
+          fit: l.fit || null,
           status: l.geo_status || null,
           url: l.url || undefined,
           matched_terms: Array.isArray(l.matched_terms) ? l.matched_terms : [],
@@ -202,6 +203,7 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
     error,
     hasMore: listings.length < total,
     loadMore,
+    reload: () => fetchPage(0, false),
     refetch: () => fetchPage(0, false),
     // Filter controls
     sort,
