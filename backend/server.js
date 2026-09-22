@@ -548,25 +548,40 @@ app.get('/api/campaigns', async (req, res) => {
              (SELECT COUNT(DISTINCT lsh.listing_id)
                 FROM search_family_searches sfs
                 JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-               WHERE sfs.family_id = (
+               -- Only the searches the family still runs, exactly as the
+               -- results screen counts them. A re-aimed family keeps its old
+               -- links, and counting them here made the list promise rows the
+               -- results screen then refused to show.
+               WHERE sfs.active = 1
+                 AND sfs.family_id = (
                      SELECT id FROM search_families sf2
                       WHERE sf2.campaign_id = c.id ORDER BY sf2.id DESC LIMIT 1)
              ) AS family_listings,
              (SELECT COUNT(DISTINCT l.id)
                 FROM listings l JOIN searches s ON s.id = l.search_id
                WHERE s.campaign_id = c.id
-             ) AS campaign_listings
+             ) AS campaign_listings,
+             (SELECT COUNT(DISTINCT l.id)
+                FROM listings l
+                JOIN route_search_circles rsc ON rsc.search_id = l.search_id
+               WHERE rsc.route_search_id = (
+                     SELECT id FROM route_searches r2
+                      WHERE r2.campaign_id = c.id ORDER BY r2.id DESC LIMIT 1)
+             ) AS route_listings
       FROM campaigns c
     `);
 
     res.json(
       rows.map(r => ({
         ...r,
-        // A family answers for itself; anything else counts its own searches.
-        // The corridor's own number is smaller again, because it drops what
-        // falls outside the corridor -- that one is left to the results screen,
-        // which is the only place that knows the detour.
-        listing_count: r.family_id ? Number(r.family_listings || 0) : Number(r.campaign_listings || 0),
+        // The same order the results screen resolves in: a route wins over a
+        // family, a family over the plain campaign. Picking a different one
+        // here is how Matratze read 50 on the list and 171 once opened.
+        listing_count: r.route_id
+          ? Number(r.route_listings || 0)
+          : r.family_id
+          ? Number(r.family_listings || 0)
+          : Number(r.campaign_listings || 0),
       }))
     );
   } catch (error) {

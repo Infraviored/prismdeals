@@ -149,6 +149,59 @@ async function main() {
         [id, detourMin]);
     }
 
+    // A second campaign, so that the precedence in /api/campaigns is actually
+    // exercised. Campaign 1 has a route and a family that see the same sixty
+    // listings, so picking either one reads the same and a wrong precedence
+    // passes unnoticed. Here the three counts are deliberately different:
+    // route 3, family 8, campaign 26.
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (2, 'Werkbank Jagd')`);
+    await runDb(db, `INSERT INTO search_families (id, campaign_id, name, base_url, enabled, created_at)
+                     VALUES (2, 2, 'Werkbank', 'https://kleinanzeigen.de/s-werkbank/k0', 1, datetime('now'))`);
+    await runDb(db, `INSERT INTO search_family_terms (id, family_id, term, label, enabled, position)
+                     VALUES (30, 2, 'Werkbank', 'Werkbank', 1, 0),
+                            (40, 2, 'Schraubstock', 'Schraubstock', 1, 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled)
+                     VALUES (201, 2, 'Werkbank Augsburg', 'https://kleinanzeigen.de/s-201', 1),
+                            (202, 2, 'Schraubstock Augsburg', 'https://kleinanzeigen.de/s-202', 1),
+                            (203, 2, 'Schraubstock alt', 'https://kleinanzeigen.de/s-203', 1),
+                            (204, 2, 'Ohne Familie', 'https://kleinanzeigen.de/s-204', 1)`);
+    // 203 is a search the family was re-aimed away from: kept, not shown. The
+    // results screen filters it out, so the number on the list must too.
+    await runDb(db, `INSERT INTO search_family_searches (family_id, term_id, search_id, active)
+                     VALUES (2, 30, 201, 1),
+                            (2, 40, 202, 1),
+                            (2, 40, 203, 0)`);
+    // The route sees one of the family's searches, not all of them.
+    await runDb(db, `INSERT INTO route_searches (id, campaign_id, family_id, name, base_url, origin, destination, radius_km, half_width_km, plan_json, created_at)
+                     VALUES (60, 2, 2, 'Augsburg nach Ulm', 'https://kleinanzeigen.de/s-werkbank/k0', 'Augsburg', 'Ulm', 30, 20, '{"distance_km":80,"duration_min":60,"polyline":[],"circles":[]}', datetime('now'))`);
+    await runDb(db, `INSERT INTO route_search_circles (route_search_id, search_id, radius_km, label)
+                     VALUES (60, 201, 30, 'Augsburg')`);
+
+    for (const [searchId, count] of [[201, 3], [202, 5], [203, 7], [204, 11]]) {
+      for (let i = 1; i <= count; i++) {
+        const id = `werkbank-${searchId}-${i}`;
+        await runDb(db, `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+                         VALUES (?, ?, ?, ?, 'Augsburg', ?, 50, ?)`,
+          [id, `Werkbank ${searchId} Nr ${i}`, `${i * 20} €`, i * 20, `https://kleinanzeigen.de/${id}`, searchId]);
+        await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at)
+                         VALUES (?, ?, ?)`, [id, searchId, now.toISOString()]);
+      }
+    }
+
+    // And a campaign with neither, so the plain branch is covered too: a
+    // search of its own, four listings, nothing else.
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (3, 'Drucker Jagd')`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled)
+                     VALUES (301, 3, 'Drucker', 'https://kleinanzeigen.de/s-301', 1)`);
+    for (let i = 1; i <= 4; i++) {
+      const id = `drucker-${i}`;
+      await runDb(db, `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+                       VALUES (?, ?, ?, ?, 'Ulm', ?, 50, 301)`,
+        [id, `Drucker Nr ${i}`, `${i * 30} €`, i * 30, `https://kleinanzeigen.de/${id}`]);
+      await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at)
+                       VALUES (?, 301, ?)`, [id, now.toISOString()]);
+    }
+
     db.close();
 
     console.log('--- TEST 1: Default Pagination (limit=50) for search-families/:id/listings ---');
@@ -348,6 +401,67 @@ async function main() {
       dealsOnly.data.total === dealsOnly.data.listings.length ||
         dealsOnly.data.listings.length === 100,
       `total ${dealsOnly.data.total} must describe what was returned`
+    );
+
+    console.log('--- TEST 14: the number on the list is the number in the results ---');
+    // A number that changes when you tap it is worse than no number. The list
+    // counted every listing of every search in the campaign; the results ask
+    // whichever endpoint the campaign's shape demands, and a campaign with both
+    // a route and a family resolves to the route.
+    const campaigns = await request('/api/campaigns');
+    assert(campaigns.status === 200, `status ${campaigns.status}`);
+
+    for (const campaign of campaigns.data) {
+      assert(
+        typeof campaign.listing_count === 'number',
+        `campaign ${campaign.id} must say how many it will show`
+      );
+
+      let shown;
+      if (campaign.route_id) {
+        shown = (await request(`/api/campaigns/${campaign.id}/route?limit=1`)).data.total;
+      } else if (campaign.family_id) {
+        shown = (await request(`/api/search-families/${campaign.family_id}/listings?limit=1`)).data.total;
+      } else {
+        shown = (await request(`/api/listings?campaign_id=${campaign.id}&limit=1`)).data.total;
+      }
+
+      assert(
+        campaign.listing_count === shown,
+        `campaign ${campaign.id}: list says ${campaign.listing_count}, results say ${shown}`
+      );
+    }
+
+    // Equality alone cannot catch a wrong precedence when the candidates agree,
+    // so campaign 2 was seeded to make them disagree: its route sees 3, its
+    // family 8, the whole campaign 26. Naming the numbers means a rule that
+    // reaches for the family first goes red here instead of passing quietly.
+    const werkbank = campaigns.data.find(c => c.id === 2);
+    assert(werkbank, 'campaign 2 must exist for the precedence to be testable');
+    assert(werkbank.route_id && werkbank.family_id, 'campaign 2 has both a route and a family');
+    assert(
+      Number(werkbank.route_listings) === 3,
+      `route sees 3, got ${werkbank.route_listings}`
+    );
+    assert(
+      Number(werkbank.family_listings) === 8,
+      `family sees 8 -- the re-aimed search is kept, not shown -- got ${werkbank.family_listings}`
+    );
+    assert(
+      Number(werkbank.campaign_listings) === 26,
+      `the whole campaign holds 26, got ${werkbank.campaign_listings}`
+    );
+    assert(
+      werkbank.listing_count === 3,
+      `a route wins over a family: expected 3, got ${werkbank.listing_count}`
+    );
+
+    const drucker = campaigns.data.find(c => c.id === 3);
+    assert(drucker, 'campaign 3 must exist for the plain branch to be testable');
+    assert(!drucker.route_id && !drucker.family_id, 'campaign 3 has neither');
+    assert(
+      drucker.listing_count === 4,
+      `a campaign with neither counts its own searches: expected 4, got ${drucker.listing_count}`
     );
 
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
