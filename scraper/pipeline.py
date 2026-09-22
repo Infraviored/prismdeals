@@ -142,8 +142,30 @@ def process_listing(
     import text_facts
 
     wanted = intent.get("fields") or []
+    listing_text = "\n".join(
+        part for part in (listing["title"], listing.get("detailed_description")) if part
+    )
     if wanted:
-        verdict, _stated, why = text_facts.judge(playbook, wanted, listing["title"])
+        # Title first, then the description under what the title settled. A
+        # title that lists every specification reads as a match -- nobody
+        # advertises a fault in the headline -- so judging the title alone sent
+        # "Ein Riegel defekt, Bastlerware" to the model at full price and let it
+        # come back a candidate. Free text we already hold is never a reason to
+        # stop looking, and an assumption from the title's silence must not
+        # shield a statement in the body.
+        verdict, _facts, why = text_facts.judge(playbook, wanted, listing["title"])
+        stage = "title"
+        if verdict != "reject" and listing.get("detailed_description"):
+            # Only what the title *stated* carries forward. judge() also returns
+            # what it assumed from silence, and passing that as settled would
+            # let the title's silence outrank the body's words.
+            verdict, _facts, why = text_facts.judge(
+                playbook,
+                wanted,
+                listing_text,
+                settled=text_facts.read_stated(playbook, listing["title"]),
+            )
+            stage = "description"
         if verdict == "reject":
             # Mark it, or the saving is imaginary. The legacy worker takes
             # every listing with llm_processed = 0, so a title rejected here
@@ -151,7 +173,9 @@ def process_listing(
             # run -- one paid call each, for the listings this step exists to
             # avoid paying for.
             _mark_settled_without_a_model(conn, listing_id)
-            return Outcome(listing_id, playbook["key"], skipped=f"title says {why[0]}")
+            return Outcome(
+                listing_id, playbook["key"], skipped=f"{stage} says {why[0]}"
+            )
 
     result = get_or_extract(
         conn,
@@ -191,7 +215,13 @@ def process_listing(
 
     if listing.get("search_id"):
         fit.from_extracted(
-            conn, listing_id, listing["search_id"], playbook, result.facts, wanted
+            conn,
+            listing_id,
+            listing["search_id"],
+            playbook,
+            result.facts,
+            wanted,
+            text=listing_text,
         )
     return Outcome(
         listing_id, playbook["key"], scoring_result.score, result.from_cache, key

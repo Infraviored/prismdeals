@@ -267,3 +267,69 @@ def test_a_clean_description_leaves_a_match_a_match(conn):
         "Voll funktionsfähig, aus einem Aufrüstsatz übrig.",
     )
     assert fit.judge_search(conn, 1)["fit"] == 1
+
+
+def test_a_stated_defect_survives_a_model_that_says_nothing(conn):
+    """An assumption must never outrank a statement.
+
+    The model answers hasFunctionalDefect with null often enough -- "Verkauf
+    ungetestet", "Display flackert" are not the word it was trained to expect --
+    and the playbook's absent_means then filled the gap with False. A kit the
+    seller called Bastlerware came back a candidate, with the green tick written
+    over the description reader's own "no".
+    """
+    import playbooks
+
+    add(
+        conn,
+        "a",
+        "Corsair Vengeance LPX 32GB (2x16) DDR4-3200 CL16",
+        "Ein Riegel defekt, Bastlerware.",
+    )
+    extracted = {
+        "criteria": {
+            "stickCount": {"value": 2},
+            "gbPerStick": {"value": 16},
+            "generation": {"value": "DDR4"},
+            "speedMhz": {"value": 3200},
+            "casLatency": {"value": 16},
+            "hasFunctionalDefect": {"value": None},
+        }
+    }
+    verdict = fit.from_extracted(
+        conn,
+        "a",
+        1,
+        playbooks.get_playbook("computing/memory"),
+        extracted,
+        WANTS["fields"],
+        text="Corsair Vengeance LPX 32GB (2x16) DDR4-3200 CL16\nEin Riegel defekt, Bastlerware.",
+    )
+    assert verdict == "no"
+
+
+def test_silence_on_both_sides_still_means_no_defect(conn):
+    """The absent_means rule is right where nothing was said -- only there."""
+    import playbooks
+
+    add(conn, "a", "Corsair Vengeance LPX 32GB (2x16) DDR4-3200 CL16")
+    extracted = {
+        "criteria": {
+            "stickCount": {"value": 2},
+            "gbPerStick": {"value": 16},
+            "generation": {"value": "DDR4"},
+            "speedMhz": {"value": 3200},
+            "casLatency": {"value": 16},
+            "hasFunctionalDefect": {"value": None},
+        }
+    }
+    verdict = fit.from_extracted(
+        conn,
+        "a",
+        1,
+        playbooks.get_playbook("computing/memory"),
+        extracted,
+        WANTS["fields"],
+        text="Corsair Vengeance LPX 32GB (2x16) DDR4-3200 CL16",
+    )
+    assert verdict == "fit"

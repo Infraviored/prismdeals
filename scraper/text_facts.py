@@ -96,7 +96,70 @@ def contradicts(wants, value):
     return False
 
 
-def judge_facts(intent_fields, facts):
+# Nobody buying memory says "stickCount is 4". The playbook already names every
+# field in the buyer's own language, and the requirement already says what was
+# wanted, so a rejection can read like a reason to walk away rather than like a
+# stack trace.
+
+_UNITS = {"speedMhz": " MHz", "gbPerStick": " GB", "totalGb": " GB"}
+
+
+def _label(playbook, field_id):
+    for field in (playbook or {}).get("fields", []):
+        if field["id"] == field_id:
+            return field.get("label") or field_id
+    return field_id
+
+
+def _show(field_id, value):
+    if isinstance(value, bool):
+        return "ja" if value else "nein"
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, str):
+        # A token with a digit in it is a spelling, not a word: ddr4 is DDR4.
+        # Everything else is an ordinary word and is merely capitalised, so
+        # "sodimm" does not arrive shouting.
+        value = value.upper() if any(c.isdigit() for c in value) else value.capitalize()
+    return f"{value}{_UNITS.get(field_id, '')}"
+
+
+def _wanted(field_id, wants):
+    if "match" in wants:
+        return "ja" if wants["match"] else "nein"
+    low, high = wants.get("min"), wants.get("max")
+    if low is not None and high is not None:
+        return _show(field_id, low) if low == high else f"{low}-{_show(field_id, high)}"
+    if low is not None:
+        return f"mind. {_show(field_id, low)}"
+    if high is not None:
+        return f"höchstens {_show(field_id, high)}"
+    if wants.get("preferred"):
+        return " oder ".join(_show(field_id, v) for v in wants["preferred"])
+    if wants.get("excluded"):
+        return "nicht " + " oder ".join(_show(field_id, v) for v in wants["excluded"])
+    return "anders"
+
+
+def say_miss(playbook, field_id, wants, value):
+    """Why this one is out, in the words the buyer set it in."""
+    label = _label(playbook, field_id)
+    # A yes/no field names a thing, not a quantity: "Defekt ja statt nein" is
+    # two words longer and less clear than "Defekt".
+    if isinstance(value, bool):
+        return label if value else f"kein {label}"
+    return f"{label} {_show(field_id, value)} statt {_wanted(field_id, wants)}"
+
+
+def say_fact(playbook, field_id, value):
+    """What was checked and found, for a listing that passes."""
+    label = _label(playbook, field_id)
+    if isinstance(value, bool):
+        return label if value else f"kein {label}"
+    return f"{label} {_show(field_id, value)}"
+
+
+def judge_facts(intent_fields, facts, playbook=None):
     """Verdict on facts that are the evidence, not a prior.
 
     Distinct from judging text against something already settled: there, a
@@ -109,9 +172,10 @@ def judge_facts(intent_fields, facts):
         value = facts.get(field.get("id"))
         if value is None:
             continue
-        if contradicts(field.get("buyer_wants") or {}, value):
-            return "reject", facts, [f"{field['id']} is {value}"]
-        reasons.append(f"{field['id']} = {value}")
+        wants = field.get("buyer_wants") or {}
+        if contradicts(wants, value):
+            return "reject", facts, [say_miss(playbook, field["id"], wants, value)]
+        reasons.append(say_fact(playbook, field["id"], value))
 
     missing = [f["id"] for f in intent_fields if f["id"] not in facts]
     if missing:
@@ -145,10 +209,13 @@ def judge(playbook, intent_fields, text, settled=None):
             continue
         if contradicts(wants, value):
             if fid in settled:
-                doubts.append(f"{fid}: {value} contradicts the earlier {settled[fid]}")
+                doubts.append(
+                    f"{_label(playbook, fid)} {_show(fid, value)}? "
+                    f"Der Titel sagte {_show(fid, settled[fid])}"
+                )
                 continue
-            return "reject", stated, [f"{fid} is {value}"]
-        reasons.append(f"{fid} = {value}")
+            return "reject", stated, [say_miss(playbook, fid, wants, value)]
+        reasons.append(say_fact(playbook, fid, value))
 
     known = {**settled, **stated}
     missing = [f["id"] for f in intent_fields if f["id"] not in known]

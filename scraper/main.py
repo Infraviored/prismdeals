@@ -8,10 +8,12 @@ import logging
 from logging.handlers import RotatingFileHandler
 import argparse
 from scraper import (
+    ScrapeRefused,
     scrape_listings,
     preview_url_listings_count,
     harvest_descriptions,
     update_all_descriptions_session,
+    update_progress,
 )
 
 # Set up logging to both console and file
@@ -472,10 +474,18 @@ def main():
     data_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
     )
-    temp_output_file = os.path.join(data_dir, "temp_scraped.json")
+    # One file per run, not one file for the machine. A scheduled run and a
+    # run the user started from the browser shared "temp_scraped.json": the
+    # second one deleted it while the first was parsing it, so one of the two
+    # imported nothing and reported success.
+    temp_output_file = os.path.join(data_dir, f"temp_scraped.{os.getpid()}.json")
 
     # Create data directory if it doesn't exist
     os.makedirs(data_dir, exist_ok=True)
+
+    # Targets the site refused outright, reported at the end rather than lost
+    # among the log lines of a run that otherwise looks successful.
+    refused_urls = []
 
     conn = get_db_connection()
     conn.row_factory = sqlite3.Row
@@ -604,6 +614,20 @@ def main():
                             )
                     conn.commit()
 
+            except ScrapeRefused as refusal:
+                # Not the same as a search with no results, and it must not
+                # look like one. A rate-limited run used to finish quietly with
+                # nothing in it, so the buyer saw an empty search and believed
+                # it.
+                refused_urls.append(url)
+                logger.error("Kleinanzeigen refused %s: %s", url, refusal)
+                update_progress(
+                    "discovery",
+                    0,
+                    0,
+                    "Kleinanzeigen hat die Anfragen abgewiesen. "
+                    "Nichts geladen -- spaeter erneut versuchen.",
+                )
             except Exception as e:
                 logger.error(f"Error scraping or importing URL {url}: {str(e)}")
 
@@ -696,6 +720,13 @@ def main():
             logger.info("Successfully executed agent_worker processing.")
         except subprocess.CalledProcessError as e:
             logger.error(f"Error running agent_worker process: {str(e)}")
+
+    if refused_urls:
+        logger.error(
+            "%d of the run's targets were refused outright: %s",
+            len(refused_urls),
+            ", ".join(refused_urls),
+        )
 
     # Cleanup temp file
     if os.path.exists(temp_output_file):

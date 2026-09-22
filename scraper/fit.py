@@ -57,11 +57,18 @@ def record(conn, listing_id, search_id, verdict, reason, facts, stage):
     _store(conn, listing_id, search_id, verdict, reason, facts, stage)
 
 
-def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted):
+def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted, text=None):
     """Re-judges a listing from its fact sheet, once a model has read it.
 
     `extracted` is the fact sheet's shape -- {"criteria": {field: {"value":…}}}
     -- so it is flattened to the plain mapping the requirements compare against.
+
+    `text` is the listing's own words. Pass them: what the seller wrote outranks
+    what the model left blank. Without them, a model that answers
+    hasFunctionalDefect with null hands the field to the playbook's
+    absent_means, and "Display flackert stark, Bastlerware" becomes a green
+    tick -- an assumption overruling a statement, which is the one thing the
+    whole three-stage sieve exists to prevent.
     """
     criteria = (extracted or {}).get("criteria") or {}
     facts = {}
@@ -74,13 +81,17 @@ def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted):
         # "ddr4" and the requirement silently went unsatisfied.
         facts[field_id] = value.lower() if isinstance(value, str) else value
 
+    # What the listing states, before any assumption is allowed to fill a gap.
+    stated = text_facts.read_stated(playbook, text) if text else {}
+    facts.update(stated)
+
     # Absence still answers for the fields only ever written when true, so the
-    # playbook's own rule applies before the comparison.
+    # playbook's own rule applies -- but only where nothing was said.
     for field in playbook.get("fields", []):
         if "absent_means" in field and field["id"] not in facts:
             facts[field["id"]] = field["absent_means"]
 
-    verdict, known, reasons = text_facts.judge_facts(wanted, facts)
+    verdict, known, reasons = text_facts.judge_facts(wanted, facts, playbook)
     stored = {"candidate": "fit", "reject": "no", "unclear": "unclear"}[verdict]
     _store(conn, listing_id, search_id, stored, "; ".join(reasons[:3]), known, "model")
     return stored

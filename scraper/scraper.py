@@ -190,30 +190,18 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
     total_pages = len(urls) * PAGES_TO_SCRAPE
     current_page_idx = 0
 
-    # Load existing listings to check for duplicates
-    existing_listings = []
-    existing_ids = set()
-    if output_file and os.path.exists(output_file):
-        try:
-            with open(output_file, "r", encoding="utf-8") as f:
-                existing_listings = json.load(f)
-                existing_ids = {item.get("id", "") for item in existing_listings}
-                logger.info(
-                    f"Loaded {len(existing_ids)} existing listing IDs to check for duplicates"
-                )
-        except (json.JSONDecodeError, IOError) as e:
-            logger.warning(f"Error loading existing listings: {str(e)}")
-            existing_listings = []
-            existing_ids = set()
-
     # The database is what "already known" means, not a JSON file that may not
     # exist. Asking only the file meant a re-scrape saw fifty fresh listings
     # where fifty were already stored, so no price was ever compared and no
     # missing photograph was ever filled in.
-    existing_ids |= _stored_listing_ids()
+    existing_ids = _stored_listing_ids()
 
     updated_ids = []
     returned_ids = set()
+    # A refused page is not an empty page. Logging the status and carrying on
+    # meant a rate-limited run finished "successfully" with nothing in it, and
+    # the next stage read that as "the search has no results".
+    refusals = 0
 
     for base_url in urls:
         for page in range(1, PAGES_TO_SCRAPE + 1):
@@ -253,11 +241,13 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                 break
 
             try:
-                response = fetch(current_url)
-                if response.status_code != 200:
+                response = _fetch_with_backoff(current_url)
+                if response is None or response.status_code != 200:
+                    status = response.status_code if response is not None else "none"
                     logger.error(
-                        f"Failed to fetch page {current_url}. Status: {response.status_code}"
+                        f"Failed to fetch page {current_url}. Status: {status}"
                     )
+                    refusals += 1
                     continue
 
                 scraped_count = 0
@@ -292,16 +282,20 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                             all_scraped_listings.append(listing)
                         continue
 
-                    # Append and save intermediate
-                    existing_listings.append(listing)
                     existing_ids.add(listing_id)
                     returned_ids.add(listing_id)
                     all_scraped_listings.append(listing)
                     scraped_count += 1
 
+                # What the caller reads back is what this run saw -- known
+                # listings included. Writing only the new ones while returning
+                # both meant main.py, which reads the file and ignores the
+                # return value, never learned that a listing another search had
+                # found first also belongs to this one: no listing_search_hits
+                # row, invisible in the search that had just found it.
                 if output_file:
                     with open(output_file, "w", encoding="utf-8") as f:
-                        json.dump(existing_listings, f, ensure_ascii=False, indent=4)
+                        json.dump(all_scraped_listings, f, ensure_ascii=False, indent=4)
 
                 logger.info(
                     f"Scraped {scraped_count} discovered listings from {current_url}"
@@ -323,10 +317,58 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
     if updated_ids:
         _refresh_known(updated_ids)
 
+    if refusals and not all_scraped_listings:
+        raise ScrapeRefused(
+            f"The site refused every one of {refusals} page requests; "
+            "nothing was harvested."
+        )
+    if refusals:
+        logger.warning(
+            "%d of %d pages were refused; the harvest is incomplete.",
+            refusals,
+            total_pages,
+        )
+
     logger.info(
         f"Successfully scraped {len(all_scraped_listings)} listings across all pages"
     )
     return all_scraped_listings
+
+
+class ScrapeRefused(RuntimeError):
+    """Every page request was refused, so the run harvested nothing.
+
+    Distinct from a search that genuinely has no results: one is our problem,
+    the other is the buyer's, and reporting the first as the second is how a
+    rate-limited run looked like a successful one.
+    """
+
+
+# Backing off is the only polite answer to a 429, and the only one that gets
+# the page. The site also answers 503 while it decides; both are worth waiting
+# for, and a 404 is not.
+RETRY_STATUSES = (429, 500, 502, 503, 504)
+RETRY_WAITS = (5, 15, 45)
+
+
+def _fetch_with_backoff(url):
+    response = None
+    for attempt, wait in enumerate((*RETRY_WAITS, None)):
+        try:
+            response = fetch(url)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Fetching %s failed: %s", url, exc)
+            response = None
+        if response is not None and response.status_code not in RETRY_STATUSES:
+            return response
+        if wait is None:
+            return response
+        status = response.status_code if response is not None else "no answer"
+        logger.warning(
+            "%s said %s; waiting %ds before attempt %d.", url, status, wait, attempt + 2
+        )
+        time.sleep(wait)
+    return response
 
 
 def _stored_listing_ids():
