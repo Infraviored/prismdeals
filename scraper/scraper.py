@@ -82,7 +82,9 @@ def parse_listing_details_requests(url, session=None):
     """Retrieve and parse detailed specifications, description, and images using direct requests"""
     try:
         caller = session if session is not None else requests
-        response = fetch(url, caller=caller)
+        response = _fetch_with_backoff(url, caller=caller)
+        if response is None:
+            return None
         if response.status_code in (404, 410):
             logger.info(
                 f"Listing details returned HTTP {response.status_code} for {url} (delisted)."
@@ -312,7 +314,10 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
             "discovery",
             total_pages,
             total_pages,
-            "Rapid listing discovery completed.",
+            "Rapid listing discovery completed."
+            if not refusals
+            else f"{refusals} von {total_pages} Seiten abgewiesen -- "
+            "die Ausbeute ist unvollstaendig.",
         )
     if updated_ids:
         _refresh_known(updated_ids)
@@ -323,6 +328,9 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
             "nothing was harvested."
         )
     if refusals:
+        # Half a harvest reported as a whole one is how fifty listings became
+        # twenty-five without anybody noticing. It is not fatal -- what was
+        # collected is real -- but it must not read as complete.
         logger.warning(
             "%d of %d pages were refused; the harvest is incomplete.",
             refusals,
@@ -351,11 +359,11 @@ RETRY_STATUSES = (429, 500, 502, 503, 504)
 RETRY_WAITS = (5, 15, 45)
 
 
-def _fetch_with_backoff(url):
+def _fetch_with_backoff(url, caller=None):
     response = None
     for attempt, wait in enumerate((*RETRY_WAITS, None)):
         try:
-            response = fetch(url)
+            response = fetch(url, caller=caller)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Fetching %s failed: %s", url, exc)
             response = None

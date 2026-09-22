@@ -101,62 +101,72 @@ def contradicts(wants, value):
 # wanted, so a rejection can read like a reason to walk away rather than like a
 # stack trace.
 
-_UNITS = {"speedMhz": " MHz", "gbPerStick": " GB", "totalGb": " GB"}
 
-
-def _label(playbook, field_id):
+def _field(playbook, field_id):
     for field in (playbook or {}).get("fields", []):
         if field["id"] == field_id:
-            return field.get("label") or field_id
-    return field_id
+            return field
+    return {}
 
 
-def _show(field_id, value):
+def _show(field, value):
     if isinstance(value, bool):
         return "ja" if value else "nein"
     if isinstance(value, float) and value.is_integer():
         value = int(value)
     if isinstance(value, str):
-        # A token with a digit in it is a spelling, not a word: ddr4 is DDR4.
-        # Everything else is an ordinary word and is merely capitalised, so
-        # "sodimm" does not arrive shouting.
-        value = value.upper() if any(c.isdigit() for c in value) else value.capitalize()
-    return f"{value}{_UNITS.get(field_id, '')}"
+        # Only a field with a fixed set of options is a token worth
+        # re-spelling: "ddr4" is DDR4, "sodimm" is SODIMM. Free text is the
+        # seller's own words, and shouting "THINKPAD T14S GEN 2" back at the
+        # buyer is not a correction, it is a defect.
+        if field.get("type") != "enum":
+            return value
+        # A token carrying a digit is a spelling: ddr4 is DDR4. An ordinary
+        # word is a word -- "Zustand DEFEKT" shouts at the buyer for no reason.
+        return value.upper() if any(c.isdigit() for c in value) else value.capitalize()
+    unit = field.get("unit")
+    return f"{value} {unit}" if unit else f"{value}"
 
 
-def _wanted(field_id, wants):
+def _wanted(field, wants):
     if "match" in wants:
         return "ja" if wants["match"] else "nein"
     low, high = wants.get("min"), wants.get("max")
     if low is not None and high is not None:
-        return _show(field_id, low) if low == high else f"{low}-{_show(field_id, high)}"
+        return _show(field, low) if low == high else f"{low}-{_show(field, high)}"
     if low is not None:
-        return f"mind. {_show(field_id, low)}"
+        return f"mind. {_show(field, low)}"
     if high is not None:
-        return f"höchstens {_show(field_id, high)}"
+        return f"höchstens {_show(field, high)}"
     if wants.get("preferred"):
-        return " oder ".join(_show(field_id, v) for v in wants["preferred"])
+        return " oder ".join(_show(field, v) for v in wants["preferred"])
     if wants.get("excluded"):
-        return "nicht " + " oder ".join(_show(field_id, v) for v in wants["excluded"])
+        return "nicht " + " oder ".join(_show(field, v) for v in wants["excluded"])
     return "anders"
 
 
 def say_miss(playbook, field_id, wants, value):
     """Why this one is out, in the words the buyer set it in."""
-    label = _label(playbook, field_id)
+    field = _field(playbook, field_id)
+    label = field.get("label") or field_id
     # A yes/no field names a thing, not a quantity: "Defekt ja statt nein" is
     # two words longer and less clear than "Defekt".
     if isinstance(value, bool):
         return label if value else f"kein {label}"
-    return f"{label} {_show(field_id, value)} statt {_wanted(field_id, wants)}"
+    # An excluded value was named outright, so repeating it as "X statt nicht X"
+    # says the same word twice and explains nothing.
+    if wants.get("excluded") and not wants.get("preferred"):
+        return f"{label} {_show(field, value)} — ausgeschlossen"
+    return f"{label} {_show(field, value)} statt {_wanted(field, wants)}"
 
 
 def say_fact(playbook, field_id, value):
     """What was checked and found, for a listing that passes."""
-    label = _label(playbook, field_id)
+    field = _field(playbook, field_id)
+    label = field.get("label") or field_id
     if isinstance(value, bool):
         return label if value else f"kein {label}"
-    return f"{label} {_show(field_id, value)}"
+    return f"{label} {_show(field, value)}"
 
 
 def judge_facts(intent_fields, facts, playbook=None):
@@ -209,9 +219,10 @@ def judge(playbook, intent_fields, text, settled=None):
             continue
         if contradicts(wants, value):
             if fid in settled:
+                field = _field(playbook, fid)
                 doubts.append(
-                    f"{_label(playbook, fid)} {_show(fid, value)}? "
-                    f"Der Titel sagte {_show(fid, settled[fid])}"
+                    f"{field.get('label') or fid} {_show(field, value)}? "
+                    f"Der Titel sagte {_show(field, settled[fid])}"
                 )
                 continue
             return "reject", stated, [say_miss(playbook, fid, wants, value)]

@@ -83,13 +83,18 @@ def test_a_verdict_is_written_for_every_listing(conn):
 
 
 def test_a_rejection_says_the_one_fact_that_decided_it(conn):
-    """ "4 Riegel statt 2" beats a list of everything that was fine."""
+    """ "Anzahl Module 4 statt 2" beats a list of everything that was fine.
+
+    And it is the buyer's own words: the playbook names every field in them,
+    while "stickCount is 4" is the variable name and reads as a stack trace.
+    """
     add(conn, "b", "32GB RAM Kit (4x8GB) Corsair Vengeance & Goodram")
     fit.judge_search(conn, 1)
     reason = conn.execute(
         "SELECT reason FROM listing_fit WHERE listing_id = 'b'"
     ).fetchone()[0]
-    assert "stickCount" in reason and "4" in reason
+    assert reason == "Anzahl Module 4 statt 2", reason
+    assert "stickCount" not in reason
 
 
 def test_the_description_settles_what_the_title_left_open(conn):
@@ -255,7 +260,9 @@ def test_a_fault_in_the_description_beats_a_perfect_title(conn):
         "SELECT verdict, reason, stage FROM listing_fit WHERE listing_id='a'"
     ).fetchone()
     assert row[0] == "no"
-    assert "hasFunctionalDefect" in row[1]
+    # The field is a yes/no, so it names the thing rather than a quantity.
+    assert row[1] == "Defekt", row[1]
+    assert "hasFunctionalDefect" not in row[1]
     assert row[2] == "description"
 
 
@@ -333,3 +340,46 @@ def test_silence_on_both_sides_still_means_no_defect(conn):
         text="Corsair Vengeance LPX 32GB (2x16) DDR4-3200 CL16",
     )
     assert verdict == "fit"
+
+
+@pytest.mark.parametrize(
+    "answer,expected",
+    [
+        ("yes", "no"),
+        ("Yes", "no"),
+        ("ja", "no"),
+        (True, "no"),
+        ("no", "fit"),
+        (False, "fit"),
+    ],
+)
+def test_the_model_answers_a_boolean_in_words(conn, answer, expected):
+    """The prompt asks for yes/no/unknown, so that is what comes back.
+
+    "yes" is not a Python True, and `contradicts` only compares a boolean
+    requirement against a boolean -- so it found no contradiction and a kit the
+    model had just called defective was stored as a match, with "Defekt Yes"
+    written underneath it.
+    """
+    import playbooks
+
+    add(conn, "a", "Corsair Vengeance LPX 32GB (2x16) DDR4-3200 CL16")
+    verdict = fit.from_extracted(
+        conn,
+        "a",
+        1,
+        playbooks.get_playbook("computing/memory"),
+        {
+            "criteria": {
+                "stickCount": {"value": 2},
+                "gbPerStick": {"value": 16},
+                "generation": {"value": "DDR4"},
+                "speedMhz": {"value": 3200},
+                "casLatency": {"value": 16},
+                "hasFunctionalDefect": {"value": answer},
+            }
+        },
+        WANTS["fields"],
+        text="Corsair Vengeance LPX 32GB (2x16) DDR4-3200 CL16",
+    )
+    assert verdict == expected

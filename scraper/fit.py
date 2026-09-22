@@ -70,6 +70,7 @@ def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted, tex
     tick -- an assumption overruling a statement, which is the one thing the
     whole three-stage sieve exists to prevent.
     """
+    types = {f["id"]: f.get("type") for f in playbook.get("fields", [])}
     criteria = (extracted or {}).get("criteria") or {}
     facts = {}
     for field_id, entry in criteria.items():
@@ -79,7 +80,12 @@ def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted, tex
         # The model answers an enum in the words of the listing; the playbook's
         # options are lowercase. Compared as written, "DDR4" never matched
         # "ddr4" and the requirement silently went unsatisfied.
-        facts[field_id] = value.lower() if isinstance(value, str) else value
+        if isinstance(value, str):
+            value = value.lower()
+        typed = _typed(types.get(field_id), value)
+        if typed is None:
+            continue
+        facts[field_id] = typed
 
     # What the listing states, before any assumption is allowed to fill a gap.
     stated = text_facts.read_stated(playbook, text) if text else {}
@@ -95,6 +101,30 @@ def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted, tex
     stored = {"candidate": "fit", "reject": "no", "unclear": "unclear"}[verdict]
     _store(conn, listing_id, search_id, stored, "; ".join(reasons[:3]), known, "model")
     return stored
+
+
+# The prompt asks for yes/no/unknown on a boolean, and the model obliges. A
+# string "yes" is not a Python True, so `contradicts` -- which only compares a
+# boolean requirement against a boolean -- found no contradiction and a kit the
+# model had just called defective was stored as a match.
+_AS_TRUE = {"yes", "true", "ja", "1"}
+_AS_FALSE = {"no", "false", "nein", "0"}
+
+
+def _typed(field_type, value):
+    """The model's answer in the type the playbook declared."""
+    if field_type != "boolean" or isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        if value in _AS_TRUE:
+            return True
+        if value in _AS_FALSE:
+            return False
+        logger.warning("Unreadable boolean %r for a %s field", value, field_type)
+        return None
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return value
 
 
 def _store(conn, listing_id, search_id, verdict, reason, facts, stage):

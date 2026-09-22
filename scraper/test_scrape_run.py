@@ -32,7 +32,7 @@ class Page:
 def run(tmp_path, monkeypatch, known):
     monkeypatch.setattr(scraper, "PAGES_TO_SCRAPE", 1)
     monkeypatch.setattr(scraper, "DELAY_BETWEEN_PAGES", 0)
-    monkeypatch.setattr(scraper, "fetch", lambda url: Page())
+    monkeypatch.setattr(scraper, "fetch", lambda url, caller=None, timeout=10: Page())
     monkeypatch.setattr(scraper, "_stored_listing_ids", lambda: set(known))
     monkeypatch.setattr(scraper, "_refresh_known", lambda listings: None)
 
@@ -66,3 +66,59 @@ def test_a_run_that_finds_nothing_new_still_reports_what_it_saw(tmp_path, monkey
     returned, written = run(tmp_path, monkeypatch, known={"111", "222"})
 
     assert [item["id"] for item in written] == ["111", "222"]
+
+
+def test_a_refused_run_says_so_instead_of_reporting_an_empty_search(
+    tmp_path, monkeypatch
+):
+    """A 429 is our problem; a search with no results is the buyer's.
+
+    Reporting the first as the second is how a rate-limited run finished
+    "successfully" with nothing in it and the buyer believed the search was
+    empty.
+    """
+    import pytest
+
+    class Refused:
+        status_code = 429
+        text = ""
+
+    monkeypatch.setattr(scraper, "PAGES_TO_SCRAPE", 1)
+    monkeypatch.setattr(scraper, "DELAY_BETWEEN_PAGES", 0)
+    monkeypatch.setattr(scraper, "RETRY_WAITS", ())
+    monkeypatch.setattr(
+        scraper, "fetch", lambda url, caller=None, timeout=10: Refused()
+    )
+    monkeypatch.setattr(scraper, "_stored_listing_ids", lambda: set())
+
+    with pytest.raises(scraper.ScrapeRefused):
+        scraper.scrape_listings_requests(
+            ["https://www.kleinanzeigen.de/s-corsair/k0"],
+            str(tmp_path / "scraped.json"),
+        )
+
+
+def test_it_retries_a_refusal_before_giving_up(tmp_path, monkeypatch):
+    answers = []
+
+    class Refused:
+        status_code = 429
+        text = ""
+
+    def flaky(url, caller=None, timeout=10):
+        answers.append(url)
+        return Refused() if len(answers) < 3 else Page()
+
+    monkeypatch.setattr(scraper, "PAGES_TO_SCRAPE", 1)
+    monkeypatch.setattr(scraper, "DELAY_BETWEEN_PAGES", 0)
+    monkeypatch.setattr(scraper, "RETRY_WAITS", (0, 0, 0))
+    monkeypatch.setattr(scraper, "fetch", flaky)
+    monkeypatch.setattr(scraper, "_stored_listing_ids", lambda: set())
+    monkeypatch.setattr(scraper, "_refresh_known", lambda listings: None)
+
+    returned = scraper.scrape_listings_requests(
+        ["https://www.kleinanzeigen.de/s-corsair/k0"], str(tmp_path / "scraped.json")
+    )
+
+    assert len(answers) == 3, "it waited and asked again rather than giving up"
+    assert [item["id"] for item in returned] == ["111", "222"]

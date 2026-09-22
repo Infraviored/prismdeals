@@ -15,6 +15,13 @@ export function formatPrice(
 ): { text: string; isMissing: boolean } {
   const raw = rawPrice?.trim() || '';
 
+  // Nought is a price, and the friendliest one there is. The guard below is
+  // `> 0`, so a free listing whose raw string had been lost fell all the way
+  // through to "no price".
+  if (priceEur === 0) {
+    return { text: raw || t('surface.giveaway'), isMissing: false };
+  }
+
   if (typeof priceEur === 'number' && priceEur > 0) {
     // Only the terms are taken from the raw string; the amount is the
     // parsed number, so a mangled "1.200 €" still reads as 1200.

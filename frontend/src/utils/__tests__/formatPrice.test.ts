@@ -32,6 +32,11 @@ describe('formatPrice', () => {
     });
   });
 
+  it('treats nought as a price, not as the absence of one', () => {
+    expect(formatPrice(0, 'Zu verschenken', t).text).toBe('Zu verschenken');
+    expect(formatPrice(0, '', t)).toEqual({ text: 'surface.giveaway', isMissing: false });
+  });
+
   it('says so when there is no price at all', () => {
     expect(formatPrice(null, '', t)).toEqual({ text: 'surface.noPrice', isMissing: true });
   });

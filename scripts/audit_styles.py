@@ -127,8 +127,14 @@ for (const el of document.querySelectorAll('body *')) {
     if (size && size < 11) add('winzige-schrift', el, `${size}px`);
   }
 
-  // 7. Wider than the window: the page scrolls sideways.
-  if (rect.right > window.innerWidth + 1 && style.position !== 'fixed') {
+  // 7. Wider than the window: the page scrolls sideways. A row inside its own
+  //    horizontally scrolling box is the documented exception -- the bar's
+  //    actions live in one -- and reporting those said 36 defects about a page
+  //    whose body does not move a pixel.
+  const inScroller = el.closest(
+    '[style*="overflow-x"], .overflow-x-auto, .overflow-x-scroll, .overflow-auto, .overflow-scroll'
+  );
+  if (rect.right > window.innerWidth + 1 && style.position !== 'fixed' && !inScroller) {
     add('ragt-heraus', el, `rechts bei ${Math.round(rect.right)}px, Fenster ${window.innerWidth}px`);
   }
 }

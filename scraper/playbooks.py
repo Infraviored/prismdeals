@@ -701,6 +701,7 @@ register(
                 "id": "gbPerStick",
                 "type": "number",
                 "label": "GB je Modul",
+                "unit": "GB",
                 "description": "Capacity of one stick, not the total.",
                 "text_patterns": [
                     (
@@ -717,12 +718,14 @@ register(
                 "id": "totalGb",
                 "type": "number",
                 "label": "GB gesamt",
+                "unit": "GB",
                 "description": "Total capacity across all sticks in the offer.",
             },
             {
                 "id": "speedMhz",
                 "type": "number",
                 "label": "Taktung",
+                "unit": "MHz",
                 "description": "Rated speed in MHz, e.g. 3200. The seller's own test system's limit is not the module's speed.",
                 # "3200MHz" has no word boundary after the 0, which is how the
                 # commonest spelling went unread and cost a page fetch.

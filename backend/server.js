@@ -409,6 +409,13 @@ async function attachPriceHistory(query, listings) {
  * corridor campaign every row showed its town where its specification belongs,
  * and the "fits" filter emptied the list because there was no verdict to keep.
  */
+// Fit first, in the ordering nobody chose. A default list ordered by anything
+// else is the same list Kleinanzeigen shows, with a 4x8 kit between the
+// matches. A sort the buyer picked by hand is left alone: "price lowest" has to
+// mean price.
+const FIT_FIRST =
+  "CASE fit.verdict WHEN 'fit' THEN 0 WHEN 'unclear' THEN 1 WHEN 'no' THEN 2 ELSE 1 END ASC, ";
+
 function fitOf(row) {
   if (!row.fit_verdict) return null;
   return {
@@ -472,10 +479,13 @@ app.get('/api/listings', async (req, res) => {
         ? await query('SELECT id FROM searches WHERE campaign_id = ?', [campaign_id])
         : await query('SELECT id FROM searches');
       const dealIds = await dealListingIds(query, scopeRows.map(r => Number(r.id)));
-      if (dealIds.length === 0) {
-        return res.json({ total: 0, offset: 0, limit: 0, listings: [] });
-      }
-      whereConditions.push(`l.id IN (${dealIds.map(() => '?').join(',')})`);
+      // An empty result is still an answer of the same shape. Returning the
+      // paginated object here regardless meant an unparameterised caller got an
+      // array on most days and an object on the day its search held no deals,
+      // and `data.map` threw.
+      whereConditions.push(
+        dealIds.length ? `l.id IN (${dealIds.map(() => '?').join(',')})` : '1 = 0'
+      );
       whereParams.push(...dealIds);
     }
 
@@ -497,9 +507,7 @@ app.get('/api/listings', async (req, res) => {
 
     // Fit first by default. A list ordered by anything else is the same list
     // Kleinanzeigen shows, with a 4x8 kit between the matches.
-    let orderBy =
-      "CASE fit.verdict WHEN 'fit' THEN 0 WHEN 'unclear' THEN 1 WHEN 'no' THEN 2 ELSE 1 END ASC, " +
-      '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+    let orderBy = FIT_FIRST + '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
     if (sort === 'price_asc') {
       orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
     } else if (sort === 'price_desc') {
@@ -1133,8 +1141,29 @@ async function getRouteCorridorPayload(route, options = {}) {
   const FIT_JOIN =
     'LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = c.search_id';
 
+  // A listing is in the corridor when one of its circles found it -- not only
+  // when the circle found it first. listings.search_id names the first finder
+  // and never changes, so a mattress a nationwide search had already seen was
+  // missing from the corridor that then found it too: 117 of 1,498 rows.
+  const CIRCLE_JOIN = `
+      JOIN listing_search_hits lsh ON lsh.listing_id = l.id
+      JOIN route_search_circles c ON c.search_id = lsh.search_id`;
+
   if (options.fitOnly === '1' || options.fitOnly === 'true') {
     whereConditions.push("fit.verdict IS NOT NULL AND fit.verdict <> 'no'");
+  }
+
+  // The filter sheet offers "deals only" on a corridor as it does anywhere
+  // else, and the parameter arrived here and was ignored: the pill did nothing
+  // and said nothing about it.
+  if (options.dealsOnly === '1' || options.dealsOnly === 'true') {
+    const dealIds = await dealListingIds(query, circles.map(c => Number(c.search_id)));
+    // No deals is an empty corridor, not a different answer: the caller gets
+    // the same payload it always gets, with nothing in it.
+    whereConditions.push(
+      dealIds.length ? `l.id IN (${dealIds.map(() => '?').join(',')})` : '1 = 0'
+    );
+    whereParams.push(...dealIds);
   }
 
   if (options.maxDetour !== undefined && options.maxDetour !== '') {
@@ -1170,9 +1199,9 @@ async function getRouteCorridorPayload(route, options = {}) {
            COUNT(DISTINCT CASE WHEN g.detour_min IS NOT NULL THEN l.id END) AS routed,
            COUNT(DISTINCT CASE WHEN g.lat IS NULL THEN l.id END) AS unplaced
       FROM listings l
-      JOIN route_search_circles c ON c.search_id = l.search_id
-      JOIN searches s ON l.search_id = s.id
-      LEFT JOIN search_family_searches sfs ON sfs.search_id = l.search_id AND sfs.active = 1
+      ${CIRCLE_JOIN}
+      JOIN searches s ON s.id = l.search_id
+      LEFT JOIN search_family_searches sfs ON sfs.search_id = c.search_id AND sfs.active = 1
       LEFT JOIN search_family_terms t ON t.id = sfs.term_id
       ${FIT_JOIN}
       LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
@@ -1194,7 +1223,9 @@ async function getRouteCorridorPayload(route, options = {}) {
   } else if (sort === 'score') {
     orderBy = '(l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
   } else {
-    orderBy = '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
+    orderBy =
+      FIT_FIRST +
+      '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
   }
 
   const limit = Math.max(1, parseInt(options.limit, 10) || 50);
@@ -1214,12 +1245,11 @@ async function getRouteCorridorPayload(route, options = {}) {
            fit.verdict AS fit_verdict, fit.reason AS fit_reason,
            fit.facts_json AS fit_facts, fit.stage AS fit_stage
       FROM listings l
-      JOIN route_search_circles c ON c.search_id = l.search_id
-      JOIN searches s ON l.search_id = s.id
-      LEFT JOIN search_family_searches sfs ON sfs.search_id = l.search_id AND sfs.active = 1
+      ${CIRCLE_JOIN}
+      JOIN searches s ON s.id = l.search_id
+      LEFT JOIN search_family_searches sfs ON sfs.search_id = c.search_id AND sfs.active = 1
       LEFT JOIN search_family_terms t ON t.id = sfs.term_id
       ${FIT_JOIN}
-      LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = c.search_id
       LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
      ${whereSql}
      GROUP BY l.id
@@ -1577,10 +1607,13 @@ app.get('/api/search-families/:id', async (req, res) => {
       }
 
       if (!has_crawled) {
+        // The searches this family runs now. Asking the log about a retired
+        // URL answered "crawled two days ago" for criteria that had never run:
+        // the family had been re-aimed at a new town that morning.
         const searchRows = await query(
           `SELECT s.url FROM searches s
              JOIN search_family_searches sfs ON sfs.search_id = s.id
-            WHERE sfs.family_id = ?`,
+            WHERE sfs.family_id = ? AND sfs.active = 1`,
           [fam.id]
         );
         const searchUrls = searchRows.map(r => r.url).filter(Boolean);
@@ -2022,10 +2055,9 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
         )
       ).map(r => Number(r.search_id));
       const dealIds = await dealListingIds(query, searchIds);
-      if (dealIds.length === 0) {
-        return res.json({ total: 0, offset: 0, limit: 0, listings: [] });
-      }
-      whereConditions.push(`l.id IN (${dealIds.map(() => '?').join(',')})`);
+      whereConditions.push(
+        dealIds.length ? `l.id IN (${dealIds.map(() => '?').join(',')})` : '1 = 0'
+      );
       whereParams.push(...dealIds);
     }
 
@@ -2088,9 +2120,11 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     } else if (sort === 'detour' || sort === 'route') {
       orderBy = '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
     } else if (routeId) {
-      orderBy = '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
+      orderBy =
+        FIT_FIRST +
+        '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
     } else {
-      orderBy = 'l.niceness_score DESC, l.id DESC';
+      orderBy = FIT_FIRST + 'l.niceness_score DESC, l.id DESC';
     }
 
     // Pagination (default limit 50, offset 0)

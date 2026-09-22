@@ -496,8 +496,13 @@ def save_family(
         route_search_id=route_search_id,
     )
 
+    # What the family runs now, which is what the caller is told it saved. A
+    # re-aimed family keeps its retired links so their listings stay reachable,
+    # and counting those made every edit of a town or a radius report a larger
+    # family than the one that was just saved.
     searches_count = cursor.execute(
-        "SELECT COUNT(DISTINCT search_id) FROM search_family_searches WHERE family_id = ?",
+        "SELECT COUNT(DISTINCT search_id) FROM search_family_searches "
+        "WHERE family_id = ? AND active = 1",
         (family_id,),
     ).fetchone()[0]
 

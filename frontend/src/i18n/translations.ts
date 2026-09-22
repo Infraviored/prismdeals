@@ -57,6 +57,7 @@ export const translations = {
     },
     surface: {
       onRoute: "on route",
+      giveaway: "Free to a good home",
       keep: "Keep",
       unkeep: "Stop keeping",
       judgeNeedsRequirements:
@@ -201,6 +202,7 @@ export const translations = {
     },
     surface: {
       onRoute: "auf Route",
+      giveaway: "Zu verschenken",
       keep: "Merken",
       unkeep: "Nicht mehr merken",
       judgeNeedsRequirements:

@@ -241,6 +241,11 @@ export const Row: React.FC<RowProps> = ({
           data-testid="keep-toggle"
           aria-pressed={isKept}
           aria-label={t(isKept ? 'surface.unkeep' : 'surface.keep')}
+          // The row above listens for Enter and Space too. Without this, a
+          // keyboard buyer who tabbed to the bookmark and pressed Space opened
+          // the find sheet instead of keeping the find -- the row swallowed the
+          // key before the button could act on it.
+          onKeyDown={event => event.stopPropagation()}
           onClick={event => {
             event.stopPropagation();
             onToggleKeep(listing.id);
