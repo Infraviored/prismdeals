@@ -328,6 +328,28 @@ async function main() {
     });
     assert(ghostSearch.status === 404, `unknown search should 404, got ${ghostSearch.status}`);
 
+    console.log('--- TEST 13: deals only, on an ordinary search too ---');
+    // The family endpoint has filtered deals on the server since the count had
+    // to be right. /api/listings ignored the parameter, so pressing the pill on
+    // an ordinary search did nothing at all and said nothing about it.
+    const allOfIt = await request('/api/listings?campaign_id=1&limit=100');
+    const dealsOnly = await request('/api/listings?campaign_id=1&limit=100&dealsOnly=1');
+    assert(dealsOnly.status === 200, `status ${dealsOnly.status}`);
+    assert(
+      dealsOnly.data.total <= allOfIt.data.total,
+      `deals are a subset: ${dealsOnly.data.total} of ${allOfIt.data.total}`
+    );
+    assert(
+      dealsOnly.data.listings.every(l => l.is_deal),
+      'and every row that comes back is one'
+    );
+    // The count is the filtered set, not the page and not the unfiltered total.
+    assert(
+      dealsOnly.data.total === dealsOnly.data.listings.length ||
+        dealsOnly.data.listings.length === 100,
+      `total ${dealsOnly.data.total} must describe what was returned`
+    );
+
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
   } finally {
     server.kill();

@@ -138,22 +138,27 @@ async function dealListingIds(query, searchIds) {
   const usable = [...references.entries()].filter(([, r]) => r.count >= MIN_GROUP_SIZE);
   if (usable.length === 0) return [];
 
-  const ids = [];
-  for (const [searchId, reference] of usable) {
-    const rows = await query(
-      `SELECT DISTINCT l.id AS id, l.price_eur AS price_eur
-         FROM listing_search_hits lsh
-         JOIN listings l ON l.id = lsh.listing_id
-        WHERE lsh.search_id = ?
-          AND l.price_eur IS NOT NULL
-          AND l.price_eur > 0`,
-      [searchId]
-    );
-    for (const row of rows) {
-      if (judge(Number(row.price_eur), reference).isDeal) ids.push(String(row.id));
-    }
+  // One query for every search, not one per search. A printer family expands
+  // to thirteen searches, and a loop of thirteen round trips to answer a
+  // filter is thirteen times the latency for the same rows.
+  const searchIdList = usable.map(([searchId]) => searchId);
+  const rows = await query(
+    `SELECT DISTINCT lsh.search_id AS search_id, l.id AS id, l.price_eur AS price_eur
+       FROM listing_search_hits lsh
+       JOIN listings l ON l.id = lsh.listing_id
+      WHERE lsh.search_id IN (${searchIdList.map(() => '?').join(',')})
+        AND l.price_eur IS NOT NULL
+        AND l.price_eur > 0`,
+    searchIdList
+  );
+
+  const byId = new Map(usable);
+  const ids = new Set();
+  for (const row of rows) {
+    const reference = byId.get(Number(row.search_id));
+    if (reference && judge(Number(row.price_eur), reference).isDeal) ids.add(String(row.id));
   }
-  return ids;
+  return [...ids];
 }
 
 module.exports = {

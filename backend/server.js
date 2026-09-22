@@ -424,6 +424,23 @@ app.get('/api/listings', async (req, res) => {
       whereParams.push(qVal, qVal);
     }
 
+    // Deals only. The family endpoint has had this since the filter moved to
+    // the server; here it was silently ignored, so pressing the pill on an
+    // ordinary search did nothing at all and said nothing about it.
+    if (req.query.dealsOnly === '1' || req.query.dealsOnly === 'true') {
+      const scopeRows = search_id
+        ? [{ id: Number(search_id) }]
+        : campaign_id
+        ? await query('SELECT id FROM searches WHERE campaign_id = ?', [campaign_id])
+        : await query('SELECT id FROM searches');
+      const dealIds = await dealListingIds(query, scopeRows.map(r => Number(r.id)));
+      if (dealIds.length === 0) {
+        return res.json({ total: 0, offset: 0, limit: 0, listings: [] });
+      }
+      whereConditions.push(`l.id IN (${dealIds.map(() => '?').join(',')})`);
+      whereParams.push(...dealIds);
+    }
+
     const whereSql = whereConditions.length ? 'WHERE ' + whereConditions.join(' AND ') : '';
 
     const countRow = await get(
