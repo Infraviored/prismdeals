@@ -460,6 +460,17 @@ app.get('/api/listings', async (req, res) => {
       whereParams.push(qVal, qVal);
     }
 
+    const minPrice = req.query.min_price ?? req.query.minPrice;
+    if (minPrice !== undefined && minPrice !== '' && !isNaN(Number(minPrice))) {
+      whereConditions.push('l.price_eur >= ?');
+      whereParams.push(Number(minPrice));
+    }
+    const maxPrice = req.query.max_price ?? req.query.maxPrice;
+    if (maxPrice !== undefined && maxPrice !== '' && !isNaN(Number(maxPrice))) {
+      whereConditions.push('l.price_eur <= ?');
+      whereParams.push(Number(maxPrice));
+    }
+
     // Filtered here, not in the browser. Hiding rejected rows from the fifty
     // already loaded and calling the remainder the answer is the same mistake
     // the deals filter made: it told a buyer a fifty-row search held twelve
@@ -747,6 +758,7 @@ app.use(require('./taxonomy'));
 app.use(require('./kept')(query, get, run));
 app.use(require('./requirements_api')(query, get, run));
 app.use(require('./fit_api')(query, get));
+app.use(require('./overview_api')(query, get));
 
 
 // API: Get search items
