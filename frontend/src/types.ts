@@ -1,4 +1,6 @@
 export interface Campaign {
+  /** How many listings this campaign's results screen will show. */
+  listing_count?: number;
   id: number
   name: string
   route_id?: number | null

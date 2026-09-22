@@ -4,6 +4,8 @@ import { useTranslation } from '../../hooks/useTranslation';
 export interface SheetProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Pinned below the scrolling content, never over it. */
+  footer?: React.ReactNode;
   title?: React.ReactNode;
   children: React.ReactNode;
   side?: 'right' | 'bottom';
@@ -13,6 +15,7 @@ export interface SheetProps {
 export const Sheet: React.FC<SheetProps> = ({
   isOpen,
   onClose,
+  footer,
   title,
   children,
   side = 'right',
@@ -83,6 +86,16 @@ export const Sheet: React.FC<SheetProps> = ({
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {children}
         </div>
+
+        {/* A pinned action belongs outside the scrolling area. Sticky inside it
+            hovers over the text instead of making room, so the last lines of a
+            description sat behind the button and no amount of bottom padding
+            could help -- padding is in the flow the button has left. */}
+        {footer && (
+          <div className="shrink-0 p-4 sm:p-5 bg-[#012828] border-t border-white/[0.08]">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -94,8 +94,22 @@ def test_a_contradiction_of_something_settled_is_a_doubt():
 
 
 def test_nothing_stated_is_nothing_claimed():
-    assert text_facts.read(MEMORY, "") == {}
-    assert text_facts.read(MEMORY, None) == {}
+    """`read_stated` is what the text says; `read` adds what silence implies.
+
+    Keeping them apart matters: an assumption passed on as settled shielded a
+    real statement, and a broken kit carried a green tick because its title had
+    not mentioned the fault.
+    """
+    assert text_facts.read_stated(MEMORY, "") == {}
+    assert text_facts.read_stated(MEMORY, None) == {}
+    assert text_facts.read_stated(MEMORY, "Corsair Vengeance") == {
+        "productLine": "vengeance"
+    }
+
+    # `read` fills in what only gets written when it is true.
+    assumed = text_facts.read(MEMORY, "Corsair Vengeance")
+    assert assumed["hasFunctionalDefect"] is False
+    assert assumed["formFactor"] == "dimm"
 
 
 def test_the_reading_patterns_never_reach_a_model():

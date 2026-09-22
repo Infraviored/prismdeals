@@ -20,11 +20,14 @@ import re
 logger = logging.getLogger(__name__)
 
 
-def read(playbook, text):
-    """Facts the text states outright, as {field_id: value}.
+def read_stated(playbook, text):
+    """Only what the text actually says, with nothing assumed.
 
-    Only what is written. A title that does not mention the latency yields no
-    latency, which is different from yielding a wrong one.
+    Separate from `read` because the two are different kinds of evidence, and
+    treating them alike cost a real verdict: a title with no mention of a fault
+    is read as "no fault", and passed on as settled that assumption then turned
+    "Ein Riegel defekt" in the description into a mere doubt instead of a
+    rejection. An assumption must never outrank a statement.
     """
     facts = {}
     if not text:
@@ -45,6 +48,16 @@ def read(playbook, text):
             if value is not None:
                 facts[field["id"]] = value
                 break
+    return facts
+
+
+def read(playbook, text):
+    """Facts the text states outright, as {field_id: value}.
+
+    Only what is written. A title that does not mention the latency yields no
+    latency, which is different from yielding a wrong one.
+    """
+    facts = read_stated(playbook, text)
 
     # Some facts are only ever written down when they are true. Nobody labels a
     # desktop module "DIMM" and nobody advertises that their memory works, so

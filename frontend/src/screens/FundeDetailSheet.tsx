@@ -55,13 +55,23 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
       isOpen={listing !== null}
       onClose={onClose}
       title={t('surface.detailTitle')}
+      footer={
+        listing.url ? (
+          <a
+            href={listing.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-3 px-4 bg-white/[0.08] hover:bg-white/[0.14] text-[#F2F5F4] rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
+          >
+            <span>{t('surface.openInKleinanzeigen')}</span>
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        ) : null
+      }
     >
       <div className="flex flex-col min-h-full">
         {/* Scrollable upper content */}
-        {/* The pinned action is sticky, so the description scrolls behind it.
-            Without room to clear it the last lines of a listing sit under the
-            button and cannot be read at all. */}
-        <div className={`flex-1 space-y-4 ${listing.url ? 'pb-24' : 'pb-4'}`}>
+        <div className="flex-1 space-y-4 pb-4">
           {/* 1. Large Image Carousel / Viewer */}
           <div className="relative w-full h-52 sm:h-64 rounded-lg bg-black/40 overflow-hidden shrink-0 border border-white/[0.08] flex items-center justify-center select-none">
             {totalImages > 0 ? (
@@ -190,20 +200,6 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
           ) : null}
         </div>
 
-        {/* 6. Pinned Bottom Action Button: Open on Kleinanzeigen */}
-        {listing.url && (
-          <div className="sticky bottom-0 -mx-4 sm:-mx-5 -mb-4 sm:-mb-5 p-4 sm:p-5 bg-[#012828] border-t border-white/[0.08] shrink-0 z-20">
-            <a
-              href={listing.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full py-3 px-4 bg-white/[0.08] hover:bg-white/[0.14] text-[#F2F5F4] rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
-            >
-              <span>{t('surface.openInKleinanzeigen')}</span>
-              <ExternalLink className="w-4 h-4" />
-            </a>
-          </div>
-        )}
       </div>
     </Sheet>
   );

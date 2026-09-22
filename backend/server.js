@@ -479,12 +479,24 @@ app.get('/api/listings', async (req, res) => {
          LEFT JOIN searches s ON l.search_id = s.id
          LEFT JOIN campaigns c ON s.campaign_id = c.id
          LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = l.search_id
-         LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = l.search_id
+         -- The verdict belongs to the search being looked at, not to whichever
+         -- search happened to find the listing first. With l.search_id, a
+         -- listing viewed under search 2 showed search 1's judgement, against
+         -- requirements that are not the ones on screen.
+         LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = ${
+           search_id ? 'CAST(? AS INTEGER)' : 'l.search_id'
+         }
         ${whereSql}
         GROUP BY l.id
         ORDER BY ${orderBy}
         ${isPaginated ? 'LIMIT ? OFFSET ?' : ''}`,
-      isPaginated ? [...whereParams, limit, offset] : whereParams
+      search_id
+        ? isPaginated
+          ? [search_id, ...whereParams, limit, offset]
+          : [search_id, ...whereParams]
+        : isPaginated
+        ? [...whereParams, limit, offset]
+        : whereParams
     );
 
     const listings = rows.map(r => ({
@@ -524,10 +536,39 @@ app.get('/api/campaigns', async (req, res) => {
     const rows = await query(`
       SELECT c.*,
              (SELECT id FROM route_searches r WHERE r.campaign_id = c.id ORDER BY r.id DESC LIMIT 1) as route_id,
-             (SELECT id FROM search_families sf WHERE sf.campaign_id = c.id ORDER BY sf.id DESC LIMIT 1) as family_id
+             (SELECT id FROM search_families sf WHERE sf.campaign_id = c.id ORDER BY sf.id DESC LIMIT 1) as family_id,
+             -- The number of listings this campaign will actually show.
+             --
+             -- The search list used to count every listing of every search in
+             -- the campaign, while the results screen asks whichever endpoint
+             -- the campaign's shape demands. Laptops read 1,140 on the list and
+             -- 50 once opened, because the family owns one of its searches and
+             -- the other 1,090 listings belong to searches it does not. A
+             -- number that changes when you tap it is worse than no number.
+             (SELECT COUNT(DISTINCT lsh.listing_id)
+                FROM search_family_searches sfs
+                JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+               WHERE sfs.family_id = (
+                     SELECT id FROM search_families sf2
+                      WHERE sf2.campaign_id = c.id ORDER BY sf2.id DESC LIMIT 1)
+             ) AS family_listings,
+             (SELECT COUNT(DISTINCT l.id)
+                FROM listings l JOIN searches s ON s.id = l.search_id
+               WHERE s.campaign_id = c.id
+             ) AS campaign_listings
       FROM campaigns c
     `);
-    res.json(rows);
+
+    res.json(
+      rows.map(r => ({
+        ...r,
+        // A family answers for itself; anything else counts its own searches.
+        // The corridor's own number is smaller again, because it drops what
+        // falls outside the corridor -- that one is left to the results screen,
+        // which is the only place that knows the detour.
+        listing_count: r.family_id ? Number(r.family_listings || 0) : Number(r.campaign_listings || 0),
+      }))
+    );
   } catch (error) {
     console.error('Error fetching campaigns:', error);
     res.status(500).json({ error: 'Failed to fetch campaigns' });
@@ -1875,7 +1916,11 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     );
     const routeId = route ? route.id : null;
 
-    const whereConditions = ['sfs.family_id = ?'];
+    // Only the searches this family still runs. A re-aimed family keeps its old
+    // links so nothing is lost from the database, but showing their results as
+    // current is misleading: those listings were found at a radius or a keyword
+    // the buyer has since changed. Kept, not shown.
+    const whereConditions = ['sfs.family_id = ?', 'sfs.active = 1'];
     const whereParams = [fam.id];
 
     // Deals only, decided here rather than in the browser. Filtering the fifty
@@ -1883,7 +1928,10 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     // a 1,266-listing search held two deals.
     if (req.query.dealsOnly === '1' || req.query.dealsOnly === 'true') {
       const searchIds = (
-        await query('SELECT search_id FROM search_family_searches WHERE family_id = ?', [fam.id])
+        await query(
+          'SELECT search_id FROM search_family_searches WHERE family_id = ? AND active = 1',
+          [fam.id]
+        )
       ).map(r => Number(r.search_id));
       const dealIds = await dealListingIds(query, searchIds);
       if (dealIds.length === 0) {

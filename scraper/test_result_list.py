@@ -216,7 +216,10 @@ def test_scraper_shapes_listings_the_way_the_database_expects(with_carousel):
         "detailed_description",
     ):
         assert key in listing, key
-    assert listing["price"] == "60 €"
+    # The page says "60 € VB". The old expectation encoded the loss: the VB was
+    # captured by the pattern and thrown away, so a negotiable offer was shown
+    # as a fixed price.
+    assert listing["price"] == "60 € VB"
     assert listing["location"] == "Bayern - Landsberg (Lech)"
     assert listing["url"].startswith("https://www.kleinanzeigen.de/")
 
@@ -388,3 +391,44 @@ def test_a_district_whose_real_name_contains_a_dash_keeps_its_spaces():
 def test_clean_text_passes_empty_values_through():
     assert result_list.clean_text(None) is None
     assert result_list.clean_text("") == ""
+
+
+def test_a_negotiable_price_says_so(with_carousel):
+    """ "60 € VB" and "60 €" are different offers.
+
+    The pattern has always captured the VB and the parser has always dropped
+    it, so a row showed a fixed price where the seller invited an offer.
+    """
+    parsed = result_list.parse(with_carousel)
+    assert all("negotiable" in item for item in parsed)
+
+    negotiable = {
+        "id": "x",
+        "title": "t",
+        "url": "u",
+        "price_eur": 60,
+        "negotiable": True,
+        "location": "L",
+        "description": "",
+    }
+    assert result_list.as_db_listing(negotiable)["price"] == "60 € VB"
+
+    fixed = {**negotiable, "negotiable": False}
+    assert result_list.as_db_listing(fixed)["price"] == "60 €"
+
+
+def test_the_card_photograph_is_read_and_asked_for_at_a_usable_size(with_carousel):
+    """Every card on a results page carries one, and none of them were read:
+    every listing this parser harvested showed a grey placeholder.
+    """
+    parsed = result_list.parse(with_carousel)
+    withimage = [p for p in parsed if p.get("image")]
+    assert withimage, "the fixture page has photographs"
+
+    for item in withimage:
+        assert item["image"].startswith("https://img.kleinanzeigen.de/")
+        # The card asks for $_2, a list thumbnail that blurs at 72 px and is
+        # useless in the find sheet.
+        assert "rule=$_59." in item["image"], item["image"]
+
+    assert result_list.as_db_listing(withimage[0])["images"] == [withimage[0]["image"]]

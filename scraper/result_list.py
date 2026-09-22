@@ -198,9 +198,14 @@ def parse(page_html):
             image = CARD_THUMB_RULE.sub(r"?rule=$_59.\1", image_match.group(1))
 
         price = None
+        negotiable = False
         price_match = PRICE_RE.search(segment)
         if price_match:
             price = int(price_match.group(1).replace(".", ""))
+            # "60 € VB" and "60 €" are different offers. The regex has always
+            # captured the VB and the parser has always dropped it, so the row
+            # showed a fixed price where the seller invited an offer.
+            negotiable = bool(price_match.group(2))
         elif GIVEAWAY_RE.search(segment):
             price = 0
 
@@ -211,6 +216,7 @@ def parse(page_html):
                 "title": title,
                 "description": description,
                 "price_eur": price,
+                "negotiable": negotiable,
                 "image": image,
                 "location": location,
                 "state": state,
@@ -293,7 +299,9 @@ def as_canonical(parsed) -> CanonicalListing:
     elif price_eur == 0:
         price_str = "Zu verschenken"
     elif price_eur is not None:
-        price_str = f"{price_eur} €"
+        price_str = (
+            f"{price_eur} € VB" if parsed.get("negotiable") else f"{price_eur} €"
+        )
     else:
         price_str = ""
 

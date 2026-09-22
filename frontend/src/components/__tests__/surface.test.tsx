@@ -45,7 +45,8 @@ describe('Surface Components P1', () => {
       expect(screen.getByText('Federkern-Matratze Ikea 140x200')).toBeInTheDocument();
       expect(screen.getByTestId('listing-price')).toHaveTextContent('90 €');
       expect(screen.getByText('Landsberg')).toBeInTheDocument();
-      expect(screen.getByText('on route')).toBeInTheDocument();
+      // The wording follows the interface language: German says "auf Route".
+      expect(screen.getByText(/on route|auf Route/)).toBeInTheDocument();
 
       const row = screen.getByTestId('listing-row');
       fireEvent.click(row);

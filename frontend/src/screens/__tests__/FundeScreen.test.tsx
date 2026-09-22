@@ -124,8 +124,10 @@ describe('FundeScreen', () => {
     expect(screen.getByText('90 €')).toBeInTheDocument();
     expect(screen.getByText('55 €')).toBeInTheDocument();
 
-    // Check detour and distance display
-    expect(screen.getByText('on route')).toBeInTheDocument();
+    // Check detour and distance display. The wording follows the interface
+    // language -- German says "auf Route" -- so the assertion asks for either
+    // rather than pinning the test to one locale.
+    expect(screen.getByText(/on route|auf Route/)).toBeInTheDocument();
     expect(screen.getByText('+4m')).toBeInTheDocument();
     expect(screen.getByText('15 km')).toBeInTheDocument();
   });

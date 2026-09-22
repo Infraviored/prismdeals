@@ -96,6 +96,7 @@ export default function App() {
           }}
           onCreateCampaign={() => setView('create-campaign')}
           onOpenKept={() => setView('kept')}
+          onOpenApp={() => setView('settings')}
         />
       </div>
     );
@@ -121,7 +122,17 @@ export default function App() {
         <EditScreen
           campaign={currentCampaign}
           searches={appData.searches}
-          onBack={() => navigate('dashboard', currentCampaignId, null)}
+          // Back from setup went to the results of a search that has none yet,
+          // which is an empty screen the redirect then bounces you out of. A
+          // search with nothing to show sends you home instead.
+          onBack={() => {
+            const configured =
+              appData.searches.some(s => s.campaign_id === currentCampaignId) ||
+              !!currentCampaign?.route_id ||
+              !!currentCampaign?.family_id;
+            if (configured) navigate('dashboard', currentCampaignId, null);
+            else navigate('landing', null, null);
+          }}
           onSaved={(savedFamily) => {
             if (currentCampaignId) {
               appData.setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, family_id: savedFamily.id } : c));

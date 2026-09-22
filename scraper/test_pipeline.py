@@ -248,3 +248,40 @@ def test_summarise_reports_cache_effectiveness(conn):
     assert second["from_cache"] == 2
     assert second["model_calls"] == 0
     assert second["identities_resolved"] == 2
+
+
+def test_a_title_rejection_is_not_handed_to_the_expensive_path(conn):
+    """The legacy worker asks the model about every listing with
+    llm_processed = 0. A title rejected here for nothing was therefore sent to
+    the model by the next stage of the same run -- one paid call each, for
+    exactly the listings this step exists to avoid paying for.
+    """
+    seed(conn)
+    # The laptop playbook reads RAM off a title, and the buyer wants at least 8.
+    conn.execute(
+        "UPDATE knowledge_sets SET item_json = ? WHERE id = 1",
+        (
+            json.dumps(
+                {
+                    "fields": [
+                        {"id": "ramGb", "importance": "high", "buyer_wants": {"min": 8}}
+                    ],
+                    "dimensions_enabled": False,
+                }
+            ),
+        ),
+    )
+    conn.execute("UPDATE listings SET title = ? WHERE id = 'l1'", ("ThinkPad 4GB RAM",))
+    conn.commit()
+
+    model = CountingModel()
+    outcomes = pipeline.run(conn, model)
+
+    assert outcomes[0].skipped and outcomes[0].skipped.startswith("title says"), (
+        outcomes[0].skipped
+    )
+    assert model.calls == 0, "nothing was asked of a model"
+    assert (
+        conn.execute("SELECT llm_processed FROM listings WHERE id = 'l1'").fetchone()[0]
+        == 1
+    ), "and the legacy worker will not ask either"

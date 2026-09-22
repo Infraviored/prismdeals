@@ -146,6 +146,14 @@ register(
                 "type": "text",
                 "label": "Hersteller",
                 "description": "Manufacturer, e.g. Apple, Lenovo, Dell.",
+                "text_patterns": [
+                    (
+                        r"\b(apple|macbook|lenovo|thinkpad|dell|latitude|hp|elitebook|"
+                        r"asus|acer|msi|medion|samsung|microsoft|surface|huawei|lg|"
+                        r"fujitsu|toshiba)\b",
+                        lambda m: m.group(1).lower(),
+                    )
+                ],
             },
             {
                 "id": "modelName",
@@ -175,6 +183,16 @@ register(
             },
             {
                 "id": "ramGb",
+                "text_patterns": [
+                    (
+                        r"\b(\d{1,3})\s*gb\s*(?:ddr\d?\s*)?(?:ram|arbeitsspeicher)",
+                        lambda m: int(m.group(1)),
+                    ),
+                    (
+                        r"(?:ram|arbeitsspeicher)\D{0,8}(\d{1,3})\s*gb",
+                        lambda m: int(m.group(1)),
+                    ),
+                ],
                 "type": "number",
                 "label": "Arbeitsspeicher",
                 "unit": "GB",
@@ -218,6 +236,16 @@ register(
                 "id": "hasFunctionalDefect",
                 "type": "boolean",
                 "label": "Funktionsdefekt",
+                "text_patterns": [
+                    (
+                        r"defe[ck]t|teildefekt|kaputt|bastler|ersatzteil|\bdead\b",
+                        lambda m: True,
+                    )
+                ],
+                # A seller who does not mention a fault is claiming there is
+                # none. The description stage looks closer, and a statement
+                # there always outranks this.
+                "absent_means": False,
                 "description": "yes only if something does not work as intended: failing battery, dead pixels, broken port, overheating, no boot. Purely cosmetic wear is NOT a functional defect.",
             },
             {

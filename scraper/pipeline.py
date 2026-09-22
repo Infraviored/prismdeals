@@ -145,6 +145,12 @@ def process_listing(
     if wanted:
         verdict, _stated, why = text_facts.judge(playbook, wanted, listing["title"])
         if verdict == "reject":
+            # Mark it, or the saving is imaginary. The legacy worker takes
+            # every listing with llm_processed = 0, so a title rejected here
+            # for nothing was sent to the model by the next stage of the same
+            # run -- one paid call each, for the listings this step exists to
+            # avoid paying for.
+            _mark_settled_without_a_model(conn, listing_id)
             return Outcome(listing_id, playbook["key"], skipped=f"title says {why[0]}")
 
     result = get_or_extract(
@@ -196,6 +202,22 @@ def _score_listing():
     from scoring import score_listing
 
     return score_listing
+
+
+def _mark_settled_without_a_model(conn, listing_id):
+    """Records that this listing needs no model call, and why nothing was spent.
+
+    llm_processed is what the legacy worker reads to decide whom to ask. A
+    listing the title settled is settled; leaving the flag at 0 hands it
+    straight to the expensive path.
+    """
+    import datetime
+
+    conn.execute(
+        "UPDATE listings SET llm_processed = 1, last_ai_evaluated_at = ? WHERE id = ?",
+        (datetime.datetime.now(datetime.timezone.utc).isoformat(), listing_id),
+    )
+    conn.commit()
 
 
 def _persist(conn, listing_id, facts, score):

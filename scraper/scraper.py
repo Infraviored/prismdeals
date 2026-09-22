@@ -213,6 +213,7 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
     existing_ids |= _stored_listing_ids()
 
     updated_ids = []
+    returned_ids = set()
 
     for base_url in urls:
         for page in range(1, PAGES_TO_SCRAPE + 1):
@@ -280,11 +281,21 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                         # to 100 went unnoticed and why rows harvested by this
                         # parser never had a picture.
                         updated_ids.append(listing)
+
+                        # And it still belongs to *this* search. "Known" means
+                        # known to the database, not known to this search: a
+                        # listing another search found first was dropped here
+                        # and never got a listing_search_hits row, so it stayed
+                        # invisible in the search that had just found it.
+                        if listing_id not in returned_ids:
+                            returned_ids.add(listing_id)
+                            all_scraped_listings.append(listing)
                         continue
 
                     # Append and save intermediate
                     existing_listings.append(listing)
                     existing_ids.add(listing_id)
+                    returned_ids.add(listing_id)
                     all_scraped_listings.append(listing)
                     scraped_count += 1
 

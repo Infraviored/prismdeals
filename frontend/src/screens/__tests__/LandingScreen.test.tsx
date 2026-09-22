@@ -95,6 +95,7 @@ describe('LandingScreen P3 Surface', () => {
         onOpenCampaign={vi.fn()}
         onCreateCampaign={handleCreate}
         onOpenKept={vi.fn()}
+        onOpenApp={vi.fn()}
       />
     );
 
@@ -116,6 +117,7 @@ describe('LandingScreen P3 Surface', () => {
         onOpenCampaign={handleOpen}
         onCreateCampaign={vi.fn()}
         onOpenKept={vi.fn()}
+        onOpenApp={vi.fn()}
       />
     );
 
@@ -138,6 +140,7 @@ describe('LandingScreen P3 Surface', () => {
         onOpenCampaign={vi.fn()}
         onCreateCampaign={handleCreate}
         onOpenKept={vi.fn()}
+        onOpenApp={vi.fn()}
       />
     );
 
@@ -158,6 +161,7 @@ describe('LandingScreen P3 Surface', () => {
         onOpenCampaign={vi.fn()}
         onCreateCampaign={vi.fn()}
         onOpenKept={vi.fn()}
+        onOpenApp={vi.fn()}
       />
     );
 

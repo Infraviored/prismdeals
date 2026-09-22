@@ -140,16 +140,22 @@ def judge_search(conn, search_id, use_descriptions=True):
         listing_id, title, detailed, short = row
 
         verdict, facts, reasons = text_facts.judge(playbook, wanted, title)
+        # Only what the title stated is carried forward as settled. What was
+        # assumed from its silence must not shield a later statement: a title
+        # that mentions no fault is not evidence there is none.
+        stated = text_facts.read_stated(playbook, title)
         stage = "title"
 
-        # Only what the title could not settle goes on, and only if we already
-        # have the text -- fetching descriptions is the scraper's job, not this
-        # one's.
-        if verdict == "unclear" and use_descriptions:
+        # The description is read whenever there is one, not only when the
+        # title left a question. A title that lists every specification reads
+        # as a match -- nobody advertises a fault in the headline -- and
+        # "Ein Riegel defekt, Bastlerware" in the body would never have been
+        # seen. Free text we already hold is never a reason to stop looking.
+        if verdict != "reject" and use_descriptions:
             description = detailed or short
             if description:
                 verdict, facts, reasons = text_facts.judge(
-                    playbook, wanted, f"{title}\n{description}", settled=facts
+                    playbook, wanted, f"{title}\n{description}", settled=stated
                 )
                 stage = "description"
 

@@ -232,3 +232,38 @@ def test_unknown_and_missing_values_are_not_facts(conn):
         WANTS["fields"],
     )
     assert verdict == "unclear"
+
+
+def test_a_fault_in_the_description_beats_a_perfect_title(conn):
+    """Nobody advertises a defect in the headline.
+
+    The title stage concluded "fit" -- every specification present, and no
+    mention of a fault, which the playbook reads as no fault. It then stopped
+    looking, so "Ein Riegel defekt, Bastlerware" in the body never got read and
+    a broken kit carried a green tick.
+    """
+    add(
+        conn,
+        "a",
+        "Corsair Vengeance LPX 32 GB (2×16 GB) DDR4-3200 CL16",
+        "Ein Riegel defekt, stürzt mit Bluescreens ab. Bastlerware.",
+    )
+    counts = fit.judge_search(conn, 1)
+    assert counts["no"] == 1, "a stated fault is a rejection wherever it is written"
+
+    row = conn.execute(
+        "SELECT verdict, reason, stage FROM listing_fit WHERE listing_id='a'"
+    ).fetchone()
+    assert row[0] == "no"
+    assert "hasFunctionalDefect" in row[1]
+    assert row[2] == "description"
+
+
+def test_a_clean_description_leaves_a_match_a_match(conn):
+    add(
+        conn,
+        "a",
+        "Corsair Vengeance LPX 32 GB (2×16 GB) DDR4-3200 CL16",
+        "Voll funktionsfähig, aus einem Aufrüstsatz übrig.",
+    )
+    assert fit.judge_search(conn, 1)["fit"] == 1

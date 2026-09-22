@@ -174,20 +174,49 @@ interface FundeEmptyStateProps {
   radiusDiagnosis: RadiusDiagnosis | null;
   hasActiveFilters: boolean;
   onResetFilters: () => void;
+  /** True before anything has ever been harvested for this search. */
+  neverHarvested: boolean;
+  isScraping: boolean;
+  onStartScrape?: () => void;
+  onConfigure: () => void;
 }
 
 const FundeEmptyState: React.FC<FundeEmptyStateProps> = ({
   radiusDiagnosis,
   hasActiveFilters,
   onResetFilters,
+  neverHarvested,
+  isScraping,
+  onStartScrape,
+  onConfigure,
 }) => {
   const { t } = useTranslation();
+
+  // Empty is not a report. A search nobody has run yet says so and offers the
+  // run; one that ran and found nothing offers a wider radius or the settings.
+  // "Keine Treffer in 30 km" on its own reads like a fault.
+  if (neverHarvested) {
+    return (
+      <EmptyLine
+        message={isScraping ? t('surface.searching') : t('surface.notSearchedYet')}
+        actions={
+          !isScraping && onStartScrape ? (
+            <Pill label={t('surface.fetchListings')} onClick={onStartScrape} />
+          ) : null
+        }
+      />
+    );
+  }
 
   return (
     <EmptyLine
       message={t('surface.noMatchesInRadius', { radius: 30 })}
       actions={
         <>
+          <Pill label={t('surface.settings')} onClick={onConfigure} />
+          {onStartScrape && !isScraping && (
+            <Pill label={t('surface.fetchListings')} onClick={onStartScrape} />
+          )}
           {radiusDiagnosis?.options?.map((opt) => (
             <Pill
               key={opt.radius}
@@ -405,6 +434,13 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
           {/* Empty State */}
           {!loading && activeListings.length === 0 && (
             <FundeEmptyState
+              // A radius diagnosis is proof the search ran and measured: it
+              // knows how many listings sit at 50 and 100 km. Only a search
+              // with nothing at all and nothing measured has never run.
+              neverHarvested={rawTotal === 0 && !hasActiveFilters && !radiusDiagnosis}
+              isScraping={!!isScraping}
+              onStartScrape={onStartScrape}
+              onConfigure={onConfigure}
               radiusDiagnosis={radiusDiagnosis}
               hasActiveFilters={hasActiveFilters}
               onResetFilters={() => {

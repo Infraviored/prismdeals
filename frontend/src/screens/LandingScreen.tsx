@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Settings } from 'lucide-react';
 import { Bar, SearchRow, Pill, EmptyLine } from '../components/surface';
 import { useTranslation } from '../hooks/useTranslation';
 import { useKept } from '../hooks/useKept';
@@ -13,6 +13,7 @@ export interface LandingScreenProps {
   onOpenCampaign: (campaign: Campaign) => void;
   onCreateCampaign: () => void;
   onOpenKept: () => void;
+  onOpenApp: () => void;
 }
 
 export const LandingScreen: React.FC<LandingScreenProps> = ({
@@ -22,6 +23,7 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
   onOpenCampaign,
   onCreateCampaign,
   onOpenKept,
+  onOpenApp,
 }) => {
   const { t } = useTranslation();
   const { kept } = useKept();
@@ -32,13 +34,26 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
       <Bar
         title={t('surface.searches')}
         actions={
-          <Pill
-            data-testid="create-campaign-btn"
-            icon={<Plus className="w-3.5 h-3.5" />}
-            onClick={onCreateCampaign}
-            title={t('surface.newSearch')}
-            aria-label={t('surface.newSearch')}
-          />
+          <>
+            <Pill
+              data-testid="create-campaign-btn"
+              icon={<Plus className="w-3.5 h-3.5" />}
+              onClick={onCreateCampaign}
+              title={t('surface.newSearch')}
+              aria-label={t('surface.newSearch')}
+            />
+            {/* The way into the app screen. Without it, connecting a
+                Kleinanzeigen account, changing the schedule, switching language
+                and logging out were all reachable only by typing #settings into
+                the address bar. */}
+            <Pill
+              data-testid="open-app-btn"
+              icon={<Settings className="w-3.5 h-3.5" />}
+              onClick={onOpenApp}
+              title={t('surface.app')}
+              aria-label={t('surface.app')}
+            />
+          </>
         }
       />
 
@@ -62,7 +77,10 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
               key={c.id}
               id={c.id}
               name={c.name}
-              count={campaignListings.length}
+              // The server's number, which is the one the results screen will
+              // show. Counting the loaded listings here gave 1,140 for a
+              // campaign that opens on 50.
+              count={typeof c.listing_count === 'number' ? c.listing_count : campaignListings.length}
               locationLabel={locationLabel}
               freshnessLabel={freshnessLabel}
               imageUrl={firstImg}
