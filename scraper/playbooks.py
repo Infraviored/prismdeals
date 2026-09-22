@@ -556,3 +556,121 @@ register(
         ],
     }
 )
+
+
+# --------------------------------------------------------------------------
+# Memory modules. What decides a purchase is printed on the sticker and, for
+# the honest listings, repeated in the title: how many sticks, how big each
+# one is, which generation, how fast, and at what latency. Those five together
+# are the product -- 32 GB as 4x8 and 32 GB as 2x16 are different things that
+# do not fit the same mainboard plan, and sellers of the wrong one write "32GB"
+# just as loudly.
+#
+# vision_weight is high because the part number on the module is the ground
+# truth. Reading CMW32GX4M2E3200C16 off a photograph settled a listing whose
+# description contradicted its own title.
+# --------------------------------------------------------------------------
+register(
+    {
+        "key": "computing/memory",
+        "version": 1,
+        "label": "Arbeitsspeicher",
+        "category_codes": ("c225",),
+        "dossier_relevant": False,
+        "vision_weight": "high",
+        "geo_constraint": "none",
+        "fields": [
+            {
+                "id": "brand",
+                "type": "text",
+                "label": "Hersteller",
+                "description": "Manufacturer, e.g. Corsair, G.Skill, Crucial.",
+            },
+            {
+                "id": "productLine",
+                "type": "text",
+                "label": "Produktlinie",
+                "description": "Line within the brand, e.g. Vengeance LPX, Vengeance RGB Pro, Ripjaws.",
+            },
+            {
+                "id": "partNumber",
+                "type": "text",
+                "label": "Teilenummer",
+                "description": (
+                    "The module's part number, e.g. CMW32GX4M2E3200C16. It is printed on "
+                    "the sticker and encodes capacity, stick count, speed and latency, so "
+                    "it settles every other field at once."
+                ),
+            },
+            {
+                "id": "generation",
+                "type": "enum",
+                "label": "Generation",
+                "options": ["ddr3", "ddr4", "ddr5"],
+                "description": "Memory generation. DDR3 does not fit a DDR4 board.",
+            },
+            {
+                "id": "formFactor",
+                "type": "enum",
+                "label": "Bauform",
+                "options": ["dimm", "sodimm"],
+                "description": "DIMM for desktops, SODIMM for laptops. Not interchangeable.",
+            },
+            {
+                "id": "stickCount",
+                "type": "number",
+                "label": "Anzahl Module",
+                "description": "How many sticks are in the offer. 2 and 4 are different products.",
+            },
+            {
+                "id": "gbPerStick",
+                "type": "number",
+                "label": "GB je Modul",
+                "description": "Capacity of one stick, not the total.",
+            },
+            {
+                "id": "totalGb",
+                "type": "number",
+                "label": "GB gesamt",
+                "description": "Total capacity across all sticks in the offer.",
+            },
+            {
+                "id": "speedMhz",
+                "type": "number",
+                "label": "Taktung",
+                "description": "Rated speed in MHz, e.g. 3200. The seller's own test system's limit is not the module's speed.",
+            },
+            {
+                "id": "casLatency",
+                "type": "number",
+                "label": "CAS-Latenz",
+                "description": "The CL number, e.g. 16. Often written as the first of 16-20-20-38.",
+            },
+            {
+                "id": "isKit",
+                "type": "boolean",
+                "label": "Matched Kit",
+                "description": "Whether the sticks were sold together as one matched kit rather than assembled from singles.",
+            },
+            {
+                "id": "hasFunctionalDefect",
+                "type": "boolean",
+                "label": "Defekt",
+                "description": "Any stick reported faulty, partly faulty or untested-and-suspected.",
+            },
+            {
+                "id": "sealed",
+                "type": "boolean",
+                "label": "Ungeöffnet",
+                "description": "Still sealed or explicitly unused.",
+            },
+            {
+                "id": "conditionGrade",
+                "type": "enum",
+                "label": "Zustand",
+                "options": ["neuwertig", "gut", "gebraucht", "defekt"],
+                "description": "Overall condition as the seller describes it.",
+            },
+        ],
+    }
+)

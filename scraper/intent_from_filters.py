@@ -41,6 +41,10 @@ FILTER_TO_FIELD = {
         "handy_telekom.art_s": "brand",
         "global.zustand": "conditionGrade",
     },
+    "computing/memory": {
+        "pc_zubehoer_software.art_s": "productLine",
+        "global.zustand": "conditionGrade",
+    },
     "vehicles/cars": {
         "autos.marke_s": "make",
         "autos.km_i": "mileageKm",
