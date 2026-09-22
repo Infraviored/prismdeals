@@ -56,7 +56,12 @@ export const translations = {
       routeRemovedSuccess: "Switched to fixed location mode."
     },
     surface: {
-      onRoute: "auf Route",
+      onRoute: "on route",
+      keep: "Keep",
+      unkeep: "Stop keeping",
+      judgeNeedsRequirements:
+        "This search has nothing to judge against yet. Set what you want under Set up.",
+      judgeFailed: "Could not evaluate this search.",
       minDetour: "+{{min}}m",
       kmDistance: "{{km}} km",
       hoursAgo: "{{hours}}h ago",
@@ -195,7 +200,12 @@ export const translations = {
       routeRemovedSuccess: "Erfolgreich zu festem Standort gewechselt."
     },
     surface: {
-      onRoute: "on route",
+      onRoute: "auf Route",
+      keep: "Merken",
+      unkeep: "Nicht mehr merken",
+      judgeNeedsRequirements:
+        "Diese Suche hat noch nichts, wogegen geprüft werden könnte. Trag unter Einrichten ein, was du willst.",
+      judgeFailed: "Die Suche konnte nicht ausgewertet werden.",
       minDetour: "+{{min}}m",
       kmDistance: "{{km}} km",
       hoursAgo: "vor {{hours}} Std",

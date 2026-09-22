@@ -4,6 +4,7 @@ import { formatFreshness, type TranslateFn } from '../../utils/freshness';
 import { PriceTrail } from './PriceTrail';
 
 import { formatLocation } from '../../utils/formatLocation';
+import { formatPrice } from '../../utils/formatPrice';
 
 export interface RowListing {
   id: string;
@@ -73,20 +74,6 @@ export interface RowProps {
 }
 
 
-function formatPrice(
-  priceEur: number | null | undefined,
-  rawPrice: string | null | undefined,
-  t: TranslateFn
-): { text: string; isMissing: boolean } {
-  if (typeof priceEur === 'number' && priceEur > 0) {
-    return { text: `${priceEur} €`, isMissing: false };
-  }
-  if (rawPrice && rawPrice.trim()) {
-    return { text: rawPrice.trim(), isMissing: false };
-  }
-  return { text: t('surface.noPrice'), isMissing: true };
-}
-
 function renderDetour(listing: RowListing, t: TranslateFn): React.ReactNode {
   if (typeof listing.detour_min === 'number') {
     if (listing.detour_min <= 0) {
@@ -141,7 +128,22 @@ export const Row: React.FC<RowProps> = ({
       data-testid="listing-row"
       data-listing-id={listing.id}
       onClick={() => onClick?.(listing)}
-      className={`h-[88px] min-h-[88px] max-h-[88px] w-full px-3 sm:px-4 py-2 flex items-center gap-3 border-b border-white/[0.08] hover:bg-white/[0.03] transition-colors select-none ${
+      // A row that only a mouse can open is a row a keyboard buyer cannot buy
+      // from: the find sheet, and with it the link to Kleinanzeigen, was
+      // unreachable without a pointer. SearchRow had this from the start.
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick(listing);
+              }
+            }
+          : undefined
+      }
+      className={`h-[88px] min-h-[88px] max-h-[88px] w-full px-3 sm:px-4 py-2 flex items-center gap-3 border-b border-white/[0.08] hover:bg-white/[0.03] transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#9FB3B0] ${
         onClick ? 'cursor-pointer' : ''
       } ${className}`}
     >
@@ -238,7 +240,7 @@ export const Row: React.FC<RowProps> = ({
           type="button"
           data-testid="keep-toggle"
           aria-pressed={isKept}
-          aria-label={isKept ? 'Nicht mehr merken' : 'Merken'}
+          aria-label={t(isKept ? 'surface.unkeep' : 'surface.keep')}
           onClick={event => {
             event.stopPropagation();
             onToggleKeep(listing.id);

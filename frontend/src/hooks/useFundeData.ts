@@ -23,6 +23,10 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
   const [termId, setTermId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [dealsOnly, setDealsOnly] = useState<boolean>(false);
+  // Asked of the server, like deals. Hiding rejected rows from the fifty
+  // already loaded and calling the remainder the answer is how the bar came
+  // to say 50 over a list of 12.
+  const [fitOnly, setFitOnly] = useState<boolean>(false);
 
   // Route & family metadata
   const [routeData, setRouteData] = useState<RouteCorridorData | null>(null);
@@ -85,6 +89,7 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
         if (termId !== null) queryParams.set('term', String(termId));
         if (searchQuery.trim()) queryParams.set('q', searchQuery.trim());
         if (dealsOnly) queryParams.set('dealsOnly', '1');
+        if (fitOnly) queryParams.set('fitOnly', '1');
 
         let url = '';
         if (routeId) {
@@ -159,7 +164,18 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
         setLoadingMore(false);
       }
     },
-    [campaignId, routeId, familyId, limit, sort, maxDetour, termId, searchQuery, dealsOnly]
+    [
+      campaignId,
+      routeId,
+      familyId,
+      limit,
+      sort,
+      maxDetour,
+      termId,
+      searchQuery,
+      dealsOnly,
+      fitOnly,
+    ]
   );
 
   // Trigger initial or filter-reset fetch
@@ -219,6 +235,8 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
     setSearchQuery,
     dealsOnly,
     setDealsOnly,
+    fitOnly,
+    setFitOnly,
     // Corridor / Family
     routeData,
     familyTerms,

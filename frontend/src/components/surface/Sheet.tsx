@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 
 export interface SheetProps {
@@ -22,14 +22,61 @@ export const Sheet: React.FC<SheetProps> = ({
   className = '',
 }) => {
   const { t } = useTranslation();
+  const panelRef = useRef<HTMLDivElement>(null);
 
+  // A modal that does not hold the focus is not modal. Opening a sheet left the
+  // focus on BODY, so Tab walked the covered page behind it: a keyboard buyer
+  // could not reach "Open on Kleinanzeigen" and could fire actions they could
+  // not see.
   useEffect(() => {
     if (!isOpen) return;
+
+    const focusable = () =>
+      Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ) ?? []
+      ).filter(el => el.offsetParent !== null);
+
+    const returnTo = document.activeElement as HTMLElement | null;
+    (focusable()[0] ?? panelRef.current)?.focus();
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+
+      const items = focusable();
+      if (items.length === 0) {
+        e.preventDefault();
+        panelRef.current?.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+
+      // Anything outside the panel -- including the covered page -- is sent
+      // back to the edge it should have come from.
+      if (!active || !panelRef.current?.contains(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      returnTo?.focus?.();
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -55,8 +102,10 @@ export const Sheet: React.FC<SheetProps> = ({
 
       {/* Sheet Content Panel */}
       <div
+        ref={panelRef}
+        tabIndex={-1}
         data-testid="surface-sheet-panel"
-        className={`${panelLayout} z-10 flex flex-col bg-[#012828] text-[#F2F5F4] ${className}`}
+        className={`${panelLayout} z-10 flex flex-col bg-[#012828] text-[#F2F5F4] focus:outline-none ${className}`}
       >
         {/* Header (48px matching Bar) */}
         <div className="h-12 min-h-[48px] max-h-[48px] px-4 border-b border-white/[0.08] flex items-center justify-between gap-3 shrink-0">

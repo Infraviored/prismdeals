@@ -262,6 +262,8 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     setSort,
     dealsOnly,
     setDealsOnly,
+    fitOnly,
+    setFitOnly,
     maxDetour,
     setMaxDetour,
     termId,
@@ -273,24 +275,40 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
 
   const { kept, toggle: toggleKeep } = useKept();
   const [keptOnly, setKeptOnly] = useState(false);
-  const [fitOnly, setFitOnly] = useState(false);
   const [judging, setJudging] = useState(false);
+  const [judgeError, setJudgeError] = useState<string | null>(null);
 
   // By campaign, not by search: a family expands to one search per model per
   // place, and this screen shows all of them at once.
   const runJudge = useCallback(async () => {
     if (!campaign?.id) return;
     setJudging(true);
+    setJudgeError(null);
     try {
       const res = await fetch(`/api/campaigns/${campaign.id}/judge`, {
         method: 'POST',
         credentials: 'same-origin',
       });
-      if (res.ok) reload();
+      if (res.ok) {
+        reload();
+        return;
+      }
+      // Swallowing this made the button look broken. The commonest reason is a
+      // search nobody has told what to want yet, and that is worth saying in so
+      // many words.
+      const body = await res.json().catch(() => null);
+      const said = String(body?.error || '');
+      setJudgeError(
+        said.includes('no requirements')
+          ? t('surface.judgeNeedsRequirements')
+          : said || t('surface.judgeFailed')
+      );
+    } catch {
+      setJudgeError(t('surface.judgeFailed'));
     } finally {
       setJudging(false);
     }
-  }, [campaign?.id, reload]);
+  }, [campaign?.id, reload, t]);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const activeTerm = familyTerms.find((term) => term.id === termId);
@@ -311,7 +329,13 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   };
 
   const isCorridor = !!campaign?.route_id;
-  const hasActiveFilters = dealsOnly || termId !== null || maxDetour !== null || sort !== 'default' || clusterListingIds !== null;
+  const hasActiveFilters =
+    dealsOnly ||
+    fitOnly ||
+    termId !== null ||
+    maxDetour !== null ||
+    sort !== 'default' ||
+    clusterListingIds !== null;
 
   // Filter listings by cluster area if tapped on map
   const inArea = clusterListingIds
@@ -322,11 +346,10 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   // handful of rows the buyer has already seen, so there is nothing to page
   // through and nothing to be wrong about in a count.
   const withKept = keptOnly ? inArea.filter((l) => kept.has(l.id)) : inArea;
-  // "Nur passende" hides what a verdict turned down. Filtered here because a
-  // verdict is on the page already -- the server sorted by it.
-  const activeListings = fitOnly
-    ? withKept.filter((l) => l.fit && l.fit.verdict !== 'no')
-    : withKept;
+  // "Nur passende" is filtered by the server, like deals, so `total` already
+  // describes it. Filtering the loaded page here instead told the buyer a
+  // fifty-row search held twelve matches while the bar still said fifty.
+  const activeListings = withKept;
 
   const mapListings: RouteListingGeo[] = listings.map((l) => ({
     id: l.id,
@@ -362,7 +385,10 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
           loading && listings.length === 0
             ? undefined
             : clusterListingIds || keptOnly
-            ? activeListings.length
+            ? // Both of these are browser-side by design: a map cluster and a
+              // shortlist are handfuls the buyer has already seen, with nothing
+              // to page through.
+              activeListings.length
             : total
         }
         onBack={onBack}
@@ -421,6 +447,43 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         </div>
       ) : (
         <main className="w-full max-w-3xl mx-auto flex-1 flex flex-col">
+          {judgeError && (
+            <div
+              role="status"
+              className="px-4 py-3 text-sm text-[#F2F5F4] bg-[#012828] border-b border-white/[0.08] flex items-start gap-3"
+            >
+              <span className="flex-1">{judgeError}</span>
+              <button
+                type="button"
+                onClick={() => setJudgeError(null)}
+                className="text-[#9FB3B0] hover:text-[#F2F5F4] shrink-0"
+                aria-label={t('surface.close')}
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {/* A first load used to paint an empty dark screen, which reads as a
+              crash rather than as work in progress. */}
+          {loading && listings.length === 0 && (
+            <div className="flex flex-col" aria-busy="true">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div
+                  key={i}
+                  className="h-[88px] w-full px-3 sm:px-4 py-2 flex items-center gap-3 border-b border-white/[0.08]"
+                >
+                  <div className="w-[72px] h-[72px] rounded bg-white/[0.06] animate-pulse shrink-0" />
+                  <div className="flex-1 flex flex-col gap-2">
+                    <div className="h-3 w-3/5 rounded bg-white/[0.06] animate-pulse" />
+                    <div className="h-3 w-2/5 rounded bg-white/[0.04] animate-pulse" />
+                  </div>
+                  <div className="h-4 w-14 rounded bg-white/[0.06] animate-pulse" />
+                </div>
+              ))}
+            </div>
+          )}
+
           {activeListings.map((listing) => (
             <Row
               key={listing.id}
@@ -445,6 +508,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
               hasActiveFilters={hasActiveFilters}
               onResetFilters={() => {
                 setDealsOnly(false);
+                setFitOnly(false);
                 setTermId(null);
                 setMaxDetour(null);
                 setClusterListingIds(null);

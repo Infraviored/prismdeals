@@ -63,12 +63,18 @@ for (const el of document.querySelectorAll('body *')) {
   const style = getComputedStyle(el);
   const rect = el.getBoundingClientRect();
   const tag = el.tagName.toLowerCase();
-  const leaf = el.children.length === 0;
+  // "Has no children" is not the same as "carries the text". A heading that
+  // wraps one word in a <span> stopped being checked at all, and the checks
+  // below are about text and about paint, not about tree shape.
+  const ownsText = [...el.childNodes].some(
+    node => node.nodeType === 3 && node.textContent.trim()
+  );
+  const parentStyle = el.parentElement ? getComputedStyle(el.parentElement) : null;
 
   // 1. Text cut off inside its own box. "Corridor settings" became "Corridor
   //    setting"; "Korridor" became "rridor".
   //    An ellipsis is a promise that text continues; a hard cut is a bug.
-  if (leaf && el.scrollWidth > el.clientWidth + 1
+  if (ownsText && el.scrollWidth > el.clientWidth + 1
       && style.textOverflow !== 'ellipsis'
       && style.overflow !== 'auto'
       && style.overflowX !== 'auto' && style.overflowX !== 'scroll') {
@@ -96,21 +102,27 @@ for (const el of document.querySelectorAll('body *')) {
   }
 
   // 4. The accent outside a price.
-  const wearsAccent = style.color === ACCENT_PLACEHOLDER
-    || style.backgroundColor === ACCENT_PLACEHOLDER
-    || style.borderColor === ACCENT_PLACEHOLDER;
-  if (wearsAccent && leaf) {
+  // Reported where the colour is set, not everywhere it is inherited: the
+  // element whose parent already had it is not the one that chose it. Checking
+  // only childless elements missed every wrapper that paints itself.
+  const setsAccent = prop =>
+    style[prop] === ACCENT_PLACEHOLDER && (!parentStyle || parentStyle[prop] !== ACCENT_PLACEHOLDER);
+  const wearsAccent =
+    setsAccent('color')
+    || setsAccent('backgroundColor')
+    || (style.borderColor === ACCENT_PLACEHOLDER && style.borderStyle !== 'none');
+  if (wearsAccent) {
     const isPrice = el.closest('[data-testid="listing-price"], [data-price-signal]') !== null;
     if (!isPrice) add('koralle-ausserhalb-preis', el, style.color);
   }
 
   // 5. Shouted labels. Not a bug, a tell: every generated page has them.
-  if (leaf && style.textTransform === 'uppercase') {
+  if (ownsText && style.textTransform === 'uppercase') {
     add('grossbuchstaben', el, 'text-transform: uppercase');
   }
 
   // 6. Text smaller than 11px is decoration, not information.
-  if (leaf && (el.innerText || '').trim()) {
+  if (ownsText && (el.innerText || '').trim()) {
     const size = parseFloat(style.fontSize);
     if (size && size < 11) add('winzige-schrift', el, `${size}px`);
   }
@@ -124,15 +136,26 @@ for (const el of document.querySelectorAll('body *')) {
 // 8. The same words twice in a row -- a field that echoes itself underneath.
 // Two search rows may honestly share a corridor name; a field that repeats
 // itself underneath cannot. Only duplicates under one parent are a defect.
+// A wrapper div between the two copies used to hide the echo, so the block
+// they share is what counts, not the tag that happens to hold each one.
+const blockOf = el => {
+  let node = el.parentElement;
+  while (node && node !== document.body) {
+    const d = getComputedStyle(node).display;
+    if (d !== 'inline' && d !== 'contents') return node;
+    node = node.parentElement;
+  }
+  return node;
+};
 const texts = [];
 for (const el of document.querySelectorAll('body *')) {
   if (!visible(el) || el.children.length) continue;
   const t = (el.innerText || '').replace(/\s+/g, ' ').trim();
-  if (t.length > 8) texts.push([t, el]);
+  if (t.length > 8) texts.push([t, el, blockOf(el)]);
 }
 for (let i = 1; i < texts.length; i++) {
   if (texts[i][0] === texts[i - 1][0]
-      && texts[i][1].parentElement === texts[i - 1][1].parentElement) {
+      && texts[i][2] === texts[i - 1][2]) {
     add('doppelter-text', texts[i][1], `steht zweimal: "${texts[i][0].slice(0, 40)}"`);
   }
 }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sheet } from '../components/surface/Sheet';
 import { formatLocation } from '../utils/formatLocation';
+import { formatPrice } from '../utils/formatPrice';
 import { useTranslation } from '../hooks/useTranslation';
 import type { RowListing } from '../components/surface/Row';
 import { ExternalLink, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
@@ -29,9 +30,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
 
   const totalImages = images.length;
 
-  const priceText = typeof listing.price_eur === 'number' && listing.price_eur > 0
-    ? `${listing.price_eur} €`
-    : (listing.price?.trim() || t('surface.noPrice'));
+  const priceText = formatPrice(listing.price_eur, listing.price, t).text;
 
   const formattedLoc = formatLocation(listing.location);
 
@@ -180,15 +179,18 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
             {listing.title || '—'}
           </h1>
 
-          {/* 4. AI Rating (Single line if present, otherwise null) */}
+          {/* 4. AI rating. One line in the list, whole here: this is the
+              screen a buyer opens to read the reasoning, and cutting it off
+              mid-sentence with an ellipsis withheld exactly what they came
+              for. */}
           {aiText && (
-            <div className="text-xs text-[#9FB3B0] bg-white/[0.03] px-3 py-2 rounded-lg border border-white/[0.08] flex items-center gap-2">
+            <div className="text-xs text-[#9FB3B0] bg-white/[0.03] px-3 py-2 rounded-lg border border-white/[0.08] flex items-start gap-2">
               {typeof listing.niceness_score === 'number' && (
                 <span className="font-mono font-bold text-[#F2F5F4] shrink-0">
                   {listing.niceness_score}/100
                 </span>
               )}
-              <span className="truncate">{aiText}</span>
+              <span className="flex-1">{aiText}</span>
             </div>
           )}
 

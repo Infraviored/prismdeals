@@ -76,10 +76,18 @@ export const Bar: React.FC<BarProps> = ({
         )}
       </div>
 
+      {/* `justify-end` on a scrolling row pins the content to the right and
+          clips it on the *left*, which is how "Passend" arrived as "ssend" and
+          "Auswerten" left the screen entirely at 390 px. An auto margin sits
+          the row right when it fits and collapses to nothing when it does not,
+          so nothing is ever cut mid-word and everything is reachable by
+          scrolling. */}
       {(actions || children) && (
-        <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar justify-end pl-1">
-          {actions}
-          {children}
+        <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar pl-1">
+          <div className="flex items-center gap-1.5 w-max ml-auto">
+            {actions}
+            {children}
+          </div>
         </div>
       )}
     </header>
