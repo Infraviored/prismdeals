@@ -211,6 +211,60 @@ async function main() {
                      VALUES ('shared-1', 301, '2026-09-01T00:00:00.000Z'),
                             ('shared-1', 202, '2026-09-10T00:00:00.000Z')`);
 
+    // Campaign 4: Memory hunt for overview endpoint testing
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (4, 'Corsair Jagd')`);
+    await runDb(
+      db,
+      `INSERT INTO knowledge_sets (id, name, item_json) VALUES (4, 'Corsair Knowledge', ?)`,
+      [
+        JSON.stringify({
+          fields: [
+            { id: 'stickCount', buyer_wants: { min: 2, max: 2 } },
+            { id: 'speedMhz', buyer_wants: { min: 3200 } },
+            { id: 'generation', buyer_wants: { preferred: ['ddr4'] } },
+          ],
+        }),
+      ]
+    );
+    await runDb(
+      db,
+      `INSERT INTO searches (id, campaign_id, name, url, knowledge_set_id, enabled)
+       VALUES (401, 4, 'Corsair Vengeance', 'https://kleinanzeigen.de/s-corsair', 4, 1)`
+    );
+
+    const memListings = [
+      { id: 'mem-1', price: 20, verdict: 'fit', reason: null, facts: { stickCount: 2, speedMhz: 3200, generation: 'ddr4' }, title: 'Corsair Vengeance RGB 16GB' },
+      { id: 'mem-2', price: 30, verdict: 'fit', reason: null, facts: { stickCount: 2, speedMhz: 3600, generation: 'ddr4' }, title: 'Corsair Vengeance LPX 16GB' },
+      { id: 'mem-3', price: 40, verdict: 'fit', reason: null, facts: { stickCount: 2, speedMhz: 3200, generation: 'ddr4' }, title: 'Corsair Vengeance Pro' },
+      { id: 'mem-4', price: 50, verdict: 'unclear', reason: null, facts: { stickCount: 2, generation: 'ddr4' }, title: 'Corsair RAM DDR4' },
+      { id: 'mem-5', price: 100, verdict: 'unclear', reason: null, facts: { speedMhz: 3200, generation: 'ddr4' }, title: 'Corsair Vengeance' },
+      { id: 'mem-6', price: 110, verdict: 'no', reason: 'Anzahl Module 4 statt 2', facts: { stickCount: 4, speedMhz: 3200, generation: 'ddr4' }, title: 'Corsair Quad Kit' },
+      { id: 'mem-7', price: 120, verdict: 'no', reason: 'Anzahl Module 4 statt 2', facts: { stickCount: 4, speedMhz: 3000, generation: 'ddr4' }, title: 'Corsair 4x8GB' },
+      { id: 'mem-8', price: 130, verdict: 'no', reason: 'Anzahl Module 4 statt 2', facts: { stickCount: 4, speedMhz: 3200, generation: 'ddr4' }, title: 'Corsair 4 Riegel' },
+      { id: 'mem-9', price: 140, verdict: 'no', reason: 'Taktung 3000 MHz statt mind. 3200 MHz', facts: { stickCount: 2, speedMhz: 3000, generation: 'ddr4' }, title: 'Corsair 3000MHz' },
+      { id: 'mem-10', price: 150, verdict: 'no', reason: 'Taktung 2666 MHz statt mind. 3200 MHz', facts: { stickCount: 2, speedMhz: 2666, generation: 'ddr4' }, title: 'Corsair 2666MHz' },
+    ];
+
+    for (const m of memListings) {
+      await runDb(
+        db,
+        `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+         VALUES (?, ?, ?, ?, 'München', ?, 50, 401)`,
+        [m.id, m.title, `${m.price} €`, m.price, `https://kleinanzeigen.de/${m.id}`]
+      );
+      await runDb(
+        db,
+        `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES (?, 401, ?)`,
+        [m.id, now.toISOString()]
+      );
+      await runDb(
+        db,
+        `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+         VALUES (?, 401, ?, ?, ?, 'title', ?)`,
+        [m.id, m.verdict, m.reason, JSON.stringify(m.facts), now.toISOString()]
+      );
+    }
+
     db.close();
 
     console.log('--- TEST 1: Default Pagination (limit=50) for search-families/:id/listings ---');
@@ -520,6 +574,88 @@ async function main() {
       Number(schraubstock.listings) === 6,
       `its live search holds 5 plus the shared one, not the retired 7: got ${schraubstock.listings}`
     );
+
+    console.log('--- TEST 16: GET /api/campaigns/:id/overview - pots, rejections, market, survivors ---');
+    const overviewRes = await request('/api/campaigns/4/overview');
+    assert(overviewRes.status === 200, `status ${overviewRes.status}`);
+    const ov = overviewRes.data;
+
+    // 1. Pots
+    assert(ov.pots.all === 10, `pots.all should be 10, got ${ov.pots.all}`);
+    assert(ov.pots.fit === 3, `pots.fit should be 3, got ${ov.pots.fit}`);
+    assert(ov.pots.unclear === 2, `pots.unclear should be 2, got ${ov.pots.unclear}`);
+    assert(ov.pots.no === 5, `pots.no should be 5, got ${ov.pots.no}`);
+    assert(ov.pots.alle === 10, `pots.alle should be 10, got ${ov.pots.alle}`);
+    assert(ov.pots.passend === 3, `pots.passend should be 3, got ${ov.pots.passend}`);
+    assert(ov.pots.unklar === 2, `pots.unklar should be 2, got ${ov.pots.unklar}`);
+    assert(ov.pots.abgelehnt === 5, `pots.abgelehnt should be 5, got ${ov.pots.abgelehnt}`);
+
+    // 2. Rejections (aggregated from text)
+    assert(Array.isArray(ov.rejections), 'rejections should be an array');
+    assert(ov.rejections.length === 2, `expected 2 rejection groups, got ${ov.rejections.length}`);
+    const modulesGroup = ov.rejections.find(r => r.reason === 'Anzahl Module 4 statt 2');
+    assert(modulesGroup && modulesGroup.count === 3, `expected 3 for modules, got ${modulesGroup?.count}`);
+    const clockGroup = ov.rejections.find(r => r.reason === 'Taktung unter mind. 3200 MHz');
+    assert(clockGroup && clockGroup.count === 2, `expected 2 for clock under 3200 MHz, got ${clockGroup?.count}`);
+
+    // 3. Market histogram & reference pricing
+    assert(ov.market && typeof ov.market === 'object', 'market should be present');
+    assert(ov.market.count === 10, `market count should be 10, got ${ov.market.count}`);
+    assert(ov.market.min === 20, `market min should be 20, got ${ov.market.min}`);
+    assert(ov.market.max === 150, `market max should be 150, got ${ov.market.max}`);
+    assert(typeof ov.market.median === 'number', `median should be number, got ${ov.market.median}`);
+    assert(Array.isArray(ov.market.bins) && ov.market.bins.length >= 2, `market bins should have >= 2 bins, got ${ov.market.bins.length}`);
+    const binTotal = ov.market.bins.reduce((sum, b) => sum + b.count, 0);
+    assert(binTotal === 10, `sum of bin counts should be 10, got ${binTotal}`);
+
+    // 4. Requirements & Survivors
+    assert(Array.isArray(ov.requirements), 'requirements should be an array');
+    assert(ov.requirements.length === 3, `expected 3 requirements, got ${ov.requirements.length}`);
+    const stickReq = ov.requirements.find(r => r.id === 'stickCount');
+    assert(stickReq, 'stickCount requirement should exist');
+    assert(stickReq.text === '2 Module', `expected "2 Module", got ${stickReq.text}`);
+    assert(stickReq.survivors === 7, `expected 7 survivors for stickCount, got ${stickReq.survivors}`);
+    assert(stickReq.contradicted === 3, `expected 3 contradicted for stickCount, got ${stickReq.contradicted}`);
+
+    const speedReq = ov.requirements.find(r => r.id === 'speedMhz');
+    assert(speedReq, 'speedMhz requirement should exist');
+    assert(speedReq.text === 'ab 3200 MHz', `expected "ab 3200 MHz", got ${speedReq.text}`);
+    assert(speedReq.survivors === 7, `expected 7 survivors for speedMhz, got ${speedReq.survivors}`);
+    assert(speedReq.contradicted === 3, `expected 3 contradicted for speedMhz, got ${speedReq.contradicted}`);
+
+    console.log('--- TEST 17: overview honours active filters (q, dealsOnly, price) ---');
+    // Filter by query q
+    const filteredQ = await request('/api/campaigns/4/overview?q=RGB');
+    assert(filteredQ.status === 200, `status ${filteredQ.status}`);
+    assert(filteredQ.data.pots.all === 1, `q=RGB should match 1 listing, got ${filteredQ.data.pots.all}`);
+    assert(filteredQ.data.pots.fit === 1, `q=RGB should have fit 1, got ${filteredQ.data.pots.fit}`);
+    assert(filteredQ.data.pots.no === 0, `q=RGB should have no 0, got ${filteredQ.data.pots.no}`);
+
+    // Filter by price range
+    const filteredPrice = await request('/api/campaigns/4/overview?min_price=100&max_price=130');
+    assert(filteredPrice.status === 200, `status ${filteredPrice.status}`);
+    assert(filteredPrice.data.pots.all === 4, `price 100-130 should have 4 listings, got ${filteredPrice.data.pots.all}`);
+    assert(filteredPrice.data.market.count === 4, `market count should be 4, got ${filteredPrice.data.market.count}`);
+    assert(filteredPrice.data.market.min === 100, `market min should be 100, got ${filteredPrice.data.market.min}`);
+    assert(filteredPrice.data.market.max === 130, `market max should be 130, got ${filteredPrice.data.market.max}`);
+
+    // Filter by dealsOnly
+    const filteredDeals = await request('/api/campaigns/4/overview?dealsOnly=1');
+    assert(filteredDeals.status === 200, `status ${filteredDeals.status}`);
+    assert(filteredDeals.data.pots.all <= 2, `deals should be at most 2, got ${filteredDeals.data.pots.all}`);
+    assert(filteredDeals.data.market.count === filteredDeals.data.pots.all, 'market count must match deals pots');
+
+    console.log('--- TEST 18: overview respects search_family_searches.active = 1 and search endpoint ---');
+    const famOverview = await request('/api/campaigns/2/overview');
+    assert(famOverview.status === 200, `status ${famOverview.status}`);
+    // Campaign 2 route has 3 listings (search 201). When routed, route rules.
+    assert(famOverview.data.pots.all === 3, `route campaign 2 should show 3 listings, got ${famOverview.data.pots.all}`);
+
+    // Search overview endpoint
+    const searchOverview = await request('/api/searches/401/overview');
+    assert(searchOverview.status === 200, `status ${searchOverview.status}`);
+    assert(searchOverview.data.pots.all === 10, `search 401 pots.all should be 10, got ${searchOverview.data.pots.all}`);
+    assert(searchOverview.data.pots.fit === 3, `search 401 pots.fit should be 3, got ${searchOverview.data.pots.fit}`);
 
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
   } finally {
