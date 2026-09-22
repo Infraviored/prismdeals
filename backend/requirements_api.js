@@ -13,8 +13,41 @@
  */
 
 const express = require('express');
+const path = require('path');
+const { spawn } = require('child_process');
 
 const router = express.Router();
+
+/**
+ * The questions this campaign's category can answer.
+ *
+ * They live in the playbook, which is Python, so this is the same shape of
+ * helper as the judge: one question, one JSON answer, no scraper.
+ */
+function askableFields(campaignId) {
+  return new Promise(resolve => {
+    const python = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const script = path.join(__dirname, '..', 'scraper', 'requirements_cli.py');
+    const child = spawn(python, [script, String(campaignId)]);
+
+    let out = '';
+    let err = '';
+    child.stdout.on('data', d => (out += d));
+    child.stderr.on('data', d => (err += d));
+    child.on('close', code => {
+      if (code !== 0) {
+        console.error('Reading requirement fields for %s failed: %s', campaignId, err);
+        return resolve({ playbook: null, fields: [] });
+      }
+      try {
+        resolve(JSON.parse(out.trim()));
+      } catch {
+        console.error('Unreadable field list for %s: %s', campaignId, out.slice(0, 200));
+        resolve({ playbook: null, fields: [] });
+      }
+    });
+  });
+}
 
 // The vocabulary scoring.py reads. Writing anything else is silently ignored,
 // which is how a requirement can look set and do nothing.
@@ -91,6 +124,77 @@ module.exports = (query, get, run) => {
       res.json({ success: true, knowledge_set_id: setId, requirements: fields });
     } catch (error) {
       console.error('Error saving requirements:', error);
+      res.status(500).json({ error: 'Failed to save requirements' });
+    }
+  });
+
+  // By campaign, because that is what a buyer has in front of them. A family
+  // expands to one search per model per place and they all want the same
+  // thing, so the requirements are written to every search the campaign runs
+  // -- setting them thirteen times by hand is not a feature.
+  router.get('/api/campaigns/:id/requirements', async (req, res) => {
+    try {
+      const searches = await query(
+        'SELECT id, knowledge_set_id FROM searches WHERE campaign_id = ?',
+        [req.params.id]
+      );
+      if (searches.length === 0) return res.status(404).json({ error: 'Unknown campaign' });
+
+      const withSet = searches.find(s => s.knowledge_set_id);
+      let stored = [];
+      if (withSet) {
+        const row = await get('SELECT item_json FROM knowledge_sets WHERE id = ?', [
+          withSet.knowledge_set_id,
+        ]);
+        try {
+          stored = JSON.parse((row && row.item_json) || '{}').fields || [];
+        } catch {
+          stored = [];
+        }
+      }
+
+      const { playbook, fields } = await askableFields(req.params.id);
+      res.json({ playbook, fields, requirements: stored, searches: searches.length });
+    } catch (error) {
+      console.error('Error reading campaign requirements:', error);
+      res.status(500).json({ error: 'Failed to read requirements' });
+    }
+  });
+
+  router.put('/api/campaigns/:id/requirements', async (req, res) => {
+    const fields = req.body && req.body.requirements;
+    const problem = validate(fields);
+    if (problem) return res.status(400).json({ error: problem });
+
+    try {
+      const searches = await query(
+        'SELECT id, name, knowledge_set_id FROM searches WHERE campaign_id = ?',
+        [req.params.id]
+      );
+      if (searches.length === 0) return res.status(404).json({ error: 'Unknown campaign' });
+
+      const payload = JSON.stringify({ fields, dimensions_enabled: false });
+      for (const search of searches) {
+        if (search.knowledge_set_id) {
+          await run('UPDATE knowledge_sets SET item_json = ? WHERE id = ?', [
+            payload,
+            search.knowledge_set_id,
+          ]);
+        } else {
+          const created = await run('INSERT INTO knowledge_sets (name, item_json) VALUES (?, ?)', [
+            `${search.name} (${search.id})`,
+            payload,
+          ]);
+          await run('UPDATE searches SET knowledge_set_id = ? WHERE id = ?', [
+            created.id,
+            search.id,
+          ]);
+        }
+      }
+
+      res.json({ success: true, searches: searches.length, requirements: fields });
+    } catch (error) {
+      console.error('Error saving campaign requirements:', error);
       res.status(500).json({ error: 'Failed to save requirements' });
     }
   });

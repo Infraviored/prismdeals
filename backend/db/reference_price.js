@@ -104,18 +104,51 @@ async function referencePrices(query, searchIds) {
 /**
  * Annotates listings in place with `is_deal` and `price_delta_eur`.
  *
- * Listings carry a single `search_id`; a listing found by several searches is
- * judged against the one it was first stored under, which is the same search
- * the row's own name comes from.
+ * Judged against every search that found the listing, and a deal under any one
+ * of them is a deal. `listings.search_id` names only the first finder, so this
+ * used to disagree with `dealListingIds` -- which asks all of them: a row that
+ * the "deals only" filter had selected then rendered with no coral and no
+ * saving, because it was re-judged against a different search's market.
  */
 async function annotateDeals(query, listings) {
-  const ids = [...new Set(listings.map(l => l.search_id).filter(Boolean))].map(Number);
-  const references = await referencePrices(query, ids);
+  if (listings.length === 0) return listings;
+
+  const searchesByListing = new Map();
+  const addSearch = (listingId, searchId) => {
+    if (!searchId) return;
+    const key = String(listingId);
+    if (!searchesByListing.has(key)) searchesByListing.set(key, new Set());
+    searchesByListing.get(key).add(Number(searchId));
+  };
+  for (const listing of listings) addSearch(listing.id, listing.search_id);
+
+  const ids = listings.map(l => String(l.id));
+  const CHUNK_SIZE = 500;
+  for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + CHUNK_SIZE);
+    const hits = await query(
+      `SELECT listing_id, search_id FROM listing_search_hits
+        WHERE listing_id IN (${chunk.map(() => '?').join(',')})`,
+      chunk
+    );
+    for (const hit of hits) addSearch(hit.listing_id, hit.search_id);
+  }
+
+  const searchIds = [...new Set([...searchesByListing.values()].flatMap(set => [...set]))];
+  const references = await referencePrices(query, searchIds);
 
   for (const listing of listings) {
-    const { isDeal, delta } = judge(listing.price_eur, references.get(Number(listing.search_id)));
-    listing.is_deal = isDeal;
-    listing.price_delta_eur = delta;
+    let best = { isDeal: false, delta: null };
+    for (const searchId of searchesByListing.get(String(listing.id)) || []) {
+      const verdict = judge(listing.price_eur, references.get(searchId));
+      // A deal beats a non-deal; between two of either, the larger saving.
+      const better =
+        (verdict.isDeal && !best.isDeal) ||
+        (verdict.isDeal === best.isDeal && (verdict.delta ?? -1) > (best.delta ?? -1));
+      if (better) best = verdict;
+    }
+    listing.is_deal = best.isDeal;
+    listing.price_delta_eur = best.delta;
   }
   return listings;
 }

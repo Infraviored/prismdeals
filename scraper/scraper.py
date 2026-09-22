@@ -635,7 +635,8 @@ def update_all_descriptions_session(campaign_id=None):
         if campaign_id is not None:
             cursor.execute(
                 """
-                SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
+                SELECT l.id, l.url, l.title, l.detailed_description, l.images
+                FROM listings l
                 JOIN searches s ON l.search_id = s.id
                 WHERE s.enabled = 1 AND s.campaign_id = ?
             """,
@@ -644,7 +645,8 @@ def update_all_descriptions_session(campaign_id=None):
         else:
             cursor.execute(
                 """
-                SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
+                SELECT l.id, l.url, l.title, l.detailed_description, l.images
+                FROM listings l
                 JOIN searches s ON l.search_id = s.id
                 WHERE s.enabled = 1
             """
@@ -671,6 +673,10 @@ def update_all_descriptions_session(campaign_id=None):
                 url = r["url"]
                 title = r["title"]
                 old_description = r["detailed_description"] or ""
+                try:
+                    old_images = json.loads(r["images"] or "[]")
+                except ValueError:
+                    old_images = []
 
                 logger.info(
                     f"Checking updates for listing {listing_id} ({title}): {url}"
@@ -690,10 +696,25 @@ def update_all_descriptions_session(campaign_id=None):
                     continue
 
             detailed_description = parsed["detailed_description"] or ""
+            text_changed = detailed_description.strip() != old_description.strip()
+            # A seller who swaps a blurry title photograph for a sharp one, or
+            # adds a picture of the damage, often does not touch a word of the
+            # text. Hanging the whole write on the description meant the buyer
+            # kept looking at the old picture forever.
+            images_changed = (parsed["images"] or []) != old_images
 
-            if detailed_description.strip() != old_description.strip():
+            if text_changed or images_changed:
                 logger.info(
-                    f"Description changed for listing {listing_id}! Updating in DB."
+                    "Listing %s changed (%s); updating in DB.",
+                    listing_id,
+                    " and ".join(
+                        part
+                        for part, yes in (
+                            ("description", text_changed),
+                            ("images", images_changed),
+                        )
+                        if yes
+                    ),
                 )
                 cursor.execute(
                     """
@@ -712,7 +733,7 @@ def update_all_descriptions_session(campaign_id=None):
                 )
                 conn.commit()
             else:
-                logger.info(f"No description changes for listing {listing_id}.")
+                logger.info(f"No changes for listing {listing_id}.")
 
         if total > 0:
             update_progress(

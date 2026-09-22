@@ -89,27 +89,61 @@ def test_a_missing_photograph_is_filled_in(conn):
 
 def test_photographs_already_collected_are_not_replaced_by_one_thumbnail(conn):
     """A detail fetch collects six; the card carries one. Overwriting would be
-    a loss dressed as an update."""
+    a loss dressed as an update -- but the card's picture is the current main
+    image, so it joins the front rather than being thrown away."""
     conn.execute(
         "UPDATE listings SET images = ? WHERE id='a'", (json.dumps(["a", "b", "c"]),)
     )
     changed = listing_updates.apply(
         conn, {"id": "a", "price_eur": 130, "images": ["thumb"]}
     )
+    assert changed["images"] == (3, 4)
+    stored = json.loads(
+        conn.execute("SELECT images FROM listings WHERE id='a'").fetchone()[0]
+    )
+    assert stored == ["thumb", "a", "b", "c"], "the new one leads, nothing is lost"
+
+
+def test_a_card_showing_a_picture_we_already_have_changes_nothing(conn):
+    conn.execute(
+        "UPDATE listings SET images = ? WHERE id='a'", (json.dumps(["a", "b"]),)
+    )
+    changed = listing_updates.apply(
+        conn, {"id": "a", "price_eur": 130, "images": ["b"]}
+    )
     assert "images" not in changed
     stored = json.loads(
         conn.execute("SELECT images FROM listings WHERE id='a'").fetchone()[0]
     )
-    assert stored == ["a", "b", "c"]
+    assert stored == ["a", "b"]
 
 
 def test_a_withdrawn_price_does_not_overwrite_the_number_with_nothing(conn):
     """ "VB" replacing a number is a change of meaning, not a gap."""
     changed = listing_updates.apply(conn, {"id": "a", "price_eur": None, "price": "VB"})
     assert "price_withdrawn" in changed
-    assert (
-        conn.execute("SELECT price_eur FROM listings WHERE id='a'").fetchone()[0] == 130
-    )
+    price_eur, price = conn.execute(
+        "SELECT price_eur, price FROM listings WHERE id='a'"
+    ).fetchone()
+    assert price_eur == 130, "the last number we saw is still the one to compare"
+    assert price == "VB", "but the row must stop promising a price that is gone"
+
+
+def test_two_changes_in_the_same_second_are_still_two_points(conn):
+    """The trail is drawn from two or more points, so an accidental duplicate
+    draws a chart of a price that never moved. Within one second the timestamps
+    are equal, and only the insertion order tells them apart."""
+    listing_updates.apply(conn, {"id": "a", "price_eur": 120})
+    listing_updates.apply(conn, {"id": "a", "price_eur": 100})
+    listing_updates.apply(conn, {"id": "a", "price_eur": 100})
+
+    seen = [h["seen_at"] for h in listing_updates.history(conn, "a")]
+    assert len(set(seen)) == 1, "the fixture runs inside one second"
+    assert [h["price_eur"] for h in listing_updates.history(conn, "a")] == [
+        130,
+        120,
+        100,
+    ], "the third call repeats the last price and must add nothing"
 
 
 def test_being_seen_is_recorded_even_when_nothing_changed(conn):

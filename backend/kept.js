@@ -38,7 +38,12 @@ module.exports = (query, get, run) => {
             ORDER BY k.kept_at DESC`,
           [uid]
         );
-        return res.json({ kept: rows.map(r => ({ ...r, listing_id: String(r.listing_id) })) });
+        // Same shape either way. `total` appearing only when listings were
+        // asked for made data.total undefined on the cheaper call.
+        return res.json({
+          total: rows.length,
+          kept: rows.map(r => ({ ...r, listing_id: String(r.listing_id) })),
+        });
       }
 
       const rows = await query(
@@ -87,8 +92,20 @@ module.exports = (query, get, run) => {
       await run(
         `INSERT INTO kept_listings (listing_id, user_id, kept_at, note)
               VALUES (?, ?, datetime('now'), ?)
-         ON CONFLICT(listing_id, user_id) DO UPDATE SET note = excluded.note`,
-        [req.params.listingId, uid, req.body && req.body.note ? String(req.body.note) : null]
+         -- A request that carries no note is not a request to erase one. The
+         -- bookmark toggle sends an empty body, so re-keeping a find wiped
+         -- "seller will go to 70, collect Saturday" without a word.
+         ON CONFLICT(listing_id, user_id) DO UPDATE
+                SET note = COALESCE(excluded.note, kept_listings.note)`,
+        [
+          req.params.listingId,
+          uid,
+          // An absent field leaves the note alone; an empty one clears it. The
+          // two are different requests and must not arrive as the same NULL.
+          req.body && Object.prototype.hasOwnProperty.call(req.body, 'note')
+            ? String(req.body.note ?? '')
+            : null,
+        ]
       );
       res.json({ kept: true });
     } catch (error) {

@@ -58,8 +58,24 @@ def test_a_speed_glued_to_its_unit_is_still_read():
 
 
 def test_the_wrong_generation_and_the_wrong_form_factor_are_rejected():
-    assert verdict("DDR3 RAM 32GB Corsair Vengeance 1600MHz (4x 8GB)") == "reject"
-    assert verdict("32GB Corsair Vengeance SODIMM DDR4 (2x 16GB) 3200 CL16") == "reject"
+    """Each title fails on exactly one thing, and says which.
+
+    The first version of this test used "DDR3 RAM 32GB Corsair Vengeance
+    1600MHz (4x 8GB)", which fails on the generation, the speed and the stick
+    count at once -- so deleting the generation reader outright left the test
+    green. A title that can be rejected for three reasons proves none of them.
+    """
+    generation = text_facts.judge(
+        MEMORY, WANTS, "DDR3 RAM 32GB Corsair Vengeance 3200MHz CL16 (2x 16GB)"
+    )
+    assert generation[0] == "reject"
+    assert generation[2] == ["Generation DDR3 statt DDR4"], generation[2]
+
+    form = text_facts.judge(
+        MEMORY, WANTS, "32GB Corsair Vengeance SODIMM DDR4 (2x 16GB) 3200 CL16"
+    )
+    assert form[0] == "reject"
+    assert form[2] == ["Bauform Sodimm statt Dimm"], form[2]
 
 
 def test_a_stated_fault_is_a_rejection_even_at_the_exact_specification():

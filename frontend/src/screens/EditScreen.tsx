@@ -4,6 +4,7 @@ import CategoryFilters from '../components/CategoryFilters';
 import { Bar, Pill } from '../components/surface';
 import PlaceInput, { type Place } from '../components/PlaceInput';
 import ModelPillGroup from '../components/ModelPillGroup';
+import { RequirementsSheet } from './RequirementsSheet';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign, SearchTarget, SearchFamilyTerm } from '../types';
 import { composeSearchUrl, decomposeSearchUrl, slugify } from '../utils/searchUrl';
@@ -36,6 +37,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
   const [terms, setTerms] = useState<SearchFamilyTerm[]>([]);
 
   const [saving, setSaving] = useState(false);
+  const [requirementsOpen, setRequirementsOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const lookupSeq = useRef(0);
@@ -331,6 +333,26 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           </div>
         </div>
 
+        {/* Field 5: what the site cannot filter on.
+            "Up to 150 EUR, memory" is all Kleinanzeigen can narrow to. "Two
+            sticks of sixteen, DDR4, at least 3200" is the difference between
+            fifty offers and the nine worth opening, and it belongs beside the
+            other four questions rather than behind an error message. */}
+        {campaign && (
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-[#9FB3B0]">
+              {t('surface.requirements')}
+            </label>
+            <button
+              type="button"
+              onClick={() => setRequirementsOpen(true)}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-left text-sm text-[#9FB3B0] hover:text-[#F2F5F4] hover:border-white/30 transition-colors cursor-pointer"
+            >
+              {t('surface.requirementsOpen')}
+            </button>
+          </div>
+        )}
+
         {saveError && (
           <p className="text-xs text-status-danger font-semibold">{saveError}</p>
         )}
@@ -351,6 +373,12 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           </div>
         )}
       </main>
+
+      <RequirementsSheet
+        isOpen={requirementsOpen}
+        onClose={() => setRequirementsOpen(false)}
+        campaignId={campaign?.id ?? null}
+      />
     </div>
   );
 };

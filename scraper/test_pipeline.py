@@ -99,6 +99,18 @@ def test_a_listing_is_extracted_scored_and_persisted(conn):
     assert row[1] == 100
     assert row[2] == 1
 
+    # And the verdict reaches the table the surface reads. Without this, the
+    # whole re-judge could be deleted and every test here stayed green -- while
+    # the buyer's list went back to being the one Kleinanzeigen already shows.
+    verdict = conn.execute(
+        "SELECT verdict, stage, reason FROM listing_fit "
+        "WHERE listing_id = 'l1' AND search_id = 1"
+    ).fetchone()
+    assert verdict is not None, "the model read it, so the verdict is the model's"
+    assert verdict[0] == "fit"
+    assert verdict[1] == "model"
+    assert "Arbeitsspeicher 16 GB" in verdict[2], verdict[2]
+
 
 def test_a_second_run_costs_no_model_call(conn):
     """The decoupling, asserted through the production entry point."""

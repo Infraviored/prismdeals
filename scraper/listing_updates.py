@@ -46,20 +46,31 @@ def apply(conn, listing):
         params += [new_price, listing.get("price") or f"{new_price} €"]
     elif new_price is None and old_price is not None:
         # "VB" replacing a number is a change of meaning, not a gap: the seller
-        # took the price down. Recorded, but the old number is not overwritten
-        # with nothing.
+        # took the price down. The number stays, because it is the last one we
+        # actually saw and a filter needs something to compare -- but the label
+        # the buyer reads has to be what the card now says, or the row keeps
+        # promising 85 EUR that is no longer on offer.
         changed["price_withdrawn"] = (old_price, None)
+        new_text = listing.get("price") or "VB"
+        if new_text != old_price_text:
+            sets.append("price = ?")
+            params.append(new_text)
 
-    # A photograph only ever gets added. Overwriting the ones a detail fetch
-    # collected with the single card thumbnail would be a loss.
+    # A photograph only ever gets added, never replaced wholesale: overwriting
+    # the ones a detail fetch collected with the single card thumbnail would be
+    # a loss. But a card whose picture we have never seen is the listing's
+    # current main image -- a seller who swaps a blurry photograph for a sharp
+    # one changes nothing else -- so it goes to the front and the rest stay.
     try:
         stored = json.loads(old_images or "[]")
     except ValueError:
         stored = []
-    if not stored and listing.get("images"):
-        changed["images"] = (0, len(listing["images"]))
+    fresh = [url for url in (listing.get("images") or []) if url not in stored]
+    if fresh:
+        merged = fresh + stored
+        changed["images"] = (len(stored), len(merged))
         sets.append("images = ?")
-        params.append(json.dumps(listing["images"], ensure_ascii=False))
+        params.append(json.dumps(merged, ensure_ascii=False))
 
     sets.append("last_seen_at = ?")
     params.append(_now())

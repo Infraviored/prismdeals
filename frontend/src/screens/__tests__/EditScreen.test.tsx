@@ -61,26 +61,27 @@ describe('EditScreen', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
   });
 
-  it('renders the 4 fields without Card containers', async () => {
+  it('renders the 5 fields without Card containers', async () => {
     render(<EditScreen campaign={mockCampaign} onBack={vi.fn()} />);
 
     // Sticky header Bar (48px)
     expect(await screen.findByText(/Drucker/i)).toBeInTheDocument();
     expect(screen.getByText(/Save|Speichern/i)).toBeInTheDocument();
 
-    // 1. Was / What
-    expect(screen.getByText(/WAS|WHAT/i)).toBeInTheDocument();
+    // 1. Was / What -- the label of the field, not any text that contains the
+    //    word: a loose matcher here caught the requirements button too.
+    expect(screen.getByText(/^(Was|What)$/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue('Drucker')).toBeInTheDocument();
     expect(await screen.findByText('Brother HL-L2350DW')).toBeInTheDocument();
     expect(screen.getByText('HP M428')).toBeInTheDocument();
 
     // 2. Wo / Where
-    expect(screen.getByText(/WO|WHERE/i)).toBeInTheDocument();
+    expect(screen.getByText(/^(Wo|Where)$/i)).toBeInTheDocument();
 
     // 3. Wie weit / How far -- a slider and a typed number, not four presets.
     //    10, 30, 50 and 100 km are not the distances people live at: Landsberg
     //    to Augsburg is 38, to Munich 57.
-    expect(screen.getByText(/WIE WEIT|HOW FAR/i)).toBeInTheDocument();
+    expect(screen.getByText(/^(Wie weit|How far)$/i)).toBeInTheDocument();
     const slider = screen.getByRole('slider');
     expect(slider).toHaveAttribute('max', '200');
     expect(slider).toHaveValue('30');
@@ -90,6 +91,14 @@ describe('EditScreen', () => {
     // 4. Bis wie viel / Up to how much (Price)
     expect(screen.getByText(/BIS WIE VIEL|UP TO HOW MUCH/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue('150')).toBeInTheDocument();
+
+    // 5. Anforderungen -- what the site cannot filter on. Without a way in,
+    //    Evaluate answered "set your requirements first" and there was nowhere
+    //    in the whole app to set them.
+    expect(screen.getByText(/^(Anforderungen|Requirements)$/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/jenseits von Preis und Ort|beyond price and place/i)
+    ).toBeInTheDocument();
 
     // Delete link at bottom
     expect(screen.getByText(/Suche löschen|Delete search/i)).toBeInTheDocument();
@@ -148,15 +157,32 @@ describe('EditScreen', () => {
     const saveBtn = await screen.findByText(/Save|Speichern/i);
     fireEvent.click(saveBtn);
 
+    // The URL itself, not merely the presence of the key. `stringContaining
+    // '"base_url"'` accepted any string at all -- the composer could have been
+    // replaced with a literal "https://kleinanzeigen.de/invalid-url-garbage"
+    // and the test stayed green, while every search saved from this screen
+    // pointed nowhere.
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/search-families/10',
-        expect.objectContaining({
-          method: 'PUT',
-          body: expect.stringContaining('"base_url"'),
-        })
+        expect.objectContaining({ method: 'PUT' })
       );
     });
+
+    const [, init] = fetchMock.mock.calls.find(
+      ([url, options]) =>
+        String(url) === '/api/search-families/10' &&
+        (options as RequestInit | undefined)?.method === 'PUT'
+    )!;
+    const saved = JSON.parse(String((init as RequestInit).body));
+
+    // The grammar is /s-<place>/[preis:a:b/]<term>/k0[c<cat>]l<place>r<radius>.
+    expect(saved.base_url).toMatch(
+      /^https:\/\/www\.kleinanzeigen\.de\/s-landsberg-am-lech\//
+    );
+    expect(saved.base_url).toContain('preis::150');
+    expect(saved.base_url).toContain('/drucker/');
+    expect(saved.base_url).toMatch(/\/k0(c\d+)?l7437r30$/);
 
     expect(onSavedMock).toHaveBeenCalled();
   });

@@ -1323,7 +1323,7 @@ async function getRouteCorridorPayload(route, options = {}) {
     total,
     offset,
     limit,
-    listings: await annotateDeals(query, parsedListings),
+    listings: await attachPriceHistory(query, await annotateDeals(query, parsedListings)),
     counts: {
       total,
       routed,
@@ -2204,6 +2204,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     }
 
     await annotateDeals(query, listings);
+    await attachPriceHistory(query, listings);
 
     res.json({ total, offset, limit, listings });
   } catch (error) {

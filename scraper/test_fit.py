@@ -24,6 +24,10 @@ CREATE TABLE listings (
     id TEXT PRIMARY KEY, search_id INTEGER, title TEXT,
     detailed_description TEXT, short_description TEXT
 );
+CREATE TABLE listing_search_hits (
+    listing_id TEXT NOT NULL, search_id INTEGER NOT NULL, first_seen_at TEXT NOT NULL,
+    PRIMARY KEY (listing_id, search_id)
+);
 CREATE TABLE listing_fit (
     listing_id TEXT NOT NULL, search_id INTEGER NOT NULL, verdict TEXT NOT NULL,
     reason TEXT, facts_json TEXT, stage TEXT NOT NULL, judged_at TEXT NOT NULL,
@@ -383,3 +387,32 @@ def test_the_model_answers_a_boolean_in_words(conn, answer, expected):
         text="Corsair Vengeance LPX 32GB (2x16) DDR4-3200 CL16",
     )
     assert verdict == expected
+
+
+def test_a_listing_another_search_found_first_is_judged_too(conn):
+    """listings.search_id is the first finder and never changes.
+
+    A kit search 2 had just harvested was never judged against search 2's
+    requirements, and "fits only" then hid it -- the one row that matched
+    perfectly.
+    """
+    conn.execute(
+        "INSERT INTO searches (id, url, knowledge_set_id) VALUES (2, ?, 1)",
+        (MEMORY_SEARCH,),
+    )
+    conn.execute(
+        "INSERT INTO listings (id, search_id, title) VALUES ('shared', 9, ?)",
+        ("Corsair Vengeance LPX 32GB (2x16GB) DDR4-3200 CL16",),
+    )
+    conn.execute(
+        "INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) "
+        "VALUES ('shared', 2, '2026-09-01')"
+    )
+
+    counts = fit.judge_search(conn, 2)
+
+    assert counts["fit"] == 1, counts
+    row = conn.execute(
+        "SELECT verdict FROM listing_fit WHERE listing_id='shared' AND search_id=2"
+    ).fetchone()
+    assert row == ("fit",)

@@ -46,17 +46,6 @@ def intent_for(conn, search_id):
         return []
 
 
-def record(conn, listing_id, search_id, verdict, reason, facts, stage):
-    """Writes one verdict. Public because the pipeline has a better one.
-
-    Two judgements that disagree are worse than one: a score of 61 beside
-    "passt nicht" tells a buyer nothing. Once the model has read the whole
-    listing, its facts replace what the title reader guessed at, and the
-    verdict is rewritten from them.
-    """
-    _store(conn, listing_id, search_id, verdict, reason, facts, stage)
-
-
 def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted, text=None):
     """Re-judges a listing from its fact sheet, once a model has read it.
 
@@ -170,10 +159,16 @@ def judge_search(conn, search_id, use_descriptions=True):
     if not wanted:
         return {"error": "this search has no requirements to judge against"}
 
+    # Every listing this search found, not only the ones it found first.
+    # listings.search_id names the first finder and never changes, so a kit
+    # another search had already seen was never judged against this search's
+    # requirements -- and "fits only" then hid it, though it matched perfectly.
     rows = conn.execute(
-        "SELECT id, title, detailed_description, short_description "
-        "FROM listings WHERE search_id = ?",
-        (search_id,),
+        """SELECT DISTINCT l.id, l.title, l.detailed_description, l.short_description
+             FROM listings l
+             LEFT JOIN listing_search_hits h ON h.listing_id = l.id
+            WHERE l.search_id = ? OR h.search_id = ?""",
+        (search_id, search_id),
     ).fetchall()
 
     counts = {v: 0 for v in VERDICTS}
@@ -208,11 +203,3 @@ def judge_search(conn, search_id, use_descriptions=True):
 
     conn.commit()
     return counts
-
-
-def summary(conn, search_id):
-    rows = conn.execute(
-        "SELECT verdict, COUNT(*) FROM listing_fit WHERE search_id = ? GROUP BY verdict",
-        (search_id,),
-    ).fetchall()
-    return {verdict: count for verdict, count in rows}

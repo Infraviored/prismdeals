@@ -72,10 +72,15 @@ describe('CategoryFilters', () => {
   });
 
   it('stops suggesting once a category is chosen', async () => {
-    globalThis.fetch = mockFetch({
+    // Asserted by what is never asked, not by what is not on screen yet. The
+    // suggestion is 400ms behind a debounce, so a bare queryByText passes
+    // before the timer has even fired -- it stayed green with the guard
+    // deleted, which is the same as having no test at all.
+    const fetchMock = mockFetch({
       '/api/taxonomy/suggest': { suggestions: [SUGGESTION] },
       '/api/taxonomy/categories/225': { id: '225', name: 'PC-Zubehör', filters: [] },
-    }) as never;
+    });
+    globalThis.fetch = fetchMock as never;
 
     render(
       <CategoryFilters
@@ -87,9 +92,20 @@ describe('CategoryFilters', () => {
       />
     );
 
+    // The chosen category is fetched, which proves the component ran at all.
     await waitFor(() => {
-      expect(screen.queryByText(/Drucker & Scanner/)).not.toBeInTheDocument();
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url).includes('/categories/225'))
+      ).toBe(true);
     });
+
+    // Well past the 400ms debounce.
+    await new Promise(resolve => setTimeout(resolve, 700));
+
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).includes('/taxonomy/suggest'))
+    ).toEqual([]);
+    expect(screen.queryByText(/Drucker & Scanner/)).not.toBeInTheDocument();
   });
 
   it('says nothing when the word is too short to guess from', async () => {

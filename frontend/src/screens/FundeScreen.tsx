@@ -4,6 +4,7 @@ import RouteCorridorMap, { type RouteCircle, type RouteListingGeo } from '../com
 import { FundeDetailSheet } from './FundeDetailSheet';
 import { FundeModelsSheet } from './FundeModelsSheet';
 import { FundeFilterSheet } from './FundeFilterSheet';
+import { RequirementsSheet } from './RequirementsSheet';
 import { useFundeData } from '../hooks/useFundeData';
 import { useKept } from '../hooks/useKept';
 import { useTranslation } from '../hooks/useTranslation';
@@ -290,6 +291,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   const [keptOnly, setKeptOnly] = useState(false);
   const [judging, setJudging] = useState(false);
   const [judgeError, setJudgeError] = useState<string | null>(null);
+  const [requirementsOpen, setRequirementsOpen] = useState(false);
 
   // By campaign, not by search: a family expands to one search per model per
   // place, and this screen shows all of them at once.
@@ -311,11 +313,13 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
       // many words.
       const body = await res.json().catch(() => null);
       const said = String(body?.error || '');
-      setJudgeError(
-        said.includes('no requirements')
-          ? t('surface.judgeNeedsRequirements')
-          : said || t('surface.judgeFailed')
-      );
+      if (said.includes('no requirements')) {
+        // Not an error to read and shrug at: the one thing missing is a list
+        // this screen can take, so it opens it instead of complaining.
+        setRequirementsOpen(true);
+        return;
+      }
+      setJudgeError(said || t('surface.judgeFailed'));
     } catch {
       setJudgeError(t('surface.judgeFailed'));
     } finally {
@@ -554,6 +558,13 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         isCorridor={isCorridor}
         maxDetour={maxDetour}
         setMaxDetour={setMaxDetour}
+      />
+
+      <RequirementsSheet
+        isOpen={requirementsOpen}
+        onClose={() => setRequirementsOpen(false)}
+        campaignId={campaign?.id ?? null}
+        onSaved={runJudge}
       />
 
       <FundeModelsSheet
