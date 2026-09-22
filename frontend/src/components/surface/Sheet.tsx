@@ -83,8 +83,8 @@ export const Sheet: React.FC<SheetProps> = ({
 
   const panelLayout =
     side === 'right'
-      ? 'fixed inset-y-0 right-0 w-full max-w-lg border-l border-white/[0.08] shadow-2xl animate-slide-left'
-      : 'fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t border-white/[0.08] shadow-2xl animate-fade-in';
+      ? 'fixed inset-y-0 right-0 w-full max-w-lg border-l border-[#0E4A40] shadow-2xl animate-slide-left'
+      : 'fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t border-[#0E4A40] shadow-2xl animate-fade-in';
 
   return (
     <div
@@ -105,10 +105,10 @@ export const Sheet: React.FC<SheetProps> = ({
         ref={panelRef}
         tabIndex={-1}
         data-testid="surface-sheet-panel"
-        className={`${panelLayout} z-10 flex flex-col bg-[#012828] text-[#F2F5F4] focus:outline-none ${className}`}
+        className={`${panelLayout} z-10 flex flex-col bg-[#06322C] text-[#F2F5F4] focus:outline-none ${className}`}
       >
         {/* Header (48px matching Bar) */}
-        <div className="h-12 min-h-[48px] max-h-[48px] px-4 border-b border-white/[0.08] flex items-center justify-between gap-3 shrink-0">
+        <div className="h-12 min-h-[48px] max-h-[48px] px-4 border-b border-[#0E4A40] flex items-center justify-between gap-3 shrink-0">
           <div className="text-sm font-semibold font-heading truncate text-[#F2F5F4]">
             {title}
           </div>
@@ -117,7 +117,7 @@ export const Sheet: React.FC<SheetProps> = ({
             data-testid="surface-sheet-close"
             onClick={onClose}
             aria-label={t('surface.close')}
-            className="flex items-center justify-center min-w-[36px] min-h-[36px] -mr-1.5 text-[#9FB3B0] hover:text-[#F2F5F4] rounded transition-colors cursor-pointer"
+            className="flex items-center justify-center min-w-[36px] min-h-[36px] -mr-1.5 text-[#8FA6A1] hover:text-[#F2F5F4] rounded transition-colors cursor-pointer"
           >
             <svg
               className="w-4 h-4"
@@ -141,7 +141,7 @@ export const Sheet: React.FC<SheetProps> = ({
             description sat behind the button and no amount of bottom padding
             could help -- padding is in the flow the button has left. */}
         {footer && (
-          <div className="shrink-0 p-4 sm:p-5 bg-[#012828] border-t border-white/[0.08]">
+          <div className="shrink-0 p-4 sm:p-5 bg-[#06322C] border-t border-[#0E4A40]">
             {footer}
           </div>
         )}

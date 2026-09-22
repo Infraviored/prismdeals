@@ -30,7 +30,7 @@ export const Bar: React.FC<BarProps> = ({
   return (
     <header
       data-testid="surface-bar"
-      className={`sticky top-0 z-30 h-12 min-h-[48px] max-h-[48px] w-full bg-[#012828] border-b border-white/[0.08] px-3 sm:px-4 backdrop-blur-md ${className}`}
+      className={`sticky top-0 z-30 h-12 min-h-[48px] max-h-[48px] w-full bg-[#06322C] border-b border-[#0E4A40] px-3 sm:px-4 backdrop-blur-md ${className}`}
     >
       {/* The bar runs to the same measure as the screen under it. Spanning the
           full 1440 while the list sat in a centre column put the title and the
@@ -44,7 +44,7 @@ export const Bar: React.FC<BarProps> = ({
             type="button"
             data-testid="surface-bar-back"
             onClick={onBack}
-            className="flex items-center justify-center gap-1 min-h-[36px] min-w-[36px] text-[#9FB3B0] hover:text-[#F2F5F4] px-1 -ml-1 rounded transition-colors text-sm font-medium shrink-0 cursor-pointer"
+            className="flex items-center justify-center gap-1 min-h-[36px] min-w-[36px] text-[#8FA6A1] hover:text-[#F2F5F4] px-1 -ml-1 rounded transition-colors text-sm font-medium shrink-0 cursor-pointer"
             aria-label={backLabel || t('surface.back')}
           >
             <svg
@@ -71,13 +71,13 @@ export const Bar: React.FC<BarProps> = ({
             {typeof count === 'number' && (
               <span
                 data-testid="surface-bar-count"
-                className="text-xs font-medium text-[#9FB3B0] tabular-nums shrink-0"
+                className="text-xs font-medium text-[#8FA6A1] tabular-nums shrink-0"
               >
                 {count}
               </span>
             )}
             {subtitle && (
-              <span className="text-2xs text-[#9FB3B0] truncate hidden md:inline">
+              <span className="text-2xs text-[#8FA6A1] truncate hidden md:inline">
                 {subtitle}
               </span>
             )}

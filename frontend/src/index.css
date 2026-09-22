@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --font-heading: "Outfit", sans-serif;
-  --font-body: "Inter", sans-serif;
+  --font-heading: "Fira Sans", sans-serif;
+  --font-body: "Fira Sans", sans-serif;
+  --font-numbers: "Archivo", sans-serif;
 
   /* Type scale.
    *
@@ -39,24 +40,36 @@
   /* Larger type needs more room around it, or the layout tightens as the text
    * grows. Adjusted to standard 0.25rem (P1 foundation). */
   --spacing: 0.25rem;
+
+  /* Nachtmarkt palette */
+  --color-nacht: #011F1F;
+  --color-glut: #E87967;
+  --color-grube: #00100F;
+  --color-tisch: #06322C;
+  --color-kante: #0E4A40;
+  --color-lampe: #E4D6BE;
+  --color-kalk: #F2F5F4;
+  --color-asche: #8FA6A1;
+  --color-moos: #4E8C6A;
+  --color-messing: #C9A227;
+
+  /* Semantic tokens mapped to Nachtmarkt */
   --color-brand-primary: #011F1F;
   --color-brand-accent: #E87967;
   
   --color-bg-base: #011F1F;
-  --color-bg-surface: #012828;
-  --color-bg-surface-hover: #013333;
-  --color-bg-input: #001414;
-  --color-border-subtle: rgba(255, 255, 255, 0.08);
-  --color-border-brand: rgba(232, 121, 103, 0.2);
+  --color-bg-surface: #06322C;
+  --color-bg-surface-hover: #083D36;
+  --color-bg-input: #00100F;
+  --color-border-subtle: #0E4A40;
   --color-text-primary: #F2F5F4;
-  --color-text-secondary: #9FB3B0;
-  --color-text-muted: #9FB3B0;
+  --color-text-secondary: #8FA6A1;
+  --color-text-muted: #8FA6A1;
 
-  --color-status-good: #10B981;
-  --color-status-onroute: #10B981;
-  --color-status-stale: #D9A441;
-  --color-status-away: #8A9694;
-  --color-status-danger: #EF4444;
+  --color-status-good: #4E8C6A;
+  --color-status-onroute: #4E8C6A;
+  --color-status-stale: #C9A227;
+  --color-status-away: #8FA6A1;
 
   --animate-slide-left: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   --animate-fade-in: fadeIn 0.2s ease-out;
@@ -89,6 +102,10 @@ body {
 }
 
 .tabular-nums {
+  font-family: var(--font-numbers);
+  font-stretch: 125%;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -179,13 +196,13 @@ input[type='range'] {
 input[type='range']::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--color-kante);
 }
 
 input[type='range']::-moz-range-track {
   height: 3px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--color-kante);
 }
 
 input[type='range']::-webkit-slider-thumb {
@@ -195,7 +212,7 @@ input[type='range']::-webkit-slider-thumb {
   height: 18px;
   margin-top: -7.5px;
   border-radius: 50%;
-  background: #f2f5f4;
+  background: var(--color-kalk);
   cursor: pointer;
 }
 
@@ -204,11 +221,11 @@ input[type='range']::-moz-range-thumb {
   height: 18px;
   border: none;
   border-radius: 50%;
-  background: #f2f5f4;
+  background: var(--color-kalk);
   cursor: pointer;
 }
 
 input[type='range']:focus-visible::-webkit-slider-thumb {
-  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline: 2px solid var(--color-kalk);
   outline-offset: 2px;
 }

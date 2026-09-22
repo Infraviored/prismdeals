@@ -41,22 +41,22 @@ export const SearchRow: React.FC<SearchRowProps> = ({
             }
           : undefined
       }
-      className={`h-16 min-h-[64px] max-h-[64px] w-full px-3 sm:px-4 py-2 flex items-center gap-3 border-b border-white/[0.08] hover:bg-white/[0.03] transition-colors select-none ${
+      className={`h-16 min-h-[64px] max-h-[64px] w-full px-3 sm:px-4 py-2 flex items-center gap-3 border-b border-[#0E4A40] hover:bg-[#06322C]/40 transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8FA6A1] ${
         onClick ? 'cursor-pointer' : ''
       } ${className}`}
     >
-      {/* 48px square thumbnail on left */}
-      <div className="w-12 h-12 min-w-[48px] rounded bg-white/[0.04] overflow-hidden shrink-0 flex items-center justify-center relative">
+      {/* 48px thumbnail on warm lampe background */}
+      <div className="w-12 h-12 min-w-[48px] rounded-sm bg-[#E4D6BE] p-[2px] overflow-hidden shrink-0 flex items-center justify-center relative">
         {showImage ? (
           <img
             src={imageUrl}
             alt={name}
             onError={() => setImgError(true)}
             loading="lazy"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover rounded-[1px]"
           />
         ) : (
-          <div className="flex flex-col items-center justify-center text-[#9FB3B0]/40">
+          <div className="flex flex-col items-center justify-center text-[#8FA6A1]/60">
             <svg
               className="w-5 h-5"
               fill="none"
@@ -81,14 +81,14 @@ export const SearchRow: React.FC<SearchRowProps> = ({
           {name || '—'}
         </h2>
 
-        <div className="text-2xs text-[#9FB3B0] truncate flex items-center gap-1.5 mt-0.5">
+        <div className="text-2xs text-[#8FA6A1] truncate flex items-center gap-1.5 mt-0.5">
           {locationLabel && <span className="truncate">{locationLabel}</span>}
           {locationLabel && freshnessLabel && (
-            <span className="text-white/20 select-none">·</span>
+            <span className="text-[#0E4A40] select-none">·</span>
           )}
           {freshnessLabel && <span>{freshnessLabel}</span>}
           {!locationLabel && !freshnessLabel && (
-            <span className="text-[#9FB3B0]/50">—</span>
+            <span className="text-[#8FA6A1]/50">—</span>
           )}
         </div>
       </div>

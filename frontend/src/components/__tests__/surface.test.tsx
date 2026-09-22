@@ -129,12 +129,12 @@ describe('Surface Components P1', () => {
 
       render(<Row listing={listing} />);
       const staleEl = screen.getByText(/Tagen|ago/);
-      expect(staleEl).toHaveClass('text-[#D9A441]');
+      expect(staleEl).toHaveClass('text-[#C9A227]');
     });
   });
 
   describe('Pill component', () => {
-    it('renders inactive and active state with click event', () => {
+    it('renders inactive and active state with click event and distinct styling', () => {
       const handleClick = vi.fn();
       const { rerender } = render(
         <Pill label="30 km" count={12} active={false} onClick={handleClick} />
@@ -142,6 +142,7 @@ describe('Surface Components P1', () => {
 
       const pill = screen.getByTestId('surface-pill');
       expect(pill).toHaveAttribute('data-active', 'false');
+      expect(pill).toHaveClass('border-[#0E4A40]');
       expect(screen.getByTestId('surface-pill-count')).toHaveTextContent('12');
 
       fireEvent.click(pill);
@@ -149,6 +150,8 @@ describe('Surface Components P1', () => {
 
       rerender(<Pill label="30 km" count={12} active={true} />);
       expect(screen.getByTestId('surface-pill')).toHaveAttribute('data-active', 'true');
+      expect(screen.getByTestId('surface-pill')).toHaveClass('bg-[#0E4A40]');
+      expect(screen.getByTestId('surface-pill')).toHaveClass('border-[#F2F5F4]');
     });
   });
 

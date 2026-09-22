@@ -58,14 +58,14 @@ export const PriceTrail: React.FC<PriceTrailProps> = ({
           x2={width}
           y1={y(reference)}
           y2={y(reference)}
-          stroke="#9FB3B0"
+          stroke="#8FA6A1"
           strokeOpacity={0.35}
           strokeDasharray="2 2"
           strokeWidth={1}
         />
       )}
-      <path d={path} fill="none" stroke={fell ? '#10B981' : '#9FB3B0'} strokeWidth={1.5} />
-      <circle cx={x(points.length - 1)} cy={y(prices[prices.length - 1])} r={1.8} fill={fell ? '#10B981' : '#9FB3B0'} />
+      <path d={path} fill="none" stroke={fell ? '#4E8C6A' : '#8FA6A1'} strokeWidth={1.5} />
+      <circle cx={x(points.length - 1)} cy={y(prices[prices.length - 1])} r={1.8} fill={fell ? '#4E8C6A' : '#8FA6A1'} />
     </svg>
   );
 };

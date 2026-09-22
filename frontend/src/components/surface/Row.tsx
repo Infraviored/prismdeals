@@ -78,20 +78,20 @@ function renderDetour(listing: RowListing, t: TranslateFn): React.ReactNode {
   if (typeof listing.detour_min === 'number') {
     if (listing.detour_min <= 0) {
       return (
-        <span className="text-[#10B981] font-medium">
+        <span className="text-[#4E8C6A] font-medium">
           {t('surface.onRoute')}
         </span>
       );
     }
     return (
-      <span className="text-[#9FB3B0]">
+      <span className="text-[#8FA6A1]">
         {t('surface.minDetour', { min: Math.round(listing.detour_min) })}
       </span>
     );
   }
   if (typeof listing.offroute_km === 'number' && listing.offroute_km > 0) {
     return (
-      <span className="text-[#9FB3B0]">
+      <span className="text-[#8FA6A1]">
         {t('surface.kmDistance', { km: Math.round(listing.offroute_km) })}
       </span>
     );
@@ -120,7 +120,7 @@ export const Row: React.FC<RowProps> = ({
   const priceClass = isDeal
     ? 'text-[#E87967]'
     : priceInfo.isMissing
-    ? 'text-[#9FB3B0]'
+    ? 'text-[#8FA6A1]'
     : 'text-[#F2F5F4]';
 
   return (
@@ -143,12 +143,12 @@ export const Row: React.FC<RowProps> = ({
             }
           : undefined
       }
-      className={`h-[88px] min-h-[88px] max-h-[88px] w-full px-3 sm:px-4 py-2 flex items-center gap-3 border-b border-white/[0.08] hover:bg-white/[0.03] transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#9FB3B0] ${
+      className={`h-[88px] min-h-[88px] max-h-[88px] w-full px-3 sm:px-4 py-2 flex items-center gap-3 border-b border-[#0E4A40] hover:bg-[#06322C]/40 transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8FA6A1] ${
         onClick ? 'cursor-pointer' : ''
       } ${className}`}
     >
-      {/* 72px square thumbnail on left */}
-      <div className="w-[72px] h-[72px] min-w-[72px] rounded bg-white/[0.04] overflow-hidden shrink-0 flex items-center justify-center relative">
+      {/* 72px thumbnail on warm lampe background */}
+      <div className="w-[72px] h-[72px] min-w-[72px] rounded-sm bg-[#E4D6BE] p-[2px] overflow-hidden shrink-0 flex items-center justify-center relative">
         {imageUrl ? (
           <img
             src={imageUrl}
@@ -158,7 +158,7 @@ export const Row: React.FC<RowProps> = ({
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="flex flex-col items-center justify-center text-[#9FB3B0]/40">
+          <div className="flex flex-col items-center justify-center text-[#8FA6A1]/60">
             <svg
               className="w-6 h-6"
               fill="none"
@@ -192,15 +192,15 @@ export const Row: React.FC<RowProps> = ({
             <span
               className={
                 listing.fit.verdict === 'fit'
-                  ? 'text-[#10B981] shrink-0'
+                  ? 'text-[#4E8C6A] shrink-0'
                   : listing.fit.verdict === 'no'
-                  ? 'text-[#8A9694] shrink-0'
-                  : 'text-[#D9A441] shrink-0'
+                  ? 'text-[#8FA6A1] shrink-0'
+                  : 'text-[#C9A227] shrink-0'
               }
             >
               {listing.fit.verdict === 'fit' ? '✓' : listing.fit.verdict === 'no' ? '✗' : '?'}
             </span>
-            <span className="truncate text-[#9FB3B0]">
+            <span className="truncate text-[#8FA6A1]">
               {summariseFit(listing.fit)}
             </span>
             {/* The number only where it adds something. For a match the answer
@@ -208,26 +208,26 @@ export const Row: React.FC<RowProps> = ({
                 beside either is a second scale that can only disagree with the
                 first. */}
             {listing.fit.verdict === 'unclear' && typeof listing.niceness_score === 'number' && (
-              <span className="shrink-0 tabular-nums text-[#9FB3B0]/70">
+              <span className="shrink-0 tabular-nums text-[#8FA6A1]/70">
                 {listing.niceness_score}/100
               </span>
             )}
           </div>
         ) : (
-        <div className="text-2xs text-[#9FB3B0] truncate flex items-center gap-1.5 mt-0.5">
+        <div className="text-2xs text-[#8FA6A1] truncate flex items-center gap-1.5 mt-0.5">
           {listing.location && (
             <span className="truncate">{formatLocation(listing.location)}</span>
           )}
           {listing.location && freshness && (
-            <span className="text-white/20 select-none">·</span>
+            <span className="text-[#0E4A40] select-none">·</span>
           )}
           {freshness && (
-            <span className={freshness.isStale ? 'text-[#D9A441]' : ''}>
+            <span className={freshness.isStale ? 'text-[#C9A227]' : ''}>
               {freshness.label}
             </span>
           )}
           {!listing.location && !freshness && (
-            <span className="text-[#9FB3B0]/50">—</span>
+            <span className="text-[#8FA6A1]/50">—</span>
           )}
         </div>
         )}
@@ -251,7 +251,7 @@ export const Row: React.FC<RowProps> = ({
             onToggleKeep(listing.id);
           }}
           className={`shrink-0 flex items-center justify-center min-w-[36px] min-h-[36px] rounded-full transition-colors ${
-            isKept ? 'text-[#F2F5F4]' : 'text-[#9FB3B0]/40 hover:text-[#9FB3B0]'
+            isKept ? 'text-[#F2F5F4]' : 'text-[#8FA6A1]/40 hover:text-[#8FA6A1]'
           }`}
         >
           <svg
@@ -282,7 +282,7 @@ export const Row: React.FC<RowProps> = ({
         {listing.price_history && listing.price_history.length > 1 ? (
           <div className="mt-0.5 min-h-[16px] flex items-center justify-end gap-1">
             {typeof listing.price_delta_eur === 'number' && listing.price_delta_eur > 0 && (
-              <span className="text-2xs tabular-nums text-[#10B981]">
+              <span className="text-2xs tabular-nums text-[#4E8C6A]">
                 −{listing.price_delta_eur} €
               </span>
             )}

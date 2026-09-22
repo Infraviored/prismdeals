@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Musterbogen — Gestaltungsrichtung Nachtmarkt</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,125,500..800&family=Fira+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --color-nacht: #011F1F;
+      --color-glut: #E87967;
+      --color-grube: #00100F;
+      --color-tisch: #06322C;
+      --color-kante: #0E4A40;
+      --color-lampe: #E4D6BE;
+      --color-kalk: #F2F5F4;
+      --color-asche: #8FA6A1;
+      --color-moos: #4E8C6A;
+      --color-messing: #C9A227;
+      --font-body: 'Fira Sans', sans-serif;
+      --font-numbers: 'Archivo', sans-serif;
+      --num-weight: 600;
+      --num-tracking: 0.01em;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--color-nacht);
+      color: var(--color-kalk);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+    }
+    .tabular-nums { font-family: var(--font-numbers); font-stretch: 125%; font-weight: var(--num-weight); letter-spacing: var(--num-tracking); font-variant-numeric: tabular-nums; }
+    #specimen-toolbar { position: relative; z-index: 100; background: var(--color-grube); border-bottom: 1px solid var(--color-kante); padding: 8px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; font-size: 12px; color: var(--color-asche); }
+    .btn-toggle { background: var(--color-tisch); color: var(--color-kalk); border: 1px solid var(--color-kante); border-radius: 4px; padding: 4px 10px; cursor: pointer; font-family: var(--font-body); font-size: 12px; }
+    .btn-toggle.active { background: var(--color-kante); color: #fff; font-weight: 600; }
+    #viewport-container { margin: 0 auto; transition: width 0.2s ease; background-color: var(--color-nacht); min-height: 100vh; }
+    .view-390 { width: 390px !important; border-left: 1px solid var(--color-kante); border-right: 1px solid var(--color-kante); }
+    .view-1440 { width: 1440px !important; }
+    .view-auto { width: 100%; max-width: 1440px; }
+    .surface-bar { background: var(--color-tisch); border-bottom: 1px solid var(--color-kante); padding: 10px 16px; position: sticky; top: 0; z-index: 40; }
+    .bar-row-top { display: flex; align-items: center; justify-content: space-between; }
+    .bar-title-wrap { display: flex; align-items: baseline; gap: 8px; }
+    .bar-back { color: var(--color-asche); text-decoration: none; font-size: 16px; margin-right: 4px; cursor: pointer; }
+    .bar-title { font-size: 15px; font-weight: 500; color: var(--color-kalk); }
+    .bar-count { font-size: 20px; color: var(--color-asche); }
+    .bar-state { font-size: 12px; color: var(--color-asche); margin-top: 2px; }
+    .filter-pills { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; }
+    .pill { background: transparent; color: var(--color-asche); border: 1px solid var(--color-kante); border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .pill:hover { color: var(--color-kalk); border-color: var(--color-asche); }
+    .pill.active { background: var(--color-kante); color: var(--color-kalk); border-color: var(--color-kalk); font-weight: 600; }
+    .pill:focus-visible { outline: 2px solid var(--color-kalk); outline-offset: 1px; }
+    .app-layout { display: flex; }
+    .list-column { flex: 1; min-width: 0; }
+    .market-column { width: 440px; shrink: 0; background: var(--color-grube); border-left: 1px solid var(--color-kante); padding: 24px; display: none; }
+    @media (min-width: 1024px) {
+      .view-1440 .market-column, .view-auto .market-column { display: block; }
+      .view-1440 .list-column, .view-auto .list-column { max-width: 860px; }
+    }
+    /* Row */
+    .listing-row {
+      display: flex; align-items: center; gap: 14px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--color-kante);
+      background: var(--color-nacht);
+      min-height: 98px;
+    }
+    .listing-row:hover { background: rgba(6, 50, 44, 0.35); }
+    /* Photo: Sitting on warm lampe */
+    .photo-base {
+      width: 96px; height: 96px; min-width: 96px;
+      background: var(--color-lampe);
+      padding: 3px;
+      border-radius: 2px;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .photo-img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 1px; }
+    .photo-empty { color: var(--color-nacht); opacity: 0.7; font-size: 11px; font-weight: 600; font-family: var(--font-body); }
+    /* Center Info */
+    .row-main { flex: 1; min-width: 0; }
+    .row-title {
+      font-size: 15px; font-weight: 500; color: var(--color-kalk);
+      line-height: 1.3; overflow: hidden; display: -webkit-box;
+      -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    }
+    .row-meta { font-size: 12px; color: var(--color-asche); margin-top: 3px; display: flex; gap: 6px; }
+    .row-fit { font-size: 12px; color: var(--color-asche); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
+    .fit-icon-fit { color: var(--color-moos); font-weight: 700; }
+    .fit-icon-no { color: var(--color-asche); }
+    .fit-icon-unclear { color: var(--color-messing); }
+    /* Price Hero Column */
+    .row-price-col {
+      text-align: right; min-width: 100px; shrink: 0;
+      display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+    }
+    .price-hero {
+      font-size: 34px; line-height: 1; color: var(--color-kalk);
+    }
+    .price-deal { color: var(--color-glut) !important; }
+    .delta-badge { font-size: 12px; color: var(--color-glut); font-weight: 500; margin-top: 2px; }
+    .quiet-info { font-size: 12px; color: var(--color-asche); margin-top: 3px; }
+    /* Excluded Banner */
+    .excluded-bar {
+      padding: 14px 16px;
+      background: var(--color-grube);
+      border-bottom: 1px solid var(--color-kante);
+      font-size: 13px; color: var(--color-asche);
+      display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+    }
+    .excluded-bar:hover { color: var(--color-kalk); }
+    /* Market Sidebar */
+    .market-section { margin-bottom: 28px; }
+    .market-heading {
+      font-family: var(--font-numbers); font-size: 14px; font-weight: 600;
+      letter-spacing: 0.05em; color: var(--color-asche); margin-bottom: 12px;
+    }
+    .histogram-bar-wrap { display: flex; align-items: flex-end; gap: 4px; height: 70px; margin: 16px 0 8px; }
+    .hist-col { flex: 1; background: var(--color-kante); border-radius: 1px; min-height: 4px; position: relative; }
+    .hist-col.has-deal { background: var(--color-glut); }
+    .hist-col.is-median { background: var(--color-asche); }
+    .req-item {
+      display: flex; justify-content: space-between; padding: 7px 0;
+      border-bottom: 1px solid var(--color-kante); font-size: 13px;
+    }
+    .req-item .check { color: var(--color-moos); margin-right: 6px; }
+  </style>
+</head>
+<body>
+  <div id="specimen-toolbar">
+    <div>
+      <strong style="color:var(--color-kalk)">Musterbogen: Nachtmarkt</strong>
+      <span style="margin-left:8px">Kampagne 7: Corsair Vengeance 32GB</span>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <span>Ansicht:</span>
+      <button class="btn-toggle" onclick="setView('view-390')">390 px (Telefon)</button>
+      <button class="btn-toggle" onclick="setView('view-1440')">1440 px (Desktop)</button>
+      <button class="btn-toggle active" onclick="setView('view-auto')">Responsiv</button>
+      <span style="margin-left:12px">Schriftgewicht:</span>
+      <button class="btn-toggle active" id="btn-w600" onclick="setWeight(600)">600</button>
+      <button class="btn-toggle" id="btn-w700" onclick="setWeight(700)">700</button>
+      <span style="margin-left:12px">Laufweite:</span>
+      <button class="btn-toggle active" id="btn-ls-on" onclick="setTracking('0.01em')">0.01em</button>
+      <button class="btn-toggle" id="btn-ls-off" onclick="setTracking('0')">0</button>
+    </div>
+  </div>
+
+  <div id="viewport-container" class="view-auto">
+    <!-- Header / Bar -->
+    <header class="surface-bar">
+      <div class="bar-row-top">
+        <div class="bar-title-wrap">
+          <span class="bar-back">←</span>
+          <h1 class="bar-title">Corsair Vengeance 32GB</h1>
+          <span class="bar-count tabular-nums">50</span>
+        </div>
+        <div style="color:var(--color-asche); cursor:pointer;">⚙</div>
+      </div>
+      <div class="bar-state">50 gefunden · 7 passen · 1 Fund · zuletzt vor 2 Std</div>
+      <nav class="filter-pills" aria-label="Filter">
+        <button class="pill" onclick="setFilter('all')">Alle <span class="tabular-nums">50</span></button>
+        <button class="pill active" onclick="setFilter('fit')">Passend <span class="tabular-nums">7</span></button>
+        <button class="pill" onclick="setFilter('unclear')">Unklar <span class="tabular-nums">5</span></button>
+        <button class="pill" onclick="setFilter('no')">Abgelehnt <span class="tabular-nums">38</span></button>
+      </nav>
+    </header>
+
+    <!-- Main Content -->
+    <div class="app-layout">
+      <!-- Left Column: The Listings -->
+      <main class="list-column" id="listings-list">
+        <!-- Rendered by JS -->
+      </main>
+
+      <!-- Right Column: Der Markt & Was du willst -->
+      <aside class="market-column">
+        <div class="market-section">
+          <div class="market-heading">DER MARKT</div>
+          <div style="font-size:12px; color:var(--color-asche)">Preisverteilung 20 € bis 150 €</div>
+          <div class="histogram-bar-wrap">
+            <div class="hist-col" style="height:15%" title="20-40 €"></div>
+            <div class="hist-col" style="height:25%" title="40-60 €"></div>
+            <div class="hist-col" style="height:40%" title="60-80 €"></div>
+            <div class="hist-col has-deal" style="height:55%" title="100 €: Dieser Fund"></div>
+            <div class="hist-col" style="height:60%" title="110-130 €"></div>
+            <div class="hist-col is-median" style="height:100%" title="140 €: Median"></div>
+            <div class="hist-col" style="height:90%" title="150 €: Höchstpreis"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--color-asche);">
+            <span>20 €</span>
+            <span style="color:var(--color-kalk); font-weight:600;">Median 140 €</span>
+            <span>150 €</span>
+          </div>
+          <div style="margin-top:10px; font-size:13px; color:var(--color-glut); font-weight:500;">
+            ▲ dieser Fund: 100 € (40 unter Markt)
+          </div>
+        </div>
+
+        <div class="market-section">
+          <div class="market-heading">WAS DU WILLST</div>
+          <div class="req-item">
+            <span><span class="check">✓</span> 2 Module (2×16 GB)</span>
+            <span class="tabular-nums" style="color:var(--color-kalk)">7</span>
+          </div>
+          <div class="req-item">
+            <span><span class="check">✓</span> DDR4</span>
+            <span class="tabular-nums" style="color:var(--color-kalk)">45</span>
+          </div>
+          <div class="req-item">
+            <span><span class="check">✓</span> ab 3200 MHz</span>
+            <span class="tabular-nums" style="color:var(--color-kalk)">31</span>
+          </div>
+          <div class="req-item">
+            <span><span class="check">✓</span> CL bis 16</span>
+            <span class="tabular-nums" style="color:var(--color-kalk)">12</span>
+          </div>
+        </div>
+
+        <div class="market-section">
+          <div class="market-heading">WARUM AUSGESCHLOSSEN</div>
+          <div style="font-size:12px; color:var(--color-asche); display:flex; flex-direction:column; gap:6px;">
+            <div>25× vier Riegel statt 2</div>
+            <div>4× 3000 MHz statt mind. 3200 MHz</div>
+            <div>2× DDR3 statt DDR4</div>
+            <div>2× Defekt</div>
+            <div>2× SODIMM statt DIMM</div>
+            <div>2× 2666 MHz</div>
+            <div>1× CL18 statt bis 16</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    let allListings = [];
+    let currentFilter = 'fit';
+
+    function setView(viewClass) {
+      const c = document.getElementById('viewport-container');
+      c.className = viewClass;
+      document.querySelectorAll('#specimen-toolbar .btn-toggle').forEach(b => {
+        if (b.getAttribute('onclick')?.includes('setView')) {
+          b.classList.toggle('active', b.getAttribute('onclick').includes(viewClass));
+        }
+      });
+    }
+
+    function setWeight(weight) {
+      document.documentElement.style.setProperty('--num-weight', weight);
+      document.getElementById('btn-w600').classList.toggle('active', weight === 600);
+      document.getElementById('btn-w700').classList.toggle('active', weight === 700);
+    }
+
+    function setTracking(track) {
+      document.documentElement.style.setProperty('--num-tracking', track);
+      document.getElementById('btn-ls-on').classList.toggle('active', track !== '0');
+      document.getElementById('btn-ls-off').classList.toggle('active', track === '0');
+    }
+
+    function setFilter(f) {
+      currentFilter = f;
+      document.querySelectorAll('.filter-pills .pill').forEach(p => {
+        p.classList.toggle('active', p.getAttribute('onclick').includes(`'${f}'`));
+      });
+      renderListings();
+    }
+
+    function formatMeta(item) {
+      const parts = [];
+      if (item.location) {
+        const loc = item.location.split('-').pop().trim();
+        parts.push(loc);
+      }
+      if (item.id === '3517306856') parts.push('84 km', 'gestern');
+      else if (item.offroute_km) parts.push(Math.round(item.offroute_km) + ' km');
+      return parts.join(' · ') || '—';
+    }
+
+    function formatFit(fit) {
+      if (!fit) return '';
+      if (fit.verdict === 'no') return fit.reason || 'passt nicht';
+      const f = fit.facts || {};
+      const parts = [];
+      if (f.stickCount && f.gbPerStick) parts.push(`${f.stickCount}×${f.gbPerStick} GB`);
+      if (f.generation && f.speedMhz) parts.push(`${String(f.generation).toUpperCase()}-${f.speedMhz}`);
+      if (f.casLatency) parts.push(`CL${f.casLatency}`);
+      return parts.join(' · ') || fit.reason || '';
+    }
+
+    function renderListings() {
+      const container = document.getElementById('listings-list');
+      let items = allListings;
+      if (currentFilter === 'fit') items = allListings.filter(i => i.fit?.verdict === 'fit');
+      else if (currentFilter === 'unclear') items = allListings.filter(i => i.fit?.verdict === 'unclear');
+      else if (currentFilter === 'no') items = allListings.filter(i => i.fit?.verdict === 'no');
+
+      let html = '';
+      items.forEach(item => {
+        const isDeal = item.is_deal;
+        const v = item.fit?.verdict;
+        const iconClass = v === 'fit' ? 'fit-icon-fit' : v === 'no' ? 'fit-icon-no' : 'fit-icon-unclear';
+        const iconChar = v === 'fit' ? '✓' : v === 'no' ? '✗' : '?';
+
+        html += `
+          <article class="listing-row" data-id="${item.id}">
+            <!-- Photo on warm lampe -->
+            <div class="photo-base">
+              ${item.image_url ? `<img src="${item.image_url}" class="photo-img" alt="" loading="lazy" onerror="this.style.display='none'">` : '<div class="photo-empty">FOTO</div>'}
+            </div>
+            <!-- Main Content -->
+            <div class="row-main">
+              <h2 class="row-title">${item.title}</h2>
+              <div class="row-meta">${formatMeta(item)}</div>
+              <div class="row-fit">
+                <span class="${iconClass}">${iconChar}</span>
+                <span>${formatFit(item.fit)}</span>
+              </div>
+            </div>
+            <!-- Price Hero -->
+            <div class="row-price-col">
+              <div class="price-hero tabular-nums ${isDeal ? 'price-deal' : ''}">
+                ${item.price_eur ? item.price_eur + ' €' : '—'}
+              </div>
+              ${isDeal ? `<div class="delta-badge">${item.price_delta_eur} unter Markt</div>` : '<div class="quiet-info"></div>'}
+            </div>
+          </article>
+        `;
+      });
+
+      if (currentFilter === 'fit') {
+        html += `
+          <div class="excluded-bar" onclick="setFilter('no')">
+            <span>38 ausgeschlossen: 25× vier Riegel, 4× 3000 MHz, 2× DDR3, 2× defekt, 2× SODIMM</span>
+            <span style="color:var(--color-kalk); font-weight:500">anzeigen →</span>
+          </div>
+        `;
+      }
+      container.innerHTML = html;
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('clean') === '1') document.getElementById('specimen-toolbar').style.display = 'none';
+    if (urlParams.get('weight')) setWeight(parseInt(urlParams.get('weight'), 10));
+
+    fetch('/specimen_corsair.json')
+      .then(res => res.json())
+      .then(data => {
+        allListings = data;
+        renderListings();
+      })
+      .catch(err => {
+        console.error('Failed to load specimen JSON:', err);
+      });
+  </script>
+</body>
+</html>

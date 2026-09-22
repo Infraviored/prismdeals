@@ -24,8 +24,8 @@ describe('PriceTrail', () => {
   it('marks a falling price differently from a rising one', () => {
     const fell = render(<PriceTrail history={[at(130, 1), at(100, 8)]} />);
     const rose = render(<PriceTrail history={[at(100, 1), at(130, 8)]} />);
-    expect(fell.container.querySelector('path')?.getAttribute('stroke')).toBe('#10B981');
-    expect(rose.container.querySelector('path')?.getAttribute('stroke')).not.toBe('#10B981');
+    expect(fell.container.querySelector('path')?.getAttribute('stroke')).toBe('#4E8C6A');
+    expect(rose.container.querySelector('path')?.getAttribute('stroke')).not.toBe('#4E8C6A');
   });
 
   it('shows the market as a line to beat', () => {
