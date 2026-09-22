@@ -142,7 +142,7 @@ describe('FundeScreen', () => {
 
     // The toggle moved into the filter sheet: seven controls did not fit across
     // 390 px, and the corridor pill rendered clipped as "rridor".
-    fireEvent.click(screen.getByText('Filter'));
+    fireEvent.click(screen.getAllByText('Filter')[0]);
     fireEvent.click(screen.getByText('Deals only'));
 
     await waitFor(() => {
@@ -198,8 +198,8 @@ describe('FundeScreen', () => {
   it('toggles map view when clicking Map pill', async () => {
     render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
 
-    const mapPill = await screen.findByText('Map');
-    fireEvent.click(mapPill);
+    const mapPills = await screen.findAllByText('Map');
+    fireEvent.click(mapPills[0]);
 
     expect(await screen.findByTestId('mock-route-corridor-map')).toBeInTheDocument();
   });

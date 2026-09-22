@@ -76,8 +76,8 @@ export const Sheet: React.FC<SheetProps> = ({
 
   const panelLayout =
     side === 'right'
-      ? 'fixed inset-y-0 right-0 w-full max-w-lg border-l border-[#0E4A40] shadow-2xl animate-slide-left'
-      : 'fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-[3px] border-t border-[#0E4A40] shadow-2xl animate-fade-in';
+      ? 'fixed inset-0 sm:inset-y-0 sm:left-auto sm:right-0 w-full sm:max-w-lg border-l border-[#0E4A40] shadow-2xl animate-slide-left'
+      : 'fixed inset-0 sm:inset-x-0 sm:bottom-0 sm:max-h-[85vh] sm:rounded-t-[3px] border-t border-[#0E4A40] shadow-2xl animate-fade-in';
 
   return (
     <div
@@ -88,7 +88,7 @@ export const Sheet: React.FC<SheetProps> = ({
     >
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-[#00100F]/70 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-[#00100F] sm:bg-[#00100F]/70 sm:backdrop-blur-sm transition-opacity"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -98,7 +98,7 @@ export const Sheet: React.FC<SheetProps> = ({
         ref={panelRef}
         tabIndex={-1}
         data-testid="surface-sheet-panel"
-        className={`${panelLayout} z-10 flex flex-col bg-[#06322C] text-[#F2F5F4] focus:outline-none ${className}`}
+        className={`${panelLayout} z-10 flex flex-col bg-[#011F1F] text-[#F2F5F4] focus:outline-none ${className}`}
       >
         {/* Header */}
         <div className="h-11 min-h-[44px] max-h-[44px] px-4 border-b border-[#0E4A40] flex items-center justify-between gap-3 shrink-0">

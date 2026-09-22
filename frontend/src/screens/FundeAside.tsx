@@ -8,6 +8,8 @@ export interface CampaignOverviewData {
   campaign_name: string;
   scope_kind?: string;
   search_id?: number | null;
+  last_crawled_at?: string | null;
+  schedule_interval?: number | null;
   pots: {
     all: number;
     fit: number;
@@ -33,6 +35,9 @@ export interface CampaignOverviewData {
       count: number;
       label: string;
     }>;
+    cluster_share?: number;
+    cluster_min?: number;
+    cluster_max?: number;
   };
   requirements: Array<{
     id: string;
@@ -76,11 +81,26 @@ export const FundeAside: React.FC<FundeAsideProps> = ({ overview, bestListing })
   const span = Math.max(1, maxPrice - minPrice);
   const medPos = Math.max(0, Math.min(100, ((medianPrice - minPrice) / span) * 100));
 
-  // Market lead sentence
-  const bestCity = bestListing?.location ? formatLocation(bestListing.location) : '';
-  const lead = bestListing?.is_deal && typeof bestListing.price_eur === 'number'
-    ? `${market.count} Angebote im Markt. Für ${bestListing.price_eur} €${bestCity ? ` in ${bestCity}` : ''} ist dieses Angebot das günstigste passende deutlich unter dem Median.`
-    : `${market.count} Angebote im Markt mit einem Median von ${medianPrice} €.`;
+  // Market lead sentence: where mass lies
+  const share = market?.cluster_share;
+  const cMin = market?.cluster_min;
+  const cMax = market?.cluster_max;
+
+  let lead: string;
+  if (typeof share === 'number' && typeof cMin === 'number' && typeof cMax === 'number') {
+    const shareSentence = t('surface.sharePriceRange', { share, min: cMin, max: cMax });
+    if (bestListing?.is_deal && typeof bestListing.price_eur === 'number') {
+      const city = bestListing.location ? formatLocation(bestListing.location) : '';
+      lead = `${shareSentence} ${t('surface.singleBestKit', { price: String(bestListing.price_eur), city })}`;
+    } else {
+      lead = shareSentence;
+    }
+  } else {
+    const bestCity = bestListing?.location ? formatLocation(bestListing.location) : '';
+    lead = bestListing?.is_deal && typeof bestListing.price_eur === 'number'
+      ? `${market.count} Angebote im Markt. Für ${bestListing.price_eur} €${bestCity ? ` in ${bestCity}` : ''} ist dieses Angebot das günstigste passende deutlich unter dem Median.`
+      : `${market.count} Angebote im Markt mit einem Median von ${medianPrice} €.`;
+  }
 
   return (
     <aside className="aside" aria-label="Markt und Anforderungen">
@@ -154,7 +174,7 @@ export const FundeAside: React.FC<FundeAsideProps> = ({ overview, bestListing })
                   <div className="req-top">
                     <span>{req.text || req.label}</span>
                     <span className="num">
-                      <b>{survivors}</b> von {total}
+                      <b>{survivors}</b> {t('surface.outOf', { count: survivors, total }).replace(`${survivors} `, '')}
                     </span>
                   </div>
                   <div className="meter">
@@ -175,7 +195,7 @@ export const FundeAside: React.FC<FundeAsideProps> = ({ overview, bestListing })
             {rejections.map((r, idx) => (
               <li key={idx}>
                 <span className="num">{r.count}×</span>
-                <span>{r.reason}</span>
+                <span>{/sodimm.*statt.*dimm/i.test(r.reason) ? 'SODIMM statt DIMM' : r.reason}</span>
               </li>
             ))}
           </ul>

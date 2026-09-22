@@ -199,7 +199,8 @@ button, a { font: inherit; color: inherit; }
 .best .where { margin-top: 4px; font-size: 14px; color: var(--asche); }
 .best .specs { margin-top: 10px; font-size: 14px; color: var(--kalk); display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .price-block { margin-top: 18px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 24px; }
-.best .price { font-size: 52px; line-height: 0.9; color: var(--glut); }
+.best .price { font-size: 52px; line-height: 0.9; color: var(--kalk); }
+.best .price.deal { color: var(--glut); }
 .price-why { font-size: 14px; line-height: 1.35; }
 .price-why .delta { color: var(--glut); font-weight: 500; }
 .price-why .was { color: var(--asche); }

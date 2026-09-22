@@ -26,14 +26,10 @@ export const translations = {
       saveError: "Failed to save scraper settings."
     },
     auth: {
-      emailLabel: "Email Address",
-      emailPlaceholder: "Enter your email...",
-      passwordLabel: "Password",
-      passwordPlaceholder: "Enter your password...",
-      buttonLogin: "Log In",
-      buttonLoggingIn: "Logging In...",
-      errorInvalid: "Invalid email or password",
-      logout: "Log Out"
+      emailLabel: "Email address", emailPlaceholder: "Enter your email...",
+      passwordLabel: "Password", passwordPlaceholder: "Enter your password...",
+      buttonLogin: "Log in", buttonLoggingIn: "Logging in...",
+      errorInvalid: "Invalid email or password", logout: "Log out"
     },
     routeResults: {
       legendRoute: "Route",
@@ -165,6 +161,7 @@ export const translations = {
       verdictSummary: "{{fits}} of {{total}} listings match.",
       verdictCheapest: "The cheapest is {{amount}} € below market price.",
       freshnessHourly: "Last searched {{when}}, searches hourly",
+      freshnessOnce: "Last searched {{when}}",
       freshnessJustNow: "just now",
       freshnessHoursAgo: "{{hours}}h ago",
       freshnessYesterday: "yesterday",
@@ -186,7 +183,9 @@ export const translations = {
       singleBestKit: "For {{price}} € in {{city}}, this kit is the only match significantly below.",
       staleSince: "Not seen since {{time}}",
       secondKit: "Second kit from {{city}} at the same price",
-      unclearGap: "Unclear"
+      unclearGap: "Unclear",
+      priceDevelopment: "Price history",
+      description: "Description"
     }
   },
   de: {
@@ -216,14 +215,10 @@ export const translations = {
       saveError: "Fehler beim Speichern der Scraper-Einstellungen."
     },
     auth: {
-      emailLabel: "E-Mail-Adresse",
-      emailPlaceholder: "Geben Sie Ihre E-Mail ein...",
-      passwordLabel: "Passwort",
-      passwordPlaceholder: "Geben Sie Ihr Passwort ein...",
-      buttonLogin: "Einloggen",
-      buttonLoggingIn: "Wird eingeloggt...",
-      errorInvalid: "Ungültige E-Mail oder Passwort",
-      logout: "Ausloggen"
+      emailLabel: "E-Mail-Adresse", emailPlaceholder: "Geben Sie Ihre E-Mail ein...",
+      passwordLabel: "Passwort", passwordPlaceholder: "Geben Sie Ihr Passwort ein...",
+      buttonLogin: "Einloggen", buttonLoggingIn: "Wird eingeloggt...",
+      errorInvalid: "Ungültige E-Mail oder Passwort", logout: "Ausloggen"
     },
     routeResults: {
       legendRoute: "Route",
@@ -280,7 +275,7 @@ export const translations = {
       sortPriceDesc: "Teuerste zuerst",
       sortNewest: "Neueste zuerst",
       sortScore: "Beste Bewertung",
-      openInKleinanzeigen: "Bei Kleinanzeigen öffnen",
+      openInKleinanzeigen: "Auf Kleinanzeigen öffnen",
       resetFilter: "Filter zurücksetzen",
       fetchListings: "Funde abrufen",
       settings: "Einstellungen",
@@ -342,7 +337,7 @@ export const translations = {
       allSearches: "Alle Suchen",
       editRequirements: "Anforderungen ändern",
       tabFit: "Passend",
-      tabUnclear: "Unclear",
+      tabUnclear: "Unklar",
       tabNo: "Abgelehnt",
       tabAll: "Alle",
       bestFind: "Bester Fund",
@@ -355,6 +350,7 @@ export const translations = {
       verdictSummary: "{{fits}} von {{total}} Angeboten passen.",
       verdictCheapest: "Das günstigste liegt {{amount}} € unter dem Marktpreis.",
       freshnessHourly: "Zuletzt gesucht {{when}}, sucht stündlich weiter",
+      freshnessOnce: "Zuletzt gesucht {{when}}",
       freshnessJustNow: "gerade eben",
       freshnessHoursAgo: "vor {{hours}} Std",
       freshnessYesterday: "gestern",
@@ -376,7 +372,9 @@ export const translations = {
       singleBestKit: "Für {{price}} € in {{city}} ist dieses Kit das einzige passende deutlich darunter.",
       staleSince: "Seit {{time}} nicht mehr gesehen",
       secondKit: "Zweites Kit aus {{city}} zum selben Preis",
-      unclearGap: "Nicht eindeutig"
+      unclearGap: "Nicht eindeutig",
+      priceDevelopment: "Preisentwicklung",
+      description: "Beschreibung"
     }
   }
 } as const;

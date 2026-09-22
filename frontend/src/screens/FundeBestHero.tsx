@@ -109,7 +109,7 @@ export const FundeBestHero: React.FC<FundeBestHeroProps> = ({
           )}
 
           <div className="price-block">
-            <div className={`price num ${isDeal ? 'text-[#E87967]' : 'text-[#F2F5F4]'}`}>
+            <div className={`price num ${isDeal ? 'deal text-[#E87967]' : 'text-[#F2F5F4]'}`}>
               {listing.price_eur !== null && listing.price_eur !== undefined ? `${listing.price_eur} €` : (listing.price || 'VB')}
             </div>
 

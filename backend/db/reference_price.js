@@ -29,7 +29,7 @@ const DEAL_PERCENTILE = 0.05;
 // The percentile alone would always mark a twentieth, even in a market where
 // every listing costs the same. This is the guard that stops it: in a tight
 // market nothing is a deal, however it ranks.
-const DEAL_RATIO = 0.7;
+const DEAL_RATIO = 0.75;
 const MIN_ABSOLUTE_SAVING_EUR = 15;
 
 // Three prices do not describe a market. Under this, no listing is a deal.
@@ -83,9 +83,11 @@ async function referencePrices(query, searchIds) {
                MAX(1, CAST(COUNT(*) OVER (PARTITION BY lsh.search_id) * ${DEAL_PERCENTILE} AS INTEGER)) AS cheap_rn
           FROM listing_search_hits lsh
           JOIN listings l ON l.id = lsh.listing_id
+          LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = lsh.search_id
          WHERE lsh.search_id IN (${placeholders})
            AND l.price_eur IS NOT NULL
            AND l.price_eur > 0
+           AND (fit.verdict IS NULL OR fit.verdict <> 'no')
       )
      GROUP BY search_id
   `;

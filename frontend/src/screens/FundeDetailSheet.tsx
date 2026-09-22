@@ -4,6 +4,7 @@ import { formatLocation } from '../utils/formatLocation';
 import { formatPrice } from '../utils/formatPrice';
 import { useTranslation } from '../hooks/useTranslation';
 import type { RowListing } from '../components/surface/Row';
+import { formatFreshness } from '../utils/freshness';
 import { ExternalLink, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
 
 export interface FundeDetailSheetProps {
@@ -60,10 +61,11 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
             href={listing.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full py-2.5 px-4 bg-[#E4D6BE] hover:bg-[#d8c8af] text-[#011F1F] rounded font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            style={{ backgroundColor: '#E4D6BE', color: '#011F1F' }}
+            className="w-full py-3 px-4 rounded-[3px] font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md hover:brightness-105"
           >
-            <span>{t('surface.openInKleinanzeigen')}</span>
-            <ExternalLink className="w-4 h-4" />
+            <span style={{ color: '#011F1F' }}>{t('surface.openInKleinanzeigen')}</span>
+            <ExternalLink className="w-4 h-4" style={{ color: '#011F1F' }} />
           </a>
         ) : null
       }
@@ -175,6 +177,26 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
             {listing.title || '—'}
           </h1>
 
+          {/* Specs / Merkmale Badges */}
+          {(() => {
+            const facts = (listing.fit?.facts || {}) as Record<string, unknown>;
+            const chips: string[] = [];
+            if (facts.stickCount && facts.gbPerStick) chips.push(`${facts.stickCount}×${facts.gbPerStick} GB`);
+            if (facts.generation) chips.push(String(facts.generation).toUpperCase() + (facts.speedMhz ? `-${facts.speedMhz}` : ''));
+            if (facts.casLatency) chips.push(`CL${facts.casLatency}`);
+            if (facts.formFactor) chips.push(String(facts.formFactor).toUpperCase());
+            if (chips.length === 0) return null;
+            return (
+              <div className="flex flex-wrap gap-2 pt-1 pb-1">
+                {chips.map((c, i) => (
+                  <span key={i} className="px-2 py-0.5 rounded text-xs bg-[#0E4A40]/60 text-[#F2F5F4] border border-[#0E4A40]">
+                    {c}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
+
           {/* 4. AI rating */}
           {aiText && (
             <div className="text-xs text-[#8FA6A1] bg-[#00100F] px-3 py-2.5 rounded border border-[#0E4A40] flex items-start gap-2">
@@ -187,10 +209,28 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
             </div>
           )}
 
+          {/* Price history */}
+          {listing.price_history && listing.price_history.length > 1 && (
+            <div className="pt-2 border-t border-[#0E4A40] space-y-2">
+              <div className="text-xs font-semibold text-[#8FA6A1]">{t('surface.priceDevelopment')}</div>
+              <div className="space-y-1 text-xs">
+                {listing.price_history.map((h, i) => (
+                  <div key={i} className="flex justify-between text-[#8FA6A1]">
+                    <span>{h.seen_at ? (formatFreshness(h.seen_at, t)?.label || h.seen_at) : 'Vorher'}</span>
+                    <span className="font-semibold text-[#F2F5F4] tabular-nums">{h.price_eur} €</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 5. Description */}
           {listing.description ? (
-            <div className="text-sm text-[#8FA6A1] leading-relaxed whitespace-pre-wrap">
-              {listing.description}
+            <div className="pt-2 border-t border-[#0E4A40] space-y-1">
+              <div className="text-xs font-semibold text-[#8FA6A1]">{t('surface.description')}</div>
+              <div className="text-sm text-[#F2F5F4]/80 leading-relaxed whitespace-pre-wrap">
+                {listing.description}
+              </div>
             </div>
           ) : null}
         </div>

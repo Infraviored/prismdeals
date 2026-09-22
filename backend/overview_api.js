@@ -11,6 +11,8 @@
  */
 
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const { referencePrices, dealListingIds, DEAL_RATIO, MIN_ABSOLUTE_SAVING_EUR, MIN_GROUP_SIZE } = require('./db/reference_price');
 
 const router = express.Router();
@@ -31,30 +33,47 @@ const FIELD_INFO = {
   productLine: { label: 'Produktlinie', unit: '' },
 };
 
-function formatRequirementText(field) {
+function formatRequirementText(field, allFields = []) {
   const fid = field.id;
   const wants = field.buyer_wants || {};
   const info = FIELD_INFO[fid] || { label: fid, unit: '' };
 
   if (fid === 'stickCount') {
+    const sticks = wants.match ?? (wants.min !== undefined && wants.min === wants.max ? wants.min : null);
+    const gbField = allFields.find(f => f.id === 'gbPerStick');
+    const gb = gbField?.buyer_wants?.match ?? (gbField?.buyer_wants?.min !== undefined && gbField?.buyer_wants?.min === gbField?.buyer_wants?.max ? gbField?.buyer_wants?.min : null);
+    if (sticks === 2 && gb === 16) return 'Zwei Riegel à 16 GB';
+    if (sticks === 2 && gb) return `Zwei Riegel à ${gb} GB`;
+    if ('match' in wants && wants.match === 2) return 'Zwei Riegel';
+    if ('match' in wants && wants.match === 1) return 'Ein Riegel';
+    if ('match' in wants && wants.match === 4) return 'Vier Riegel';
     if (wants.min !== undefined && wants.min === wants.max) return `${wants.min} Module`;
     if (wants.min !== undefined) return `mind. ${wants.min} Module`;
     if (wants.max !== undefined) return `höchstens ${wants.max} Module`;
   }
   if (fid === 'gbPerStick') {
+    const stickField = allFields.find(f => f.id === 'stickCount');
+    const sticks = stickField?.buyer_wants?.match ?? (stickField?.buyer_wants?.min !== undefined && stickField?.buyer_wants?.min === stickField?.buyer_wants?.max ? stickField?.buyer_wants?.min : null);
+    const gb = wants.match ?? (wants.min !== undefined && wants.min === wants.max ? wants.min : null);
+    if (sticks === 2 && gb === 16) return 'Zwei Riegel à 16 GB';
+    if (gb) return `${gb} GB je Modul`;
     if (wants.min !== undefined && wants.min === wants.max) return `${wants.min} GB je Modul`;
   }
   if (fid === 'generation') {
+    if (wants.match) return String(wants.match).toUpperCase();
     if (Array.isArray(wants.preferred)) return wants.preferred.map(g => g.toUpperCase()).join(' / ');
   }
   if (fid === 'formFactor') {
+    if (wants.match) return String(wants.match).toUpperCase();
     if (Array.isArray(wants.preferred)) return wants.preferred.map(f => f.toUpperCase()).join(' / ');
   }
   if (fid === 'speedMhz') {
+    if ('match' in wants) return `mindestens ${wants.match} MHz`;
     if (wants.min !== undefined) return `ab ${wants.min} MHz`;
   }
   if (fid === 'casLatency') {
-    if (wants.max !== undefined) return `CL bis ${wants.max}`;
+    const maxVal = wants.max ?? wants.match;
+    if (maxVal !== undefined) return `CL${maxVal} oder schneller`;
   }
   if (fid === 'hasFunctionalDefect') {
     if (wants.match === false) return 'kein Defekt';
@@ -65,7 +84,10 @@ function formatRequirementText(field) {
   }
 
   // Generic fallback
-  if ('match' in wants) return `${info.label}: ${wants.match ? 'ja' : 'nein'}`;
+  if ('match' in wants) {
+    if (typeof wants.match === 'boolean') return `${info.label}: ${wants.match ? 'ja' : 'nein'}`;
+    return `${info.label}: ${wants.match}`;
+  }
   if (wants.min !== undefined && wants.max !== undefined) {
     return wants.min === wants.max
       ? `${info.label} ${wants.min}${info.unit ? ' ' + info.unit : ''}`
@@ -80,8 +102,17 @@ function formatRequirementText(field) {
 
 function contradicts(wants, value) {
   if (value === null || value === undefined) return false;
-  if ('match' in wants && typeof value === 'boolean') {
-    return value !== Boolean(wants.match);
+  if ('match' in wants) {
+    if (typeof value === 'boolean') {
+      return value !== Boolean(wants.match);
+    }
+    if (typeof value === 'number') {
+      return Number(value) !== Number(wants.match);
+    }
+    if (typeof value === 'string') {
+      return String(value).trim().toLowerCase() !== String(wants.match).trim().toLowerCase();
+    }
+    return value !== wants.match;
   }
   if ('min' in wants && typeof value === 'number' && value < wants.min) {
     return true;
@@ -107,6 +138,10 @@ function contradicts(wants, value) {
 function normalizeReason(raw) {
   if (!raw) return 'Ohne Begründung';
   const str = String(raw).trim();
+
+  if (/sodimm.*statt.*dimm/i.test(str)) {
+    return 'SODIMM statt DIMM';
+  }
 
   // "Taktung 3000 MHz statt mind. 3200 MHz" -> "Taktung unter mind. 3200 MHz"
   const minMatch = str.match(/^(.+?)\s+[\d\.,]+\s*(\w+)?\s+statt\s+(mind\..+)$/);
@@ -352,6 +387,7 @@ module.exports = (query, get) => {
     // Query listings with their verdicts and facts
     const sql = `
       SELECT l.id, l.price_eur,
+             MAX(lsh.first_seen_at) AS first_seen_at,
              MAX(fit.verdict) AS verdict,
              MAX(fit.reason) AS reason,
              MAX(fit.facts_json) AS facts_json
@@ -367,6 +403,7 @@ module.exports = (query, get) => {
     let unclearCount = 0;
     let noCount = 0;
     let unjudgedCount = 0;
+    let latestSeen = null;
 
     const rejectionMap = new Map();
     const exactRejectionMap = new Map();
@@ -374,6 +411,9 @@ module.exports = (query, get) => {
     const factsList = [];
 
     for (const r of rows) {
+      const seen = r.first_seen_at;
+      if (seen && (!latestSeen || new Date(seen) > new Date(latestSeen))) latestSeen = seen;
+
       const v = r.verdict;
       if (v === 'fit') {
         fitCount++;
@@ -475,6 +515,26 @@ module.exports = (query, get) => {
         : sortedPrices[mid];
     }
 
+    // Clustering: where most prices gather
+    let clusterShare = null;
+    let clusterMin = null;
+    let clusterMax = null;
+    if (prices.length > 0) {
+      const freq = {};
+      for (const p of prices) freq[p] = (freq[p] || 0) + 1;
+      const common = Object.keys(freq)
+        .map(Number)
+        .sort((a, b) => freq[b] - freq[a])
+        .slice(0, 2)
+        .sort((a, b) => a - b);
+      if (common.length > 0) {
+        clusterMin = common[0];
+        clusterMax = common[common.length - 1];
+        const inCluster = prices.filter(p => p >= clusterMin && p <= clusterMax).length;
+        clusterShare = Math.round((100 * inCluster) / prices.length);
+      }
+    }
+
     const histogram = buildPriceHistogram(prices);
     const market = {
       median: marketMedian,
@@ -484,6 +544,9 @@ module.exports = (query, get) => {
       max: histogram.max,
       count: histogram.count,
       bins: histogram.bins,
+      cluster_share: clusterShare,
+      cluster_min: clusterMin,
+      cluster_max: clusterMax,
     };
 
     // 4. Requirements & Survivors
@@ -528,7 +591,7 @@ module.exports = (query, get) => {
         id: fid,
         label: info.label,
         unit: info.unit || null,
-        text: formatRequirementText(f),
+        text: formatRequirementText(f, requirementFields),
         buyer_wants: wants,
         survivors: evalTotal - contradictedCount,
         passed,
@@ -537,6 +600,14 @@ module.exports = (query, get) => {
         total: evalTotal,
       };
     });
+
+    const configPath = path.join(__dirname, '..', 'data', 'schedule_config.json');
+    let scheduleInterval = 0;
+    try {
+      if (fs.existsSync(configPath)) {
+        scheduleInterval = JSON.parse(fs.readFileSync(configPath, 'utf8')).interval || 0;
+      }
+    } catch {}
 
     return {
       campaign_id: campaign.id,
@@ -549,6 +620,8 @@ module.exports = (query, get) => {
       market,
       price_distribution: market,
       requirements: requirementStats,
+      last_crawled_at: latestSeen,
+      schedule_interval: scheduleInterval,
     };
   }
 

@@ -64,7 +64,7 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
     }
     return initialTab;
   });
-  const [sort, setSort] = useState<string>('default');
+  const [sort, setSort] = useState<string>('price_asc');
   const [maxDetour, setMaxDetour] = useState<number | null>(null);
   const [radius, setRadius] = useState<number>(30);
   const [termId, setTermId] = useState<number | null>(null);
@@ -259,7 +259,13 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
 
   // Best deal or cheapest fitting listing
   const bestListing = useMemo(() => {
-    const fits = listings.filter((l) => l.fit?.verdict === 'fit');
+    const fits = listings
+      .filter((l) => l.fit?.verdict === 'fit')
+      .sort((a, b) => {
+        const pa = typeof a.price_eur === 'number' ? a.price_eur : 999999;
+        const pb = typeof b.price_eur === 'number' ? b.price_eur : 999999;
+        return pa - pb;
+      });
     return fits.find((l) => l.is_deal) || fits[0] || listings.find((l) => l.is_deal) || null;
   }, [listings]);
 

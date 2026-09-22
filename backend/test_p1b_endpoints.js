@@ -265,6 +265,56 @@ async function main() {
       );
     }
 
+
+    // Campaign 5: Käufersprache and wants.match contradicts evaluation
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (5, 'Käufersprache Jagd')`);
+    await runDb(
+      db,
+      `INSERT INTO knowledge_sets (id, name, item_json) VALUES (5, 'Käufersprache Knowledge', ?)`,
+      [
+        JSON.stringify({
+          fields: [
+            { id: 'stickCount', buyer_wants: { match: 2 } },
+            { id: 'gbPerStick', buyer_wants: { match: 16 } },
+            { id: 'generation', buyer_wants: { match: 'ddr4' } },
+            { id: 'speedMhz', buyer_wants: { match: 3200 } },
+            { id: 'casLatency', buyer_wants: { max: 16 } },
+            { id: 'formFactor', buyer_wants: { match: 'dimm' } },
+          ],
+        }),
+      ]
+    );
+    await runDb(
+      db,
+      `INSERT INTO searches (id, campaign_id, name, url, knowledge_set_id, enabled)
+       VALUES (501, 5, 'Käufersprache Search', 'https://kleinanzeigen.de/s-kaeufer', 5, 1)`
+    );
+
+    const buyerListings = [
+      { id: 'b-1', price: 100, verdict: 'fit', reason: null, facts: { stickCount: 2, gbPerStick: 16, generation: 'ddr4', speedMhz: 3200, casLatency: 16, formFactor: 'dimm' }, title: 'Perfekter RAM' },
+      { id: 'b-2', price: 90, verdict: 'no', reason: 'SODIMM statt DIMM', facts: { stickCount: 4, gbPerStick: 8, generation: 'ddr4', speedMhz: 3200, casLatency: 18, formFactor: 'sodimm' }, title: 'Falscher RAM' },
+    ];
+
+    for (const b of buyerListings) {
+      await runDb(
+        db,
+        `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+         VALUES (?, ?, ?, ?, 'Berlin', ?, 50, 501)`,
+        [b.id, b.title, `${b.price} €`, b.price, `https://kleinanzeigen.de/${b.id}`]
+      );
+      await runDb(
+        db,
+        `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES (?, 501, ?)`,
+        [b.id, now.toISOString()]
+      );
+      await runDb(
+        db,
+        `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+         VALUES (?, 501, ?, ?, ?, 'title', ?)`,
+        [b.id, b.verdict, b.reason, JSON.stringify(b.facts), now.toISOString()]
+      );
+    }
+
     db.close();
 
     console.log('--- TEST 1: Default Pagination (limit=50) for search-families/:id/listings ---');
@@ -675,6 +725,33 @@ async function main() {
     const unclearListings = await request('/api/listings?campaign_id=4&limit=50&verdict=unclear');
     assert(unclearListings.status === 200, `status ${unclearListings.status}`);
     assert(unclearListings.data.total === 2, `expected 2 unclear listings, got ${unclearListings.data.total}`);
+
+
+    console.log('--- TEST 20: Käufersprache phrasing and contradicts on wants.match (numbers and strings) ---');
+    const buyerOverview = await request('/api/campaigns/5/overview');
+    assert(buyerOverview.status === 200, `status ${buyerOverview.status}`);
+    const reqs = buyerOverview.data.requirements;
+
+    const bStickReq = reqs.find(r => r.id === 'stickCount');
+    assert(bStickReq, 'stickCount req must exist');
+    assert(bStickReq.text === 'Zwei Riegel à 16 GB', `expected "Zwei Riegel à 16 GB", got ${bStickReq.text}`);
+    assert(bStickReq.total === 2, `expected total 2, got ${bStickReq.total}`);
+    assert(bStickReq.contradicted === 1, `expected 1 contradicted (4 sticks != match: 2), got ${bStickReq.contradicted}`);
+    assert(bStickReq.survivors === 1, `expected 1 survivor, got ${bStickReq.survivors}`);
+
+    const bGenReq = reqs.find(r => r.id === 'generation');
+    assert(bGenReq && bGenReq.text === 'DDR4', `expected "DDR4", got ${bGenReq?.text}`);
+
+    const bSpeedReq = reqs.find(r => r.id === 'speedMhz');
+    assert(bSpeedReq && bSpeedReq.text === 'mindestens 3200 MHz', `expected "mindestens 3200 MHz", got ${bSpeedReq?.text}`);
+
+    const bClReq = reqs.find(r => r.id === 'casLatency');
+    assert(bClReq && bClReq.text === 'CL16 oder schneller', `expected "CL16 oder schneller", got ${bClReq?.text}`);
+    assert(bClReq.contradicted === 1, `expected 1 contradicted for CL (18 > max: 16), got ${bClReq.contradicted}`);
+
+    const bFfReq = reqs.find(r => r.id === 'formFactor');
+    assert(bFfReq && bFfReq.text === 'DIMM', `expected "DIMM", got ${bFfReq?.text}`);
+    assert(bFfReq.contradicted === 1, `expected 1 contradicted for formFactor ('sodimm' != match: 'dimm'), got ${bFfReq.contradicted}`);
 
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
   } finally {

@@ -11,6 +11,7 @@ import { useFundeData, type FundeTabKey } from '../hooks/useFundeData';
 import { useKept } from '../hooks/useKept';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign } from '../types';
+import { formatFreshness } from '../utils/freshness';
 
 export interface FundeScreenProps {
   campaign: Campaign | undefined;
@@ -118,9 +119,17 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   // Hero: shown when tab is fit or all, and bestListing exists
   const heroShown = (tab === 'fit' || tab === 'all') && bestListing !== null;
   const heroListing = heroShown ? bestListing : null;
-  const displayListings = heroShown && heroListing
-    ? listings.filter((l) => l.id !== heroListing.id)
-    : listings;
+  const displayListings = useMemo(() => {
+    let list = listings;
+    if (heroShown && heroListing) {
+      list = list.filter((l) => l.id !== heroListing.id);
+    }
+    return [...list].sort((a, b) => {
+      const pa = typeof a.price_eur === 'number' ? a.price_eur : 999999;
+      const pb = typeof b.price_eur === 'number' ? b.price_eur : 999999;
+      return pa - pb;
+    });
+  }, [listings, heroShown, heroListing]);
 
   // Masthead verdict sentence
   const deal = bestListing?.is_deal;
@@ -158,65 +167,30 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     <div className="c-page">
       {/* 1. Kopfstreifen (strip) */}
       <nav className="strip" aria-label="Navigation">
-        <button
-          type="button"
-          data-testid="surface-bar-back"
-          className="back"
-          onClick={onBack}
-        >
+        <button type="button" data-testid="surface-bar-back" className="back" onClick={onBack}>
           {t('surface.allSearches')}
         </button>
-
-        <span data-testid="surface-bar-count" className="num text-xs text-[#8FA6A1]">
-          {total}
-        </span>
-
+        <span data-testid="surface-bar-count" className="sr-only">{total}</span>
         <span className="spacer" />
-
         {isCorridor && (
-          <button
-            type="button"
-            className="edit cursor-pointer"
-            onClick={() => setViewMode(viewMode === 'map' ? 'list' : 'map')}
-          >
+          <button type="button" className="edit cursor-pointer hidden sm:inline-flex" onClick={() => setViewMode(viewMode === 'map' ? 'list' : 'map')}>
             {viewMode === 'map' ? t('surface.list') : t('surface.map')}
           </button>
         )}
-
         {familyTerms.length > 0 && (
-          <button
-            type="button"
-            className="edit cursor-pointer"
-            onClick={() => setModelsOpen(true)}
-          >
+          <button type="button" className="edit cursor-pointer hidden sm:inline-flex" onClick={() => setModelsOpen(true)}>
             {t('surface.models')}
           </button>
         )}
-
-        <button
-          type="button"
-          className="edit cursor-pointer"
-          onClick={() => setFilterOpen(true)}
-        >
+        <button type="button" className="edit cursor-pointer hidden sm:inline-flex" onClick={() => setFilterOpen(true)}>
           {t('surface.filter')}
         </button>
-
         {onStartScrape && (
-          <button
-            type="button"
-            className="edit cursor-pointer"
-            onClick={onStartScrape}
-            disabled={isScraping}
-          >
+          <button type="button" className="edit cursor-pointer hidden sm:inline-flex" onClick={onStartScrape} disabled={isScraping}>
             {isScraping ? t('surface.searching') : t('surface.fetchListings')}
           </button>
         )}
-
-        <button
-          type="button"
-          className="edit cursor-pointer"
-          onClick={onConfigure}
-        >
+        <button type="button" className="edit cursor-pointer" onClick={onConfigure}>
           {t('surface.editRequirements')}
         </button>
       </nav>
@@ -242,26 +216,45 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             <p className="verdict" id="verdict">
               {verdictText}
             </p>
-            <p className="freshness" id="freshness">
-              {t('surface.freshnessHourly', { when: t('surface.freshnessHoursAgo', { hours: 2 }) })}
-            </p>
+            {(() => {
+              const rawTime = overview?.last_crawled_at || (listings.length > 0 ? (listings[0].first_seen_at || listings[0].last_seen_at) : null);
+              if (!rawTime) return null;
+              const f = formatFreshness(rawTime, t);
+              if (!f) return null;
+              const text = (overview?.schedule_interval ?? 0) > 0
+                ? t('surface.freshnessHourly', { when: f.label })
+                : t('surface.freshnessOnce', { when: f.label });
+              return <p className="freshness" id="freshness">{text}</p>;
+            })()}
           </header>
 
           {/* 3. Sticky Tabs */}
           <div className="tabs" role="tablist" id="tabs">
             {tabs.map((tabItem) => (
-              <button
-                key={tabItem.key}
-                className="tab"
-                role="tab"
-                type="button"
-                data-tab={tabItem.key}
-                aria-selected={tab === tabItem.key}
-                onClick={() => setTab(tabItem.key)}
-              >
+              <button key={tabItem.key} className="tab" role="tab" type="button" data-tab={tabItem.key} aria-selected={tab === tabItem.key} onClick={() => setTab(tabItem.key)}>
                 {tabItem.label} <span className="num">{tabItem.count}</span>
               </button>
             ))}
+          </div>
+          <div className="sm:hidden flex items-center gap-2 px-4 py-2 overflow-x-auto border-b border-[var(--kante)] bg-[var(--grube)] text-xs text-[var(--kalk)]">
+            {isCorridor && (
+              <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setViewMode(viewMode === 'map' ? 'list' : 'map')}>
+                {viewMode === 'map' ? t('surface.list') : t('surface.map')}
+              </button>
+            )}
+            {familyTerms.length > 0 && (
+              <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setModelsOpen(true)}>
+                {t('surface.models')}
+              </button>
+            )}
+            <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setFilterOpen(true)}>
+              {t('surface.filter')}
+            </button>
+            {onStartScrape && (
+              <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={onStartScrape} disabled={isScraping}>
+                {isScraping ? t('surface.searching') : t('surface.fetchListings')}
+              </button>
+            )}
           </div>
 
           {/* 4. Raster: Main + 400px Aside via Container Query */}
