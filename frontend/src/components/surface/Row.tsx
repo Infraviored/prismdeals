@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import { formatFreshness, type TranslateFn } from '../../utils/freshness';
+import { PriceTrail } from './PriceTrail';
 
 import { formatLocation } from '../../utils/formatLocation';
 
@@ -25,6 +26,8 @@ export interface RowListing {
   description?: string | null;
   summary?: string | null;
   price_delta_eur?: number | null;
+  price_history?: Array<{ price_eur: number | null; seen_at: string }> | null;
+  reference_price_eur?: number | null;
   niceness_score?: number | null;
   reference_comparison?: { closer_to: 'good' | 'bad' | 'mixed'; reasoning: string } | null;
   fit?: {
@@ -266,9 +269,30 @@ export const Row: React.FC<RowProps> = ({
           {priceInfo.text}
         </div>
 
-        <div className="text-2xs tabular-nums mt-0.5 min-h-[16px] flex items-center justify-end">
-          {renderDetour(listing, t)}
-        </div>
+        {/* Where the price has been, and the market it is measured against.
+            Only for listings whose price actually moved: a flat line would
+            claim a history the listing does not have. */}
+        {listing.price_history && listing.price_history.length > 1 ? (
+          <div className="mt-0.5 min-h-[16px] flex items-center justify-end gap-1">
+            {typeof listing.price_delta_eur === 'number' && listing.price_delta_eur > 0 && (
+              <span className="text-2xs tabular-nums text-[#10B981]">
+                −{listing.price_delta_eur} €
+              </span>
+            )}
+            <PriceTrail
+              history={listing.price_history}
+              reference={
+                typeof listing.price_eur === 'number' && typeof listing.price_delta_eur === 'number'
+                  ? listing.price_eur + listing.price_delta_eur
+                  : null
+              }
+            />
+          </div>
+        ) : (
+          <div className="text-2xs tabular-nums mt-0.5 min-h-[16px] flex items-center justify-end">
+            {renderDetour(listing, t)}
+          </div>
+        )}
       </div>
     </article>
   );

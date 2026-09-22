@@ -130,6 +130,7 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
           is_deal: !!l.is_deal,
           price_delta_eur: typeof l.price_delta_eur === 'number' ? l.price_delta_eur : null,
           fit: l.fit || null,
+          price_history: Array.isArray(l.price_history) ? l.price_history : null,
           status: l.geo_status || null,
           url: l.url || undefined,
           matched_terms: Array.isArray(l.matched_terms) ? l.matched_terms : [],

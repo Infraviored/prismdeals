@@ -58,6 +58,18 @@ ALT_LOCATION_RE = re.compile(
 PRICE_RE = re.compile(r">\s*([\d.]+)\s*€(\s*VB)?\s*<")
 GIVEAWAY_RE = re.compile(r">\s*Zu verschenken\s*<", re.I)
 
+# The card's own thumbnail. It was never read at all: every listing harvested
+# by this parser had an empty images field, and the rows showed a grey
+# placeholder where a photograph belongs.
+CARD_IMAGE_RE = re.compile(
+    r'<img[^>]+src="(https://img\.kleinanzeigen\.de/[^"]+)"', re.I
+)
+
+# Kleinanzeigen encodes the size in the URL. The card asks for $_2, which is a
+# list thumbnail and blurs at the 72 px the row draws it at, let alone in the
+# find sheet. $_59 is what the listing's own page uses for its main image.
+CARD_THUMB_RULE = re.compile(r"\?rule=\$_\d+\.(\w+)$")
+
 # Kleinanzeigen writes the Munich district names with a soft break inside them:
 # "Schwabing-<U+200B>West", "Berg-<U+200B>am-<U+200B>Laim". The character is a
 # zero-width space, so the name looks right on screen and compares wrong
@@ -180,6 +192,11 @@ def parse(page_html):
                 clean_text(match.group(2)),
             )
 
+        image = None
+        image_match = CARD_IMAGE_RE.search(segment)
+        if image_match:
+            image = CARD_THUMB_RULE.sub(r"?rule=$_59.\1", image_match.group(1))
+
         price = None
         price_match = PRICE_RE.search(segment)
         if price_match:
@@ -194,6 +211,7 @@ def parse(page_html):
                 "title": title,
                 "description": description,
                 "price_eur": price,
+                "image": image,
                 "location": location,
                 "state": state,
                 "source": "kleinanzeigen",
@@ -224,6 +242,9 @@ class CanonicalListing:
     place: Optional[str] = None
     state: Optional[str] = None
     detailed_description: str = ""
+    # The card's own photograph. One is enough for a row and for a first look;
+    # the rest arrive with the detail page, when there is a reason to fetch it.
+    images: Optional[list] = None
     llm_processed: bool = False
     last_seen_at: Optional[str] = None
     delisted_at: Optional[str] = None
@@ -243,6 +264,7 @@ class CanonicalListing:
             "url": self.url,
             "short_description": self.short_description,
             "detailed_description": self.detailed_description,
+            "images": self.images or [],
             "llm_processed": self.llm_processed,
             "last_seen_at": self.last_seen_at,
             "delisted_at": self.delisted_at,
@@ -288,6 +310,7 @@ def as_canonical(parsed) -> CanonicalListing:
         price_eur=price_eur,
         location=loc_str,
         place=parsed.get("place") or parsed.get("location"),
+        images=[parsed["image"]] if parsed.get("image") else [],
         state=state,
         url=parsed.get("url") or "",
         short_description=parsed.get("description")

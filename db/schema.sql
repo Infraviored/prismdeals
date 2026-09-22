@@ -277,3 +277,25 @@ CREATE TABLE IF NOT EXISTS listing_fit (
 );
 
 CREATE INDEX IF NOT EXISTS idx_listing_fit_search ON listing_fit(search_id, verdict);
+
+-- What a listing has cost over time.
+--
+-- The scraper only ever added: a listing it had seen before was skipped
+-- outright, so a kit that fell from 130 EUR to 100 went unnoticed, and the
+-- photograph a later harvest could have filled in never arrived either. A
+-- price that moves is the most useful thing a watched search can tell you and
+-- it was being thrown away on every run.
+--
+-- One row per observed change, not per observation: a price that holds for
+-- three weeks is one row, not twenty-one.
+-- No primary key on (listing_id, seen_at): the timestamp has second
+-- resolution, so two changes inside one second collided and one was lost.
+-- record_price already refuses to write a price that has not moved, which is
+-- the guard that actually belongs here.
+CREATE TABLE IF NOT EXISTS listing_price_history (
+    listing_id TEXT NOT NULL,
+    price_eur  INTEGER,
+    seen_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_history_listing ON listing_price_history(listing_id, seen_at);

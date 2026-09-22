@@ -206,6 +206,14 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
             existing_listings = []
             existing_ids = set()
 
+    # The database is what "already known" means, not a JSON file that may not
+    # exist. Asking only the file meant a re-scrape saw fifty fresh listings
+    # where fifty were already stored, so no price was ever compared and no
+    # missing photograph was ever filled in.
+    existing_ids |= _stored_listing_ids()
+
+    updated_ids = []
+
     for base_url in urls:
         for page in range(1, PAGES_TO_SCRAPE + 1):
             current_page_idx += 1
@@ -262,10 +270,17 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                         break
 
                     listing_id = parsed["id"]
-                    if listing_id in existing_ids:
-                        continue
-
                     listing = result_list.as_db_listing(parsed)
+
+                    if listing_id in existing_ids:
+                        # Known, not finished with. The card already carries the
+                        # price and a photograph, so bringing the row up to date
+                        # costs nothing beyond the page we had to fetch anyway.
+                        # Skipping outright is why a kit that fell from 130 EUR
+                        # to 100 went unnoticed and why rows harvested by this
+                        # parser never had a picture.
+                        updated_ids.append(listing)
+                        continue
 
                     # Append and save intermediate
                     existing_listings.append(listing)
@@ -294,10 +309,75 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
             total_pages,
             "Rapid listing discovery completed.",
         )
+    if updated_ids:
+        _refresh_known(updated_ids)
+
     logger.info(
         f"Successfully scraped {len(all_scraped_listings)} listings across all pages"
     )
     return all_scraped_listings
+
+
+def _stored_listing_ids():
+    """Every listing id the database holds."""
+    try:
+        conn = sqlite3.connect(
+            f"file:{db_schema.default_path()}?mode=ro", uri=True, timeout=10.0
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not read stored listing ids: %s", exc)
+        return set()
+    try:
+        return {row[0] for row in conn.execute("SELECT id FROM listings")}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not read stored listing ids: %s", exc)
+        return set()
+    finally:
+        conn.close()
+
+
+def _refresh_known(listings):
+    """Brings listings already in the database up to date from their cards.
+
+    Its own connection and its own try: a failure to update what is already
+    stored must not lose the new listings the same run discovered.
+    """
+    import listing_updates
+
+    try:
+        conn = sqlite3.connect(db_schema.default_path(), timeout=10.0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not open the database to refresh listings: %s", exc)
+        return
+
+    prices, pictures = 0, 0
+    try:
+        for listing in listings:
+            try:
+                changed = listing_updates.apply(conn, listing)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Could not refresh %s: %s", listing.get("id"), exc)
+                continue
+            if not changed:
+                continue
+            if "price_eur" in changed:
+                old_price, new_price = changed["price_eur"]
+                logger.info(
+                    "Listing %s: %s EUR -> %s EUR", listing["id"], old_price, new_price
+                )
+                prices += 1
+            if "images" in changed:
+                pictures += 1
+        conn.commit()
+    finally:
+        conn.close()
+
+    logger.info(
+        "Refreshed %d known listing(s): %d price change(s), %d picture(s) filled in.",
+        len(listings),
+        prices,
+        pictures,
+    )
 
 
 def preview_url_listings_count(url):
