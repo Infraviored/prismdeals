@@ -33,31 +33,22 @@ const FIELD_INFO = {
   productLine: { label: 'Produktlinie', unit: '' },
 };
 
-function formatRequirementText(field, allFields = []) {
+function formatRequirementText(field) {
   const fid = field.id;
   const wants = field.buyer_wants || {};
   const info = FIELD_INFO[fid] || { label: fid, unit: '' };
+  // An exact wish is either a match or a range that collapses to one value.
+  const exact = wants.match ?? (wants.min !== undefined && wants.min === wants.max ? wants.min : undefined);
 
   if (fid === 'stickCount') {
-    const sticks = wants.match ?? (wants.min !== undefined && wants.min === wants.max ? wants.min : null);
-    const gbField = allFields.find(f => f.id === 'gbPerStick');
-    const gb = gbField?.buyer_wants?.match ?? (gbField?.buyer_wants?.min !== undefined && gbField?.buyer_wants?.min === gbField?.buyer_wants?.max ? gbField?.buyer_wants?.min : null);
-    if (sticks === 2 && gb === 16) return 'Zwei Riegel à 16 GB';
-    if (sticks === 2 && gb) return `Zwei Riegel à ${gb} GB`;
-    if ('match' in wants && wants.match === 2) return 'Zwei Riegel';
-    if ('match' in wants && wants.match === 1) return 'Ein Riegel';
-    if ('match' in wants && wants.match === 4) return 'Vier Riegel';
-    if (wants.min !== undefined && wants.min === wants.max) return `${wants.min} Module`;
-    if (wants.min !== undefined) return `mind. ${wants.min} Module`;
-    if (wants.max !== undefined) return `höchstens ${wants.max} Module`;
+    const words = { 1: 'Ein Riegel', 2: 'Zwei Riegel', 4: 'Vier Riegel' };
+    if (words[exact]) return words[exact];
+    if (exact !== undefined) return `${exact} Riegel`;
+    if (wants.min !== undefined) return `mind. ${wants.min} Riegel`;
+    if (wants.max !== undefined) return `höchstens ${wants.max} Riegel`;
   }
   if (fid === 'gbPerStick') {
-    const stickField = allFields.find(f => f.id === 'stickCount');
-    const sticks = stickField?.buyer_wants?.match ?? (stickField?.buyer_wants?.min !== undefined && stickField?.buyer_wants?.min === stickField?.buyer_wants?.max ? stickField?.buyer_wants?.min : null);
-    const gb = wants.match ?? (wants.min !== undefined && wants.min === wants.max ? wants.min : null);
-    if (sticks === 2 && gb === 16) return 'Zwei Riegel à 16 GB';
-    if (gb) return `${gb} GB je Modul`;
-    if (wants.min !== undefined && wants.min === wants.max) return `${wants.min} GB je Modul`;
+    if (exact !== undefined) return `${exact} GB je Riegel`;
   }
   if (fid === 'generation') {
     if (wants.match) return String(wants.match).toUpperCase();
@@ -591,7 +582,7 @@ module.exports = (query, get) => {
         id: fid,
         label: info.label,
         unit: info.unit || null,
-        text: formatRequirementText(f, requirementFields),
+        text: formatRequirementText(f),
         buyer_wants: wants,
         survivors: evalTotal - contradictedCount,
         passed,

@@ -29,7 +29,7 @@ const DEAL_PERCENTILE = 0.05;
 // The percentile alone would always mark a twentieth, even in a market where
 // every listing costs the same. This is the guard that stops it: in a tight
 // market nothing is a deal, however it ranks.
-const DEAL_RATIO = 0.75;
+const DEAL_RATIO = 0.7;
 const MIN_ABSOLUTE_SAVING_EUR = 15;
 
 // Three prices do not describe a market. Under this, no listing is a deal.

@@ -663,7 +663,7 @@ async function main() {
     assert(ov.requirements.length === 3, `expected 3 requirements, got ${ov.requirements.length}`);
     const stickReq = ov.requirements.find(r => r.id === 'stickCount');
     assert(stickReq, 'stickCount requirement should exist');
-    assert(stickReq.text === '2 Module', `expected "2 Module", got ${stickReq.text}`);
+    assert(stickReq.text === 'Zwei Riegel', `expected "Zwei Riegel", got ${stickReq.text}`);
     assert(stickReq.survivors === 7, `expected 7 survivors for stickCount, got ${stickReq.survivors}`);
     assert(stickReq.contradicted === 3, `expected 3 contradicted for stickCount, got ${stickReq.contradicted}`);
 
@@ -734,10 +734,14 @@ async function main() {
 
     const bStickReq = reqs.find(r => r.id === 'stickCount');
     assert(bStickReq, 'stickCount req must exist');
-    assert(bStickReq.text === 'Zwei Riegel à 16 GB', `expected "Zwei Riegel à 16 GB", got ${bStickReq.text}`);
+    assert(bStickReq.text === 'Zwei Riegel', `expected "Zwei Riegel", got ${bStickReq.text}`);
     assert(bStickReq.total === 2, `expected total 2, got ${bStickReq.total}`);
     assert(bStickReq.contradicted === 1, `expected 1 contradicted (4 sticks != match: 2), got ${bStickReq.contradicted}`);
     assert(bStickReq.survivors === 1, `expected 1 survivor, got ${bStickReq.survivors}`);
+    const bGbReq = reqs.find(r => r.id === 'gbPerStick');
+    assert(bGbReq, 'gbPerStick req must exist');
+    assert(bGbReq.text === '16 GB je Riegel', `expected "16 GB je Riegel", got ${bGbReq.text}`);
+    assert(bGbReq.text !== bStickReq.text, 'two requirements must not share one label');
 
     const bGenReq = reqs.find(r => r.id === 'generation');
     assert(bGenReq && bGenReq.text === 'DDR4', `expected "DDR4", got ${bGenReq?.text}`);

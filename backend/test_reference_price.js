@@ -56,10 +56,46 @@ function run() {
       throw new Error('should not have queried');
     },
     []
-  ).then(map => {
-    assert.strictEqual(map.size, 0, 'no searches, no references, no query');
-    console.log('reference_price: all assertions passed');
-  });
+  )
+    .then(map => {
+      assert.strictEqual(map.size, 0, 'no searches, no references, no query');
+      return rejectedListingsStayOutOfTheMedian();
+    })
+    .then(() => console.log('reference_price: all assertions passed'));
+}
+
+// A search for 2x16 GB kits also finds 4x8 GB kits, which the judge rejects.
+// They are a different thing at a different price; letting them into the
+// median made a matching kit at the usual price look expensive and an ordinary
+// one look like a deal.
+async function rejectedListingsStayOutOfTheMedian() {
+  const sqlite3 = require('sqlite3');
+  const db = new sqlite3.Database(':memory:');
+  const run = (sql, params = []) =>
+    new Promise((resolve, reject) => db.run(sql, params, err => (err ? reject(err) : resolve())));
+  const query = (sql, params) =>
+    new Promise((resolve, reject) => db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows))));
+
+  await run('CREATE TABLE listings (id TEXT PRIMARY KEY, price_eur INTEGER)');
+  await run('CREATE TABLE listing_search_hits (listing_id TEXT, search_id INTEGER, first_seen_at TEXT)');
+  await run('CREATE TABLE listing_fit (listing_id TEXT, search_id INTEGER, verdict TEXT)');
+
+  // Five matching kits at 150, five rejected four-stick kits at 60.
+  const rows = [
+    ...[1, 2, 3, 4, 5].map(i => [`fit-${i}`, 150, 'fit']),
+    ...[1, 2, 3, 4, 5].map(i => [`four-${i}`, 60, 'no']),
+    ['unjudged', 150, null],
+  ];
+  for (const [id, price, verdict] of rows) {
+    await run('INSERT INTO listings VALUES (?, ?)', [id, price]);
+    await run("INSERT INTO listing_search_hits VALUES (?, 7, '2026-09-22')", [id]);
+    if (verdict) await run('INSERT INTO listing_fit VALUES (?, 7, ?)', [id, verdict]);
+  }
+
+  const ref = (await referencePrices(query, [7])).get(7);
+  assert.strictEqual(ref.count, 6, 'rejected listings are not counted; unjudged ones are');
+  assert.strictEqual(ref.median, 150, 'the median is the price of what is actually hunted');
+  db.close();
 }
 
 run();
