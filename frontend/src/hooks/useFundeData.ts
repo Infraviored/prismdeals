@@ -2,6 +2,45 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Campaign, SearchFamilyTerm, RouteCorridorData, RouteListingGeo, RadiusDiagnosis } from '../types';
 import type { RowListing } from '../components/surface';
 
+/**
+ * One listing as the three endpoints send it.
+ *
+ * Written down rather than left as `any`: every field below is read by the
+ * mapper, and an `any` there means a renamed column reaches the surface as
+ * `undefined` with nothing to say so.
+ */
+interface ApiListing {
+  id: string | number;
+  title?: string | null;
+  price?: string | null;
+  price_eur?: number | null;
+  location?: string | null;
+  url?: string | null;
+  images?: string[] | null;
+  detour_min?: number | null;
+  offroute_km?: number | null;
+  lat?: number | null;
+  lon?: number | null;
+  geo_status?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  is_deal?: boolean;
+  price_delta_eur?: number | null;
+  price_history?: RowListing['price_history'];
+  fit?: RowListing['fit'];
+  matched_terms?: RowListing['matched_terms'];
+  niceness_score?: number | null;
+  detailed_description?: string | null;
+  short_description?: string | null;
+  description?: string | null;
+  summary?: string | null;
+  reference_comparison?: RowListing['reference_comparison'];
+  extracted_facts?: {
+    summary?: string | null;
+    reference_comparison?: RowListing['reference_comparison'];
+  } | null;
+}
+
 export interface UseFundeDataOptions {
   campaign: Campaign | undefined;
   isScraping?: boolean;
@@ -117,7 +156,7 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
           if (data.route) setRouteData(data as RouteCorridorData);
         }
 
-        const mapped: RowListing[] = rawListings.map((l: any) => ({
+        const mapped: RowListing[] = rawListings.map((l: ApiListing) => ({
           id: String(l.id),
           title: l.title || '',
           price: l.price,

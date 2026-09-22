@@ -293,14 +293,19 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   const [judgeError, setJudgeError] = useState<string | null>(null);
   const [requirementsOpen, setRequirementsOpen] = useState(false);
 
+  // Read out once, so the callback depends on the id and not on the whole
+  // campaign object: the compiler infers the wider dependency from `campaign?.id`
+  // read inline, and then refuses to keep the memoization at all.
+  const campaignId = campaign?.id ?? null;
+
   // By campaign, not by search: a family expands to one search per model per
   // place, and this screen shows all of them at once.
   const runJudge = useCallback(async () => {
-    if (!campaign?.id) return;
+    if (!campaignId) return;
     setJudging(true);
     setJudgeError(null);
     try {
-      const res = await fetch(`/api/campaigns/${campaign.id}/judge`, {
+      const res = await fetch(`/api/campaigns/${campaignId}/judge`, {
         method: 'POST',
         credentials: 'same-origin',
       });
@@ -325,7 +330,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     } finally {
       setJudging(false);
     }
-  }, [campaign?.id, reload, t]);
+  }, [campaignId, reload, t]);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const activeTerm = familyTerms.find((term) => term.id === termId);

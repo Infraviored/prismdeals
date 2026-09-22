@@ -5,7 +5,6 @@ export interface PillProps extends React.ButtonHTMLAttributes<HTMLButtonElement>
   label?: React.ReactNode;
   count?: number | string;
   icon?: React.ReactNode;
-  variant?: 'default' | 'accent';
 }
 
 function getPillStateStyles(disabled: boolean, active: boolean): string {
@@ -23,7 +22,6 @@ export const Pill: React.FC<PillProps> = ({
   label,
   count,
   icon,
-  variant = 'default',
   children,
   className = '',
   disabled = false,
