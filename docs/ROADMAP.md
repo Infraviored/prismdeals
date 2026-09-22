@@ -5,8 +5,7 @@ und Fallbeispielen als Artifact:
 <https://claude.ai/code/artifact/67a9de19-ccf6-496e-8067-17ac8dd27994>
 
 > **Was davon heute wirklich läuft**, gezählt an der Live-Datenbank: [`backend-bestand.md`](backend-bestand.md).
-> **Wie Bewertung je Kategorie verschieden sein muss** (Spezifikation, Preis-Leistung, Modellprüfung, Geschmack): [`plan-generische-suche.md`](plan-generische-suche.md).
-> **Wie das Produkt Wissen sammelt** (Wissensbaum, Recherche-Brücke, Bewertung in Stapeln): [`plan-wissen.md`](plan-wissen.md).
+> **Wie prismdeals urteilt** (fünf Achsen, Profile je Kategorie, Wissensbaum, Recherche-Brücke, Bewertung in Stapeln): [`produktkern.md`](produktkern.md).
 
 ---
 

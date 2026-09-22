@@ -4,7 +4,7 @@
 Jede Zahl unten ist gezählt, nicht geschätzt. Wer sie aktualisiert: nachzählen.*
 
 Dieses Dokument beschreibt den **Ist-Zustand**. Wohin es gehen soll, steht in
-[`plan-generische-suche.md`](plan-generische-suche.md).
+[`produktkern.md`](produktkern.md).
 
 ---
 
