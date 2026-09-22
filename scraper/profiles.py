@@ -271,16 +271,17 @@ def taxonomy():
 
 # /s-anzeige/<slug>/<ad id>-<category>-<location>
 _LISTING_RE = re.compile(r"/s-anzeige/[^/?#]+/\d+-(\d+)-\d+")
-_SEARCH_RE = re.compile(r"c(\d+)")
+# The last path segment of a search: "c17", "k0c278", "k0c278l6411r30+notebooks.ram_s:16gb".
+_SEARCH_TAIL_RE = re.compile(r"^(?:k\d+)?c(\d+)(?:[lr+].*)?$")
 
 
 def category_from_url(url):
     """The category id a listing or search URL carries, or None.
 
-    A listing URL states it outright. A search URL packs it into its last path
-    segment ("k0c278l6411"), where a bare "c123" can also occur inside a slug,
-    so only ids the taxonomy knows are accepted. A search over all categories
-    ("k0" without c) has none.
+    A listing URL states it outright. A search URL carries it only in its last
+    path segment ("k0c278l6411"). Anywhere else a "c" and digits is part of what
+    someone typed: "mercedes-c220" is a car model, not category 220 (campers).
+    A search over all categories ("k0" without c) has none.
     """
     if not url:
         return None
@@ -288,12 +289,12 @@ def category_from_url(url):
     match = _LISTING_RE.search(path)
     if match:
         return match.group(1)
-    known = taxonomy()
     segments = [s for s in path.split("/") if s]
-    for segment in reversed(segments):
-        for found in _SEARCH_RE.finditer(segment):
-            if found.group(1) in known:
-                return found.group(1)
+    if not segments:
+        return None
+    match = _SEARCH_TAIL_RE.match(segments[-1])
+    if match and match.group(1) in taxonomy():
+        return match.group(1)
     return None
 
 

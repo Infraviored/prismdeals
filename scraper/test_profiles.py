@@ -58,6 +58,30 @@ def test_a_c_inside_a_slug_is_not_a_category():
     assert profiles.category_from_url(url) is None
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        # Model numbers that are also real category ids: 220 campers, 25 prams, 23 toys.
+        "https://www.kleinanzeigen.de/s-mercedes-c220/k0",
+        "https://www.kleinanzeigen.de/s-muenchen/c220/k0l6411",
+        "https://www.kleinanzeigen.de/s-muenchen/sony-a7-c25/k0l6411r50",
+        "https://www.kleinanzeigen.de/s-c23-roller/k0",
+    ],
+)
+def test_a_model_number_that_is_also_a_category_id_is_not_one(url):
+    assert profiles.category_from_url(url) is None
+
+
+def test_the_category_page_form_is_read():
+    # The taxonomy's own url_path form, "/s-<slug>/c<id>".
+    assert (
+        profiles.category_from_url(
+            "https://www.kleinanzeigen.de/s-familie-kind-baby/c17"
+        )
+        == "17"
+    )
+
+
 def test_children_inherit_their_branch():
     # Mietwohnungen (c203) is not listed itself; Immobilien (c195) is.
     assert "203" not in profiles.CATEGORY_PROFILE
