@@ -202,6 +202,15 @@ async function main() {
                        VALUES (?, 301, ?)`, [id, now.toISOString()]);
     }
 
+    // A listing two searches found, in two different campaigns. l.search_id is
+    // the first finder and never changes, so a scope built on it alone hides
+    // this row from the search that found it second.
+    await runDb(db, `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+                     VALUES ('shared-1', 'Werkbank geteilt', '90 €', 90, 'Ulm', 'https://kleinanzeigen.de/shared-1', 50, 301)`);
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at)
+                     VALUES ('shared-1', 301, '2026-09-01T00:00:00.000Z'),
+                            ('shared-1', 202, '2026-09-10T00:00:00.000Z')`);
+
     db.close();
 
     console.log('--- TEST 1: Default Pagination (limit=50) for search-families/:id/listings ---');
@@ -403,6 +412,31 @@ async function main() {
       `total ${dealsOnly.data.total} must describe what was returned`
     );
 
+    console.log('--- TEST 13b: a listing belongs to every search that found it ---');
+    // Not only to the one that found it first. Scoping on listings.search_id
+    // made a search that had just harvested a row answer without it, and
+    // showed the first finder's date under the search now looking at it.
+    const secondFinder = await request('/api/listings?search_id=202&limit=50');
+    const sharedRow = secondFinder.data.listings.find(l => l.id === 'shared-1');
+    assert(sharedRow, 'search 202 found it, so search 202 must show it');
+    assert(
+      sharedRow.first_seen_at.startsWith('2026-09-10'),
+      `the date is when *this* search saw it, got ${sharedRow.first_seen_at}`
+    );
+
+    const firstFinder = await request('/api/listings?search_id=301&limit=60');
+    assert(
+      firstFinder.data.listings.some(l => l.id === 'shared-1'),
+      'and the search that found it first still shows it'
+    );
+
+    // The campaign it was found in second holds it too.
+    const secondCampaign = await request('/api/listings?campaign_id=2&limit=50');
+    assert(
+      secondCampaign.data.listings.some(l => l.id === 'shared-1'),
+      'campaign 2 harvested it, so campaign 2 holds it'
+    );
+
     console.log('--- TEST 14: the number on the list is the number in the results ---');
     // A number that changes when you tap it is worse than no number. The list
     // counted every listing of every search in the campaign; the results ask
@@ -444,12 +478,12 @@ async function main() {
       `route sees 3, got ${werkbank.route_listings}`
     );
     assert(
-      Number(werkbank.family_listings) === 8,
-      `family sees 8 -- the re-aimed search is kept, not shown -- got ${werkbank.family_listings}`
+      Number(werkbank.family_listings) === 9,
+      `family sees 9 -- the re-aimed search is kept, not shown -- got ${werkbank.family_listings}`
     );
     assert(
-      Number(werkbank.campaign_listings) === 26,
-      `the whole campaign holds 26, got ${werkbank.campaign_listings}`
+      Number(werkbank.campaign_listings) === 27,
+      `the whole campaign holds 27 -- 26 of its own plus one a second search found -- got ${werkbank.campaign_listings}`
     );
     assert(
       werkbank.listing_count === 3,
@@ -460,8 +494,31 @@ async function main() {
     assert(drucker, 'campaign 3 must exist for the plain branch to be testable');
     assert(!drucker.route_id && !drucker.family_id, 'campaign 3 has neither');
     assert(
-      drucker.listing_count === 4,
-      `a campaign with neither counts its own searches: expected 4, got ${drucker.listing_count}`
+      drucker.listing_count === 5,
+      `a campaign with neither counts its own searches: expected 5, got ${drucker.listing_count}`
+    );
+
+    console.log('--- TEST 15: a re-aimed family counts only what it still searches ---');
+    // A family keeps its old links so the listings they found stay reachable,
+    // but it does not search through them any more. Counting them made every
+    // number grow each time a town or a radius was edited. Family 2 has one
+    // retired link holding seven listings.
+    const families = await request('/api/search-families?campaign_id=2');
+    assert(families.status === 200, `status ${families.status}`);
+    const fam2 = families.data.find(f => f.id === 2);
+    assert(fam2, 'family 2 must be listed');
+    assert(Number(fam2.searches) === 2, `two live searches, got ${fam2.searches}`);
+    assert(
+      Number(fam2.listings) === 9,
+      `the retired link's seven do not count: expected 9, got ${fam2.listings}`
+    );
+
+    const fam2Detail = await request('/api/search-families/2');
+    const schraubstock = fam2Detail.data.terms.find(t => t.term === 'Schraubstock');
+    assert(schraubstock, 'the Schraubstock term must be there');
+    assert(
+      Number(schraubstock.listings) === 6,
+      `its live search holds 5 plus the shared one, not the retired 7: got ${schraubstock.listings}`
     );
 
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
