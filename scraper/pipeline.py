@@ -251,9 +251,7 @@ def default_model_caller():
     extractor = EvidenceExtractor()
 
     def call(prompt, fields):
-        kwargs = agent_worker.build_llm_kwargs(
-            [{"role": "user", "content": prompt}], max_tokens=32000
-        )
+        kwargs = agent_worker.build_llm_kwargs([{"role": "user", "content": prompt}])
         response = agent_worker.client.chat.completions.create(**kwargs)
         text = agent_worker.get_response_text(response)
 

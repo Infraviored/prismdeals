@@ -68,9 +68,23 @@ def playbook_for_url(url):
     return None
 
 
+# Keys that exist for reading text here, not for asking a model. They hold
+# compiled patterns and functions, and handing them on put a lambda into a
+# JSON dump: "Object of type function is not JSON serializable", which failed
+# sixteen listings at once.
+_LOCAL_ONLY = ("text_patterns", "absent_means")
+
+
 def extraction_fields(playbook):
-    """The field definitions the extraction prompt should ask for."""
-    return playbook.get("fields", [])
+    """The field definitions the extraction prompt should ask for.
+
+    A copy without the parts only this process understands, so the same field
+    can carry both how to read it from a title and how to ask a model for it.
+    """
+    return [
+        {k: v for k, v in field.items() if k not in _LOCAL_ONLY}
+        for field in playbook.get("fields", [])
+    ]
 
 
 def resolve_scoring_fields(playbook, intent_fields):

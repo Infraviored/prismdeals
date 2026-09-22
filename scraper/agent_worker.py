@@ -83,18 +83,48 @@ def get_response_text(response):
     return content.strip()
 
 
-def build_llm_kwargs(messages, max_tokens, temperature=0.0):
+def _reasoning_setting():
+    """How much the model should think, from config, defaulting to not at all.
+
+    Extraction is reading rather than thinking, and reasoning tokens count
+    against max_tokens -- so a reasoning model with a sane cap returns an empty
+    completion with finish_reason=length, having spent the whole budget before
+    writing a word. Measured on one listing: 31 s with reasoning, 0.8 s without,
+    same JSON either way.
+    """
+    try:
+        from config import LLM_REASONING
+    except ImportError:
+        return False
+    return LLM_REASONING
+
+
+def build_llm_kwargs(messages, max_tokens=None, temperature=0.0):
     """Builds chat-completion kwargs matching the configured model's dialect.
 
     Reasoning models take `max_completion_tokens` and no temperature; every other
     model (including those served via OpenRouter) takes `max_tokens`.
     """
+    if max_tokens is None:
+        try:
+            from config import LLM_MAX_TOKENS
+
+            max_tokens = LLM_MAX_TOKENS
+        except ImportError:
+            max_tokens = 1500
+
     kwargs = {"model": LLM_MODEL, "messages": messages}
     if _is_openai_reasoning_model():
         kwargs["max_completion_tokens"] = max_tokens
     else:
         kwargs["max_tokens"] = max_tokens
         kwargs["temperature"] = temperature
+
+    reasoning = _reasoning_setting()
+    if reasoning is False:
+        kwargs["extra_body"] = {"reasoning": {"enabled": False}}
+    elif reasoning:
+        kwargs["extra_body"] = {"reasoning": {"effort": str(reasoning)}}
     return kwargs
 
 
@@ -387,7 +417,7 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
         try:
             messages = [{"role": "user", "content": prompt}]
 
-            kwargs = build_llm_kwargs(messages, max_tokens=32000)
+            kwargs = build_llm_kwargs(messages)
             response = client.chat.completions.create(**kwargs)
             response_text = get_response_text(response)
 
@@ -430,7 +460,7 @@ def process_unprocessed_listings(target_listing_id=None, campaign_id=None):
                     )
                     retry_messages.append({"role": "user", "content": retry_prompt})
 
-                retry_kwargs = build_llm_kwargs(retry_messages, max_tokens=32000)
+                retry_kwargs = build_llm_kwargs(retry_messages)
 
                 try:
                     response = client.chat.completions.create(**retry_kwargs)

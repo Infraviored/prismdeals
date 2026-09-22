@@ -96,3 +96,20 @@ def test_a_contradiction_of_something_settled_is_a_doubt():
 def test_nothing_stated_is_nothing_claimed():
     assert text_facts.read(MEMORY, "") == {}
     assert text_facts.read(MEMORY, None) == {}
+
+
+def test_the_reading_patterns_never_reach_a_model():
+    """A field carries both how to read it from a title and how to ask a model
+    for it. The first is compiled patterns and functions; handing those on put
+    a lambda into a JSON dump -- "Object of type function is not JSON
+    serializable" -- and failed sixteen listings at once."""
+    import json
+
+    fields = playbooks.extraction_fields(MEMORY)
+    json.dumps(fields)  # raises if anything unserialisable survived
+
+    assert all("text_patterns" not in f for f in fields)
+    assert all("absent_means" not in f for f in fields)
+
+    # And the playbook itself keeps them, because the reader needs them.
+    assert any("text_patterns" in f for f in MEMORY["fields"])
