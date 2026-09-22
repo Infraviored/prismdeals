@@ -84,6 +84,7 @@ async function main() {
     id TEXT PRIMARY KEY,
     title TEXT,
     price TEXT,
+    price_eur INTEGER,
     location TEXT,
     url TEXT,
     short_description TEXT,
@@ -133,11 +134,18 @@ async function main() {
   // so a moving clock made each CI run differ from the committed baseline
   // while nothing in the code had changed.
   const now = '2026-01-01T12:00:00.000Z';
+  // Priced the way the site prices things, and the way the database stores it:
+  // a number in price_eur and the seller's own words in price. The fixture used
+  // to carry "€ 650" and no number at all, so every screenshot rendered the
+  // fallback branch -- the one case the surface hopes never to need -- and the
+  // baseline could not have caught a broken price, a lost "VB" or a giveaway
+  // shown as "no price".
   const listings = [
     {
       id: 'fixture-001',
       title: 'ThinkPad T14s Gen 3, 16GB, 512GB SSD',
-      price: '€ 650',
+      price: '650 €',
+      price_eur: 650,
       location: '86899 Landsberg am Lech',
       niceness_score: 82,
       status: 'New',
@@ -146,7 +154,8 @@ async function main() {
     {
       id: 'fixture-002',
       title: 'Lenovo ThinkPad T14s AMD Ryzen 7 PRO, top Zustand',
-      price: '€ 520',
+      price: '520 € VB',
+      price_eur: 520,
       location: '80331 München',
       niceness_score: 74,
       status: 'New',
@@ -155,7 +164,8 @@ async function main() {
     {
       id: 'fixture-003',
       title: 'X1 Carbon Gen 11, i7, 32GB, WQUXGA',
-      price: '€ 980',
+      price: '980 €',
+      price_eur: 980,
       location: '10115 Berlin',
       niceness_score: 91,
       status: 'New',
@@ -164,7 +174,8 @@ async function main() {
     {
       id: 'fixture-004',
       title: 'ThinkPad X1 Carbon Gen 9, 16GB, FHD+',
-      price: '€ 430',
+      price: 'Zu verschenken',
+      price_eur: 0,
       location: '50667 Köln',
       niceness_score: 65,
       status: 'Evaluate with AI',
@@ -174,13 +185,14 @@ async function main() {
 
   for (const l of listings) {
     await run(
-      `INSERT INTO listings (id, title, price, location, niceness_score, status, search_id,
-        url, short_description, llm_processed, last_description_changed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+      `INSERT INTO listings (id, title, price, price_eur, location, niceness_score, status,
+        search_id, url, short_description, llm_processed, last_description_changed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
       [
         l.id,
         l.title,
         l.price,
+        l.price_eur,
         l.location,
         l.niceness_score,
         l.status,
