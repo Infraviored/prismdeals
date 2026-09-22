@@ -6,11 +6,23 @@ import functools
 import http.server
 import os
 import socketserver
+import sys
 import threading
 import time
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
+except ImportError:
+    # Search worktree and main repository roots for venv
+    cur = os.path.abspath(__file__)
+    for _ in range(5):
+        cur = os.path.dirname(cur)
+        candidate = os.path.join(cur, "venv", "bin", "python")
+        if os.path.exists(candidate) and sys.executable != candidate:
+            os.execv(candidate, [candidate] + sys.argv)
+    raise
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND = os.path.join(ROOT, "frontend")

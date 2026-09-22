@@ -45,23 +45,37 @@ export interface RowListing {
  * list of everything that was fine. A match says what it is, because that is
  * what a buyer compares.
  */
-function summariseFit(fit: NonNullable<RowListing['fit']>): string {
+function summariseFit(fit: NonNullable<RowListing['fit']>): React.ReactNode {
   if (fit.verdict === 'no') return fit.reason || 'passt nicht';
 
   const facts = fit.facts || {};
-  const parts: string[] = [];
+  const chips: React.ReactNode[] = [];
   if (facts.stickCount && facts.gbPerStick) {
-    parts.push(`${facts.stickCount}×${facts.gbPerStick} GB`);
+    chips.push(
+      <span key="sticks">
+        <span className="tabular-nums">{facts.stickCount as number}×{facts.gbPerStick as number}</span> GB
+      </span>
+    );
   }
   if (facts.generation && facts.speedMhz) {
-    parts.push(`${String(facts.generation).toUpperCase()}-${facts.speedMhz}`);
+    chips.push(
+      <span key="gen-speed">
+        {String(facts.generation).toUpperCase()}-<span className="tabular-nums">{facts.speedMhz as number}</span>
+      </span>
+    );
   } else if (facts.generation) {
-    parts.push(String(facts.generation).toUpperCase());
+    chips.push(<span key="gen">{String(facts.generation).toUpperCase()}</span>);
   }
-  if (facts.casLatency) parts.push(`CL${facts.casLatency}`);
+  if (facts.casLatency) {
+    chips.push(
+      <span key="cl">
+        CL<span className="tabular-nums">{facts.casLatency as number}</span>
+      </span>
+    );
+  }
 
-  if (parts.length === 0) return fit.reason || '';
-  return parts.join(' · ');
+  if (chips.length === 0) return fit.reason || '';
+  return <span className="inline-flex items-baseline gap-2.5">{chips}</span>;
 }
 
 export interface RowProps {
@@ -148,7 +162,7 @@ export const Row: React.FC<RowProps> = ({
       } ${className}`}
     >
       {/* 72px thumbnail on warm lampe background */}
-      <div className="w-[72px] h-[72px] min-w-[72px] rounded-sm bg-[#E4D6BE] p-[2px] overflow-hidden shrink-0 flex items-center justify-center relative">
+      <div className="w-[72px] h-[72px] min-w-[72px] rounded-sm bg-[#E4D6BE] p-1 overflow-hidden shrink-0 flex items-center justify-center relative">
         {imageUrl ? (
           <img
             src={imageUrl}
@@ -214,12 +228,9 @@ export const Row: React.FC<RowProps> = ({
             )}
           </div>
         ) : (
-        <div className="text-2xs text-[#8FA6A1] truncate flex items-center gap-1.5 mt-0.5">
+        <div className="text-2xs text-[#8FA6A1] truncate flex items-baseline gap-2.5 mt-0.5">
           {listing.location && (
-            <span className="truncate">{formatLocation(listing.location)}</span>
-          )}
-          {listing.location && freshness && (
-            <span className="text-[#0E4A40] select-none">·</span>
+            <span className="truncate text-[#F2F5F4]/90">{formatLocation(listing.location)}</span>
           )}
           {freshness && (
             <span className={freshness.isStale ? 'text-[#C9A227]' : ''}>

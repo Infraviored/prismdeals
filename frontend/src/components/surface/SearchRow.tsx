@@ -46,7 +46,7 @@ export const SearchRow: React.FC<SearchRowProps> = ({
       } ${className}`}
     >
       {/* 48px thumbnail on warm lampe background */}
-      <div className="w-12 h-12 min-w-[48px] rounded-sm bg-[#E4D6BE] p-[2px] overflow-hidden shrink-0 flex items-center justify-center relative">
+      <div className="w-12 h-12 min-w-[48px] rounded-sm bg-[#E4D6BE] p-1 overflow-hidden shrink-0 flex items-center justify-center relative">
         {showImage ? (
           <img
             src={imageUrl}
@@ -81,11 +81,8 @@ export const SearchRow: React.FC<SearchRowProps> = ({
           {name || '—'}
         </h2>
 
-        <div className="text-2xs text-[#8FA6A1] truncate flex items-center gap-1.5 mt-0.5">
-          {locationLabel && <span className="truncate">{locationLabel}</span>}
-          {locationLabel && freshnessLabel && (
-            <span className="text-[#0E4A40] select-none">·</span>
-          )}
+        <div className="text-2xs text-[#8FA6A1] truncate flex items-baseline gap-2.5 mt-0.5">
+          {locationLabel && <span className="truncate text-[#F2F5F4]/90">{locationLabel}</span>}
           {freshnessLabel && <span>{freshnessLabel}</span>}
           {!locationLabel && !freshnessLabel && (
             <span className="text-[#8FA6A1]/50">—</span>
