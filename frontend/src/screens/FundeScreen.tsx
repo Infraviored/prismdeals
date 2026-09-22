@@ -26,6 +26,7 @@ interface FundeBarActionsProps {
   cycleSort: () => void;
   sortLabel: string;
   dealsOnly: boolean;
+  setDealsOnly: (on: boolean) => void;
   maxDetour: number | null;
   onOpenFilter: () => void;
   keptOnly: boolean;
@@ -55,6 +56,7 @@ const FundeBarActions: React.FC<FundeBarActionsProps> = ({
   cycleSort,
   sortLabel,
   dealsOnly,
+  setDealsOnly,
   maxDetour,
   onOpenFilter,
   keptOnly,
@@ -124,13 +126,24 @@ const FundeBarActions: React.FC<FundeBarActionsProps> = ({
         <Pill label={t('surface.fitsOnly')} active={fitOnly} onClick={onToggleFitOnly} />
       )}
 
-      {/* One filter pill. Seven controls did not fit across 390 px -- the
-          corridor pill rendered as "rridor", clipped mid-word. */}
-      <Pill
-        label={t('surface.filter')}
-        active={dealsOnly || maxDetour !== null}
-        onClick={onOpenFilter}
-      />
+      {/* One filter pill, because seven controls did not fit across 390 px --
+          the corridor pill rendered as "rridor", clipped mid-word. But off a
+          corridor the sheet holds a single checkbox, and opening a 512px
+          drawer the height of a 1440px screen to offer one option is not a
+          filter panel, it is an empty room. */}
+      {isCorridor ? (
+        <Pill
+          label={t('surface.filter')}
+          active={dealsOnly || maxDetour !== null}
+          onClick={onOpenFilter}
+        />
+      ) : (
+        <Pill
+          label={t('surface.dealsOnly')}
+          active={dealsOnly}
+          onClick={() => setDealsOnly(!dealsOnly)}
+        />
+      )}
 
       {/* Sort Pill */}
       <Pill
@@ -402,6 +415,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             cycleSort={cycleSort}
             sortLabel={getSortLabel()}
             dealsOnly={dealsOnly}
+            setDealsOnly={setDealsOnly}
             maxDetour={maxDetour}
             onOpenFilter={() => setFilterOpen(true)}
             keptOnly={keptOnly}

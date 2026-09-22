@@ -74,9 +74,9 @@ export const AppScreen: React.FC<AppScreenProps> = ({
 
   return (
     <div className="w-full bg-[#011F1F] text-[#F2F5F4] flex flex-col min-h-screen">
-      <Bar title={t('surface.app')} onBack={onBack} />
+      <Bar title={t('surface.app')} onBack={onBack} measure="max-w-xl" />
 
-      <main className="flex-1 px-4 py-5 space-y-6 max-w-xl w-full">
+      <main className="flex-1 px-4 py-5 space-y-6 max-w-xl w-full mx-auto">
         <section className="space-y-2">
           <h2 className="text-xs font-medium text-[#9FB3B0]">{t('surface.connection')}</h2>
           <div className={row}>

@@ -232,6 +232,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
     <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col font-sans w-full">
       {/* 1. Header Bar (48px) */}
       <Bar
+        measure="max-w-xl"
         title={t('surface.setupTitle', { name: name || campaign?.name || '' })}
         onBack={onBack}
         actions={

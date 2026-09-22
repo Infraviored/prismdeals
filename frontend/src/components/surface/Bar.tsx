@@ -9,6 +9,8 @@ export interface BarProps {
   backLabel?: string;
   actions?: React.ReactNode;
   children?: React.ReactNode;
+  /** The measure the screen's own content runs to, so the two line up. */
+  measure?: string;
   className?: string;
 }
 
@@ -20,6 +22,7 @@ export const Bar: React.FC<BarProps> = ({
   backLabel,
   actions,
   children,
+  measure = 'max-w-3xl',
   className = '',
 }) => {
   const { t } = useTranslation();
@@ -27,8 +30,14 @@ export const Bar: React.FC<BarProps> = ({
   return (
     <header
       data-testid="surface-bar"
-      className={`sticky top-0 z-30 h-12 min-h-[48px] max-h-[48px] w-full bg-[#012828] border-b border-white/[0.08] px-3 sm:px-4 flex items-center justify-between gap-2 backdrop-blur-md ${className}`}
+      className={`sticky top-0 z-30 h-12 min-h-[48px] max-h-[48px] w-full bg-[#012828] border-b border-white/[0.08] px-3 sm:px-4 backdrop-blur-md ${className}`}
     >
+      {/* The bar runs to the same measure as the screen under it. Spanning the
+          full 1440 while the list sat in a centre column put the title and the
+          actions 1,400px apart with nothing between them. */}
+      <div
+        className={`${measure} mx-auto w-full h-full flex items-center justify-between gap-2`}
+      >
       <div className="flex items-center gap-2 shrink-0 max-w-[45%] sm:max-w-none min-w-0">
         {onBack && (
           <button
@@ -90,6 +99,7 @@ export const Bar: React.FC<BarProps> = ({
           </div>
         </div>
       )}
+      </div>
     </header>
   );
 };

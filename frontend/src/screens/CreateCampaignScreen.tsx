@@ -26,6 +26,7 @@ export default function CreateCampaignScreen({
   return (
     <div className="w-full bg-[#011F1F] text-[#F2F5F4] flex flex-col min-h-screen">
       <Bar
+        measure="max-w-xl"
         title={t('wizard.createCampaignTitle')}
         onBack={onCancel}
         actions={
@@ -33,7 +34,7 @@ export default function CreateCampaignScreen({
         }
       />
 
-      <main className="flex-1 px-4 py-5 space-y-2 max-w-xl w-full">
+      <main className="flex-1 px-4 py-5 space-y-2 max-w-xl w-full mx-auto">
         <label htmlFor="campaign-name" className="block text-xs font-medium text-[#9FB3B0]">
           {t('wizard.campaignNameLabel')}
         </label>
