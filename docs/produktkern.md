@@ -32,7 +32,7 @@ Arbeitsspeicher oder ein Schrank ist?**
 
 ```mermaid
 flowchart TD
-    A[Käufer: „Yamaha R1, bis 9000 €,<br/>Landstraße, zu zweit"] --> I[Gespräch:<br/>Absicht erheben]
+    A[Käufer: „Yamaha R1, bis 9000 €,<br/>Landstraße, zu zweit“] --> I[Gespräch:<br/>Absicht erheben]
     I --> AB[(Absicht<br/>Filter · Pflicht · Vorliebe · Einsatz)]
     AB -->|Filter| URL[Such-URL]
     URL --> K[Kleinanzeigen]
@@ -178,11 +178,11 @@ Deshalb gilt:
 flowchart LR
     C[Kategorie der Anzeige] --> T[Taxonomie-Lookup]
     T --> V[vorgeschlagenes Profil]
-    A[Absicht: „Matratze 140×200"] --> KM{kleines Modell:<br/>passt der Vorschlag<br/>zum Gegenstand?}
+    A[Absicht: „Matratze 140×200“] --> KM{kleines Modell:<br/>passt der Vorschlag<br/>zum Gegenstand?}
     V --> KM
     KM -->|ja| P[Profil der Jagd]
     KM -->|nein, mit Begründung| P2[anderes Profil] --> P
-    V -->|„Offen"| KM
+    V -->|„Offen“| KM
 ```
 
 Das kleine Modell prüft den Vorschlag **einmal pro Jagd**, nicht pro Anzeige,
@@ -451,9 +451,9 @@ sequenceDiagram
     P->>P: Marktbild bilden (≥10 Anzeigen)
     P->>P: Profil + Recherchewert bestimmen
     P->>KM: Absicht, Marktbild, Profil,<br/>vorhandenes Wissen im Baum
-    KM-->>P: „Was zu wissen ist" + Auftrag (Mitte)
+    KM-->>P: „Was zu wissen ist“ + Auftrag (Mitte)
     P->>P: harten Rahmen anfügen (Anfang, Ende)
-    P->>K: „Was zu wissen ist" anzeigen,<br/>[Rechercheauftrag kopieren]
+    P->>K: „Was zu wissen ist“ anzeigen,<br/>[Rechercheauftrag kopieren]
     K->>RK: Auftrag einfügen
     RK-->>K: Antwort mit festen Überschriften
     K->>P: Antwort einfügen
