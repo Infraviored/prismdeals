@@ -71,10 +71,12 @@ Stufen: Titel → Beschreibung → **Foto** → Modell nur für `unclear`.
 
 Stufen: Titel → Beschreibung (Hardware lesen) → **Leistungswert** → Wertung.
 
-- **Leistungswert aus einer Tabelle, nicht vom Modell.** CPU- und GPU-Modell →
-  Benchmarkpunkte aus einer gepflegten Tabelle. Heute rät das Modell eine
-  „CPU-Stufe 1–5". Das ist genau die Stelle, an der eine KI überzeugt klingt
-  und falsch liegt.
+- **Leistungswert aus belegter Recherche, nicht aus dem Gedächtnis eines
+  Modells.** CPU- und GPU-Modell → Leistungswert mit Quelle, beschafft über die
+  Recherche-Brücke aus [`plan-wissen.md`](plan-wissen.md), und zwar nur für die
+  Prozessoren, die im Markt der Jagd tatsächlich vorkommen. Heute rät das
+  Modell eine „CPU-Stufe 1–5". Das ist genau die Stelle, an der eine KI
+  überzeugt klingt und falsch liegt.
 - **Gewertet wird Leistung pro Euro**, und die Referenz ist eine Kurve, kein
   Median: Preis gegen Leistungswert über alle Angebote der Suche. Schnäppchen
   ist, was weit unter der Kurve liegt, egal von welcher Marke.
