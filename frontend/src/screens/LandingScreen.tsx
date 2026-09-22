@@ -30,7 +30,7 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
 
   return (
     <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col w-full">
-      {/* 1. Sticky Bar (48px) */}
+      {/* 1. Sticky Bar (44px) */}
       <Bar
         title={t('surface.searches')}
         actions={
@@ -38,20 +38,14 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
             <Pill
               data-testid="create-campaign-btn"
               icon={<Plus className="w-3.5 h-3.5" />}
+              label={t('surface.newSearch')}
               onClick={onCreateCampaign}
-              title={t('surface.newSearch')}
-              aria-label={t('surface.newSearch')}
             />
-            {/* The way into the app screen. Without it, connecting a
-                Kleinanzeigen account, changing the schedule, switching language
-                and logging out were all reachable only by typing #settings into
-                the address bar. */}
             <Pill
               data-testid="open-app-btn"
               icon={<Settings className="w-3.5 h-3.5" />}
+              label={t('surface.app')}
               onClick={onOpenApp}
-              title={t('surface.app')}
-              aria-label={t('surface.app')}
             />
           </>
         }

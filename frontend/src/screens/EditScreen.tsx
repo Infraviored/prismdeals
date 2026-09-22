@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { RadiusField } from '../components/RadiusField';
 import CategoryFilters from '../components/CategoryFilters';
-import { Bar, Pill } from '../components/surface';
+import { Bar } from '../components/surface';
 import PlaceInput, { type Place } from '../components/PlaceInput';
 import ModelPillGroup from '../components/ModelPillGroup';
 import { RequirementsSheet } from './RequirementsSheet';
@@ -232,19 +232,21 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
   return (
     <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col font-sans w-full">
-      {/* 1. Header Bar (48px) */}
+      {/* 1. Header Bar (44px) */}
       <Bar
         measure="max-w-xl"
         title={t('surface.setupTitle', { name: name || campaign?.name || '' })}
         onBack={onBack}
+        backLabel={t('surface.back')}
         actions={
-          <Pill
-            label={saving ? t('surface.saving') : t('surface.save')}
-            active
+          <button
+            type="button"
             disabled={saving || !name.trim()}
             onClick={handleSave}
-            className="font-semibold text-xs px-4 py-1.5 cursor-pointer"
-          />
+            className="px-3 py-1.5 rounded text-xs font-semibold bg-[#E4D6BE] text-[#011F1F] hover:bg-[#d8c8af] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving ? t('surface.saving') : t('surface.save')}
+          </button>
         }
       />
 
@@ -252,7 +254,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
       <main className="w-full max-w-xl mx-auto px-4 py-6 flex-1 flex flex-col space-y-6">
         {/* Field 1: Was (What) */}
         <div className="space-y-2">
-          <label htmlFor="setup-what" className="block text-xs font-medium text-[#9FB3B0]">
+          <label htmlFor="setup-what" className="block text-xs font-medium text-[#8FA6A1]">
             {t('surface.what')}
           </label>
           <input
@@ -261,7 +263,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t('surface.whatPlaceholder')}
-            className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-[#F2F5F4] placeholder-[#9FB3B0]/40 focus:outline-none focus:border-white/30 text-sm transition-colors"
+            className="w-full px-3.5 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] placeholder-[#8FA6A1]/40 focus:outline-none focus:border-[#8FA6A1] text-sm transition-colors"
           />
 
           {/* Models as pills */}
@@ -275,7 +277,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
         </div>
 
         {resolveFailed && (
-          <p className="text-sm text-[#D9A441]">{t('surface.placeUnresolved')}</p>
+          <p className="text-sm text-[#C9A227]">{t('surface.placeUnresolved')}</p>
         )}
 
         <CategoryFilters
@@ -288,7 +290,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
         {/* Field 2: Wo (Where) */}
         <div className="space-y-2">
-          <label className="block text-xs font-medium text-[#9FB3B0]">
+          <label className="block text-xs font-medium text-[#8FA6A1]">
             {t('surface.where')}
           </label>
           <PlaceInput
@@ -302,7 +304,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
         {/* Field 3: Wie weit (How far) */}
         <div className="space-y-2">
-          <label className="block text-xs font-medium text-[#9FB3B0]">
+          <label className="block text-xs font-medium text-[#8FA6A1]">
             {t('surface.howFar')}
           </label>
           <RadiusField value={radius} onChange={setRadius} />
@@ -310,7 +312,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
         {/* Field 4: Bis wie viel (Max price) */}
         <div className="space-y-2">
-          <label htmlFor="setup-price" className="block text-xs font-medium text-[#9FB3B0]">
+          <label htmlFor="setup-price" className="block text-xs font-medium text-[#8FA6A1]">
             {t('surface.maxPrice')}
           </label>
           <div className="relative w-36">
@@ -325,28 +327,24 @@ export const EditScreen: React.FC<EditScreenProps> = ({
                 setMaxPrice(val ? parseInt(val, 10) : null);
               }}
               placeholder="150"
-              className="w-full pl-3.5 pr-8 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-[#F2F5F4] placeholder-[#9FB3B0]/40 focus:outline-none focus:border-white/30 text-sm tabular-nums font-mono text-right transition-colors"
+              className="w-full pl-3.5 pr-8 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] placeholder-[#8FA6A1]/40 focus:outline-none focus:border-[#8FA6A1] text-sm tabular-nums text-right transition-colors"
             />
-            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-[#9FB3B0] pointer-events-none font-medium">
+            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-[#8FA6A1] pointer-events-none font-medium">
               €
             </span>
           </div>
         </div>
 
-        {/* Field 5: what the site cannot filter on.
-            "Up to 150 EUR, memory" is all Kleinanzeigen can narrow to. "Two
-            sticks of sixteen, DDR4, at least 3200" is the difference between
-            fifty offers and the nine worth opening, and it belongs beside the
-            other four questions rather than behind an error message. */}
+        {/* Field 5: what the site cannot filter on */}
         {campaign && (
           <div className="space-y-2">
-            <label className="block text-xs font-medium text-[#9FB3B0]">
+            <label className="block text-xs font-medium text-[#8FA6A1]">
               {t('surface.requirements')}
             </label>
             <button
               type="button"
               onClick={() => setRequirementsOpen(true)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-left text-sm text-[#9FB3B0] hover:text-[#F2F5F4] hover:border-white/30 transition-colors cursor-pointer"
+              className="w-full px-3.5 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-left text-sm text-[#8FA6A1] hover:text-[#F2F5F4] hover:border-[#8FA6A1] transition-colors cursor-pointer"
             >
               {t('surface.requirementsOpen')}
             </button>
@@ -354,19 +352,16 @@ export const EditScreen: React.FC<EditScreenProps> = ({
         )}
 
         {saveError && (
-          <p className="text-xs text-status-danger font-semibold">{saveError}</p>
+          <p className="text-xs text-[#E87967] font-semibold">{saveError}</p>
         )}
 
         {/* Quiet delete button at the bottom */}
         {campaign && (
           <div className="pt-10 pb-6">
-            {/* A destructive action rendered as bare grey text is indistinguishable
-                from a caption. It gets a border and a hit area like any control,
-                and stays quiet in colour rather than in affordance. */}
             <button
               type="button"
               onClick={handleDelete}
-              className="w-full px-4 py-3 rounded-xl border border-white/[0.12] text-sm text-[#9FB3B0] hover:text-[#F2F5F4] hover:border-white/30 transition-colors cursor-pointer bg-transparent"
+              className="w-full px-4 py-2.5 rounded border border-[#0E4A40] text-sm text-[#8FA6A1] hover:text-[#F2F5F4] hover:border-[#8FA6A1] transition-colors cursor-pointer bg-transparent"
             >
               {t('surface.deleteSearch')}
             </button>

@@ -155,8 +155,8 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
   };
 
   const rowClass = (selected: boolean) =>
-    `w-full text-left px-3 py-3 min-h-[44px] border-b border-white/[0.08] text-sm flex items-center justify-between gap-3 ${
-      selected ? 'text-[#F2F5F4]' : 'text-[#9FB3B0]'
+    `w-full text-left px-3 py-3 min-h-[44px] border-b border-[#0E4A40] hover:bg-[#00100F] text-sm flex items-center justify-between gap-3 transition-colors ${
+      selected ? 'text-[#F2F5F4] font-medium' : 'text-[#8FA6A1]'
     }`;
 
   const shown = search.trim()
@@ -167,17 +167,17 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
 
   return (
     <div className="space-y-2">
-      <label className="block text-xs font-medium text-[#9FB3B0]">
+      <label className="block text-xs font-medium text-[#8FA6A1]">
         {t('surface.category')}
       </label>
 
       <button
         type="button"
         onClick={() => setPickerOpen(true)}
-        className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-left text-sm text-[#F2F5F4] hover:border-white/30 transition-colors"
+        className="w-full px-3.5 py-2.5 min-h-[40px] rounded bg-[#00100F] border border-[#0E4A40] text-left text-sm text-[#F2F5F4] hover:border-[#8FA6A1] transition-colors cursor-pointer"
       >
         {categoryName || (
-          <span className="text-[#9FB3B0]">{t('surface.anyCategory')}</span>
+          <span className="text-[#8FA6A1]">{t('surface.anyCategory')}</span>
         )}
       </button>
 
@@ -188,10 +188,10 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
               key={`${suggestion.id}-${suggestion.filter || ''}`}
               type="button"
               onClick={() => applySuggestion(suggestion)}
-              className="px-3 min-h-[36px] rounded-full bg-white/[0.04] border border-white/[0.08] text-xs text-[#9FB3B0] hover:text-[#F2F5F4] hover:border-white/30 transition-colors"
+              className="px-3 py-1.5 rounded bg-[#06322C] border border-[#0E4A40] text-xs text-[#8FA6A1] hover:text-[#F2F5F4] hover:border-[#8FA6A1] transition-colors cursor-pointer"
             >
               {suggestion.filter_label || suggestion.name}
-              <span className="text-[#9FB3B0]/50"> · {suggestion.name}</span>
+              <span className="text-[#8FA6A1]/60"> ({suggestion.name})</span>
             </button>
           ))}
         </div>
@@ -210,10 +210,10 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
               type="button"
               aria-pressed={on}
               onClick={() => setValue(filter.key, on ? null : 'true')}
-              className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-between gap-3 text-sm hover:border-white/30 transition-colors"
+              className="w-full px-3.5 py-2.5 min-h-[40px] rounded bg-[#00100F] border border-[#0E4A40] flex items-center justify-between gap-3 text-sm hover:border-[#8FA6A1] transition-colors cursor-pointer"
             >
-              <span className="text-[#9FB3B0]">{filter.label}</span>
-              <span className={on ? 'text-[#F2F5F4]' : 'text-[#9FB3B0]/50'}>
+              <span className="text-[#8FA6A1]">{filter.label}</span>
+              <span className={on ? 'text-[#4E8C6A] font-semibold' : 'text-[#8FA6A1]/50'}>
                 {on ? '✓' : t('surface.anyValue')}
               </span>
             </button>
@@ -226,10 +226,10 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
             key={filter.key}
             type="button"
             onClick={() => setOpenFilter(filter)}
-            className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-between gap-3 text-sm hover:border-white/30 transition-colors"
+            className="w-full px-3.5 py-2.5 min-h-[40px] rounded bg-[#00100F] border border-[#0E4A40] flex items-center justify-between gap-3 text-sm hover:border-[#8FA6A1] transition-colors cursor-pointer"
           >
-            <span className="text-[#9FB3B0]">{filter.label}</span>
-            <span className={label ? 'text-[#F2F5F4]' : 'text-[#9FB3B0]/50'}>
+            <span className="text-[#8FA6A1]">{filter.label}</span>
+            <span className={label ? 'text-[#F2F5F4]' : 'text-[#8FA6A1]/50'}>
               {label || t('surface.anyValue')}
             </span>
           </button>
@@ -246,10 +246,10 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder={t('surface.searchCategory')}
-          className="w-full mb-2 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-[#F2F5F4] placeholder-[#9FB3B0]/40 focus:outline-none focus:border-white/30 text-sm"
+          className="w-full mb-2 px-3.5 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] placeholder-[#8FA6A1]/40 focus:outline-none focus:border-[#8FA6A1] text-sm"
         />
         {unavailable ? (
-          <p className="px-3 py-3 text-sm text-[#9FB3B0]">{t('surface.categoriesUnavailable')}</p>
+          <p className="px-3 py-3 text-sm text-[#8FA6A1]">{t('surface.categoriesUnavailable')}</p>
         ) : (
           <div className="flex flex-col">
             <button onClick={() => pickCategory(null)} className={rowClass(!categoryId)}>
@@ -259,7 +259,7 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
               <button key={c.id} onClick={() => pickCategory(c.id)} className={rowClass(categoryId === c.id)}>
                 <span>{c.name}</span>
                 {c.parent_name && (
-                  <span className="text-2xs text-[#9FB3B0]/60 shrink-0">{c.parent_name}</span>
+                  <span className="text-2xs text-[#8FA6A1]/60 shrink-0">{c.parent_name}</span>
                 )}
               </button>
             ))}

@@ -33,8 +33,8 @@ export const FundeModelsSheet: React.FC<FundeModelsSheetProps> = ({
   };
 
   const rowClass = (selected: boolean) =>
-    `text-left px-3 py-3 border-b border-white/[0.08] text-sm ${
-      selected ? 'text-[#F2F5F4]' : 'text-[#9FB3B0]'
+    `text-left px-3 py-3 border-b border-[#0E4A40] hover:bg-[#00100F] text-sm transition-colors ${
+      selected ? 'text-[#F2F5F4] font-medium' : 'text-[#8FA6A1]'
     }`;
 
   return (

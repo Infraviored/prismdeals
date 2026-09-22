@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
-import { formatFreshness, type TranslateFn } from '../../utils/freshness';
-import { PriceTrail } from './PriceTrail';
-
+import { formatFreshness } from '../../utils/freshness';
 import { formatLocation } from '../../utils/formatLocation';
 import { formatPrice } from '../../utils/formatPrice';
 
@@ -39,45 +37,6 @@ export interface RowListing {
   } | null;
 }
 
-/** The line a verdict earns: what was checked, or why it was turned down.
- *
- * A rejection says the one fact that decided it -- "4 Riegel statt 2" beats a
- * list of everything that was fine. A match says what it is, because that is
- * what a buyer compares.
- */
-function summariseFit(fit: NonNullable<RowListing['fit']>): React.ReactNode {
-  if (fit.verdict === 'no') return fit.reason || 'passt nicht';
-
-  const facts = fit.facts || {};
-  const chips: React.ReactNode[] = [];
-  if (facts.stickCount && facts.gbPerStick) {
-    chips.push(
-      <span key="sticks">
-        <span className="tabular-nums">{facts.stickCount as number}×{facts.gbPerStick as number}</span> GB
-      </span>
-    );
-  }
-  if (facts.generation && facts.speedMhz) {
-    chips.push(
-      <span key="gen-speed">
-        {String(facts.generation).toUpperCase()}-<span className="tabular-nums">{facts.speedMhz as number}</span>
-      </span>
-    );
-  } else if (facts.generation) {
-    chips.push(<span key="gen">{String(facts.generation).toUpperCase()}</span>);
-  }
-  if (facts.casLatency) {
-    chips.push(
-      <span key="cl">
-        CL<span className="tabular-nums">{facts.casLatency as number}</span>
-      </span>
-    );
-  }
-
-  if (chips.length === 0) return fit.reason || '';
-  return <span className="inline-flex items-baseline gap-2.5">{chips}</span>;
-}
-
 export interface RowProps {
   listing: RowListing;
   onClick?: (listing: RowListing) => void;
@@ -87,30 +46,26 @@ export interface RowProps {
   className?: string;
 }
 
-
-function renderDetour(listing: RowListing, t: TranslateFn): React.ReactNode {
-  if (typeof listing.detour_min === 'number') {
-    if (listing.detour_min <= 0) {
-      return (
-        <span className="text-[#4E8C6A] font-medium">
-          {t('surface.onRoute')}
-        </span>
-      );
-    }
-    return (
-      <span className="text-[#8FA6A1]">
-        {t('surface.minDetour', { min: Math.round(listing.detour_min) })}
+function renderSpecs(facts: Record<string, unknown> = {}): React.ReactNode[] {
+  const chips: React.ReactNode[] = [];
+  if (facts.stickCount && facts.gbPerStick) {
+    chips.push(
+      <span key="sticks" className="tabular-nums">
+        {facts.stickCount as number}×{facts.gbPerStick as number} GB
       </span>
     );
   }
-  if (typeof listing.offroute_km === 'number' && listing.offroute_km > 0) {
-    return (
-      <span className="text-[#8FA6A1]">
-        {t('surface.kmDistance', { km: Math.round(listing.offroute_km) })}
+  if (facts.generation) {
+    chips.push(
+      <span key="gen">
+        {String(facts.generation).toUpperCase()}{facts.speedMhz ? `-${facts.speedMhz}` : ''}
       </span>
     );
   }
-  return <span className="text-transparent select-none">—</span>;
+  if (facts.casLatency) {
+    chips.push(<span key="cl">CL{facts.casLatency as number}</span>);
+  }
+  return chips;
 }
 
 export const Row: React.FC<RowProps> = ({
@@ -125,26 +80,23 @@ export const Row: React.FC<RowProps> = ({
   const [imgError, setImgError] = useState(false);
 
   const imageUrl =
-    !imgError && (listing.image_url || (listing.images && listing.images.length > 0 ? listing.images[0] : null));
+    !imgError &&
+    (listing.image_url || (listing.images && listing.images.length > 0 ? listing.images[0] : null));
 
   const freshness = formatFreshness(listing.first_seen_at || listing.last_seen_at, t);
   const priceInfo = formatPrice(listing.price_eur, listing.price, t);
   const isDeal = propIsDeal ?? !!listing.is_deal;
+  const isGone = listing.fit?.verdict === 'no';
 
-  const priceClass = isDeal
-    ? 'text-[#E87967]'
-    : priceInfo.isMissing
-    ? 'text-[#8FA6A1]'
-    : 'text-[#F2F5F4]';
+  // Details under location
+  const facts = listing.fit?.facts || {};
+  const chips = renderSpecs(facts);
 
   return (
     <article
       data-testid="listing-row"
       data-listing-id={listing.id}
       onClick={() => onClick?.(listing)}
-      // A row that only a mouse can open is a row a keyboard buyer cannot buy
-      // from: the find sheet, and with it the link to Kleinanzeigen, was
-      // unreachable without a pointer. SearchRow had this from the start.
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={
@@ -157,160 +109,88 @@ export const Row: React.FC<RowProps> = ({
             }
           : undefined
       }
-      className={`h-[88px] min-h-[88px] max-h-[88px] w-full px-3 sm:px-4 py-2 flex items-center gap-3 border-b border-[#0E4A40] hover:bg-[#06322C]/40 transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8FA6A1] ${
-        onClick ? 'cursor-pointer' : ''
-      } ${className}`}
+      className={`row ${isGone ? 'gone' : ''} ${onClick ? 'cursor-pointer' : ''} ${className}`}
     >
-      {/* 72px thumbnail on warm lampe background */}
-      <div className="w-[72px] h-[72px] min-w-[72px] rounded-sm bg-[#E4D6BE] p-1 overflow-hidden shrink-0 flex items-center justify-center relative">
+      {/* Photo on lampe passepartout */}
+      <div className="mat shrink-0">
         {imageUrl ? (
           <img
             src={imageUrl}
-            alt={listing.title || ''}
-            onError={() => setImgError(true)}
+            alt=""
             loading="lazy"
-            className="w-full h-full object-cover"
+            onError={() => setImgError(true)}
+            className="w-full h-full object-cover block"
           />
         ) : (
-          <div className="flex flex-col items-center justify-center text-[#8FA6A1]/60">
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
-            </svg>
-          </div>
+          <span className="text-[#8FA6A1]/60 text-2xs">{t('surface.noImage')}</span>
         )}
       </div>
 
-      {/* Center column: Title (max 2 lines) + Location / Age */}
-      <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
-        <h2 className="text-sm font-medium text-[#F2F5F4] line-clamp-2 surface-row-text">
-          {listing.title || '—'}
-        </h2>
+      {/* Middle column: Title, Where, Specs/Reason/Note */}
+      <div className="min-w-0 flex flex-col justify-center">
+        <h3>{listing.title || '—'}</h3>
 
-        {/* What was checked, where it matters more than where the thing is.
-            For a memory kit the town decides nothing and "2×16 · DDR4-3200 ·
-            CL16" decides everything, so the verdict's own facts take the line
-            when there is one. */}
-        {listing.fit ? (
-          <div className="text-2xs truncate flex items-center gap-1.5 mt-0.5">
-            <span
-              className={
-                listing.fit.verdict === 'fit'
-                  ? 'text-[#4E8C6A] shrink-0'
-                  : listing.fit.verdict === 'no'
-                  ? 'text-[#8FA6A1] shrink-0'
-                  : 'text-[#C9A227] shrink-0'
-              }
-            >
-              {listing.fit.verdict === 'fit' ? '✓' : listing.fit.verdict === 'no' ? '✗' : '?'}
-            </span>
-            <span className="truncate text-[#8FA6A1]">
-              {summariseFit(listing.fit)}
-            </span>
-            {/* The number only where it adds something. For a match the answer
-                is yes and the price decides; for a rejection it is no. A score
-                beside either is a second scale that can only disagree with the
-                first. */}
-            {listing.fit.verdict === 'unclear' && typeof listing.niceness_score === 'number' && (
-              <span className="shrink-0 tabular-nums text-[#8FA6A1]/70">
-                {listing.niceness_score}/100
-              </span>
-            )}
-          </div>
-        ) : (
-        <div className="text-2xs text-[#8FA6A1] truncate flex items-baseline gap-2.5 mt-0.5">
-          {listing.location && (
-            <span className="truncate text-[#F2F5F4]/90">{formatLocation(listing.location)}</span>
-          )}
+        <p className="where">
+          {listing.location ? formatLocation(listing.location) : t('surface.noLocation')}
           {freshness && (
-            <span className={freshness.isStale ? 'text-[#C9A227]' : ''}>
+            <span className={`ml-3 ${freshness.isStale ? 'text-[#C9A227]' : ''}`}>
               {freshness.label}
             </span>
           )}
-          {!listing.location && !freshness && (
-            <span className="text-[#8FA6A1]/50">—</span>
+          {typeof listing.detour_min === 'number' && (
+            <span className={listing.detour_min <= 0 ? 'ml-3 text-[#4E8C6A]' : 'ml-3'}>
+              {listing.detour_min <= 0 ? t('surface.onRoute') : t('surface.minDetour', { min: Math.round(listing.detour_min) })}
+            </span>
           )}
-        </div>
-        )}
+          {typeof listing.offroute_km === 'number' && listing.offroute_km > 0 && !listing.detour_min && (
+            <span className="ml-3">{t('surface.kmDistance', { km: Math.round(listing.offroute_km) })}</span>
+          )}
+        </p>
+
+        {isGone ? (
+          <p className="reason">{listing.fit?.reason || t('surface.tabNo')}</p>
+        ) : listing.fit?.verdict === 'unclear' ? (
+          <p className="note">{listing.fit?.reason || t('surface.unclearGap')}</p>
+        ) : chips.length > 0 ? (
+          <p className="specs">{chips}</p>
+        ) : null}
       </div>
 
-      {/* Keeping a find. Quiet until it is on -- a row full of marks would
-          compete with the price, which is the thing that decides. */}
-      {onToggleKeep && (
-        <button
-          type="button"
-          data-testid="keep-toggle"
-          aria-pressed={isKept}
-          aria-label={t(isKept ? 'surface.unkeep' : 'surface.keep')}
-          // The row above listens for Enter and Space too. Without this, a
-          // keyboard buyer who tabbed to the bookmark and pressed Space opened
-          // the find sheet instead of keeping the find -- the row swallowed the
-          // key before the button could act on it.
-          onKeyDown={event => event.stopPropagation()}
-          onClick={event => {
-            event.stopPropagation();
-            onToggleKeep(listing.id);
-          }}
-          className={`shrink-0 flex items-center justify-center min-w-[36px] min-h-[36px] rounded-full transition-colors ${
-            isKept ? 'text-[#F2F5F4]' : 'text-[#8FA6A1]/40 hover:text-[#8FA6A1]'
-          }`}
-        >
-          <svg
-            className="w-4 h-4"
-            viewBox="0 0 24 24"
-            fill={isKept ? 'currentColor' : 'none'}
-            stroke="currentColor"
-            strokeWidth={1.8}
-            aria-hidden="true"
+      {/* Price on right in large Archivo numbers & keep button */}
+      <div className="flex items-center gap-3 shrink-0">
+        {onToggleKeep && (
+          <button
+            type="button"
+            data-testid="keep-toggle"
+            aria-pressed={isKept}
+            aria-label={t(isKept ? 'surface.unkeep' : 'surface.keep')}
+            onKeyDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleKeep(listing.id);
+            }}
+            className={`cursor-pointer transition-colors p-1 ${
+              isKept ? 'text-[#F2F5F4]' : 'text-[#8FA6A1]/40 hover:text-[#8FA6A1]'
+            }`}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 4h12a1 1 0 011 1v15l-7-4-7 4V5a1 1 0 011-1z" />
-          </svg>
-        </button>
-      )}
+            <svg
+              className="w-4 h-4"
+              viewBox="0 0 24 24"
+              fill={isKept ? 'currentColor' : 'none'}
+              stroke="currentColor"
+              strokeWidth={1.8}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 4h12a1 1 0 011 1v15l-7-4-7 4V5a1 1 0 011-1z" />
+            </svg>
+          </button>
+        )}
 
-      {/* Right column: Price hero + quiet Detour underneath */}
-      <div className="shrink-0 text-right flex flex-col justify-center items-end pl-2 min-w-[72px]">
         <div
           data-testid="listing-price"
-          className={`text-base sm:text-lg font-bold font-heading tabular-nums leading-tight ${priceClass}`}
+          className={`price num ${isDeal ? 'text-[#E87967]' : priceInfo.isMissing ? 'text-[#8FA6A1]' : 'text-[#F2F5F4]'}`}
         >
           {priceInfo.text}
         </div>
-
-        {/* Where the price has been, and the market it is measured against.
-            Only for listings whose price actually moved: a flat line would
-            claim a history the listing does not have. */}
-        {listing.price_history && listing.price_history.length > 1 ? (
-          <div className="mt-0.5 min-h-[16px] flex items-center justify-end gap-1">
-            {typeof listing.price_delta_eur === 'number' && listing.price_delta_eur > 0 && (
-              <span className="text-2xs tabular-nums text-[#4E8C6A]">
-                −{listing.price_delta_eur} €
-              </span>
-            )}
-            <PriceTrail
-              history={listing.price_history}
-              reference={
-                typeof listing.price_eur === 'number' && typeof listing.price_delta_eur === 'number'
-                  ? listing.price_eur + listing.price_delta_eur
-                  : null
-              }
-            />
-          </div>
-        ) : (
-          <div className="text-2xs tabular-nums mt-0.5 min-h-[16px] flex items-center justify-end">
-            {renderDetour(listing, t)}
-          </div>
-        )}
       </div>
     </article>
   );

@@ -28,17 +28,17 @@ export default function AuthScreen({
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-brand-primary flex items-center justify-center font-sans">
+      <div className="min-h-screen bg-[#011F1F] flex items-center justify-center font-sans">
         <div className="text-center space-y-4">
-          <div className="animate-spin w-8 h-8 border-2 border-brand-accent border-t-transparent rounded-full mx-auto" />
-          <p className="text-text-secondary text-sm font-medium">{t('common.loading')}</p>
+          <div className="animate-spin w-8 h-8 border-2 border-[#E4D6BE] border-t-transparent rounded-full mx-auto" />
+          <p className="text-[#8FA6A1] text-sm font-medium">{t('common.loading')}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-brand-primary flex items-center justify-center p-6 font-sans relative overflow-hidden">
+    <div className="min-h-screen bg-[#011F1F] flex items-center justify-center p-6 font-sans relative overflow-hidden">
       <div className="w-full max-w-md space-y-6 z-10">
         <div className="text-center">
           <img
@@ -50,7 +50,7 @@ export default function AuthScreen({
         <Card className="p-6 space-y-4">
           <form onSubmit={onLoginSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-sm text-text-secondary font-medium block">
+              <label className="text-xs text-[#8FA6A1] font-medium block">
                 {t('auth.emailLabel')}
               </label>
               <Input
@@ -62,7 +62,7 @@ export default function AuthScreen({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm text-text-secondary font-medium block">
+              <label className="text-xs text-[#8FA6A1] font-medium block">
                 {t('auth.passwordLabel')}
               </label>
               <Input
@@ -74,7 +74,7 @@ export default function AuthScreen({
               />
             </div>
             {loginError && (
-              <div className="bg-status-danger/10 border border-status-danger/25 p-3 rounded-xl text-sm text-status-danger font-semibold animate-fadeIn">
+              <div className="bg-[#00100F] border border-[#E87967] p-3 rounded text-xs text-[#E87967] font-medium animate-fadeIn">
                 {loginError}
               </div>
             )}

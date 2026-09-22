@@ -48,9 +48,14 @@ export const KeptScreen: React.FC<KeptScreenProps> = ({ onBack }) => {
 
   return (
     <div className="w-full bg-[#011F1F] text-[#F2F5F4] flex flex-col min-h-screen">
-      <Bar title={t('surface.kept')} count={loading ? undefined : shown.length} onBack={onBack} />
+      <Bar
+        title={t('surface.kept')}
+        count={loading ? undefined : shown.length}
+        onBack={onBack}
+        backLabel={t('surface.allSearches')}
+      />
 
-      <div className="flex-1">
+      <div className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-8 py-4">
         {!loading && shown.length === 0 && (
           <EmptyLine message={t('surface.nothingKept')} />
         )}

@@ -9,9 +9,25 @@
 
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 
 const router = express.Router();
+
+function findPython() {
+  const candidates = [
+    path.join(__dirname, '..', '.venv', 'bin', 'python3'),
+    path.join(__dirname, '..', 'venv', 'bin', 'python3'),
+    path.join(__dirname, '..', '..', '..', 'venv', 'bin', 'python3'),
+    '/home/flo/docker-projects/prismdeals/venv/bin/python3',
+    '/usr/bin/python3',
+    'python3'
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return 'python3';
+}
 
 module.exports = (query, get) => {
   // What the free stages make of every listing in a search. No model is called
@@ -19,9 +35,14 @@ module.exports = (query, get) => {
   // words, and the model is left for the handful that stay unclear.
   function judgeOne(searchId) {
     return new Promise(resolve => {
-      const python = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+      const python = findPython();
       const script = path.join(__dirname, '..', 'scraper', 'judge_cli.py');
       const child = spawn(python, [script, String(searchId)]);
+
+      child.on('error', err => {
+        console.error('Failed to spawn python for judge:', err.message);
+        resolve({ error: 'failed' });
+      });
 
       let out = '';
       let err = '';

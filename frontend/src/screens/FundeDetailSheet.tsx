@@ -60,7 +60,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
             href={listing.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full py-3 px-4 bg-white/[0.08] hover:bg-white/[0.14] text-[#F2F5F4] rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            className="w-full py-2.5 px-4 bg-[#E4D6BE] hover:bg-[#d8c8af] text-[#011F1F] rounded font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
           >
             <span>{t('surface.openInKleinanzeigen')}</span>
             <ExternalLink className="w-4 h-4" />
@@ -72,7 +72,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
         {/* Scrollable upper content */}
         <div className="flex-1 space-y-4 pb-4">
           {/* 1. Large Image Carousel / Viewer */}
-          <div className="relative w-full h-52 sm:h-64 rounded-lg bg-black/40 overflow-hidden shrink-0 border border-white/[0.08] flex items-center justify-center select-none">
+          <div className="relative w-full h-52 sm:h-64 rounded bg-[#00100F] overflow-hidden shrink-0 border border-[#0E4A40] flex items-center justify-center select-none">
             {totalImages > 0 ? (
               <>
                 <img
@@ -83,7 +83,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
 
                 {/* Photo counter overlay: e.g. "Foto 1 / 6" */}
                 {totalImages > 1 && (
-                  <div className="absolute bottom-2.5 right-2.5 bg-[#011F1F]/80 backdrop-blur-sm border border-white/[0.1] text-2xs font-mono text-[#F2F5F4] px-2 py-0.5 rounded shadow-sm">
+                  <div className="absolute bottom-2.5 right-2.5 bg-[#00100F]/90 border border-[#0E4A40] text-2xs text-[#8FA6A1] px-2 py-0.5 rounded">
                     {t('surface.photoCount', { current: activeImageIndex + 1, total: totalImages })}
                   </div>
                 )}
@@ -95,7 +95,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
                       type="button"
                       onClick={prevImage}
                       aria-label="Previous photo"
-                      className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-[#011F1F]/70 hover:bg-[#011F1F] border border-white/[0.12] text-[#F2F5F4] flex items-center justify-center transition-colors cursor-pointer"
+                      className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded bg-[#00100F]/80 hover:bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] flex items-center justify-center transition-colors cursor-pointer"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
@@ -103,7 +103,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
                       type="button"
                       onClick={nextImage}
                       aria-label="Next photo"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-[#011F1F]/70 hover:bg-[#011F1F] border border-white/[0.12] text-[#F2F5F4] flex items-center justify-center transition-colors cursor-pointer"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded bg-[#00100F]/80 hover:bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] flex items-center justify-center transition-colors cursor-pointer"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -111,7 +111,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
                 )}
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center text-[#9FB3B0]/40 gap-1.5">
+              <div className="flex flex-col items-center justify-center text-[#8FA6A1]/40 gap-1.5">
                 <ImageIcon className="w-8 h-8" />
                 <span className="text-2xs">{t('surface.noImage')}</span>
               </div>
@@ -119,11 +119,11 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
           </div>
 
           {/* 2. Price Block (Price is HERO, reference distance is ONLY coral element) */}
-          <div className="border-b border-white/[0.08] pb-3 space-y-1">
+          <div className="border-b border-[#0E4A40] pb-3 space-y-1">
             <div className="flex items-baseline justify-between gap-3">
               <span
                 data-testid="detail-price"
-                className="text-3xl sm:text-4xl font-heading font-bold tabular-nums text-[#F2F5F4] leading-none"
+                className="text-3xl sm:text-4xl font-bold tabular-nums text-[#F2F5F4] leading-none"
               >
                 {priceText}
               </span>
@@ -134,7 +134,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
                   {t('surface.belowReference', { amount: listing.price_delta_eur })}
                 </span>
               ) : typeof listing.price_delta_eur === 'number' && listing.price_delta_eur < 0 ? (
-                <span className="text-sm font-semibold text-[#9FB3B0] tabular-nums whitespace-nowrap">
+                <span className="text-sm font-semibold text-[#8FA6A1] tabular-nums whitespace-nowrap">
                   {t('surface.aboveReference', { amount: Math.abs(listing.price_delta_eur) })}
                 </span>
               ) : listing.is_deal ? (
@@ -145,14 +145,13 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
             </div>
 
             {/* Location and detour */}
-            <div className="text-xs text-[#9FB3B0] flex items-center gap-1.5 truncate">
+            <div className="text-xs text-[#8FA6A1] flex items-center gap-2 truncate">
               <span>{formattedLoc || t('surface.noLocation')}</span>
 
               {hasDetour && (
                 <>
-                  <span className="text-white/20 select-none">·</span>
                   {isDirectlyOnRoute ? (
-                    <span className="text-[#10B981] font-medium">
+                    <span className="text-[#4E8C6A] font-medium">
                       {t('surface.onRouteFull')}
                     </span>
                   ) : (
@@ -164,12 +163,9 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
               )}
 
               {hasOffroute && (
-                <>
-                  <span className="text-white/20 select-none">·</span>
-                  <span>
-                    {t('surface.kmDistance', { km: Math.round(listing.offroute_km!) })}
-                  </span>
-                </>
+                <span>
+                  {t('surface.kmDistance', { km: Math.round(listing.offroute_km!) })}
+                </span>
               )}
             </div>
           </div>
@@ -179,14 +175,11 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
             {listing.title || '—'}
           </h1>
 
-          {/* 4. AI rating. One line in the list, whole here: this is the
-              screen a buyer opens to read the reasoning, and cutting it off
-              mid-sentence with an ellipsis withheld exactly what they came
-              for. */}
+          {/* 4. AI rating */}
           {aiText && (
-            <div className="text-xs text-[#9FB3B0] bg-white/[0.03] px-3 py-2 rounded-lg border border-white/[0.08] flex items-start gap-2">
+            <div className="text-xs text-[#8FA6A1] bg-[#00100F] px-3 py-2.5 rounded border border-[#0E4A40] flex items-start gap-2">
               {typeof listing.niceness_score === 'number' && (
-                <span className="font-mono font-bold text-[#F2F5F4] shrink-0">
+                <span className="font-bold text-[#F2F5F4] shrink-0 tabular-nums">
                   {listing.niceness_score}/100
                 </span>
               )}
@@ -196,7 +189,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
 
           {/* 5. Description */}
           {listing.description ? (
-            <div className="text-sm text-[#9FB3B0] leading-relaxed whitespace-pre-wrap">
+            <div className="text-sm text-[#8FA6A1] leading-relaxed whitespace-pre-wrap">
               {listing.description}
             </div>
           ) : null}

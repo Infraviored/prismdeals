@@ -4,7 +4,6 @@ import { useTranslation } from '../../hooks/useTranslation';
 export interface SheetProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Pinned below the scrolling content, never over it. */
   footer?: React.ReactNode;
   title?: React.ReactNode;
   children: React.ReactNode;
@@ -24,10 +23,6 @@ export const Sheet: React.FC<SheetProps> = ({
   const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // A modal that does not hold the focus is not modal. Opening a sheet left the
-  // focus on BODY, so Tab walked the covered page behind it: a keyboard buyer
-  // could not reach "Open on Kleinanzeigen" and could fire actions they could
-  // not see.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -36,7 +31,7 @@ export const Sheet: React.FC<SheetProps> = ({
         panelRef.current?.querySelectorAll<HTMLElement>(
           'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         ) ?? []
-      ).filter(el => el.offsetParent !== null);
+      ).filter((el) => el.offsetParent !== null);
 
     const returnTo = document.activeElement as HTMLElement | null;
     (focusable()[0] ?? panelRef.current)?.focus();
@@ -58,8 +53,6 @@ export const Sheet: React.FC<SheetProps> = ({
       const last = items[items.length - 1];
       const active = document.activeElement as HTMLElement | null;
 
-      // Anything outside the panel -- including the covered page -- is sent
-      // back to the edge it should have come from.
       if (!active || !panelRef.current?.contains(active)) {
         e.preventDefault();
         (e.shiftKey ? last : first).focus();
@@ -84,7 +77,7 @@ export const Sheet: React.FC<SheetProps> = ({
   const panelLayout =
     side === 'right'
       ? 'fixed inset-y-0 right-0 w-full max-w-lg border-l border-[#0E4A40] shadow-2xl animate-slide-left'
-      : 'fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t border-[#0E4A40] shadow-2xl animate-fade-in';
+      : 'fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-[3px] border-t border-[#0E4A40] shadow-2xl animate-fade-in';
 
   return (
     <div
@@ -95,7 +88,7 @@ export const Sheet: React.FC<SheetProps> = ({
     >
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-[#00100F]/70 backdrop-blur-sm transition-opacity"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -107,9 +100,9 @@ export const Sheet: React.FC<SheetProps> = ({
         data-testid="surface-sheet-panel"
         className={`${panelLayout} z-10 flex flex-col bg-[#06322C] text-[#F2F5F4] focus:outline-none ${className}`}
       >
-        {/* Header (48px matching Bar) */}
-        <div className="h-12 min-h-[48px] max-h-[48px] px-4 border-b border-[#0E4A40] flex items-center justify-between gap-3 shrink-0">
-          <div className="text-sm font-semibold font-heading truncate text-[#F2F5F4]">
+        {/* Header */}
+        <div className="h-11 min-h-[44px] max-h-[44px] px-4 border-b border-[#0E4A40] flex items-center justify-between gap-3 shrink-0">
+          <div className="text-sm font-semibold truncate text-[#F2F5F4]">
             {title}
           </div>
           <button
@@ -117,7 +110,7 @@ export const Sheet: React.FC<SheetProps> = ({
             data-testid="surface-sheet-close"
             onClick={onClose}
             aria-label={t('surface.close')}
-            className="flex items-center justify-center min-w-[36px] min-h-[36px] -mr-1.5 text-[#8FA6A1] hover:text-[#F2F5F4] rounded transition-colors cursor-pointer"
+            className="flex items-center justify-center min-w-[36px] min-h-[36px] text-[#8FA6A1] hover:text-[#F2F5F4] rounded-[3px] transition-colors cursor-pointer"
           >
             <svg
               className="w-4 h-4"
@@ -136,10 +129,7 @@ export const Sheet: React.FC<SheetProps> = ({
           {children}
         </div>
 
-        {/* A pinned action belongs outside the scrolling area. Sticky inside it
-            hovers over the text instead of making room, so the last lines of a
-            description sat behind the button and no amount of bottom padding
-            could help -- padding is in the flow the button has left. */}
+        {/* Pinned action footer */}
         {footer && (
           <div className="shrink-0 p-4 sm:p-5 bg-[#06322C] border-t border-[#0E4A40]">
             {footer}

@@ -11,16 +11,12 @@ export const translations = {
       connectionIssueFailed: "Failed to auto-register search query due to connection issues."
     },
     landing: {
-      deleteConfirm: "Delete the search \"{{name}}\"?",
-      deleteConfirmWithContents: "Delete the search \"{{name}}\"? This also removes its {{contents}}.",
-      deleteSearches: "{{count}} searches",
-      deleteListings: "{{count}} listings",
-      deleteFailed: "Could not delete this search.",
-      renameFailed: "Could not rename this search."
+      deleteConfirm: "Delete the search \"{{name}}\"?", deleteConfirmWithContents: "Delete the search \"{{name}}\"? This also removes its {{contents}}.",
+      deleteSearches: "{{count}} searches", deleteListings: "{{count}} listings",
+      deleteFailed: "Could not delete this search.", renameFailed: "Could not rename this search."
     },
     wizard: {
-      createCampaignTitle: "Create Hunt Campaign",
-      campaignNameLabel: "Campaign Name",
+      createCampaignTitle: "Create Hunt Campaign", campaignNameLabel: "Campaign Name",
       campaignNamePlaceholder: "e.g. Vintage Scooters, Yamaha Motorcycles"
     },
     settings: {
@@ -51,8 +47,6 @@ export const translations = {
       savedSuccess: "Search family saved successfully."
     },
     campaignSettings: {
-      // Short forms for phone width: three full labels overflow 390px and get
-      // sliced mid-word, which reads as a broken control rather than as tabs.
       routeRemovedSuccess: "Switched to fixed location mode."
     },
     surface: {
@@ -60,8 +54,7 @@ export const translations = {
       requirements: "Requirements",
       requirementsOpen: "Say what you want, beyond price and place",
       saveRequirements: "Save requirements",
-      requirementsIntro:
-        "What you want, beyond what the site can filter on. Applies to all {{searches}} searches in this hunt.",
+      requirementsIntro: "What you want, beyond what the site can filter on. Applies to all {{searches}} searches in this hunt.",
       requirementsNoFields: "This category has nothing to ask about yet.",
       requirementsLoadFailed: "Could not load the requirements.",
       requirementsSaveFailed: "Could not save the requirements.",
@@ -72,8 +65,7 @@ export const translations = {
       giveaway: "Free to a good home",
       keep: "Keep",
       unkeep: "Stop keeping",
-      judgeNeedsRequirements:
-        "This search has nothing to judge against yet. Set what you want under Set up.",
+      judgeNeedsRequirements: "This search has nothing to judge against yet. Set what you want under Set up.",
       judgeFailed: "Could not evaluate this search.",
       minDetour: "+{{min}}m",
       kmDistance: "{{km}} km",
@@ -85,6 +77,7 @@ export const translations = {
       noPrice: "VB",
       noImage: "No image",
       back: "Back",
+      cancel: "Cancel",
       close: "Close",
       noMatchesInRadius: "No matches within {{radius}} km",
       dealsOnly: "Deals only",
@@ -155,7 +148,45 @@ export const translations = {
       onRouteFull: "on route",
       areaFilter: "Area ({{count}})",
       clearAreaFilter: "Clear area filter",
-      detailTitle: "Find"
+      detailTitle: "Find",
+      allSearches: "All searches",
+      editRequirements: "Edit requirements",
+      tabFit: "Matching",
+      tabUnclear: "Unclear",
+      tabNo: "Rejected",
+      tabAll: "All",
+      bestFind: "Best find",
+      cheapestFit: "Cheapest matching listing",
+      belowMarket: "{{amount}} € below market",
+      marketPrice: "Market price {{amount}} €",
+      usually: "typical is {{amount}} €",
+      priceDropped: "Reduced {{when}}, was {{before}} €",
+      noDealNotice: "None is significantly below market price.",
+      verdictSummary: "{{fits}} of {{total}} listings match.",
+      verdictCheapest: "The cheapest is {{amount}} € below market price.",
+      freshnessHourly: "Last searched {{when}}, searches hourly",
+      freshnessJustNow: "just now",
+      freshnessHoursAgo: "{{hours}}h ago",
+      freshnessYesterday: "yesterday",
+      freshnessDaysAgo: "{{days}}d ago",
+      listHeadFit: "Another {{count}} matching listings, by price",
+      listHeadUnclear: "{{count}} listings missing details",
+      listHeadNo: "{{count}} listings that do not match",
+      listHeadAll: "All other {{count}} listings, by price",
+      moreRejected: "{{count}} listings do not match, most because: {{reason}}.",
+      viewRejected: "View rejected",
+      market: "Market",
+      whatYouWant: "What you want",
+      howManyFulfill: "How many of the {{total}} listings fulfill each requirement",
+      outOf: "{{count}} of {{total}}",
+      whyRejected: "Why rejected",
+      median: "Median {{amount}} €",
+      bestFindLegend: "Best find {{amount}} €",
+      sharePriceRange: "{{share}} % of listings cost {{min}} € to {{max}} €.",
+      singleBestKit: "For {{price}} € in {{city}}, this kit is the only match significantly below.",
+      staleSince: "Not seen since {{time}}",
+      secondKit: "Second kit from {{city}} at the same price",
+      unclearGap: "Unclear"
     }
   },
   de: {
@@ -170,16 +201,12 @@ export const translations = {
       connectionIssueFailed: "Auto-Registrierung des Suchziels wegen Verbindungsproblemen fehlgeschlagen."
     },
     landing: {
-      deleteConfirm: "Suche \"{{name}}\" löschen?",
-      deleteConfirmWithContents: "Suche \"{{name}}\" löschen? Damit verschwinden auch {{contents}}.",
-      deleteSearches: "{{count}} Suchen",
-      deleteListings: "{{count}} Anzeigen",
-      deleteFailed: "Die Suche konnte nicht gelöscht werden.",
-      renameFailed: "Die Suche konnte nicht umbenannt werden."
+      deleteConfirm: "Suche \"{{name}}\" löschen?", deleteConfirmWithContents: "Suche \"{{name}}\" löschen? Damit verschwinden auch {{contents}}.",
+      deleteSearches: "{{count}} Suchen", deleteListings: "{{count}} Anzeigen",
+      deleteFailed: "Die Suche konnte nicht gelöscht werden.", renameFailed: "Die Suche konnte nicht umbenannt werden."
     },
     wizard: {
-      createCampaignTitle: "Suchkampagne erstellen",
-      campaignNameLabel: "Kampagnenname",
+      createCampaignTitle: "Suchkampagne erstellen", campaignNameLabel: "Kampagnenname",
       campaignNamePlaceholder: "z.B. Vintage-Roller, Yamaha-Motorräder"
     },
     settings: {
@@ -217,8 +244,7 @@ export const translations = {
       requirements: "Anforderungen",
       requirementsOpen: "Sag, was du willst — jenseits von Preis und Ort",
       saveRequirements: "Anforderungen speichern",
-      requirementsIntro:
-        "Was du willst, jenseits dessen, was die Seite filtern kann. Gilt für alle {{searches}} Suchen dieser Jagd.",
+      requirementsIntro: "Was du willst, jenseits dessen, was die Seite filtern kann. Gilt für alle {{searches}} Suchen dieser Jagd.",
       requirementsNoFields: "Zu dieser Kategorie gibt es noch nichts zu fragen.",
       requirementsLoadFailed: "Die Anforderungen konnten nicht geladen werden.",
       requirementsSaveFailed: "Die Anforderungen konnten nicht gespeichert werden.",
@@ -229,8 +255,7 @@ export const translations = {
       giveaway: "Zu verschenken",
       keep: "Merken",
       unkeep: "Nicht mehr merken",
-      judgeNeedsRequirements:
-        "Diese Suche hat noch nichts, wogegen geprüft werden könnte. Trag unter Einrichten ein, was du willst.",
+      judgeNeedsRequirements: "Diese Suche hat noch nichts, wogegen geprüft werden könnte. Trag unter Einrichten ein, was du willst.",
       judgeFailed: "Die Suche konnte nicht ausgewertet werden.",
       minDetour: "+{{min}}m",
       kmDistance: "{{km}} km",
@@ -242,6 +267,7 @@ export const translations = {
       noPrice: "VB",
       noImage: "Kein Bild",
       back: "Zurück",
+      cancel: "Abbrechen",
       close: "Schließen",
       noMatchesInRadius: "Keine Treffer in {{radius}} km",
       dealsOnly: "Nur Schnäppchen",
@@ -266,8 +292,8 @@ export const translations = {
       kept: "Gemerkt",
       notSearchedYet: "Noch nicht gesucht",
       searching: "Sucht…",
-      judge: "Auswerten",
-      judging: "Wertet aus…",
+      judge: "Prüfen",
+      judging: "Prüft…",
       judgeTitle: "Jede Anzeige gegen deine Anforderungen prüfen",
       fitsOnly: "Passend",
       nothingKept: "Noch nichts gemerkt",
@@ -312,7 +338,45 @@ export const translations = {
       onRouteFull: "auf Route",
       areaFilter: "Bereich ({{count}})",
       clearAreaFilter: "Bereichsfilter aufheben",
-      detailTitle: "Fund"
+      detailTitle: "Fund",
+      allSearches: "Alle Suchen",
+      editRequirements: "Anforderungen ändern",
+      tabFit: "Passend",
+      tabUnclear: "Unclear",
+      tabNo: "Abgelehnt",
+      tabAll: "Alle",
+      bestFind: "Bester Fund",
+      cheapestFit: "Günstigstes passendes Angebot",
+      belowMarket: "{{amount}} € unter Markt",
+      marketPrice: "Marktpreis {{amount}} €",
+      usually: "üblich sind {{amount}} €",
+      priceDropped: "Gesenkt {{when}}, vorher {{before}} €",
+      noDealNotice: "Keines liegt deutlich unter dem Marktpreis.",
+      verdictSummary: "{{fits}} von {{total}} Angeboten passen.",
+      verdictCheapest: "Das günstigste liegt {{amount}} € unter dem Marktpreis.",
+      freshnessHourly: "Zuletzt gesucht {{when}}, sucht stündlich weiter",
+      freshnessJustNow: "gerade eben",
+      freshnessHoursAgo: "vor {{hours}} Std",
+      freshnessYesterday: "gestern",
+      freshnessDaysAgo: "vor {{days}} Tagen",
+      listHeadFit: "Weitere {{count}} passende Angebote, nach Preis",
+      listHeadUnclear: "{{count}} Angebote, bei denen eine Angabe fehlt",
+      listHeadNo: "{{count}} Angebote, die nicht passen",
+      listHeadAll: "Alle weiteren {{count}} Angebote, nach Preis",
+      moreRejected: "{{count}} Angebote passen nicht, die meisten wegen: {{reason}}.",
+      viewRejected: "Abgelehnte ansehen",
+      market: "Markt",
+      whatYouWant: "Was du willst",
+      howManyFulfill: "Wie viele der {{total}} Angebote jede Anforderung erfüllen",
+      outOf: "{{count}} von {{total}}",
+      whyRejected: "Warum abgelehnt",
+      median: "Median {{amount}} €",
+      bestFindLegend: "Bester Fund {{amount}} €",
+      sharePriceRange: "{{share}} % der Angebote kosten {{min}} € bis {{max}} €.",
+      singleBestKit: "Für {{price}} € in {{city}} ist dieses Kit das einzige passende deutlich darunter.",
+      staleSince: "Seit {{time}} nicht mehr gesehen",
+      secondKit: "Zweites Kit aus {{city}} zum selben Preis",
+      unclearGap: "Nicht eindeutig"
     }
   }
 } as const;
@@ -327,4 +391,3 @@ type PathKeys<T> = T extends string
     }[keyof T & string];
 
 export type TranslationPath = PathKeys<TranslationKeys>;
-

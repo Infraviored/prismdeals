@@ -1,14 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { Campaign, SearchFamilyTerm, RouteCorridorData, RouteListingGeo, RadiusDiagnosis } from '../types';
 import type { RowListing } from '../components/surface';
+import type { CampaignOverviewData } from '../screens/FundeAside';
 
-/**
- * One listing as the three endpoints send it.
- *
- * Written down rather than left as `any`: every field below is read by the
- * mapper, and an `any` there means a renamed column reaches the surface as
- * `undefined` with nothing to say so.
- */
 interface ApiListing {
   id: string | number;
   title?: string | null;
@@ -41,12 +35,15 @@ interface ApiListing {
   } | null;
 }
 
+export type FundeTabKey = 'fit' | 'unclear' | 'no' | 'all';
+
 export interface UseFundeDataOptions {
   campaign: Campaign | undefined;
   isScraping?: boolean;
+  initialTab?: FundeTabKey;
 }
 
-export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
+export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFundeDataOptions) {
   const [listings, setListings] = useState<RowListing[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [offset, setOffset] = useState<number>(0);
@@ -55,19 +52,28 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters & sorting
+  // Tab & filters
+  const [tab, setTab] = useState<FundeTabKey>(() => {
+    try {
+      const match = window.location.hash.match(/[?&]tab=(fit|unclear|no|all)/);
+      if (match) return match[1] as FundeTabKey;
+      const searchMatch = window.location.search.match(/[?&]tab=(fit|unclear|no|all)/);
+      if (searchMatch) return searchMatch[1] as FundeTabKey;
+    } catch {
+      /* ignore */
+    }
+    return initialTab;
+  });
   const [sort, setSort] = useState<string>('default');
   const [maxDetour, setMaxDetour] = useState<number | null>(null);
   const [radius, setRadius] = useState<number>(30);
   const [termId, setTermId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [dealsOnly, setDealsOnly] = useState<boolean>(false);
-  // Asked of the server, like deals. Hiding rejected rows from the fifty
-  // already loaded and calling the remainder the answer is how the bar came
-  // to say 50 over a list of 12.
   const [fitOnly, setFitOnly] = useState<boolean>(false);
 
-  // Route & family metadata
+  // Route & family metadata & overview
+  const [overview, setOverview] = useState<CampaignOverviewData | null>(null);
   const [routeData, setRouteData] = useState<RouteCorridorData | null>(null);
   const [familyTerms, setFamilyTerms] = useState<SearchFamilyTerm[]>([]);
   const [radiusDiagnosis, setRadiusDiagnosis] = useState<RadiusDiagnosis | null>(null);
@@ -76,7 +82,7 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
   const routeId = campaign?.route_id ?? null;
   const familyId = campaign?.family_id ?? null;
 
-  // Load family metadata once if present
+  // Load family metadata
   useEffect(() => {
     if (!familyId) {
       setFamilyTerms([]);
@@ -93,6 +99,35 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
       })
       .catch(() => {});
   }, [familyId]);
+
+  // Fetch campaign overview
+  const fetchOverview = useCallback(async () => {
+    if (!campaignId) {
+      setOverview(null);
+      return;
+    }
+    try {
+      const qp = new URLSearchParams();
+      if (searchQuery.trim()) qp.set('q', searchQuery.trim());
+      if (dealsOnly) qp.set('dealsOnly', '1');
+      if (termId !== null) qp.set('term', String(termId));
+      if (maxDetour !== null) qp.set('maxDetour', String(maxDetour));
+
+      const res = await fetch(`/api/campaigns/${campaignId}/overview?${qp.toString()}`, {
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOverview(data);
+      }
+    } catch {
+      // overview is optional progressive enhancement
+    }
+  }, [campaignId, searchQuery, dealsOnly, termId, maxDetour]);
+
+  useEffect(() => {
+    fetchOverview();
+  }, [fetchOverview]);
 
   const activeFetchController = useRef<AbortController | null>(null);
 
@@ -111,11 +146,8 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
       const controller = new AbortController();
       activeFetchController.current = controller;
 
-      if (append) {
-        setLoadingMore(true);
-      } else {
-        setLoading(true);
-      }
+      if (append) setLoadingMore(true);
+      else setLoading(true);
       setError(null);
 
       try {
@@ -128,7 +160,13 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
         if (termId !== null) queryParams.set('term', String(termId));
         if (searchQuery.trim()) queryParams.set('q', searchQuery.trim());
         if (dealsOnly) queryParams.set('dealsOnly', '1');
-        if (fitOnly) queryParams.set('fitOnly', '1');
+
+        // Tab maps to verdict filter
+        if (tab && tab !== 'all') {
+          queryParams.set('verdict', tab);
+        } else if (fitOnly) {
+          queryParams.set('fitOnly', '1');
+        }
 
         let url = '';
         if (routeId) {
@@ -168,9 +206,6 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
           offroute_km: typeof l.offroute_km === 'number' ? l.offroute_km : null,
           first_seen_at: l.first_seen_at || l.last_seen_at || null,
           last_seen_at: l.last_seen_at || null,
-          // The server decides this now, from the median price of the same
-          // search. The old rule asked niceness_score >= 85, and 10 of 1266
-          // listings have a score at all -- so the accent never once appeared.
           is_deal: !!l.is_deal,
           price_delta_eur: typeof l.price_delta_eur === 'number' ? l.price_delta_eur : null,
           fit: l.fit || null,
@@ -182,18 +217,14 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
           lon: typeof l.lon === 'number' ? l.lon : null,
           description: l.detailed_description || l.short_description || l.description || null,
           summary: l.summary || l.extracted_facts?.summary || null,
-
           niceness_score: typeof l.niceness_score === 'number' ? l.niceness_score : null,
           reference_comparison: l.reference_comparison || l.extracted_facts?.reference_comparison || null,
         }));
 
         setTotal(fetchedTotal);
         setOffset(targetOffset);
-        if (append) {
-          setListings((prev) => [...prev, ...mapped]);
-        } else {
-          setListings(mapped);
-        }
+        if (append) setListings((prev) => [...prev, ...mapped]);
+        else setListings(mapped);
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== 'AbortError') {
           setError(err.message || 'Failed to load listings');
@@ -203,40 +234,21 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
         setLoadingMore(false);
       }
     },
-    [
-      campaignId,
-      routeId,
-      familyId,
-      limit,
-      sort,
-      maxDetour,
-      termId,
-      searchQuery,
-      dealsOnly,
-      fitOnly,
-    ]
+    [campaignId, routeId, familyId, limit, sort, maxDetour, termId, searchQuery, dealsOnly, tab, fitOnly]
   );
 
-  // Trigger initial or filter-reset fetch
   useEffect(() => {
     fetchPage(0, false);
   }, [fetchPage]);
 
-  // Refetch when scraping finishes -- on the transition, not on every render
-  // while it is false.
-  //
-  // With `fetchPage` in this effect's dependencies, both effects fired for the
-  // same change. The second aborted the first, but the first's `finally` still
-  // ran setLoading(false) after the second had set it true, so opening the
-  // screen and every filter change flashed the "no matches" empty state, and
-  // every page was fetched twice.
   const wasScraping = useRef(isScraping);
   useEffect(() => {
     if (wasScraping.current && !isScraping) {
       fetchPage(0, false);
+      fetchOverview();
     }
     wasScraping.current = isScraping;
-  }, [isScraping, fetchPage]);
+  }, [isScraping, fetchPage, fetchOverview]);
 
   const loadMore = useCallback(() => {
     if (loading || loadingMore) return;
@@ -245,22 +257,28 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
     }
   }, [loading, loadingMore, listings.length, total, offset, limit, fetchPage]);
 
-  // The server decides and counts. Filtering here meant the header reported the
-  // number of deals among the fifty loaded rows as the size of the search.
-  const displayedListings = listings;
-  const displayedCount = total;
+  // Best deal or cheapest fitting listing
+  const bestListing = useMemo(() => {
+    const fits = listings.filter((l) => l.fit?.verdict === 'fit');
+    return fits.find((l) => l.is_deal) || fits[0] || listings.find((l) => l.is_deal) || null;
+  }, [listings]);
 
   return {
-    listings: displayedListings,
-    total: displayedCount,
+    listings,
+    total,
     rawTotal: total,
     loading,
     loadingMore,
     error,
     hasMore: listings.length < total,
     loadMore,
-    reload: () => fetchPage(0, false),
-    refetch: () => fetchPage(0, false),
+    reload: () => { fetchPage(0, false); fetchOverview(); },
+    refetch: () => { fetchPage(0, false); fetchOverview(); },
+    // Tab control
+    tab,
+    setTab,
+    overview,
+    bestListing,
     // Filter controls
     sort,
     setSort,

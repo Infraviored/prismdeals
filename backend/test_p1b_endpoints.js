@@ -657,6 +657,25 @@ async function main() {
     assert(searchOverview.data.pots.all === 10, `search 401 pots.all should be 10, got ${searchOverview.data.pots.all}`);
     assert(searchOverview.data.pots.fit === 3, `search 401 pots.fit should be 3, got ${searchOverview.data.pots.fit}`);
 
+    console.log('--- TEST 19: filtering listings by verdict (fit, unclear, no, all) ---');
+    const fitListings = await request('/api/listings?campaign_id=4&limit=50&verdict=fit');
+    assert(fitListings.status === 200, `status ${fitListings.status}`);
+    assert(fitListings.data.total === 3, `expected 3 fit listings, got ${fitListings.data.total}`);
+    for (const l of fitListings.data.listings) {
+      assert(l.fit && l.fit.verdict === 'fit', `listing ${l.id} must be fit`);
+    }
+
+    const noListings = await request('/api/listings?campaign_id=4&limit=50&verdict=no');
+    assert(noListings.status === 200, `status ${noListings.status}`);
+    assert(noListings.data.total === 5, `expected 5 rejected listings, got ${noListings.data.total}`);
+    for (const l of noListings.data.listings) {
+      assert(l.fit && l.fit.verdict === 'no', `listing ${l.id} must be rejected`);
+    }
+
+    const unclearListings = await request('/api/listings?campaign_id=4&limit=50&verdict=unclear');
+    assert(unclearListings.status === 200, `status ${unclearListings.status}`);
+    assert(unclearListings.data.total === 2, `expected 2 unclear listings, got ${unclearListings.data.total}`);
+
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
   } finally {
     server.kill();

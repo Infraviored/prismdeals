@@ -27,35 +27,34 @@ export const Button: React.FC<ButtonProps> = ({
   children,
   ...props
 }) => {
-  const baseStyle = 'inline-flex items-center justify-center font-bold transition-all duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 shrink-0 select-none';
+  const baseStyle =
+    'inline-flex items-center justify-center font-semibold transition-colors duration-150 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed shrink-0 select-none cursor-pointer';
 
   const variants: Record<string, string> = {
-    primary: 'bg-brand-accent hover:bg-[#f09587] text-white rounded-xl shadow-lg shadow-brand-accent/10 hover:shadow-[#f09587]/20 border border-transparent',
-    secondary: 'bg-bg-surface hover:bg-bg-surface-hover border border-border-subtle text-text-secondary hover:text-text-primary rounded-xl',
-    danger: 'bg-status-danger/10 hover:bg-status-danger/20 text-status-danger border border-status-danger/30 rounded-xl',
-    quiet: 'bg-transparent hover:bg-bg-surface border border-transparent hover:border-border-subtle text-text-muted hover:text-text-primary rounded-xl',
-    badge: 'text-text-muted hover:text-text-primary bg-bg-surface hover:bg-bg-surface-hover border border-border-subtle rounded-xl',
-    icon: 'rounded-xl bg-bg-surface hover:bg-bg-surface-hover text-text-muted hover:text-brand-accent border border-border-subtle hover:border-border-brand shadow-sm group',
-    // Backward-compatible mappings for legacy variant names
-    'action-emerald': 'bg-bg-surface hover:bg-bg-surface-hover text-text-muted hover:text-brand-accent border border-border-subtle rounded-xl shadow-sm',
-    'action-sky': 'bg-bg-surface hover:bg-bg-surface-hover text-text-muted hover:text-text-primary border border-border-subtle rounded-xl shadow-sm',
-    'action-indigo': 'bg-bg-surface hover:bg-bg-surface-hover text-text-muted hover:text-text-primary border border-border-subtle rounded-xl shadow-sm',
-    'mini-emerald': 'bg-brand-accent hover:bg-[#f09587] text-white rounded-lg font-bold transition-colors border border-transparent',
-    'mini-slate': 'bg-bg-surface hover:bg-bg-surface-hover text-text-secondary rounded-lg transition-colors border border-border-subtle',
+    primary: 'bg-[#E4D6BE] hover:bg-[#F0E4CE] text-[#011F1F] border border-[#E4D6BE] rounded-[3px]',
+    secondary: 'bg-transparent hover:border-[#8FA6A1] border border-[#0E4A40] text-[#F2F5F4] rounded-[3px]',
+    danger: 'bg-transparent hover:border-[#E87967] border border-[#0E4A40] text-[#8FA6A1] hover:text-[#F2F5F4] rounded-[3px]',
+    quiet: 'bg-transparent hover:border-[#8FA6A1] border border-transparent text-[#8FA6A1] hover:text-[#F2F5F4] rounded-[3px]',
+    badge: 'text-[#8FA6A1] hover:text-[#F2F5F4] bg-transparent border border-[#0E4A40] rounded-[3px]',
+    icon: 'rounded-[3px] bg-transparent hover:border-[#8FA6A1] text-[#8FA6A1] hover:text-[#F2F5F4] border border-[#0E4A40]',
+    // Backward-compatible mappings
+    'action-emerald': 'bg-transparent hover:border-[#8FA6A1] text-[#F2F5F4] border border-[#0E4A40] rounded-[3px]',
+    'action-sky': 'bg-transparent hover:border-[#8FA6A1] text-[#F2F5F4] border border-[#0E4A40] rounded-[3px]',
+    'action-indigo': 'bg-transparent hover:border-[#8FA6A1] text-[#F2F5F4] border border-[#0E4A40] rounded-[3px]',
+    'mini-emerald': 'bg-[#E4D6BE] hover:bg-[#F0E4CE] text-[#011F1F] border border-[#E4D6BE] rounded-[3px] text-xs font-semibold',
+    'mini-slate': 'bg-transparent hover:border-[#8FA6A1] text-[#8FA6A1] border border-[#0E4A40] rounded-[3px] text-xs',
   };
 
   const sizes = {
-    xs: 'min-h-[44px] px-3 text-xs rounded-xl gap-1',
-    sm: 'min-h-[44px] px-4 text-sm rounded-xl gap-1.5 whitespace-nowrap',
-    md: 'min-h-[44px] px-5 text-base rounded-xl gap-1.5 whitespace-nowrap',
-    lg: 'min-h-[44px] px-6 text-lg rounded-xl gap-2',
+    xs: 'min-h-[36px] px-2.5 text-xs rounded-[3px] gap-1',
+    sm: 'min-h-[40px] px-3.5 text-sm rounded-[3px] gap-1.5 whitespace-nowrap',
+    md: 'min-h-[42px] px-4 text-sm rounded-[3px] gap-1.5 whitespace-nowrap',
+    lg: 'min-h-[46px] px-5 text-base rounded-[3px] gap-2',
   };
 
   const isBtnDisabled = disabled || loading;
-
-  // Icon buttons are square with minimum 44x44px touch target
   const finalSizeClass = variant === 'icon' && !props.style?.width && !className.includes('w-')
-    ? (size === 'lg' ? 'min-h-[48px] min-w-[48px] p-3' : 'min-h-[44px] min-w-[44px] p-2.5')
+    ? (size === 'lg' ? 'min-h-[44px] min-w-[44px] p-2.5' : 'min-h-[40px] min-w-[40px] p-2')
     : sizes[size];
 
   return (
@@ -70,14 +69,7 @@ export const Button: React.FC<ButtonProps> = ({
           fill="none"
           viewBox="0 0 24 24"
         >
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path
             className="opacity-75"
             fill="currentColor"
@@ -89,4 +81,3 @@ export const Button: React.FC<ButtonProps> = ({
     </button>
   );
 };
-

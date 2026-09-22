@@ -12,7 +12,7 @@ function getPillStateStyles(disabled: boolean, active: boolean): string {
     return 'opacity-40 cursor-not-allowed bg-transparent border-[#0E4A40]/40 text-[#8FA6A1]';
   }
   if (active) {
-    return 'bg-[#0E4A40] text-[#F2F5F4] border-[#F2F5F4] font-semibold';
+    return 'bg-[#0E4A40] text-[#F2F5F4] border-[#F2F5F4] font-medium';
   }
   return 'bg-transparent text-[#8FA6A1] border-[#0E4A40] hover:text-[#F2F5F4] hover:border-[#8FA6A1]';
 }
@@ -29,7 +29,7 @@ export const Pill: React.FC<PillProps> = ({
 }) => {
   const content = label ?? children;
   const baseStyles =
-    'inline-flex items-center justify-center gap-1.5 px-3 min-h-[36px] rounded-full text-xs font-medium cursor-pointer transition-all border select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F2F5F4] focus-visible:ring-offset-1 focus-visible:ring-offset-[#011F1F] shrink-0';
+    'inline-flex items-center justify-center gap-1.5 px-3 min-h-[34px] rounded-[3px] text-xs font-medium cursor-pointer transition-colors border select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-[#E4D6BE] shrink-0';
   const stateStyles = getPillStateStyles(disabled, active);
 
   return (
@@ -46,7 +46,7 @@ export const Pill: React.FC<PillProps> = ({
       {count !== undefined && count !== null && (
         <span
           data-testid="surface-pill-count"
-          className="text-2xs tabular-nums opacity-85"
+          className="num text-2xs opacity-85 ml-0.5"
         >
           {count}
         </span>

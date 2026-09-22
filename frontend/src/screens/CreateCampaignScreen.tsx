@@ -1,4 +1,4 @@
-import { Bar, Pill } from '../components/surface'
+import { Bar } from '../components/surface'
 import { useTranslation } from '../hooks/useTranslation'
 
 interface CreateCampaignScreenProps {
@@ -29,13 +29,25 @@ export default function CreateCampaignScreen({
         measure="max-w-xl"
         title={t('wizard.createCampaignTitle')}
         onBack={onCancel}
+        backLabel={t('surface.cancel')}
         actions={
-          <Pill label={t('surface.save')} active={canSave} onClick={canSave ? onSave : undefined} />
+          <button
+            type="button"
+            onClick={canSave ? onSave : undefined}
+            disabled={!canSave}
+            className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
+              canSave
+                ? 'bg-[#E4D6BE] text-[#011F1F] hover:bg-[#d8c8af] cursor-pointer'
+                : 'bg-[#06322C] text-[#8FA6A1]/50 border border-[#0E4A40] cursor-not-allowed'
+            }`}
+          >
+            {t('surface.save')}
+          </button>
         }
       />
 
       <main className="flex-1 px-4 py-5 space-y-2 max-w-xl w-full mx-auto">
-        <label htmlFor="campaign-name" className="block text-xs font-medium text-[#9FB3B0]">
+        <label htmlFor="campaign-name" className="block text-xs font-medium text-[#8FA6A1]">
           {t('wizard.campaignNameLabel')}
         </label>
         <input
@@ -48,7 +60,7 @@ export default function CreateCampaignScreen({
             if (e.key === 'Enter' && canSave) onSave()
           }}
           placeholder={t('wizard.campaignNamePlaceholder')}
-          className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-[#F2F5F4] placeholder-[#9FB3B0]/40 focus:outline-none focus:border-white/30 text-sm transition-colors"
+          className="w-full px-3.5 py-2.5 min-h-[40px] rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] placeholder-[#8FA6A1]/40 focus:outline-none focus:border-[#8FA6A1] text-sm transition-colors"
         />
       </main>
     </div>

@@ -117,7 +117,7 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
   ) => {
     const current = wants[field.id]?.[operator];
     return (
-      <label className="flex items-center gap-2 text-xs text-[#9FB3B0]">
+      <label className="flex items-center gap-2 text-xs text-[#8FA6A1]">
         <span className="w-10 shrink-0">{placeholder}</span>
         <input
           type="number"
@@ -130,7 +130,7 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
             else next[operator] = Number(raw);
             setWant(field.id, next);
           }}
-          className="w-full min-w-0 bg-white/[0.05] border border-white/[0.08] rounded px-2 py-1.5 text-sm text-[#F2F5F4] tabular-nums focus:outline-none focus:border-white/25"
+          className="w-full min-w-0 bg-[#00100F] border border-[#0E4A40] rounded px-2.5 py-1.5 text-sm text-[#F2F5F4] tabular-nums focus:outline-none focus:border-[#8FA6A1]"
         />
         {field.unit && <span className="shrink-0">{field.unit}</span>}
       </label>
@@ -147,7 +147,7 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
           type="button"
           onClick={save}
           disabled={saving || loading}
-          className="w-full min-h-[44px] rounded-full bg-white/[0.14] text-[#F2F5F4] text-sm font-semibold disabled:opacity-40"
+          className="w-full min-h-[40px] rounded bg-[#E4D6BE] hover:bg-[#d8c8af] text-[#011F1F] text-sm font-semibold disabled:opacity-40 transition-colors cursor-pointer"
         >
           {saving ? t('surface.saving') : t('surface.saveRequirements')}
         </button>
@@ -155,15 +155,15 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
     >
       {error && <p className="text-sm text-[#E87967] mb-3">{error}</p>}
 
-      {loading && <p className="text-sm text-[#9FB3B0]">{t('surface.loading')}</p>}
+      {loading && <p className="text-sm text-[#8FA6A1]">{t('surface.loading')}</p>}
 
       {!loading && fields.length === 0 && (
-        <p className="text-sm text-[#9FB3B0]">{t('surface.requirementsNoFields')}</p>
+        <p className="text-sm text-[#8FA6A1]">{t('surface.requirementsNoFields')}</p>
       )}
 
       {!loading && fields.length > 0 && (
         <>
-          <p className="text-xs text-[#9FB3B0] mb-4">
+          <p className="text-xs text-[#8FA6A1] mb-4">
             {t('surface.requirementsIntro', { searches: searchCount })}
           </p>
 
@@ -225,7 +225,7 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
                 )}
 
                 {field.description && (
-                  <p className="text-2xs text-[#9FB3B0]/70 leading-snug">{field.description}</p>
+                  <p className="text-2xs text-[#8FA6A1] leading-snug">{field.description}</p>
                 )}
               </div>
             ))}
