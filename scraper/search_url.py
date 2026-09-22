@@ -25,7 +25,16 @@ import re
 import urllib.parse
 
 # k<keyword flag> c<category> l<location> r<radius>, any of the last three absent.
-TAIL_RE = re.compile(r"(k\d+)(c\d+)?(l\d+)?(r\d+)?$")
+# Category attribute filters hang off the END of the tail, after location and
+# radius, joined by '+': k0c278l6411r30+notebooks.brand_s:apple
+#
+# The order is not a guess. Put the same filter BEFORE the location and
+# kleinanzeigen.de redirects the request and drops the location entirely --
+# /s-muenchen/notebook/k0c278+notebooks.brand_s:applel6411r30 came back as
+# /s-notebooks/notebook/k0c278, a nationwide search wearing the same URL. After
+# the radius the location survives and the filter bites: measured on Munich
+# within 30 km, 25 notebooks unfiltered, 22 Lenovo, 2 Apple.
+TAIL_RE = re.compile(r"(k\d+)(c\d+)?(l\d+)?(r\d+)?((?:\+[\w.]+:[^+/]+)*)$")
 
 
 def parse_tail(url):
@@ -40,12 +49,16 @@ def parse_tail(url):
     match = TAIL_RE.fullmatch(last)
     if not match:
         return None
-    keyword, category, location, radius = match.groups()
+    keyword, category, location, radius, attributes = match.groups()
     return {
         "keyword": keyword,
         "category": category,
         "location": location,
         "radius": int(radius[1:]) if radius else None,
+        # Kept as written, including their order: the site accepts the same key
+        # twice to mean "either of these", so de-duplicating would change the
+        # search.
+        "attributes": [a for a in (attributes or "").split("+") if a],
     }
 
 
@@ -66,7 +79,8 @@ def with_location(url, location_id, radius_km):
         location = "l" + location.lstrip("_")
 
     radius = max(1, int(round(radius_km)))
-    tail = f"{parts['keyword']}{parts['category'] or ''}{location}r{radius}"
+    attrs = "".join(f"+{a}" for a in parts["attributes"])
+    tail = f"{parts['keyword']}{parts['category'] or ''}{location}r{radius}{attrs}"
 
     split = urllib.parse.urlsplit(url)
     path = split.path.rstrip("/")
@@ -129,3 +143,165 @@ def with_query(url, term):
 
     new_path = "/".join(segments)
     return urllib.parse.urlunsplit(split._replace(path=new_path))
+
+
+PRICE_RE = re.compile(r"^preis:(\d*(?:\.\d+)?)?:(\d*(?:\.\d+)?)?$")
+
+
+def parse_price(url):
+    """Returns the parsed price filter {'min': int|None, 'max': int|None}, or None if absent."""
+    split = urllib.parse.urlsplit(url)
+    segments = [s for s in split.path.rstrip("/").split("/") if s]
+    for seg in segments:
+        m = PRICE_RE.match(seg)
+        if m:
+            min_str, max_str = m.groups()
+            min_val = int(round(float(min_str))) if min_str else None
+            max_val = int(round(float(max_str))) if max_str else None
+            return {"min": min_val, "max": max_val}
+    return None
+
+
+def with_price(url, min_price=None, max_price=None):
+    """Inserts, updates, or removes the preis:a:b filter in a Kleinanzeigen search URL."""
+    parts = parse_tail(url)
+    if parts is None:
+        raise ValueError(
+            f"Not a rewriteable search URL: {url!r} — its last path segment must "
+            f"look like k0c278l6411r25"
+        )
+
+    split = urllib.parse.urlsplit(url)
+    segments = split.path.rstrip("/").split("/")
+    if len(segments) < 2:
+        raise ValueError(f"URL path too short to rewrite: {url!r}")
+
+    # Normalise prices
+    p_min = (
+        int(round(float(min_price)))
+        if min_price is not None and str(min_price).strip() != ""
+        else None
+    )
+    p_max = (
+        int(round(float(max_price)))
+        if max_price is not None and str(max_price).strip() != ""
+        else None
+    )
+
+    # Locate any existing preis: segment
+    price_idx = None
+    for idx, seg in enumerate(segments):
+        if PRICE_RE.match(seg):
+            price_idx = idx
+            break
+
+    if p_min is None and p_max is None:
+        if price_idx is not None:
+            del segments[price_idx]
+    else:
+        s_min = str(p_min) if p_min is not None else ""
+        s_max = str(p_max) if p_max is not None else ""
+        price_segment = f"preis:{s_min}:{s_max}"
+        if price_idx is not None:
+            segments[price_idx] = price_segment
+        else:
+            # Insert right after root slug if present, otherwise before tail
+            insert_idx = min(2, max(1, len(segments) - 1))
+            segments.insert(insert_idx, price_segment)
+
+    new_path = "/".join(segments)
+    return urllib.parse.urlunsplit(split._replace(path=new_path))
+
+
+def decompose_search_url(url):
+    """Decomposes a Kleinanzeigen search URL into its four constituent fields.
+
+    Returns dict with location_slug, location_id, radius, min_price, max_price,
+    query, and category.
+    """
+    parts = parse_tail(url)
+    if not parts:
+        return None
+
+    split = urllib.parse.urlsplit(url)
+    segments = [s for s in split.path.rstrip("/").split("/") if s]
+    if not segments:
+        return None
+
+    root_seg = segments[0]
+    location_slug = root_seg[2:] if root_seg.startswith("s-") else root_seg
+
+    price = parse_price(url)
+
+    # Identify query segment (if any): segment that is not root, not a facet (':'), and not tail
+    query = None
+    tail_seg = segments[-1]
+    for seg in segments[1:-1]:
+        if ":" not in seg and seg != tail_seg:
+            query = seg
+
+    loc_id = parts["location"].lstrip("l") if parts.get("location") else None
+    cat_id = parts["category"].lstrip("c") if parts.get("category") else None
+
+    return {
+        "location_slug": location_slug,
+        "location_id": loc_id,
+        "radius": parts.get("radius"),
+        "min_price": price["min"] if price else None,
+        "max_price": price["max"] if price else None,
+        "query": query,
+        "category": cat_id,
+        "attributes": parts.get("attributes") or [],
+    }
+
+
+def compose_search_url(
+    location_slug,
+    location_id,
+    radius=None,
+    min_price=None,
+    max_price=None,
+    query=None,
+    category=None,
+    attributes=None,
+    origin="https://www.kleinanzeigen.de",
+):
+    """Constructs a canonical Kleinanzeigen search URL from the four composer fields."""
+    clean_slug = slugify(location_slug) if location_slug else "suchanfrage"
+    root = clean_slug if clean_slug.startswith("s-") else f"s-{clean_slug}"
+    segments = ["", root]
+
+    p_min = (
+        int(round(float(min_price)))
+        if min_price is not None and str(min_price).strip() != ""
+        else None
+    )
+    p_max = (
+        int(round(float(max_price)))
+        if max_price is not None and str(max_price).strip() != ""
+        else None
+    )
+    if p_min is not None or p_max is not None:
+        s_min = str(p_min) if p_min is not None else ""
+        s_max = str(p_max) if p_max is not None else ""
+        segments.append(f"preis:{s_min}:{s_max}")
+
+    if query:
+        q_slug = slugify(query)
+        if q_slug:
+            segments.append(q_slug)
+
+    kw = "k0"
+    cat = f"c{category}" if category else ""
+    loc = f"l{str(location_id).lstrip('l')}" if location_id else ""
+    rad = (
+        f"r{int(round(float(radius)))}"
+        if radius is not None and str(radius).strip() != ""
+        else ""
+    )
+    attrs = "".join(f"+{a}" for a in (attributes or []) if a)
+    tail = f"{kw}{cat}{loc}{rad}{attrs}"
+    segments.append(tail)
+
+    path = "/".join(segments)
+    return f"{origin.rstrip('/')}{path}"

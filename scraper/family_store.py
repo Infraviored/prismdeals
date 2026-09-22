@@ -160,7 +160,10 @@ def recompute_enabled(conn, search_ids, cursor=None):
     switched (resolves C-3 from PROPOSALS.md).
 
     Owners are:
-    1. search_family_searches: active when both the family and the term are enabled.
+    1. search_family_searches: active when the family and the term are enabled
+       AND the link itself is still active. A link is deactivated rather than
+       deleted when a family is re-aimed, so the searches it used to own stop
+       being scraped while the listings they found stay reachable.
     2. route_search_circles: active when the route has no family (r.family_id IS NULL).
        When a route has a family, active ownership is tracked via search_family_searches.
     """
@@ -181,7 +184,8 @@ def recompute_enabled(conn, search_ids, cursor=None):
         f"""
         SELECT sfs.search_id,
                COUNT(*) AS total,
-               SUM(CASE WHEN f.enabled = 1 AND t.enabled = 1 THEN 1 ELSE 0 END) AS active
+               SUM(CASE WHEN f.enabled = 1 AND t.enabled = 1 AND sfs.active = 1
+                        THEN 1 ELSE 0 END) AS active
         FROM search_family_searches sfs
         JOIN search_families f ON f.id = sfs.family_id
         JOIN search_family_terms t ON t.id = sfs.term_id
@@ -492,8 +496,13 @@ def save_family(
         route_search_id=route_search_id,
     )
 
+    # What the family runs now, which is what the caller is told it saved. A
+    # re-aimed family keeps its retired links so their listings stay reachable,
+    # and counting those made every edit of a town or a radius report a larger
+    # family than the one that was just saved.
     searches_count = cursor.execute(
-        "SELECT COUNT(DISTINCT search_id) FROM search_family_searches WHERE family_id = ?",
+        "SELECT COUNT(DISTINCT search_id) FROM search_family_searches "
+        "WHERE family_id = ? AND active = 1",
         (family_id,),
     ).fetchone()[0]
 
@@ -501,8 +510,8 @@ def save_family(
     return family_id, searches_count, conflicts
 
 
-def update_family(conn, family_id, name=None, enabled=None, terms=None):
-    """Updates an existing search family, reconciling terms and ownership."""
+def update_family(conn, family_id, name=None, enabled=None, terms=None, base_url=None):
+    """Updates an existing search family, reconciling terms, base_url, and ownership."""
     cursor = conn.cursor()
     fam = cursor.execute(
         "SELECT id, name, enabled, base_url, campaign_id, knowledge_set_id FROM search_families WHERE id = ?",
@@ -518,6 +527,16 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None):
         cursor.execute(
             "UPDATE search_families SET name = ? WHERE id = ?", (name, family_id)
         )
+
+    base_url_changed = False
+    if base_url is not None and str(base_url).strip():
+        new_base = str(base_url).strip()
+        if new_base != fam[3]:
+            cursor.execute(
+                "UPDATE search_families SET base_url = ? WHERE id = ?",
+                (new_base, family_id),
+            )
+            base_url_changed = True
 
     family_enabled_changed = False
     if enabled is not None:
@@ -566,8 +585,8 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None):
                 old_slug = existing_by_id[tid][1]
                 slug_changed = slug != old_slug
 
-                if slug_changed:
-                    # Term keyword changed: detach old searches and attach new ones
+                if base_url_changed or slug_changed:
+                    # Term keyword or base_url changed: detach old searches and attach new ones
                     old_sids = [
                         s[0]
                         for s in cursor.execute(
@@ -576,8 +595,16 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None):
                         ).fetchall()
                     ]
                     affected_search_ids.update(old_sids)
+                    # Re-aimed, not removed. Deleting the link left the old
+                    # searches with no owner at all, and recompute_enabled never
+                    # switches an unowned row -- it reads one as hand-made. So
+                    # every edit of a town, a radius or a keyword permanently
+                    # added searches to the scrape schedule that nothing wanted,
+                    # and the listings they had found disappeared from the
+                    # family because listing_search_hits still pointed at them.
                     cursor.execute(
-                        "DELETE FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+                        "UPDATE search_family_searches SET active = 0 "
+                        "WHERE family_id = ? AND term_id = ?",
                         (family_id, tid),
                     )
                     if route_search_id and old_sids:
@@ -640,6 +667,46 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None):
                 conn,
                 family_id,
                 new_terms_to_attach,
+                circles=circles,
+                campaign_id=campaign_id,
+                knowledge_set_id=knowledge_set_id,
+                route_search_id=route_search_id,
+            )
+            conflicts.extend(new_conflicts)
+    elif base_url_changed:
+        # Re-attach all existing terms with updated base_url
+        all_terms = cursor.execute(
+            "SELECT id, term, label FROM search_family_terms WHERE family_id = ?",
+            (family_id,),
+        ).fetchall()
+        terms_to_reattach = []
+        for tid, t_slug, lbl in all_terms:
+            old_sids = [
+                s[0]
+                for s in cursor.execute(
+                    "SELECT search_id FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+                    (family_id, tid),
+                ).fetchall()
+            ]
+            affected_search_ids.update(old_sids)
+            # Re-aimed, not removed -- see the note on the slug-change path.
+            cursor.execute(
+                "UPDATE search_family_searches SET active = 0 "
+                "WHERE family_id = ? AND term_id = ?",
+                (family_id, tid),
+            )
+            if route_search_id and old_sids:
+                placeholders = ",".join("?" for _ in old_sids)
+                cursor.execute(
+                    f"DELETE FROM route_search_circles WHERE route_search_id = ? AND family_id = ? AND search_id IN ({placeholders})",
+                    (route_search_id, family_id, *old_sids),
+                )
+            terms_to_reattach.append({"id": tid, "term": t_slug, "label": lbl})
+        if terms_to_reattach:
+            new_conflicts = attach_terms(
+                conn,
+                family_id,
+                terms_to_reattach,
                 circles=circles,
                 campaign_id=campaign_id,
                 knowledge_set_id=knowledge_set_id,

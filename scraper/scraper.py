@@ -82,7 +82,9 @@ def parse_listing_details_requests(url, session=None):
     """Retrieve and parse detailed specifications, description, and images using direct requests"""
     try:
         caller = session if session is not None else requests
-        response = fetch(url, caller=caller)
+        response = _fetch_with_backoff(url, caller=caller)
+        if response is None:
+            return None
         if response.status_code in (404, 410):
             logger.info(
                 f"Listing details returned HTTP {response.status_code} for {url} (delisted)."
@@ -190,21 +192,18 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
     total_pages = len(urls) * PAGES_TO_SCRAPE
     current_page_idx = 0
 
-    # Load existing listings to check for duplicates
-    existing_listings = []
-    existing_ids = set()
-    if output_file and os.path.exists(output_file):
-        try:
-            with open(output_file, "r", encoding="utf-8") as f:
-                existing_listings = json.load(f)
-                existing_ids = {item.get("id", "") for item in existing_listings}
-                logger.info(
-                    f"Loaded {len(existing_ids)} existing listing IDs to check for duplicates"
-                )
-        except (json.JSONDecodeError, IOError) as e:
-            logger.warning(f"Error loading existing listings: {str(e)}")
-            existing_listings = []
-            existing_ids = set()
+    # The database is what "already known" means, not a JSON file that may not
+    # exist. Asking only the file meant a re-scrape saw fifty fresh listings
+    # where fifty were already stored, so no price was ever compared and no
+    # missing photograph was ever filled in.
+    existing_ids = _stored_listing_ids()
+
+    updated_ids = []
+    returned_ids = set()
+    # A refused page is not an empty page. Logging the status and carrying on
+    # meant a rate-limited run finished "successfully" with nothing in it, and
+    # the next stage read that as "the search has no results".
+    refusals = 0
 
     for base_url in urls:
         for page in range(1, PAGES_TO_SCRAPE + 1):
@@ -244,11 +243,13 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                 break
 
             try:
-                response = fetch(current_url)
-                if response.status_code != 200:
+                response = _fetch_with_backoff(current_url)
+                if response is None or response.status_code != 200:
+                    status = response.status_code if response is not None else "none"
                     logger.error(
-                        f"Failed to fetch page {current_url}. Status: {response.status_code}"
+                        f"Failed to fetch page {current_url}. Status: {status}"
                     )
+                    refusals += 1
                     continue
 
                 scraped_count = 0
@@ -262,20 +263,41 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                         break
 
                     listing_id = parsed["id"]
-                    if listing_id in existing_ids:
-                        continue
-
                     listing = result_list.as_db_listing(parsed)
 
-                    # Append and save intermediate
-                    existing_listings.append(listing)
+                    if listing_id in existing_ids:
+                        # Known, not finished with. The card already carries the
+                        # price and a photograph, so bringing the row up to date
+                        # costs nothing beyond the page we had to fetch anyway.
+                        # Skipping outright is why a kit that fell from 130 EUR
+                        # to 100 went unnoticed and why rows harvested by this
+                        # parser never had a picture.
+                        updated_ids.append(listing)
+
+                        # And it still belongs to *this* search. "Known" means
+                        # known to the database, not known to this search: a
+                        # listing another search found first was dropped here
+                        # and never got a listing_search_hits row, so it stayed
+                        # invisible in the search that had just found it.
+                        if listing_id not in returned_ids:
+                            returned_ids.add(listing_id)
+                            all_scraped_listings.append(listing)
+                        continue
+
                     existing_ids.add(listing_id)
+                    returned_ids.add(listing_id)
                     all_scraped_listings.append(listing)
                     scraped_count += 1
 
+                # What the caller reads back is what this run saw -- known
+                # listings included. Writing only the new ones while returning
+                # both meant main.py, which reads the file and ignores the
+                # return value, never learned that a listing another search had
+                # found first also belongs to this one: no listing_search_hits
+                # row, invisible in the search that had just found it.
                 if output_file:
                     with open(output_file, "w", encoding="utf-8") as f:
-                        json.dump(existing_listings, f, ensure_ascii=False, indent=4)
+                        json.dump(all_scraped_listings, f, ensure_ascii=False, indent=4)
 
                 logger.info(
                     f"Scraped {scraped_count} discovered listings from {current_url}"
@@ -292,12 +314,131 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
             "discovery",
             total_pages,
             total_pages,
-            "Rapid listing discovery completed.",
+            "Rapid listing discovery completed."
+            if not refusals
+            else f"{refusals} von {total_pages} Seiten abgewiesen -- "
+            "die Ausbeute ist unvollstaendig.",
         )
+    if updated_ids:
+        _refresh_known(updated_ids)
+
+    if refusals and not all_scraped_listings:
+        raise ScrapeRefused(
+            f"The site refused every one of {refusals} page requests; "
+            "nothing was harvested."
+        )
+    if refusals:
+        # Half a harvest reported as a whole one is how fifty listings became
+        # twenty-five without anybody noticing. It is not fatal -- what was
+        # collected is real -- but it must not read as complete.
+        logger.warning(
+            "%d of %d pages were refused; the harvest is incomplete.",
+            refusals,
+            total_pages,
+        )
+
     logger.info(
         f"Successfully scraped {len(all_scraped_listings)} listings across all pages"
     )
     return all_scraped_listings
+
+
+class ScrapeRefused(RuntimeError):
+    """Every page request was refused, so the run harvested nothing.
+
+    Distinct from a search that genuinely has no results: one is our problem,
+    the other is the buyer's, and reporting the first as the second is how a
+    rate-limited run looked like a successful one.
+    """
+
+
+# Backing off is the only polite answer to a 429, and the only one that gets
+# the page. The site also answers 503 while it decides; both are worth waiting
+# for, and a 404 is not.
+RETRY_STATUSES = (429, 500, 502, 503, 504)
+RETRY_WAITS = (5, 15, 45)
+
+
+def _fetch_with_backoff(url, caller=None):
+    response = None
+    for attempt, wait in enumerate((*RETRY_WAITS, None)):
+        try:
+            response = fetch(url, caller=caller)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Fetching %s failed: %s", url, exc)
+            response = None
+        if response is not None and response.status_code not in RETRY_STATUSES:
+            return response
+        if wait is None:
+            return response
+        status = response.status_code if response is not None else "no answer"
+        logger.warning(
+            "%s said %s; waiting %ds before attempt %d.", url, status, wait, attempt + 2
+        )
+        time.sleep(wait)
+    return response
+
+
+def _stored_listing_ids():
+    """Every listing id the database holds."""
+    try:
+        conn = sqlite3.connect(
+            f"file:{db_schema.default_path()}?mode=ro", uri=True, timeout=10.0
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not read stored listing ids: %s", exc)
+        return set()
+    try:
+        return {row[0] for row in conn.execute("SELECT id FROM listings")}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not read stored listing ids: %s", exc)
+        return set()
+    finally:
+        conn.close()
+
+
+def _refresh_known(listings):
+    """Brings listings already in the database up to date from their cards.
+
+    Its own connection and its own try: a failure to update what is already
+    stored must not lose the new listings the same run discovered.
+    """
+    import listing_updates
+
+    try:
+        conn = sqlite3.connect(db_schema.default_path(), timeout=10.0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not open the database to refresh listings: %s", exc)
+        return
+
+    prices, pictures = 0, 0
+    try:
+        for listing in listings:
+            try:
+                changed = listing_updates.apply(conn, listing)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Could not refresh %s: %s", listing.get("id"), exc)
+                continue
+            if not changed:
+                continue
+            if "price_eur" in changed:
+                old_price, new_price = changed["price_eur"]
+                logger.info(
+                    "Listing %s: %s EUR -> %s EUR", listing["id"], old_price, new_price
+                )
+                prices += 1
+            if "images" in changed:
+                pictures += 1
+        conn.commit()
+    finally:
+        conn.close()
+
+    logger.info(
+        "Refreshed %d known listing(s): %d price change(s), %d picture(s) filled in.",
+        len(listings),
+        prices,
+        pictures,
+    )
 
 
 def preview_url_listings_count(url):
@@ -494,7 +635,8 @@ def update_all_descriptions_session(campaign_id=None):
         if campaign_id is not None:
             cursor.execute(
                 """
-                SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
+                SELECT l.id, l.url, l.title, l.detailed_description, l.images
+                FROM listings l
                 JOIN searches s ON l.search_id = s.id
                 WHERE s.enabled = 1 AND s.campaign_id = ?
             """,
@@ -503,7 +645,8 @@ def update_all_descriptions_session(campaign_id=None):
         else:
             cursor.execute(
                 """
-                SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
+                SELECT l.id, l.url, l.title, l.detailed_description, l.images
+                FROM listings l
                 JOIN searches s ON l.search_id = s.id
                 WHERE s.enabled = 1
             """
@@ -530,6 +673,10 @@ def update_all_descriptions_session(campaign_id=None):
                 url = r["url"]
                 title = r["title"]
                 old_description = r["detailed_description"] or ""
+                try:
+                    old_images = json.loads(r["images"] or "[]")
+                except ValueError:
+                    old_images = []
 
                 logger.info(
                     f"Checking updates for listing {listing_id} ({title}): {url}"
@@ -549,10 +696,25 @@ def update_all_descriptions_session(campaign_id=None):
                     continue
 
             detailed_description = parsed["detailed_description"] or ""
+            text_changed = detailed_description.strip() != old_description.strip()
+            # A seller who swaps a blurry title photograph for a sharp one, or
+            # adds a picture of the damage, often does not touch a word of the
+            # text. Hanging the whole write on the description meant the buyer
+            # kept looking at the old picture forever.
+            images_changed = (parsed["images"] or []) != old_images
 
-            if detailed_description.strip() != old_description.strip():
+            if text_changed or images_changed:
                 logger.info(
-                    f"Description changed for listing {listing_id}! Updating in DB."
+                    "Listing %s changed (%s); updating in DB.",
+                    listing_id,
+                    " and ".join(
+                        part
+                        for part, yes in (
+                            ("description", text_changed),
+                            ("images", images_changed),
+                        )
+                        if yes
+                    ),
                 )
                 cursor.execute(
                     """
@@ -571,7 +733,7 @@ def update_all_descriptions_session(campaign_id=None):
                 )
                 conn.commit()
             else:
-                logger.info(f"No description changes for listing {listing_id}.")
+                logger.info(f"No changes for listing {listing_id}.")
 
         if total > 0:
             update_progress(

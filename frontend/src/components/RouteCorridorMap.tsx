@@ -24,8 +24,6 @@ export interface RouteListingGeo {
   lon: number | null;
   detour_min: number | null;
   offroute_km: number | null;
-  // Why a detour is missing, which is not the same question as whether the
-  // listing has coordinates: 'too_far' and 'failed' both have them.
   geo_status?: 'routed' | 'too_far' | 'unplaceable' | 'failed' | null;
   niceness_score: number | null;
   llm_processed?: boolean;
@@ -33,12 +31,13 @@ export interface RouteListingGeo {
   matched_terms?: MatchedTerm[];
 }
 
-interface RouteCorridorMapProps {
+export interface RouteCorridorMapProps {
   polyline: [number, number][];
   circles: RouteCircle[];
   listings: RouteListingGeo[];
   selectedListingId: string | null;
   onSelectListing: (id: string) => void;
+  onSelectCluster?: (listingIds: string[]) => void;
   originName?: string;
   destinationName?: string;
   className?: string;
@@ -48,42 +47,34 @@ interface RouteCorridorMapProps {
 function MapBoundsFitter({ bounds }: { bounds: L.LatLngBounds | null }) {
   const map = useMap();
   useEffect(() => {
+    map.invalidateSize();
     if (bounds && bounds.isValid()) {
       map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
     }
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
+    return () => clearTimeout(timer);
   }, [map, bounds]);
   return null;
 }
 
 // 8px dot for unselected listing with 32x32 touch target
 function createDotIcon(detourMin: number | null) {
-  const detourLabel = detourMin !== null ? (detourMin < 1 ? 'on route' : `+${Math.round(detourMin)}m`) : '';
-  const html = `
-    <div class="cursor-pointer -translate-x-1/2 -translate-y-1/2 flex items-center justify-center w-8 h-8 group" title="${detourLabel}">
-      <div class="w-2 h-2 rounded-full bg-status-good ring-2 ring-bg-base shadow-md group-hover:scale-150 transition-all duration-150"></div>
-    </div>
-  `;
+  const label = detourMin !== null ? (detourMin < 1 ? 'on route' : `+${Math.round(detourMin)}m`) : '';
   return L.divIcon({
-    html,
+    html: `<div class="cursor-pointer -translate-x-1/2 -translate-y-1/2 flex items-center justify-center w-8 h-8 group" title="${label}"><div class="w-2.5 h-2.5 rounded-full bg-[#10B981] ring-2 ring-[#011F1F] shadow-md group-hover:scale-150 transition-all duration-150"></div></div>`,
     className: 'prism-listing-marker-dot',
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
 }
 
-// Selected or hovered listing: full pill with minutes
+// Selected listing marker: pill with detour info
 function createSelectedPillIcon(detourMin: number | null) {
-  const detourText = detourMin !== null ? (detourMin < 1 ? 'on route' : `+${Math.round(detourMin)}m`) : '•';
-  const html = `
-    <div class="cursor-pointer -translate-x-1/2 -translate-y-1/2 flex items-center justify-center z-50">
-      <div class="px-2.5 py-1 rounded-full text-xs font-mono shadow-2xl flex items-center gap-1.5 whitespace-nowrap bg-status-good text-bg-base ring-4 ring-status-good/40 font-extrabold">
-        <span class="w-1.5 h-1.5 rounded-full bg-bg-base"></span>
-        <span>${detourText}</span>
-      </div>
-    </div>
-  `;
+  const text = detourMin !== null ? (detourMin < 1 ? 'on route' : `+${Math.round(detourMin)}m`) : '•';
   return L.divIcon({
-    html,
+    html: `<div class="cursor-pointer -translate-x-1/2 -translate-y-1/2 flex items-center justify-center z-50"><div class="px-2.5 py-1 rounded-full text-xs font-mono shadow-2xl flex items-center gap-1.5 whitespace-nowrap bg-[#10B981] text-[#011F1F] ring-4 ring-[#10B981]/40 font-extrabold"><span class="w-1.5 h-1.5 rounded-full bg-[#011F1F]"></span><span>${text}</span></div></div>`,
     className: 'prism-listing-marker-pill',
     iconSize: [0, 0],
     iconAnchor: [0, 0],
@@ -93,15 +84,8 @@ function createSelectedPillIcon(detourMin: number | null) {
 // Cluster marker showing count for overlapping listings
 function createClusterIcon(count: number) {
   const size = count >= 10 ? 'w-7 h-7 text-xs' : 'w-6 h-6 text-2xs';
-  const html = `
-    <div class="cursor-pointer -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
-      <div class="${size} rounded-full bg-status-good text-bg-base font-mono font-bold shadow-lg flex items-center justify-center border-2 border-bg-base hover:opacity-90 hover:scale-110 transition-all">
-        ${count}
-      </div>
-    </div>
-  `;
   return L.divIcon({
-    html,
+    html: `<div class="cursor-pointer -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"><div class="${size} rounded-full bg-[#10B981] text-[#011F1F] font-mono font-bold shadow-lg flex items-center justify-center border-2 border-[#011F1F] hover:opacity-90 hover:scale-110 transition-all">${count}</div></div>`,
     className: 'prism-listing-marker-cluster',
     iconSize: [0, 0],
     iconAnchor: [0, 0],
@@ -109,32 +93,26 @@ function createClusterIcon(count: number) {
 }
 
 function createEndpointIcon(label: string, isStart: boolean) {
-  const bgClass = isStart ? 'bg-status-good' : 'bg-status-danger';
-  const html = `
-    <div class="cursor-pointer -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
-      <div class="w-6 h-6 rounded-full ${bgClass} text-white font-extrabold text-2xs shadow-lg flex items-center justify-center border-2 border-bg-base">
-        ${label}
-      </div>
-    </div>
-  `;
-
+  const bgClass = isStart ? 'bg-[#10B981] text-[#011F1F]' : 'bg-[#012828] text-[#F2F5F4] border-2 border-[#10B981]';
   return L.divIcon({
-    html,
+    html: `<div class="cursor-pointer -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"><div class="w-6 h-6 rounded-full ${bgClass} font-extrabold text-2xs shadow-lg flex items-center justify-center">${label}</div></div>`,
     className: 'prism-endpoint-marker',
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
 }
 
-// Subcomponent that manages zoom-aware clustering within MapContainer
+// Subcomponent managing zoom-aware clustering within MapContainer
 function ListingClusterMarkers({
   listings,
   selectedListingId,
   onSelectListing,
+  onSelectCluster,
 }: {
   listings: RouteListingGeo[];
   selectedListingId: string | null;
   onSelectListing: (id: string) => void;
+  onSelectCluster?: (listingIds: string[]) => void;
 }) {
   const map = useMap();
   const [currentZoom, setCurrentZoom] = useState(() => map.getZoom());
@@ -239,6 +217,7 @@ function ListingClusterMarkers({
                   [cluster.centerLat, cluster.centerLon],
                   Math.min(map.getZoom() + 2, 15)
                 );
+                onSelectCluster?.(cluster.items.map((i) => i.id));
               },
             }}
           />
@@ -254,6 +233,7 @@ export default function RouteCorridorMap({
   listings,
   selectedListingId,
   onSelectListing,
+  onSelectCluster,
   originName,
   destinationName,
   className = '',
@@ -264,11 +244,11 @@ export default function RouteCorridorMap({
   const bounds = useMemo(() => {
     const latLngs: L.LatLngExpression[] = [];
 
-    polyline.forEach(([lat, lon]) => {
+    (polyline || []).forEach(([lat, lon]) => {
       latLngs.push([lat, lon]);
     });
 
-    circles.forEach((circle) => {
+    (circles || []).forEach((circle) => {
       if (circle.lat !== null && circle.lon !== null) {
         latLngs.push([circle.lat, circle.lon]);
       }
@@ -280,17 +260,21 @@ export default function RouteCorridorMap({
 
   const defaultCenter: [number, number] = polyline.length > 0
     ? polyline[Math.floor(polyline.length / 2)]
-    : [48.137, 11.576]; // Default fallback Munich
+    : [48.137, 11.576];
 
   const startPoint = polyline.length > 0 ? polyline[0] : null;
   const endPoint = polyline.length > 1 ? polyline[polyline.length - 1] : null;
 
   return (
-    <div className={`w-full h-full min-h-[300px] rounded-2xl overflow-hidden relative border border-border-subtle shadow-2xl bg-bg-base ${className}`}>
+    <div
+      data-testid="route-corridor-map-container"
+      className={`w-full h-full min-h-[300px] relative bg-[#011F1F] overflow-hidden ${className}`}
+    >
       <MapContainer
         center={defaultCenter}
         zoom={9}
         scrollWheelZoom={true}
+        style={{ width: '100%', height: '100%' }}
         className="w-full h-full min-h-[300px] z-10"
       >
         <TileLayer
@@ -305,8 +289,8 @@ export default function RouteCorridorMap({
           <Polyline
             positions={polyline}
             pathOptions={{
-              color: '#10b981',
-              weight: 5,
+              color: '#10B981',
+              weight: 4,
               opacity: 0.9,
               lineCap: 'round',
               lineJoin: 'round',
@@ -323,20 +307,20 @@ export default function RouteCorridorMap({
               center={[circle.lat, circle.lon]}
               radius={circle.radius_km * 1000}
               pathOptions={{
-                color: '#10b981',
-                fillColor: '#10b981',
-                fillOpacity: 0.07,
+                color: '#10B981',
+                fillColor: '#10B981',
+                fillOpacity: 0.08,
                 weight: 1.5,
                 dashArray: '6, 6',
               }}
             >
               <Popup>
-                <div className="text-xs font-sans text-text-secondary space-y-1">
-                  <div className="font-bold text-status-good">
+                <div className="text-xs font-sans text-[#9FB3B0] space-y-1">
+                  <div className="font-bold text-[#10B981]">
                     {t('routeResults.legendSearchArea')} #{index + 1}
                   </div>
-                  <div className="font-semibold">{circle.label}</div>
-                  <div className="text-2xs text-text-muted">
+                  <div className="font-semibold text-[#F2F5F4]">{circle.label}</div>
+                  <div className="text-2xs text-[#9FB3B0]">
                     {t('routeResults.circlePopup', { label: circle.label, radius: circle.radius_km })}
                   </div>
                 </div>
@@ -347,26 +331,24 @@ export default function RouteCorridorMap({
 
         {/* Origin and Destination Pin Markers */}
         {startPoint && (
-          <Marker
-            position={startPoint}
-            icon={createEndpointIcon('A', true)}
-          >
+          <Marker position={startPoint} icon={createEndpointIcon('A', true)}>
             <Popup>
-              <div className="text-xs font-sans text-text-secondary">
-                <span className="font-bold text-status-good block">{t('routeResults.originPin', { place: originName || 'Start' })}</span>
+              <div className="text-xs font-sans text-[#9FB3B0]">
+                <span className="font-bold text-[#10B981] block">
+                  {t('routeResults.originPin', { place: originName || 'Start' })}
+                </span>
               </div>
             </Popup>
           </Marker>
         )}
 
         {endPoint && (
-          <Marker
-            position={endPoint}
-            icon={createEndpointIcon('B', false)}
-          >
+          <Marker position={endPoint} icon={createEndpointIcon('B', false)}>
             <Popup>
-              <div className="text-xs font-sans text-text-secondary">
-                <span className="font-bold text-status-danger block">{t('routeResults.destinationPin', { place: destinationName || 'Destination' })}</span>
+              <div className="text-xs font-sans text-[#9FB3B0]">
+                <span className="font-bold text-[#F2F5F4] block">
+                  {t('routeResults.destinationPin', { place: destinationName || 'Destination' })}
+                </span>
               </div>
             </Popup>
           </Marker>
@@ -377,21 +359,22 @@ export default function RouteCorridorMap({
           listings={listings}
           selectedListingId={selectedListingId}
           onSelectListing={onSelectListing}
+          onSelectCluster={onSelectCluster}
         />
       </MapContainer>
 
       {/* Map Legend Overlay */}
-      <div className="absolute bottom-3 left-3 z-[400] bg-bg-surface/85 backdrop-blur-md border border-border-subtle rounded-xl px-3 py-1.5 flex items-center gap-3 text-2xs font-semibold text-text-secondary pointer-events-none">
+      <div className="absolute bottom-3 left-3 z-[400] bg-[#012828]/90 backdrop-blur-md border border-white/[0.08] rounded-lg px-3 py-1.5 flex items-center gap-3 text-2xs font-semibold text-[#9FB3B0] pointer-events-none shadow-md">
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-1 bg-status-good rounded-full" />
+          <span className="w-3 h-1 bg-[#10B981] rounded-full" />
           <span>{t('routeResults.legendRoute')}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full border border-dashed border-status-good/60 bg-status-good/10" />
+          <span className="w-2.5 h-2.5 rounded-full border border-dashed border-[#10B981]/60 bg-[#10B981]/10" />
           <span>{t('routeResults.legendSearchArea')}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-status-good ring-1 ring-bg-base" />
+          <span className="w-2 h-2 rounded-full bg-[#10B981] ring-1 ring-[#011F1F]" />
           <span>{t('routeResults.legendListing')}</span>
         </div>
       </div>

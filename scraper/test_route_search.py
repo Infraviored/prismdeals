@@ -18,18 +18,21 @@ def test_tail_parsing_covers_the_shapes_the_site_emits():
         "category": None,
         "location": "l13533",
         "radius": 25,
+        "attributes": [],
     }
     assert route_search.parse_tail(LAPTOPS) == {
         "keyword": "k0",
         "category": "c278",
         "location": "l6411",
         "radius": None,
+        "attributes": [],
     }
     assert route_search.parse_tail("https://www.kleinanzeigen.de/s-tiere/k0c130") == {
         "keyword": "k0",
         "category": "c130",
         "location": None,
         "radius": None,
+        "attributes": [],
     }
 
 

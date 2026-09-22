@@ -30,6 +30,11 @@ def apply_schema(connection, force=False):
     cascaded is worse than no cascade, because the code reads as if it works.
     """
     connection.execute("PRAGMA foreign_keys = ON")
+    # The backend writes to this database at the same time, and SQLite's default
+    # is to give up after five seconds. A scrape that lost its whole import
+    # batch to "database is locked" logged one line and reported success, so the
+    # listings were simply gone. Waiting is always better than losing them.
+    connection.execute("PRAGMA busy_timeout = 30000")
 
     key = _database_key(connection)
     if not force and key is not None and key in _APPLIED:

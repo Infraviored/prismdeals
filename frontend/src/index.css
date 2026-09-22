@@ -37,9 +37,8 @@
   --text-4xl--line-height: 1.1;
 
   /* Larger type needs more room around it, or the layout tightens as the text
-   * grows. One step up in the spacing unit widens every gap, pad and inset
-   * together, which is why they were all written against it. */
-  --spacing: 0.28rem;
+   * grows. Adjusted to standard 0.25rem (P1 foundation). */
+  --spacing: 0.25rem;
   --color-brand-primary: #011F1F;
   --color-brand-accent: #E87967;
   
@@ -47,13 +46,16 @@
   --color-bg-surface: #012828;
   --color-bg-surface-hover: #013333;
   --color-bg-input: #001414;
-  --color-border-subtle: rgba(255, 255, 255, 0.1);
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
   --color-border-brand: rgba(232, 121, 103, 0.2);
-  --color-text-primary: #FFFFFF;
-  --color-text-secondary: #E2EAEA;
-  --color-text-muted: #9BB1B1;
+  --color-text-primary: #F2F5F4;
+  --color-text-secondary: #9FB3B0;
+  --color-text-muted: #9FB3B0;
 
   --color-status-good: #10B981;
+  --color-status-onroute: #10B981;
+  --color-status-stale: #D9A441;
+  --color-status-away: #8A9694;
   --color-status-danger: #EF4444;
 
   --animate-slide-left: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -79,11 +81,29 @@
 }
 
 body {
-  background-color: var(--color-brand-primary);
-  color: #F1F5F9;
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
   font-family: var(--font-body);
   margin: 0;
   min-height: 100vh;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.surface-row-text {
+  line-height: 1.3;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 button, input, select, textarea {
@@ -104,6 +124,8 @@ button, input, select, textarea {
 .leaflet-container {
   font-family: var(--font-body) !important;
   background-color: #011f1f !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .leaflet-popup-content-wrapper {
@@ -140,3 +162,53 @@ button, input, select, textarea {
 }
 
 
+
+/* The range track, drawn by hand.
+ *
+ * `accent-color` paints the filled half and leaves the rest to the browser,
+ * which in a dark page renders a warm brown that reads as the coral accent --
+ * a colour this surface reserves for one thing: the price is a signal. Both
+ * halves are stated here so nothing borrows that meaning by accident.
+ */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+input[type='range']::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7.5px;
+  border-radius: 50%;
+  background: #f2f5f4;
+  cursor: pointer;
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: #f2f5f4;
+  cursor: pointer;
+}
+
+input[type='range']:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 2px;
+}

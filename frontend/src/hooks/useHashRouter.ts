@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export type ViewState = 'landing' | 'dashboard' | 'edit' | 'create-campaign' | 'settings';
+export type ViewState = 'landing' | 'dashboard' | 'edit' | 'create-campaign' | 'settings' | 'kept';
 
 export interface RouteState {
   view: ViewState;
@@ -17,7 +17,7 @@ const parseHash = (hashStr: string): RouteState => {
   const path = match[1];
   const queryParams = new URLSearchParams(match[2] || '');
 
-  if (['landing', 'dashboard', 'edit', 'create-campaign', 'settings'].includes(path)) {
+  if (['landing', 'dashboard', 'edit', 'create-campaign', 'settings', 'kept'].includes(path)) {
     const view = path as ViewState;
     const campaignIdStr = queryParams.get('campaignId');
     const campaignId = campaignIdStr ? parseInt(campaignIdStr, 10) : null;
@@ -95,28 +95,43 @@ export function useHashRouter() {
   // Expose state mutators that automatically synchronize back into the URL hash
   const navigate = useCallback((
     newView: ViewState,
-    newCampaignId: number | null = route.campaignId,
-    newSearchId: number | null = route.searchId,
-    newListingId: string | null = route.listingId,
-    newStep: 1 | 2 | 3 = route.step
+    newCampaignId?: number | null,
+    newSearchId?: number | null,
+    newListingId?: string | null,
+    newStep?: 1 | 2 | 3
   ) => {
-    if (newView === 'settings') {
-      if (route.view !== 'settings') {
-        setPreviousView(route.view as Exclude<ViewState, 'settings'>);
+    setRoute((prev) => {
+      const targetCampaignId = newCampaignId !== undefined ? newCampaignId : prev.campaignId;
+      const targetSearchId = newSearchId !== undefined ? newSearchId : prev.searchId;
+      const targetListingId = newListingId !== undefined ? newListingId : prev.listingId;
+      const targetStep = newStep !== undefined ? newStep : prev.step;
+
+      if (
+        prev.view === newView &&
+        prev.campaignId === targetCampaignId &&
+        prev.searchId === targetSearchId &&
+        prev.listingId === targetListingId &&
+        prev.step === targetStep
+      ) {
+        return prev;
       }
-    }
 
-    const nextRoute = {
-      view: newView,
-      campaignId: newCampaignId,
-      searchId: newSearchId,
-      listingId: newListingId,
-      step: newStep,
-    };
+      if (newView === 'settings' && prev.view !== 'settings') {
+        setPreviousView(prev.view as Exclude<ViewState, 'settings'>);
+      }
 
-    setRoute(nextRoute);
-    updateHash(newView, newCampaignId, newSearchId, newListingId, newStep);
-  }, [route, updateHash]);
+      const nextRoute: RouteState = {
+        view: newView,
+        campaignId: targetCampaignId,
+        searchId: targetSearchId,
+        listingId: targetListingId,
+        step: targetStep,
+      };
+
+      updateHash(newView, targetCampaignId, targetSearchId, targetListingId, targetStep);
+      return nextRoute;
+    });
+  }, [updateHash]);
 
   // Expose convenient, atomic individual setters for ease-of-use
   const setView = useCallback((v: ViewState) => {
@@ -124,20 +139,40 @@ export function useHashRouter() {
   }, [navigate]);
 
   const setCurrentCampaignId = useCallback((cid: number | null) => {
-    navigate(route.view, cid);
-  }, [navigate, route.view]);
+    setRoute((prev) => {
+      if (prev.campaignId === cid) return prev;
+      const next: RouteState = { ...prev, campaignId: cid };
+      updateHash(next.view, next.campaignId, next.searchId, next.listingId, next.step);
+      return next;
+    });
+  }, [updateHash]);
 
   const setCurrentSearchId = useCallback((sid: number | null) => {
-    navigate(route.view, route.campaignId, sid);
-  }, [navigate, route.view, route.campaignId]);
+    setRoute((prev) => {
+      if (prev.searchId === sid) return prev;
+      const next: RouteState = { ...prev, searchId: sid };
+      updateHash(next.view, next.campaignId, next.searchId, next.listingId, next.step);
+      return next;
+    });
+  }, [updateHash]);
 
   const setSelectedListingId = useCallback((lid: string | null) => {
-    navigate(route.view, route.campaignId, route.searchId, lid);
-  }, [navigate, route.view, route.campaignId, route.searchId]);
+    setRoute((prev) => {
+      if (prev.listingId === lid) return prev;
+      const next: RouteState = { ...prev, listingId: lid };
+      updateHash(next.view, next.campaignId, next.searchId, next.listingId, next.step);
+      return next;
+    });
+  }, [updateHash]);
 
   const setWizardStep = useCallback((stepVal: 1 | 2 | 3) => {
-    navigate(route.view, route.campaignId, route.searchId, route.listingId, stepVal);
-  }, [navigate, route.view, route.campaignId, route.searchId, route.listingId]);
+    setRoute((prev) => {
+      if (prev.step === stepVal) return prev;
+      const next: RouteState = { ...prev, step: stepVal };
+      updateHash(next.view, next.campaignId, next.searchId, next.listingId, next.step);
+      return next;
+    });
+  }, [updateHash]);
 
   return {
     view: route.view,

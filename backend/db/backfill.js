@@ -135,4 +135,49 @@ function backfillCanonicalListings(db) {
   );
 }
 
-module.exports = { backfillCanonicalListings, parsePriceEur };
+
+/**
+ * Removes the invisible characters Kleinanzeigen injects into place names.
+ *
+ * Munich districts arrive as "Schwabing-<U+200B>West": a zero-width space sits
+ * inside the name. It is invisible on screen and decisive everywhere else --
+ * two rows that read identically do not group, a map cluster splits in two, and
+ * a filter on the town misses half its rows. Measured on the live database:
+ * 489 of 1266 locations carry one. Where the numeric entity lost its
+ * terminating semicolon the page ships the literal text "&#8203", which the
+ * HTML parser leaves standing; 56 rows show that. The two overlap in 18 rows,
+ * so 527 locations are wrong in one way or the other, plus 5 short and 17
+ * detailed descriptions.
+ *
+ * result_list.clean_text() stops new rows from arriving this way. This repairs
+ * the ones already stored. Guarded by WHERE, so every later run does no work.
+ *
+ * @param {import('sqlite3').Database} db
+ */
+function backfillListingText(db) {
+  // char(8203) zero-width space, char(8204) ZWNJ, char(8205) ZWJ,
+  // char(65279) byte-order mark. The literal "&#8203" is the same character
+  // that never got decoded, so it goes the same way.
+  const strip = col =>
+    `TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${col},` +
+    `'&#8203',''),char(8203),''),char(8204),''),char(8205),''),char(65279),''))`;
+  const dirty = col =>
+    `(${col} LIKE '%' || char(8203) || '%' OR ${col} LIKE '%' || char(8204) || '%'` +
+    ` OR ${col} LIKE '%' || char(8205) || '%' OR ${col} LIKE '%' || char(65279) || '%'` +
+    ` OR ${col} LIKE '%&#8203%')`;
+
+  for (const col of ['location', 'short_description', 'detailed_description']) {
+    db.run(
+      `UPDATE listings SET ${col} = ${strip(col)} WHERE ${dirty(col)}`,
+      function (err) {
+        if (err) {
+          console.error(`Backfilling listings.${col} failed:`, err);
+        } else if (this.changes > 0) {
+          console.log(`Backfilled ${this.changes} listings.${col} values (invisible characters removed).`);
+        }
+      }
+    );
+  }
+}
+
+module.exports = { backfillCanonicalListings, backfillListingText, parsePriceEur };

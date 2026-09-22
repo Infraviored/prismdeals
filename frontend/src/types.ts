@@ -1,4 +1,6 @@
 export interface Campaign {
+  /** How many listings this campaign's results screen will show. */
+  listing_count?: number;
   id: number
   name: string
   route_id?: number | null
@@ -64,10 +66,13 @@ export interface Listing {
   id: string
   title: string
   price: string
+  price_eur?: number | null
   location: string
   url: string
   short_description: string
   detailed_description: string
+  first_seen_at?: string | null
+  last_seen_at?: string | null
   extracted_facts: Record<string, unknown>
   niceness_score?: number | null
   status: string
@@ -217,5 +222,61 @@ export interface MatchedTerm {
   id: number;
   label: string;
   term?: string;
+}
+
+export interface RouteCircle {
+  lat: number;
+  lon: number;
+  radius_km: number;
+  label?: string;
+  postal_code?: string;
+}
+
+export interface RouteListingGeo {
+  id: string;
+  title: string;
+  price?: string | null;
+  price_eur?: number | null;
+  location?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  offroute_km?: number | null;
+  detour_min?: number | null;
+  images?: string[];
+  url?: string;
+  niceness_score?: number | null;
+  llm_processed?: boolean;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  matched_terms?: Array<{ id: number; label: string }>;
+  is_deal?: boolean;
+  geo_status?: string | null;
+}
+
+export interface RouteCorridorData {
+  route: {
+    id: number;
+    campaign_id: number;
+    family_id?: number | null;
+    name: string;
+    base_url: string;
+    origin: string;
+    destination: string;
+    radius_km: number;
+    half_width_km: number;
+    distance_km: number | null;
+    duration_min: number | null;
+    polyline: [number, number][];
+    circles: RouteCircle[];
+  };
+  listings: RouteListingGeo[];
+  total?: number;
+  offset?: number;
+  limit?: number;
+  counts: {
+    total: number;
+    routed: number;
+    unplaced: number;
+  };
 }
 

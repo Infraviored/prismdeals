@@ -99,6 +99,18 @@ def test_a_listing_is_extracted_scored_and_persisted(conn):
     assert row[1] == 100
     assert row[2] == 1
 
+    # And the verdict reaches the table the surface reads. Without this, the
+    # whole re-judge could be deleted and every test here stayed green -- while
+    # the buyer's list went back to being the one Kleinanzeigen already shows.
+    verdict = conn.execute(
+        "SELECT verdict, stage, reason FROM listing_fit "
+        "WHERE listing_id = 'l1' AND search_id = 1"
+    ).fetchone()
+    assert verdict is not None, "the model read it, so the verdict is the model's"
+    assert verdict[0] == "fit"
+    assert verdict[1] == "model"
+    assert "Arbeitsspeicher 16 GB" in verdict[2], verdict[2]
+
 
 def test_a_second_run_costs_no_model_call(conn):
     """The decoupling, asserted through the production entry point."""
@@ -248,3 +260,40 @@ def test_summarise_reports_cache_effectiveness(conn):
     assert second["from_cache"] == 2
     assert second["model_calls"] == 0
     assert second["identities_resolved"] == 2
+
+
+def test_a_title_rejection_is_not_handed_to_the_expensive_path(conn):
+    """The legacy worker asks the model about every listing with
+    llm_processed = 0. A title rejected here for nothing was therefore sent to
+    the model by the next stage of the same run -- one paid call each, for
+    exactly the listings this step exists to avoid paying for.
+    """
+    seed(conn)
+    # The laptop playbook reads RAM off a title, and the buyer wants at least 8.
+    conn.execute(
+        "UPDATE knowledge_sets SET item_json = ? WHERE id = 1",
+        (
+            json.dumps(
+                {
+                    "fields": [
+                        {"id": "ramGb", "importance": "high", "buyer_wants": {"min": 8}}
+                    ],
+                    "dimensions_enabled": False,
+                }
+            ),
+        ),
+    )
+    conn.execute("UPDATE listings SET title = ? WHERE id = 'l1'", ("ThinkPad 4GB RAM",))
+    conn.commit()
+
+    model = CountingModel()
+    outcomes = pipeline.run(conn, model)
+
+    assert outcomes[0].skipped and outcomes[0].skipped.startswith("title says"), (
+        outcomes[0].skipped
+    )
+    assert model.calls == 0, "nothing was asked of a model"
+    assert (
+        conn.execute("SELECT llm_processed FROM listings WHERE id = 'l1'").fetchone()[0]
+        == 1
+    ), "and the legacy worker will not ask either"

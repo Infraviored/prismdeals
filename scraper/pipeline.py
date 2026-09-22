@@ -27,7 +27,7 @@ from extraction import get_or_extract, score_against_intent
 logger = logging.getLogger(__name__)
 
 LISTING_QUERY = """
-    SELECT l.id, l.title, l.detailed_description, l.details,
+    SELECT l.id, l.title, l.detailed_description, l.details, l.search_id,
            s.url AS search_url, k.item_json, k.expert_knowledge
     FROM listings l
     JOIN searches s ON l.search_id = s.id
@@ -111,6 +111,19 @@ def process_listing(
 
     intent = parse_intent(listing["item_json"])
 
+    # A knowledge set that names no fields is the normal case, not the odd one:
+    # all three stored ones are empty objects. What the buyer actually said is
+    # in the search itself -- the category they picked and the filters they set.
+    if not intent.get("fields"):
+        import intent_from_filters
+        import search_url
+
+        derived = intent_from_filters.intent_for_search(
+            playbook, listing["search_url"], search_url.parse_tail
+        )
+        if derived["fields"]:
+            intent = derived
+
     # Transitional guard. Extraction is buyer-independent and precomputing it is
     # the whole point, but while the legacy worker still runs alongside this
     # path, a listing the pipeline extracts without scoring stays
@@ -119,6 +132,50 @@ def process_listing(
     # only take listings this pipeline can see all the way through.
     if require_intent and not intent.get("fields"):
         return Outcome(listing_id, skipped="knowledge set defines no fields")
+
+    # What the seller already wrote decides most of them, for nothing.
+    #
+    # A title like "32GB DDR3 CORSAIR VENGEANCE (4x8GB)" states four facts, and
+    # three of them fail a buyer who wants two DDR4 sticks. Asking a model about
+    # that title would return the same four at a thousand times the cost. Of 50
+    # stored Corsair offers, 32 are settled here and never reach extraction.
+    import text_facts
+
+    wanted = intent.get("fields") or []
+    listing_text = "\n".join(
+        part for part in (listing["title"], listing.get("detailed_description")) if part
+    )
+    if wanted:
+        # Title first, then the description under what the title settled. A
+        # title that lists every specification reads as a match -- nobody
+        # advertises a fault in the headline -- so judging the title alone sent
+        # "Ein Riegel defekt, Bastlerware" to the model at full price and let it
+        # come back a candidate. Free text we already hold is never a reason to
+        # stop looking, and an assumption from the title's silence must not
+        # shield a statement in the body.
+        verdict, _facts, why = text_facts.judge(playbook, wanted, listing["title"])
+        stage = "title"
+        if verdict != "reject" and listing.get("detailed_description"):
+            # Only what the title *stated* carries forward. judge() also returns
+            # what it assumed from silence, and passing that as settled would
+            # let the title's silence outrank the body's words.
+            verdict, _facts, why = text_facts.judge(
+                playbook,
+                wanted,
+                listing_text,
+                settled=text_facts.read_stated(playbook, listing["title"]),
+            )
+            stage = "description"
+        if verdict == "reject":
+            # Mark it, or the saving is imaginary. The legacy worker takes
+            # every listing with llm_processed = 0, so a title rejected here
+            # for nothing was sent to the model by the next stage of the same
+            # run -- one paid call each, for the listings this step exists to
+            # avoid paying for.
+            _mark_settled_without_a_model(conn, listing_id)
+            return Outcome(
+                listing_id, playbook["key"], skipped=f"{stage} says {why[0]}"
+            )
 
     result = get_or_extract(
         conn,
@@ -150,6 +207,22 @@ def process_listing(
     )
 
     _persist(conn, listing_id, result.facts, scoring_result.score)
+
+    # The model has now read the whole listing, so its facts replace what the
+    # title reader could only guess at. Leaving both meant a score of 61 sitting
+    # beside "passt nicht", which tells a buyer nothing.
+    import fit
+
+    if listing.get("search_id"):
+        fit.from_extracted(
+            conn,
+            listing_id,
+            listing["search_id"],
+            playbook,
+            result.facts,
+            wanted,
+            text=listing_text,
+        )
     return Outcome(
         listing_id, playbook["key"], scoring_result.score, result.from_cache, key
     )
@@ -159,6 +232,22 @@ def _score_listing():
     from scoring import score_listing
 
     return score_listing
+
+
+def _mark_settled_without_a_model(conn, listing_id):
+    """Records that this listing needs no model call, and why nothing was spent.
+
+    llm_processed is what the legacy worker reads to decide whom to ask. A
+    listing the title settled is settled; leaving the flag at 0 hands it
+    straight to the expensive path.
+    """
+    import datetime
+
+    conn.execute(
+        "UPDATE listings SET llm_processed = 1, last_ai_evaluated_at = ? WHERE id = ?",
+        (datetime.datetime.now(datetime.timezone.utc).isoformat(), listing_id),
+    )
+    conn.commit()
 
 
 def _persist(conn, listing_id, facts, score):
@@ -224,9 +313,7 @@ def default_model_caller():
     extractor = EvidenceExtractor()
 
     def call(prompt, fields):
-        kwargs = agent_worker.build_llm_kwargs(
-            [{"role": "user", "content": prompt}], max_tokens=32000
-        )
+        kwargs = agent_worker.build_llm_kwargs([{"role": "user", "content": prompt}])
         response = agent_worker.client.chat.completions.create(**kwargs)
         text = agent_worker.get_response_text(response)
 

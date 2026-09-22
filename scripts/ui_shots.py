@@ -110,21 +110,158 @@ def build_driver(width, height):
 
 
 def shoot(driver, out_dir, name, settle=1.0):
-    """The whole page, not just what happens to fit above the fold."""
+    """The whole page, not just what happens to fit above the fold.
+
+    The previous implementation grew the window to the full page height before
+    calling save_screenshot. That worked visually, but corrupted Chrome's JS
+    event dispatch after every shot: the DOM stayed live and fields accepted
+    input, but click events never reached React's synthetic event listener
+    delegation again. The workaround (reloading before every click) added
+    ~5s of round-trips per campaign.
+
+    Chrome DevTools Protocol's Page.captureScreenshot supports
+    captureBeyondViewport=True, which captures the full document without
+    touching the window size. The renderer stays healthy and the session
+    stays authenticated.
+    """
+    import base64
+
     time.sleep(settle)
-    width = driver.get_window_size()["width"]
-    height = driver.execute_script(
-        "return Math.max(document.body.scrollHeight,"
-        " document.documentElement.scrollHeight, 700)"
-    )
-    driver.set_window_size(width, min(int(height) + 100, 4000))
-    time.sleep(0.35)
     path = os.path.join(out_dir, f"{name}.png")
-    driver.save_screenshot(path)
+    try:
+        data = driver.execute_cdp_cmd(
+            "Page.captureScreenshot",
+            {"format": "png", "captureBeyondViewport": True, "fromSurface": True},
+        )
+        with open(path, "wb") as fh:
+            fh.write(base64.b64decode(data["data"]))
+    except Exception:
+        # CDP unavailable (older ChromeDriver / non-Chrome); fall back to the
+        # viewport-only screenshot so the walk still produces *something*.
+        driver.save_screenshot(path)
     print(f"  {name}.png")
 
 
-def walk(driver, base, out_dir, width, height):
+def open_campaign(driver, campaign_id, name, settle=2.5):
+    """Click the campaign card, the way a person reaches a campaign.
+
+    Two URL-driven approaches failed before this one, and both failed silently
+    by leaving the landing page on screen under a filename that claimed
+    otherwise. `driver.get` on a URL differing only by its fragment performs no
+    navigation at all in headless Chrome; assigning `location.hash` is undone
+    within milliseconds by the app writing the hash back out of its own state.
+    Clicking is also the more honest test -- it exercises the path a user takes.
+
+    The card has `data-testid="campaign-card-{id}"` (added to LandingScreen.tsx
+    as a single-line product-code change expressly allowed for stable automation
+    selectors), so we can address each card with a direct CSS attribute selector
+    that is unique, stable, and immune to DOM traversal order.
+    """
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
+
+    # Primary: direct testid selector (campaign-card-{id})
+    testid = f"campaign-card-{campaign_id}"
+    try:
+        card = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, f"[data-testid='{testid}']"))
+        )
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", card)
+        time.sleep(0.3)
+        hash_before = driver.execute_script("return window.location.hash;")
+        # Use JS dispatch rather than Selenium's coordinate-based click: the
+        # sticky header sits at the top of the viewport and can silently
+        # intercept the native pointer event when scrollIntoView centres the card
+        # near the top. JS .click() bypasses the visual hit-test layer entirely.
+        driver.execute_script("arguments[0].click();", card)
+        time.sleep(settle)
+        hash_after = driver.execute_script("return window.location.hash;")
+        print(f"    [{testid}] hash {hash_before!r} -> {hash_after!r}")
+        return True
+    except Exception as exc:
+        print(f"    ! primary click failed: {exc}")
+        pass
+
+    # Fallback: scan all testid-anchored cards for the one whose text contains
+    # the campaign name (covers the case where testid attr is absent in the build).
+    for card in driver.find_elements(
+        By.CSS_SELECTOR, "[data-testid^='campaign-card-']"
+    ):
+        try:
+            if name and name.lower() in (card.text or "").lower():
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});", card
+                )
+                time.sleep(0.2)
+                driver.execute_script("arguments[0].click();", card)
+                time.sleep(settle)
+                return True
+        except Exception:
+            continue
+
+    return False
+
+
+def back_to_landing(driver, settle=2.0):
+    """Navigate to the landing page from anywhere in the app.
+
+    Clicks the logo in the app header, which calls navigate('landing', null, null)
+    and is available on every authenticated screen. Single-step landing, regardless
+    of the current depth (Dashboard → Landing, Edit → Landing, etc.).
+
+    Fallback: if the logo cannot be found, try the first 'back to' button (which
+    at most takes us one step up, not all the way to landing).
+    """
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
+
+    # Support both surface-bar-back (FundeScreen) and legacy header-logo
+    for selector in ("[data-testid='surface-bar-back']", "[data-testid='header-logo']"):
+        try:
+            elem = WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+            )
+            driver.execute_script("arguments[0].click();", elem)
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "[data-testid^='campaign-card-']")
+                )
+            )
+            time.sleep(settle)
+            return True
+        except Exception:
+            pass
+
+    try:
+        logo = WebDriverWait(driver, 3).until(
+            EC.element_to_be_clickable(
+                (By.XPATH, "//header//span[normalize-space()='prismdeals']")
+            )
+        )
+        driver.execute_script("arguments[0].click();", logo)
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "[data-testid^='campaign-card-']")
+            )
+        )
+        time.sleep(settle)
+        return True
+    except Exception:
+        pass
+
+    # Fallback: a 'back to' button (may only go one level up)
+    for btn in driver.find_elements(By.CSS_SELECTOR, "button"):
+        txt = (btn.text or "").lower()
+        if "back to" in txt or "zurück" in txt or "zuruck" in txt:
+            driver.execute_script("arguments[0].click();", btn)
+            time.sleep(settle)
+            return True
+    return False
+
+
+def walk(driver, base, out_dir, width, height, db_path=None):
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.ui import WebDriverWait
@@ -135,6 +272,23 @@ def walk(driver, base, out_dir, width, height):
     wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input")))
     print("Photographing:")
     shoot(driver, out_dir, "01-login")
+
+    # Reload before logging in, because the shot above broke the page's network.
+    #
+    # `shoot` grows the window to the full page height and saves a screenshot.
+    # After that the DOM is still live -- the fields accept input and read back
+    # correctly -- but every `fetch` from the page fails, so the login POST came
+    # back as "Network connection failed", the app stayed on the login form, and
+    # the walk gave up with "still unauthenticated" after only two images.
+    #
+    # Isolated by bisection: the same steps without the preceding `shoot` log in
+    # fine; restoring the window size afterwards does not help; navigating anew
+    # does. Whatever the screenshot does to the renderer, a fresh document
+    # survives it.
+    driver.get(base)
+    wait.until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='password']"))
+    )
 
     email = driver.find_element(By.CSS_SELECTOR, "input[type='email'], input")
     password = driver.find_element(By.CSS_SELECTOR, "input[type='password']")
@@ -152,15 +306,60 @@ def walk(driver, base, out_dir, width, height):
             )
         )
         wait.until(EC.presence_of_element_located((By.TAG_NAME, "header")))
+        # Also wait for campaign cards: they appear only after refreshAll() has
+        # completed and both campaigns and searches are in the React state. The
+        # header renders immediately on mount, before the data is loaded, so the
+        # old wait was a race -- the onOpenCampaign handler fired with an empty
+        # searches list and navigated to 'edit' instead of 'dashboard', while
+        # the concurrent refreshAll completion reset the hash back to 'landing'.
+        wait.until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "[data-testid^='campaign-card-']")
+            )
+        )
     except Exception:
         print("  ! still unauthenticated - the shots below are the logged-out view")
     driver.set_window_size(width, height)
 
     shoot(driver, out_dir, "02-landing")
 
-    campaigns = driver.execute_script(
-        "return fetch('/api/campaigns').then(r => r.json()).catch(() => [])"
-    )
+    # Read the campaigns from the database, not through the browser.
+    #
+    # This used to be `execute_script("return fetch('/api/campaigns')...")`, which
+    # has two faults at once: `execute_script` cannot serialise the Promise it
+    # returns, so the answer arrived as None; and every in-page fetch after a
+    # `shoot` fails anyway, because saving a screenshot at full page height
+    # leaves the document alive but its network dead. Either fault alone made the
+    # walk stop with "no campaigns in the database" however many there were.
+    #
+    # We already own the database this throwaway server was pointed at, so ask it
+    # directly. No browser, nothing to break.
+    campaigns = []
+    if db_path:
+        import sqlite3
+
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            campaigns = [
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "route_id": row["route_id"],
+                    "family_id": row["family_id"],
+                }
+                for row in conn.execute(
+                    "SELECT c.id, c.name,"
+                    " (SELECT r.id FROM route_searches r WHERE r.campaign_id = c.id"
+                    "  ORDER BY r.id DESC LIMIT 1) AS route_id,"
+                    " (SELECT f.id FROM search_families f WHERE f.campaign_id = c.id"
+                    "  ORDER BY f.id DESC LIMIT 1) AS family_id"
+                    " FROM campaigns c ORDER BY c.id"
+                )
+            ]
+            conn.close()
+        except Exception as error:
+            print(f"  ! could not read campaigns from {db_path}: {error}")
     if not isinstance(campaigns, list) or not campaigns:
         print("  (no campaigns in the database; stopping after the landing view)")
         return
@@ -170,9 +369,69 @@ def walk(driver, base, out_dir, width, height):
         has_route = bool(campaign.get("route_id"))
         has_family = bool(campaign.get("family_id"))
 
-        driver.get(f"{base}/#edit?campaignId={identifier}")
-        time.sleep(2)
-        shoot(driver, out_dir, f"03-campaign-{identifier}")
+        name = campaign.get("name")
+        if not open_campaign(driver, identifier, name):
+            print(f"  ! could not open campaign {name!r}; skipping it")
+            back_to_landing(driver)
+            continue
+        shoot(driver, out_dir, f"04-dashboard-{identifier}")
+
+        # Capture FundeDetailSheet by clicking the first listing row
+        try:
+            rows = driver.find_elements(By.CSS_SELECTOR, "[data-testid='listing-row']")
+            if rows:
+                driver.execute_script("arguments[0].click();", rows[0])
+                time.sleep(1.5)
+                shoot(driver, out_dir, f"04d-detail-sheet-{identifier}")
+                close_btn = driver.find_elements(
+                    By.CSS_SELECTOR, "[data-testid='surface-sheet-close']"
+                )
+                if close_btn:
+                    driver.execute_script("arguments[0].click();", close_btn[0])
+                    time.sleep(0.5)
+        except Exception as exc:
+            print(f"  ! could not open detail sheet: {exc}")
+
+        # Capture Corridor Map view by clicking the Map pill
+        if has_route:
+            try:
+                for pill in driver.find_elements(
+                    By.CSS_SELECTOR, "[data-testid='surface-pill']"
+                ):
+                    txt = (pill.text or "").strip().lower()
+                    if txt in ("karte", "map"):
+                        driver.execute_script("arguments[0].click();", pill)
+                        time.sleep(2.5)
+                        shoot(driver, out_dir, f"04c-corridor-map-{identifier}")
+                        # Switch back to list
+                        driver.execute_script("arguments[0].click();", pill)
+                        time.sleep(1)
+                        break
+            except Exception as exc:
+                print(f"  ! could not toggle map view: {exc}")
+
+        # Settings via the gear, the way a person gets there.
+        opened_settings = False
+        try:
+            settings_btn = driver.find_element(
+                By.CSS_SELECTOR, "[data-testid='campaign-settings-btn']"
+            )
+            driver.execute_script("arguments[0].click();", settings_btn)
+            time.sleep(2)
+            opened_settings = True
+        except Exception:
+            for btn in driver.find_elements(By.CSS_SELECTOR, "button"):
+                cls = btn.get_attribute("class") or ""
+                if not (btn.text or "").strip() and ("p-1" in cls or "p-2" in cls):
+                    try:
+                        driver.execute_script("arguments[0].click();", btn)
+                        time.sleep(2)
+                        opened_settings = True
+                        break
+                    except Exception:
+                        continue
+        if opened_settings:
+            shoot(driver, out_dir, f"03-campaign-{identifier}")
 
         if has_family:
             try:
@@ -188,7 +447,8 @@ def walk(driver, base, out_dir, width, height):
 
         if has_route or has_family:
             # Also capture the corridor dashboard view
-            driver.get(f"{base}/#dashboard?campaignId={identifier}")
+            back_to_landing(driver)
+            open_campaign(driver, identifier, name)
             time.sleep(2)
             shoot(driver, out_dir, f"04-corridor-dashboard-{identifier}")
 
@@ -262,6 +522,20 @@ def walk(driver, base, out_dir, width, height):
                     )
                 break
 
+        # Return to the landing page before the next campaign iteration.
+        # Without this, the subsequent open_campaign call looks for a campaign
+        # card on whatever view is currently active (dashboard, edit, corridor
+        # results, ...) and finds nothing.
+        back_to_landing(driver)
+
+    # Photograph P1 surface foundation preview
+    try:
+        driver.execute_script("window.location.hash = '#surface-preview';")
+        time.sleep(1.5)
+        shoot(driver, out_dir, f"10-surface-foundation-preview-{width}")
+    except Exception as exc:
+        print(f"  ! could not capture surface foundation preview: {exc}")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -317,7 +591,7 @@ def main():
 
         driver = build_driver(args.width, args.height)
         try:
-            walk(driver, base, args.out, args.width, args.height)
+            walk(driver, base, args.out, args.width, args.height, db_path)
         finally:
             driver.quit()
 

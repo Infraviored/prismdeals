@@ -223,3 +223,79 @@ ALTER TABLE listings ADD COLUMN last_seen_at TEXT;
 
 ALTER TABLE listings ADD COLUMN delisted_at TEXT;
 
+
+-- Re-aiming a family left its old searches behind.
+--
+-- update_family's base_url path detaches every term and re-attaches it under
+-- the new URL. The old searches rows survived with no owner at all, and
+-- recompute_enabled deliberately never switches an unowned row -- it reads one
+-- as hand-made. So every edit of a town, a radius or a price permanently added
+-- N always-enabled searches to the scrape schedule, and the family's own
+-- listings vanished from the results because listing_search_hits still pointed
+-- at the detached rows.
+--
+-- The link is kept and marked instead of deleted: an inactive row is not an
+-- owner for the enabled rule, so the scraper leaves it alone, and the history
+-- it found is still reachable.
+ALTER TABLE search_family_searches ADD COLUMN active INTEGER NOT NULL DEFAULT 1;
+
+-- Keeping a find.
+--
+-- A hunt through a thousand laptops turns up three worth a second look, and
+-- until now there was nowhere to put them: the list is sorted by something
+-- else the moment you change a filter, and the only way back to a listing was
+-- to find it again. A kept find is the buyer's own shortlist, not a property
+-- of the listing, so it lives in its own table rather than a column.
+CREATE TABLE IF NOT EXISTS kept_listings (
+    listing_id TEXT NOT NULL,
+    user_id    INTEGER NOT NULL,
+    kept_at    TEXT NOT NULL,
+    note       TEXT,
+    PRIMARY KEY (listing_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_kept_listings_user ON kept_listings(user_id, kept_at DESC);
+
+-- The verdict on one listing for one buyer's requirements.
+--
+-- It was being computed and thrown away: the title stage settles most of a
+-- search for nothing, inside the scoring pipeline, and the answer went nowhere.
+-- So a list of fifty offers looked exactly like the same list on Kleinanzeigen,
+-- with a 4x8 kit sitting between the matches.
+--
+-- Per (listing, search) rather than per listing: the same memory kit fits one
+-- buyer's requirements and fails another's.
+CREATE TABLE IF NOT EXISTS listing_fit (
+    listing_id TEXT NOT NULL,
+    search_id  INTEGER NOT NULL,
+    verdict    TEXT NOT NULL,          -- fit | no | unclear
+    reason     TEXT,
+    facts_json TEXT,                   -- what was read, so a verdict can be argued with
+    stage      TEXT NOT NULL,          -- title | description | photo
+    judged_at  TEXT NOT NULL,
+    PRIMARY KEY (listing_id, search_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_listing_fit_search ON listing_fit(search_id, verdict);
+
+-- What a listing has cost over time.
+--
+-- The scraper only ever added: a listing it had seen before was skipped
+-- outright, so a kit that fell from 130 EUR to 100 went unnoticed, and the
+-- photograph a later harvest could have filled in never arrived either. A
+-- price that moves is the most useful thing a watched search can tell you and
+-- it was being thrown away on every run.
+--
+-- One row per observed change, not per observation: a price that holds for
+-- three weeks is one row, not twenty-one.
+-- No primary key on (listing_id, seen_at): the timestamp has second
+-- resolution, so two changes inside one second collided and one was lost.
+-- record_price already refuses to write a price that has not moved, which is
+-- the guard that actually belongs here.
+CREATE TABLE IF NOT EXISTS listing_price_history (
+    listing_id TEXT NOT NULL,
+    price_eur  INTEGER,
+    seen_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_history_listing ON listing_price_history(listing_id, seen_at);

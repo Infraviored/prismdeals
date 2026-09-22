@@ -68,9 +68,23 @@ def playbook_for_url(url):
     return None
 
 
+# Keys that exist for reading text here, not for asking a model. They hold
+# compiled patterns and functions, and handing them on put a lambda into a
+# JSON dump: "Object of type function is not JSON serializable", which failed
+# sixteen listings at once.
+_LOCAL_ONLY = ("text_patterns", "absent_means")
+
+
 def extraction_fields(playbook):
-    """The field definitions the extraction prompt should ask for."""
-    return playbook.get("fields", [])
+    """The field definitions the extraction prompt should ask for.
+
+    A copy without the parts only this process understands, so the same field
+    can carry both how to read it from a title and how to ask a model for it.
+    """
+    return [
+        {k: v for k, v in field.items() if k not in _LOCAL_ONLY}
+        for field in playbook.get("fields", [])
+    ]
 
 
 def resolve_scoring_fields(playbook, intent_fields):
@@ -132,6 +146,14 @@ register(
                 "type": "text",
                 "label": "Hersteller",
                 "description": "Manufacturer, e.g. Apple, Lenovo, Dell.",
+                "text_patterns": [
+                    (
+                        r"\b(apple|macbook|lenovo|thinkpad|dell|latitude|hp|elitebook|"
+                        r"asus|acer|msi|medion|samsung|microsoft|surface|huawei|lg|"
+                        r"fujitsu|toshiba)\b",
+                        lambda m: m.group(1).lower(),
+                    )
+                ],
             },
             {
                 "id": "modelName",
@@ -161,6 +183,16 @@ register(
             },
             {
                 "id": "ramGb",
+                "text_patterns": [
+                    (
+                        r"\b(\d{1,3})\s*gb\s*(?:ddr\d?\s*)?(?:ram|arbeitsspeicher)",
+                        lambda m: int(m.group(1)),
+                    ),
+                    (
+                        r"(?:ram|arbeitsspeicher)\D{0,8}(\d{1,3})\s*gb",
+                        lambda m: int(m.group(1)),
+                    ),
+                ],
                 "type": "number",
                 "label": "Arbeitsspeicher",
                 "unit": "GB",
@@ -204,6 +236,16 @@ register(
                 "id": "hasFunctionalDefect",
                 "type": "boolean",
                 "label": "Funktionsdefekt",
+                "text_patterns": [
+                    (
+                        r"defe[ck]t|teildefekt|kaputt|bastler|ersatzteil|\bdead\b",
+                        lambda m: True,
+                    )
+                ],
+                # A seller who does not mention a fault is claiming there is
+                # none. The description stage looks closer, and a statement
+                # there always outranks this.
+                "absent_means": False,
                 "description": "yes only if something does not work as intended: failing battery, dead pixels, broken port, overheating, no boot. Purely cosmetic wear is NOT a functional defect.",
             },
             {
@@ -552,6 +594,190 @@ register(
                 "label": "Zustand",
                 "options": ["neuwertig", "gut", "gebraucht", "defekt"],
                 "description": "Overall condition. Use 'defekt' whenever any functional fault is admitted.",
+            },
+        ],
+    }
+)
+
+
+# --------------------------------------------------------------------------
+# Memory modules. What decides a purchase is printed on the sticker and, for
+# the honest listings, repeated in the title: how many sticks, how big each
+# one is, which generation, how fast, and at what latency. Those five together
+# are the product -- 32 GB as 4x8 and 32 GB as 2x16 are different things that
+# do not fit the same mainboard plan, and sellers of the wrong one write "32GB"
+# just as loudly.
+#
+# vision_weight is high because the part number on the module is the ground
+# truth. Reading CMW32GX4M2E3200C16 off a photograph settled a listing whose
+# description contradicted its own title.
+# --------------------------------------------------------------------------
+register(
+    {
+        "key": "computing/memory",
+        "version": 1,
+        "label": "Arbeitsspeicher",
+        "category_codes": ("c225",),
+        "dossier_relevant": False,
+        "vision_weight": "high",
+        "geo_constraint": "none",
+        "fields": [
+            {
+                "id": "brand",
+                "type": "text",
+                "label": "Hersteller",
+                "description": "Manufacturer, e.g. Corsair, G.Skill, Crucial.",
+            },
+            {
+                "id": "productLine",
+                "type": "text",
+                "label": "Produktlinie",
+                "description": "Line within the brand, e.g. Vengeance LPX, Vengeance RGB Pro, Ripjaws.",
+                "text_patterns": [
+                    (
+                        r"vengeance\s+(lpx|rgb\s*pro|rgb|pro|lp)\b",
+                        lambda m: "vengeance "
+                        + re.sub(r"\s+", " ", m.group(1).lower()),
+                    ),
+                    (
+                        r"\b(vengeance|ripjaws|trident|ballistix|fury)\b",
+                        lambda m: m.group(1).lower(),
+                    ),
+                ],
+            },
+            {
+                "id": "partNumber",
+                "type": "text",
+                "label": "Teilenummer",
+                "description": (
+                    "The module's part number, e.g. CMW32GX4M2E3200C16. It is printed on "
+                    "the sticker and encodes capacity, stick count, speed and latency, so "
+                    "it settles every other field at once."
+                ),
+            },
+            {
+                "id": "generation",
+                "type": "enum",
+                "label": "Generation",
+                "options": ["ddr3", "ddr4", "ddr5"],
+                "description": "Memory generation. DDR3 does not fit a DDR4 board.",
+                "text_patterns": [
+                    (r"\bddr\s?([345])l?\b", lambda m: "ddr" + m.group(1))
+                ],
+            },
+            {
+                "id": "formFactor",
+                "type": "enum",
+                "label": "Bauform",
+                "options": ["dimm", "sodimm"],
+                "description": "DIMM for desktops, SODIMM for laptops. Not interchangeable.",
+                "text_patterns": [(r"so-?dimm", lambda m: "sodimm")],
+                # Only the laptop form is ever written down. Requiring the
+                # desktop one to be stated left every clean title unclear.
+                "absent_means": "dimm",
+            },
+            {
+                "id": "stickCount",
+                "type": "number",
+                "label": "Anzahl Module",
+                "description": "How many sticks are in the offer. 2 and 4 are different products.",
+                # x, ×, * and the words: "4x8GB", "2×16", "4*8gb Set",
+                # "8Gb mal 4", "4 Times 8 GB" all occur in one page of results.
+                # No \b after the digit -- "4x8GB" is one token and a word
+                # boundary never falls between the 8 and the G.
+                "text_patterns": [
+                    (
+                        r"\b(\d)\s*(?:[x×*]|times|mal)\s*\d{1,2}\s*gb",
+                        lambda m: int(m.group(1)),
+                    ),
+                    (
+                        r"\b(\d)\s*(?:[x×*]|times|mal)\s*(?:16|8|4)\b",
+                        lambda m: int(m.group(1)),
+                    ),
+                    (r"\d{1,2}\s*gb\s*(?:mal|times)\s*(\d)", lambda m: int(m.group(1))),
+                ],
+            },
+            {
+                "id": "gbPerStick",
+                "type": "number",
+                "label": "GB je Modul",
+                "unit": "GB",
+                "description": "Capacity of one stick, not the total.",
+                "text_patterns": [
+                    (
+                        r"\b\d\s*(?:[x×*]|times|mal)\s*(\d{1,2})\s*gb",
+                        lambda m: int(m.group(1)),
+                    ),
+                    (
+                        r"\b\d\s*(?:[x×*]|times|mal)\s*(16|8|4)\b",
+                        lambda m: int(m.group(1)),
+                    ),
+                ],
+            },
+            {
+                "id": "totalGb",
+                "type": "number",
+                "label": "GB gesamt",
+                "unit": "GB",
+                "description": "Total capacity across all sticks in the offer.",
+            },
+            {
+                "id": "speedMhz",
+                "type": "number",
+                "label": "Taktung",
+                "unit": "MHz",
+                "description": "Rated speed in MHz, e.g. 3200. The seller's own test system's limit is not the module's speed.",
+                # "3200MHz" has no word boundary after the 0, which is how the
+                # commonest spelling went unread and cost a page fetch.
+                "text_patterns": [
+                    (
+                        r"\bddr\s?[345]l?\s*[- ]\s*(\d{4})(?!\d)",
+                        lambda m: int(m.group(1)),
+                    ),
+                    (r"\b(\d{4})\s*mhz", lambda m: int(m.group(1))),
+                ],
+            },
+            {
+                "id": "casLatency",
+                "type": "number",
+                "label": "CAS-Latenz",
+                "description": "The CL number, e.g. 16. Often written as the first of 16-20-20-38.",
+                "text_patterns": [
+                    (r"\bcl\s*(\d{1,2})(?!\d)", lambda m: int(m.group(1))),
+                    (r"\b(\d{2})-\d\d-\d\d-\d\d\b", lambda m: int(m.group(1))),
+                ],
+            },
+            {
+                "id": "isKit",
+                "type": "boolean",
+                "label": "Matched Kit",
+                "description": "Whether the sticks were sold together as one matched kit rather than assembled from singles.",
+            },
+            {
+                "id": "hasFunctionalDefect",
+                "type": "boolean",
+                "label": "Defekt",
+                "description": "Any stick reported faulty, partly faulty or untested-and-suspected.",
+                "text_patterns": [
+                    (r"defe[ck]t|teildefekt|kaputt|\bdead\b", lambda m: True)
+                ],
+                # A seller who does not mention a fault is claiming there is
+                # none. Taking that at face value is what a person does reading
+                # the list; the description stage looks closer.
+                "absent_means": False,
+            },
+            {
+                "id": "sealed",
+                "type": "boolean",
+                "label": "Ungeöffnet",
+                "description": "Still sealed or explicitly unused.",
+            },
+            {
+                "id": "conditionGrade",
+                "type": "enum",
+                "label": "Zustand",
+                "options": ["neuwertig", "gut", "gebraucht", "defekt"],
+                "description": "Overall condition as the seller describes it.",
             },
         ],
     }

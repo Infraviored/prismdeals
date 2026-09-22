@@ -58,6 +58,35 @@ ALT_LOCATION_RE = re.compile(
 PRICE_RE = re.compile(r">\s*([\d.]+)\s*€(\s*VB)?\s*<")
 GIVEAWAY_RE = re.compile(r">\s*Zu verschenken\s*<", re.I)
 
+# The card's own thumbnail. It was never read at all: every listing harvested
+# by this parser had an empty images field, and the rows showed a grey
+# placeholder where a photograph belongs.
+CARD_IMAGE_RE = re.compile(
+    r'<img[^>]+src="(https://img\.kleinanzeigen\.de/[^"]+)"', re.I
+)
+
+# Kleinanzeigen encodes the size in the URL. The card asks for $_2, which is a
+# list thumbnail and blurs at the 72 px the row draws it at, let alone in the
+# find sheet. $_59 is what the listing's own page uses for its main image.
+CARD_THUMB_RULE = re.compile(r"\?rule=\$_\d+\.(\w+)$")
+
+# Kleinanzeigen writes the Munich district names with a soft break inside them:
+# "Schwabing-<U+200B>West", "Berg-<U+200B>am-<U+200B>Laim". The character is a
+# zero-width space, so the name looks right on screen and compares wrong
+# everywhere else -- two rows that read identically do not group, a map cluster
+# splits in two, and a filter on the town misses half its rows. 489 of the 1266
+# stored listings carry one. Where the entity lost its terminating semicolon the
+# page ships the literal text "&#8203" instead, which BeautifulSoup leaves
+# standing; 56 rows show it.
+_INVISIBLE = {ord(c): None for c in "\u200b\u200c\u200d\ufeff"}
+
+
+def clean_text(value):
+    """Decodes entities and drops the invisible characters the page injects."""
+    if not value:
+        return value
+    return html_module.unescape(value).translate(_INVISIBLE).strip()
+
 
 EMPTY_RE = re.compile(
     r"Es wurden keine Ergebnisse|leider keine Ergebnisse", re.IGNORECASE
@@ -145,7 +174,7 @@ def _title_and_description(segment):
         except ValueError:
             continue
         if block.get("title"):
-            return block.get("title"), block.get("description")
+            return clean_text(block.get("title")), clean_text(block.get("description"))
     return None, None
 
 
@@ -159,14 +188,24 @@ def parse(page_html):
         match = ALT_LOCATION_RE.search(segment)
         if match:
             state, location = (
-                match.group(1),
-                html_module.unescape(match.group(2)).strip(),
+                clean_text(match.group(1)),
+                clean_text(match.group(2)),
             )
 
+        image = None
+        image_match = CARD_IMAGE_RE.search(segment)
+        if image_match:
+            image = CARD_THUMB_RULE.sub(r"?rule=$_59.\1", image_match.group(1))
+
         price = None
+        negotiable = False
         price_match = PRICE_RE.search(segment)
         if price_match:
             price = int(price_match.group(1).replace(".", ""))
+            # "60 € VB" and "60 €" are different offers. The regex has always
+            # captured the VB and the parser has always dropped it, so the row
+            # showed a fixed price where the seller invited an offer.
+            negotiable = bool(price_match.group(2))
         elif GIVEAWAY_RE.search(segment):
             price = 0
 
@@ -177,6 +216,8 @@ def parse(page_html):
                 "title": title,
                 "description": description,
                 "price_eur": price,
+                "negotiable": negotiable,
+                "image": image,
                 "location": location,
                 "state": state,
                 "source": "kleinanzeigen",
@@ -207,6 +248,9 @@ class CanonicalListing:
     place: Optional[str] = None
     state: Optional[str] = None
     detailed_description: str = ""
+    # The card's own photograph. One is enough for a row and for a first look;
+    # the rest arrive with the detail page, when there is a reason to fetch it.
+    images: Optional[list] = None
     llm_processed: bool = False
     last_seen_at: Optional[str] = None
     delisted_at: Optional[str] = None
@@ -226,6 +270,7 @@ class CanonicalListing:
             "url": self.url,
             "short_description": self.short_description,
             "detailed_description": self.detailed_description,
+            "images": self.images or [],
             "llm_processed": self.llm_processed,
             "last_seen_at": self.last_seen_at,
             "delisted_at": self.delisted_at,
@@ -254,7 +299,9 @@ def as_canonical(parsed) -> CanonicalListing:
     elif price_eur == 0:
         price_str = "Zu verschenken"
     elif price_eur is not None:
-        price_str = f"{price_eur} €"
+        price_str = (
+            f"{price_eur} € VB" if parsed.get("negotiable") else f"{price_eur} €"
+        )
     else:
         price_str = ""
 
@@ -271,6 +318,7 @@ def as_canonical(parsed) -> CanonicalListing:
         price_eur=price_eur,
         location=loc_str,
         place=parsed.get("place") or parsed.get("location"),
+        images=[parsed["image"]] if parsed.get("image") else [],
         state=state,
         url=parsed.get("url") or "",
         short_description=parsed.get("description")
