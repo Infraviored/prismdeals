@@ -591,6 +591,17 @@ register(
                 "type": "text",
                 "label": "Produktlinie",
                 "description": "Line within the brand, e.g. Vengeance LPX, Vengeance RGB Pro, Ripjaws.",
+                "text_patterns": [
+                    (
+                        r"vengeance\s+(lpx|rgb\s*pro|rgb|pro|lp)\b",
+                        lambda m: "vengeance "
+                        + re.sub(r"\s+", " ", m.group(1).lower()),
+                    ),
+                    (
+                        r"\b(vengeance|ripjaws|trident|ballistix|fury)\b",
+                        lambda m: m.group(1).lower(),
+                    ),
+                ],
             },
             {
                 "id": "partNumber",
@@ -608,6 +619,9 @@ register(
                 "label": "Generation",
                 "options": ["ddr3", "ddr4", "ddr5"],
                 "description": "Memory generation. DDR3 does not fit a DDR4 board.",
+                "text_patterns": [
+                    (r"\bddr\s?([345])l?\b", lambda m: "ddr" + m.group(1))
+                ],
             },
             {
                 "id": "formFactor",
@@ -615,18 +629,47 @@ register(
                 "label": "Bauform",
                 "options": ["dimm", "sodimm"],
                 "description": "DIMM for desktops, SODIMM for laptops. Not interchangeable.",
+                "text_patterns": [(r"so-?dimm", lambda m: "sodimm")],
+                # Only the laptop form is ever written down. Requiring the
+                # desktop one to be stated left every clean title unclear.
+                "absent_means": "dimm",
             },
             {
                 "id": "stickCount",
                 "type": "number",
                 "label": "Anzahl Module",
                 "description": "How many sticks are in the offer. 2 and 4 are different products.",
+                # x, ×, * and the words: "4x8GB", "2×16", "4*8gb Set",
+                # "8Gb mal 4", "4 Times 8 GB" all occur in one page of results.
+                # No \b after the digit -- "4x8GB" is one token and a word
+                # boundary never falls between the 8 and the G.
+                "text_patterns": [
+                    (
+                        r"\b(\d)\s*(?:[x×*]|times|mal)\s*\d{1,2}\s*gb",
+                        lambda m: int(m.group(1)),
+                    ),
+                    (
+                        r"\b(\d)\s*(?:[x×*]|times|mal)\s*(?:16|8|4)\b",
+                        lambda m: int(m.group(1)),
+                    ),
+                    (r"\d{1,2}\s*gb\s*(?:mal|times)\s*(\d)", lambda m: int(m.group(1))),
+                ],
             },
             {
                 "id": "gbPerStick",
                 "type": "number",
                 "label": "GB je Modul",
                 "description": "Capacity of one stick, not the total.",
+                "text_patterns": [
+                    (
+                        r"\b\d\s*(?:[x×*]|times|mal)\s*(\d{1,2})\s*gb",
+                        lambda m: int(m.group(1)),
+                    ),
+                    (
+                        r"\b\d\s*(?:[x×*]|times|mal)\s*(16|8|4)\b",
+                        lambda m: int(m.group(1)),
+                    ),
+                ],
             },
             {
                 "id": "totalGb",
@@ -639,12 +682,25 @@ register(
                 "type": "number",
                 "label": "Taktung",
                 "description": "Rated speed in MHz, e.g. 3200. The seller's own test system's limit is not the module's speed.",
+                # "3200MHz" has no word boundary after the 0, which is how the
+                # commonest spelling went unread and cost a page fetch.
+                "text_patterns": [
+                    (
+                        r"\bddr\s?[345]l?\s*[- ]\s*(\d{4})(?!\d)",
+                        lambda m: int(m.group(1)),
+                    ),
+                    (r"\b(\d{4})\s*mhz", lambda m: int(m.group(1))),
+                ],
             },
             {
                 "id": "casLatency",
                 "type": "number",
                 "label": "CAS-Latenz",
                 "description": "The CL number, e.g. 16. Often written as the first of 16-20-20-38.",
+                "text_patterns": [
+                    (r"\bcl\s*(\d{1,2})(?!\d)", lambda m: int(m.group(1))),
+                    (r"\b(\d{2})-\d\d-\d\d-\d\d\b", lambda m: int(m.group(1))),
+                ],
             },
             {
                 "id": "isKit",
@@ -657,6 +713,13 @@ register(
                 "type": "boolean",
                 "label": "Defekt",
                 "description": "Any stick reported faulty, partly faulty or untested-and-suspected.",
+                "text_patterns": [
+                    (r"defe[ck]t|teildefekt|kaputt|\bdead\b", lambda m: True)
+                ],
+                # A seller who does not mention a fault is claiming there is
+                # none. Taking that at face value is what a person does reading
+                # the list; the description stage looks closer.
+                "absent_means": False,
             },
             {
                 "id": "sealed",

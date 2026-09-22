@@ -287,6 +287,47 @@ async function main() {
     assert(released.status === 200, `release status ${released.status}`);
     assert((await request('/api/kept')).data.kept.length === 0, 'released');
 
+    console.log('--- TEST 12: what the buyer wants, beyond what the site can filter ---');
+    // Kleinanzeigen can narrow to "PC accessories, memory, up to 150 EUR". It
+    // cannot say "two sticks of sixteen gigabytes at 3200 CL16", and that is
+    // the difference between 84 offers and the nine worth opening.
+    const none = await request('/api/searches/101/requirements');
+    assert(none.status === 200, `status ${none.status}`);
+    assert(none.data.requirements.length === 0, 'nothing required to begin with');
+
+    const wants = [
+      { id: 'stickCount', importance: 'high', buyer_wants: { min: 2, max: 2 } },
+      { id: 'speedMhz', importance: 'high', buyer_wants: { min: 3200 } },
+      { id: 'generation', importance: 'high', buyer_wants: { preferred: ['ddr4'] } },
+    ];
+    const saved = await request('/api/searches/101/requirements', {
+      method: 'PUT', body: JSON.stringify({ requirements: wants }),
+    });
+    assert(saved.status === 200, `save status ${saved.status}`);
+    assert(saved.data.knowledge_set_id, 'a knowledge set was created to hold them');
+
+    const back = await request('/api/searches/101/requirements');
+    assert(back.data.requirements.length === 3, `three requirements, got ${back.data.requirements.length}`);
+    assert(back.data.requirements[1].buyer_wants.min === 3200, 'values survive the round trip');
+
+    // The pipeline reads these as its intent, so they have to be in the shape
+    // scoring.py understands. An operator it does not know is ignored in
+    // silence -- a requirement that looks set and does nothing.
+    const nonsense = await request('/api/searches/101/requirements', {
+      method: 'PUT',
+      body: JSON.stringify({ requirements: [{ id: 'speedMhz', buyer_wants: { faster_than: 3200 } }] }),
+    });
+    assert(nonsense.status === 400, `an unknown operator must be refused, got ${nonsense.status}`);
+    assert(/faster_than/.test(nonsense.data.error), `and named: ${nonsense.data.error}`);
+
+    const unchanged = await request('/api/searches/101/requirements');
+    assert(unchanged.data.requirements.length === 3, 'a refused write changes nothing');
+
+    const ghostSearch = await request('/api/searches/99999/requirements', {
+      method: 'PUT', body: JSON.stringify({ requirements: wants }),
+    });
+    assert(ghostSearch.status === 404, `unknown search should 404, got ${ghostSearch.status}`);
+
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
   } finally {
     server.kill();

@@ -133,6 +133,20 @@ def process_listing(
     if require_intent and not intent.get("fields"):
         return Outcome(listing_id, skipped="knowledge set defines no fields")
 
+    # What the seller already wrote decides most of them, for nothing.
+    #
+    # A title like "32GB DDR3 CORSAIR VENGEANCE (4x8GB)" states four facts, and
+    # three of them fail a buyer who wants two DDR4 sticks. Asking a model about
+    # that title would return the same four at a thousand times the cost. Of 50
+    # stored Corsair offers, 32 are settled here and never reach extraction.
+    import text_facts
+
+    wanted = intent.get("fields") or []
+    if wanted:
+        verdict, _stated, why = text_facts.judge(playbook, wanted, listing["title"])
+        if verdict == "reject":
+            return Outcome(listing_id, playbook["key"], skipped=f"title says {why[0]}")
+
     result = get_or_extract(
         conn,
         listing,
