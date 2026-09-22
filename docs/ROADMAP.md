@@ -4,6 +4,9 @@ Stand: 11. August 2026. Ausführliche Fassung mit Marktanalyse, Kategoriebewertu
 und Fallbeispielen als Artifact:
 <https://claude.ai/code/artifact/67a9de19-ccf6-496e-8067-17ac8dd27994>
 
+> **Was davon heute wirklich läuft**, gezählt an der Live-Datenbank: [`backend-bestand.md`](backend-bestand.md).
+> **Wie Bewertung je Kategorie verschieden sein muss** (Spezifikation, Preis-Leistung, Modellprüfung, Geschmack): [`plan-generische-suche.md`](plan-generische-suche.md).
+
 ---
 
 ## Das Problem
