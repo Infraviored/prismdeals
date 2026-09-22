@@ -83,6 +83,29 @@ def contradicts(wants, value):
     return False
 
 
+def judge_facts(intent_fields, facts):
+    """Verdict on facts that are the evidence, not a prior.
+
+    Distinct from judging text against something already settled: there, a
+    contradiction is a doubt, because the earlier stage may have been reading
+    the seller's mainboard rather than the memory. Here the facts came from a
+    model that read the whole listing, so a miss is a miss.
+    """
+    reasons = []
+    for field in intent_fields:
+        value = facts.get(field.get("id"))
+        if value is None:
+            continue
+        if contradicts(field.get("buyer_wants") or {}, value):
+            return "reject", facts, [f"{field['id']} is {value}"]
+        reasons.append(f"{field['id']} = {value}")
+
+    missing = [f["id"] for f in intent_fields if f["id"] not in facts]
+    if missing:
+        return "unclear", facts, reasons
+    return "candidate", facts, reasons
+
+
 def judge(playbook, intent_fields, text, settled=None):
     """Verdict on one piece of text against the buyer's requirements.
 

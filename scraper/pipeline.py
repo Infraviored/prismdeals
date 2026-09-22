@@ -27,7 +27,7 @@ from extraction import get_or_extract, score_against_intent
 logger = logging.getLogger(__name__)
 
 LISTING_QUERY = """
-    SELECT l.id, l.title, l.detailed_description, l.details,
+    SELECT l.id, l.title, l.detailed_description, l.details, l.search_id,
            s.url AS search_url, k.item_json, k.expert_knowledge
     FROM listings l
     JOIN searches s ON l.search_id = s.id
@@ -177,6 +177,16 @@ def process_listing(
     )
 
     _persist(conn, listing_id, result.facts, scoring_result.score)
+
+    # The model has now read the whole listing, so its facts replace what the
+    # title reader could only guess at. Leaving both meant a score of 61 sitting
+    # beside "passt nicht", which tells a buyer nothing.
+    import fit
+
+    if listing.get("search_id"):
+        fit.from_extracted(
+            conn, listing_id, listing["search_id"], playbook, result.facts, wanted
+        )
     return Outcome(
         listing_id, playbook["key"], scoring_result.score, result.from_cache, key
     )

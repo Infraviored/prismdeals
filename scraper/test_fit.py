@@ -142,3 +142,93 @@ def test_a_category_with_no_playbook_says_so(conn):
     add(conn, "a", "irgendwas")
     result = fit.judge_search(conn, 1)
     assert "error" in result and "playbook" in result["error"]
+
+
+def test_the_model_s_reading_replaces_the_title_s_guess(conn):
+    """Two judgements that disagree are worse than one.
+
+    The pipeline scored a listing 61 while the title stage called it "passt
+    nicht", and a buyer reading both learns nothing. Once a model has read the
+    whole listing, its facts are the better evidence.
+    """
+    import playbooks
+
+    add(conn, "a", "Corsair Vengeance LPX 32GB (2x16GB)")
+    fit.judge_search(conn, 1)
+    assert (
+        conn.execute("SELECT verdict FROM listing_fit WHERE listing_id='a'").fetchone()[
+            0
+        ]
+        == "unclear"
+    )
+
+    extracted = {
+        "criteria": {
+            "stickCount": {"value": 2},
+            "gbPerStick": {"value": 16},
+            # The model answers in the listing's own words. Compared as written,
+            # "DDR4" never matched the playbook's "ddr4" and the requirement
+            # went silently unsatisfied.
+            "generation": {"value": "DDR4"},
+            "speedMhz": {"value": 3200},
+            "casLatency": {"value": 16},
+            "hasFunctionalDefect": {"value": False},
+        }
+    }
+    verdict = fit.from_extracted(
+        conn,
+        "a",
+        1,
+        playbooks.get_playbook("computing/memory"),
+        extracted,
+        WANTS["fields"],
+    )
+    assert verdict == "fit"
+
+    row = conn.execute(
+        "SELECT verdict, stage FROM listing_fit WHERE listing_id='a'"
+    ).fetchone()
+    assert row == ("fit", "model"), "and it says the model is what answered"
+
+
+def test_a_fact_sheet_that_contradicts_the_requirements_is_a_no(conn):
+    import playbooks
+
+    add(conn, "a", "Corsair Vengeance LPX 32GB (2x16GB)")
+    extracted = {
+        "criteria": {
+            "stickCount": {"value": 2},
+            "gbPerStick": {"value": 16},
+            "generation": {"value": "DDR4"},
+            "speedMhz": {"value": 2666},
+            "casLatency": {"value": 16},
+            "hasFunctionalDefect": {"value": False},
+        }
+    }
+    verdict = fit.from_extracted(
+        conn,
+        "a",
+        1,
+        playbooks.get_playbook("computing/memory"),
+        extracted,
+        WANTS["fields"],
+    )
+    assert verdict == "no"
+
+
+def test_unknown_and_missing_values_are_not_facts(conn):
+    import playbooks
+
+    add(conn, "a", "Corsair Vengeance")
+    extracted = {
+        "criteria": {"speedMhz": {"value": None}, "generation": {"value": "unknown"}}
+    }
+    verdict = fit.from_extracted(
+        conn,
+        "a",
+        1,
+        playbooks.get_playbook("computing/memory"),
+        extracted,
+        WANTS["fields"],
+    )
+    assert verdict == "unclear"

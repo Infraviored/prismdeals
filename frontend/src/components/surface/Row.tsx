@@ -198,6 +198,15 @@ export const Row: React.FC<RowProps> = ({
             <span className="truncate text-[#9FB3B0]">
               {summariseFit(listing.fit)}
             </span>
+            {/* The number only where it adds something. For a match the answer
+                is yes and the price decides; for a rejection it is no. A score
+                beside either is a second scale that can only disagree with the
+                first. */}
+            {listing.fit.verdict === 'unclear' && typeof listing.niceness_score === 'number' && (
+              <span className="shrink-0 tabular-nums text-[#9FB3B0]/70">
+                {listing.niceness_score}/100
+              </span>
+            )}
           </div>
         ) : (
         <div className="text-2xs text-[#9FB3B0] truncate flex items-center gap-1.5 mt-0.5">

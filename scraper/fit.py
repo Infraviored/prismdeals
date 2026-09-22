@@ -46,6 +46,46 @@ def intent_for(conn, search_id):
         return []
 
 
+def record(conn, listing_id, search_id, verdict, reason, facts, stage):
+    """Writes one verdict. Public because the pipeline has a better one.
+
+    Two judgements that disagree are worse than one: a score of 61 beside
+    "passt nicht" tells a buyer nothing. Once the model has read the whole
+    listing, its facts replace what the title reader guessed at, and the
+    verdict is rewritten from them.
+    """
+    _store(conn, listing_id, search_id, verdict, reason, facts, stage)
+
+
+def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted):
+    """Re-judges a listing from its fact sheet, once a model has read it.
+
+    `extracted` is the fact sheet's shape -- {"criteria": {field: {"value":…}}}
+    -- so it is flattened to the plain mapping the requirements compare against.
+    """
+    criteria = (extracted or {}).get("criteria") or {}
+    facts = {}
+    for field_id, entry in criteria.items():
+        value = entry.get("value") if isinstance(entry, dict) else entry
+        if value is None or value == "unknown":
+            continue
+        # The model answers an enum in the words of the listing; the playbook's
+        # options are lowercase. Compared as written, "DDR4" never matched
+        # "ddr4" and the requirement silently went unsatisfied.
+        facts[field_id] = value.lower() if isinstance(value, str) else value
+
+    # Absence still answers for the fields only ever written when true, so the
+    # playbook's own rule applies before the comparison.
+    for field in playbook.get("fields", []):
+        if "absent_means" in field and field["id"] not in facts:
+            facts[field["id"]] = field["absent_means"]
+
+    verdict, known, reasons = text_facts.judge_facts(wanted, facts)
+    stored = {"candidate": "fit", "reject": "no", "unclear": "unclear"}[verdict]
+    _store(conn, listing_id, search_id, stored, "; ".join(reasons[:3]), known, "model")
+    return stored
+
+
 def _store(conn, listing_id, search_id, verdict, reason, facts, stage):
     conn.execute(
         """INSERT INTO listing_fit
