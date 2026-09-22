@@ -29,7 +29,7 @@ SCREENS = [
     ("neue-suche", "create-campaign"),
     # The sheet a buying decision is made on. No URL reaches it, so it was
     # never measured and never audited.
-    ("fund", "dashboard?campaignId=1", '[data-testid="listing-row"]'),
+    ("fund", "dashboard?campaignId=7", '[data-testid="listing-row"]'),
     ("gemerkt", "kept"),
 ]
 

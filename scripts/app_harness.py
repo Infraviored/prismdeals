@@ -16,7 +16,7 @@ Use it as a context manager:
 
 import contextlib
 import os
-import shutil
+import sqlite3
 import socket
 import subprocess
 import sys
@@ -157,7 +157,18 @@ def running_app(width, height=900):
     """Yields a logged-in App against a copy of the live database."""
     port = free_port()
     db_path = f"/tmp/prismdeals-harness-{port}.db"
-    shutil.copy(db_schema.default_path(), db_path)
+
+    # VACUUM INTO, not a file copy. The database runs in WAL mode and its -wal
+    # file is nearly as large as the database itself, so copying only the .db
+    # loses every recent write. A screen measured that way shows a search that
+    # has fifty listings as empty -- which is exactly what happened, silently,
+    # to every measurement and audit run before this line was written.
+    source = sqlite3.connect(f"file:{db_schema.default_path()}?mode=ro", uri=True)
+    try:
+        source.execute("VACUUM INTO ?", (db_path,))
+    finally:
+        source.close()
+
     make_test_user(db_path)
 
     env = dict(os.environ, PRISMDEALS_DB=db_path, PRISMDEALS_PORT=str(port))

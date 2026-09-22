@@ -12,6 +12,7 @@ SCREENS = [
     ("funde-laptops", "dashboard?campaignId=1"),
     ("funde-matratze", "dashboard?campaignId=5"),
     ("funde-drucker", "dashboard?campaignId=6"),
+    ("funde-corsair", "dashboard?campaignId=7"),
     ("einrichten", "edit?campaignId=6"),
     ("app", "settings"),
     ("neue-suche", "create-campaign"),
@@ -27,9 +28,12 @@ const candidate = main.querySelector(
   'label, input, h1, h2, [data-testid="listing-row"], [data-testid="search-row"]'
 );
 const rect = candidate ? candidate.getBoundingClientRect() : main.getBoundingClientRect();
-const buttons = document.querySelectorAll(
+// Buttons that are chrome, not content. Every row carries a keep mark, so
+// counting those made a fifty-row list read as fifty-nine controls when the
+// bar holds eight.
+const buttons = [...document.querySelectorAll(
   'button, [role="button"], [data-testid="surface-pill"]'
-);
+)].filter(b => !b.closest('[data-testid="listing-row"], [data-testid="search-row"]'));
 const text = document.body.innerText || '';
 const words = text.trim().split(/\\s+/).filter(w => w.length > 0);
 const bar = document.querySelector('[data-testid="surface-bar"], header');
