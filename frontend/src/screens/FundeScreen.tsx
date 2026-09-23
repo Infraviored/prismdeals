@@ -226,14 +226,12 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
                 ? rawInterval / 60
                 : rawInterval;
 
-              let text = '';
-              if (intervalHours <= 0) {
-                text = t('surface.freshnessOnce', { when: f.label });
-              } else if (intervalHours === 1) {
-                text = t('surface.freshnessHourly', { when: f.label });
-              } else {
-                text = t('surface.freshnessInterval', { when: f.label, interval: intervalHours });
-              }
+              const text =
+                intervalHours <= 0
+                  ? t('surface.freshnessOnce', { when: f.label })
+                  : intervalHours === 1
+                  ? t('surface.freshnessHourly', { when: f.label })
+                  : t('surface.freshnessInterval', { when: f.label, interval: intervalHours });
               return <p className="freshness" id="freshness" data-testid="freshness">{text}</p>;
             })()}
           </header>

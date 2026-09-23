@@ -48,22 +48,30 @@ export interface RowProps {
 
 function renderSpecs(facts: Record<string, unknown> = {}): React.ReactNode[] {
   const chips: React.ReactNode[] = [];
-  if (facts.stickCount && facts.gbPerStick) {
+  const stickCount = Number(facts.stickCount);
+  const gbPerStick = Number(facts.gbPerStick);
+  if (!isNaN(stickCount) && stickCount > 0 && !isNaN(gbPerStick) && gbPerStick > 0) {
     chips.push(
       <span key="sticks" className="tabular-nums">
-        {facts.stickCount as number}×{facts.gbPerStick as number} GB
+        {stickCount}×{gbPerStick} GB
       </span>
     );
   }
-  if (facts.generation) {
+  const genRaw = facts.generation != null ? String(facts.generation).trim() : '';
+  if (genRaw && genRaw.toLowerCase() !== 'undefined' && genRaw.toLowerCase() !== 'null') {
+    const speedRaw = facts.speedMhz != null ? String(facts.speedMhz).trim() : '';
+    const speed = speedRaw && speedRaw.toLowerCase() !== 'undefined' && speedRaw.toLowerCase() !== 'null'
+      ? `-${speedRaw}`
+      : '';
     chips.push(
       <span key="gen">
-        {String(facts.generation).toUpperCase()}{facts.speedMhz ? `-${facts.speedMhz}` : ''}
+        {genRaw.toUpperCase()}{speed}
       </span>
     );
   }
-  if (facts.casLatency) {
-    chips.push(<span key="cl">CL{facts.casLatency as number}</span>);
+  const cl = Number(facts.casLatency);
+  if (!isNaN(cl) && cl > 0) {
+    chips.push(<span key="cl">CL{cl}</span>);
   }
   return chips;
 }

@@ -97,13 +97,14 @@ export const FundeAside: React.FC<FundeAsideProps> = ({ overview, bestListing })
     }
   } else {
     const bestCity = bestListing?.location ? formatLocation(bestListing.location) : '';
+    const cityStr = bestCity ? ` in ${bestCity}` : '';
     lead = bestListing?.is_deal && typeof bestListing.price_eur === 'number'
-      ? `${market.count} Angebote im Markt. Für ${bestListing.price_eur} €${bestCity ? ` in ${bestCity}` : ''} ist dieses Angebot das günstigste passende deutlich unter dem Median.`
-      : `${market.count} Angebote im Markt mit einem Median von ${medianPrice} €.`;
+      ? t('surface.singleBestBelowMedian', { count: market.count, price: bestListing.price_eur, city: cityStr })
+      : t('surface.marketCountWithMedian', { count: market.count, median: medianPrice });
   }
 
   return (
-    <aside className="aside" aria-label="Markt und Anforderungen">
+    <aside className="aside" aria-label={t('surface.marketAndRequirements')}>
       {/* 1. Markt Panel */}
       <section className="panel" id="market">
         <h2>{t('surface.market')}</h2>
@@ -113,7 +114,7 @@ export const FundeAside: React.FC<FundeAsideProps> = ({ overview, bestListing })
           <div
             className="hist"
             role="img"
-            aria-label={`Preisverteilung von ${minPrice} € bis ${maxPrice} €, Median ${medianPrice} €`}
+            aria-label={t('surface.priceDistributionAria', { min: minPrice, max: maxPrice, median: medianPrice })}
           >
             <div className="bars">
               {bins.map((b, idx) => (

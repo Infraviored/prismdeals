@@ -38,9 +38,23 @@ export const FundeBestHero: React.FC<FundeBestHeroProps> = ({
   // Facts specs
   const facts = (listing.fit?.facts || {}) as Record<string, unknown>;
   const chips: string[] = [];
-  if (facts.stickCount && facts.gbPerStick) chips.push(`${facts.stickCount}×${facts.gbPerStick} GB`);
-  if (facts.generation) chips.push(String(facts.generation).toUpperCase() + (facts.speedMhz ? `-${facts.speedMhz}` : ''));
-  if (facts.casLatency) chips.push(`CL${facts.casLatency}`);
+  const stickCount = Number(facts.stickCount);
+  const gbPerStick = Number(facts.gbPerStick);
+  if (!isNaN(stickCount) && stickCount > 0 && !isNaN(gbPerStick) && gbPerStick > 0) {
+    chips.push(`${stickCount}×${gbPerStick} GB`);
+  }
+  const genRaw = facts.generation != null ? String(facts.generation).trim() : '';
+  if (genRaw && genRaw.toLowerCase() !== 'undefined' && genRaw.toLowerCase() !== 'null') {
+    const speedRaw = facts.speedMhz != null ? String(facts.speedMhz).trim() : '';
+    const speed = speedRaw && speedRaw.toLowerCase() !== 'undefined' && speedRaw.toLowerCase() !== 'null'
+      ? `-${speedRaw}`
+      : '';
+    chips.push(genRaw.toUpperCase() + speed);
+  }
+  const cl = Number(facts.casLatency);
+  if (!isNaN(cl) && cl > 0) {
+    chips.push(`CL${cl}`);
+  }
 
   // Price history drop check
   const history = listing.price_history || [];
