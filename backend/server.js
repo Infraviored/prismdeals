@@ -430,6 +430,12 @@ app.get('/api/listings', async (req, res) => {
     const isPaginated =
       limitParam !== undefined || offsetParam !== undefined || sort !== undefined || q !== undefined;
 
+    // A listing belongs to every search that found it, not only to the one
+    // that found it first. l.search_id is that first finder and never changes,
+    // so scoping on it alone made a search that had just harvested fifty rows
+    // answer with none of them, because another search had seen them first.
+    // The same holds for the verdict: it is the best one among the searches in
+    // view, never the first finder's, which may belong to another campaign.
     let scopeSearchIds = null;
     let scopeCampaign = null;
 
@@ -483,6 +489,10 @@ app.get('/api/listings', async (req, res) => {
       whereParams.push(Number(maxPrice));
     }
 
+    // Filtered here, not in the browser. Hiding rejected rows from the fifty
+    // already loaded and calling the remainder the answer is the same mistake
+    // the deals filter made: it told a buyer a fifty-row search held twelve
+    // matches when it held fifty-three.
     const verdict = req.query.verdict;
     const fitOnly = req.query.fitOnly === '1' || req.query.fitOnly === 'true' || Boolean(verdict);
     const verdictCol = scopeSearchIds ? 'bs.fit_verdict' : 'fit.verdict';
@@ -496,11 +506,17 @@ app.get('/api/listings', async (req, res) => {
       whereConditions.push(`${verdictCol} IS NOT NULL AND ${verdictCol} <> 'no'`);
     }
 
+    // Deals only. The family endpoint has had this since the filter moved to
+    // the server; here it was silently ignored, so pressing the pill on an
+    // ordinary search did nothing at all and said nothing about it.
     if (req.query.dealsOnly === '1' || req.query.dealsOnly === 'true') {
       const targetSearchIds = scopeSearchIds
         ? scopeSearchIds
         : (await query('SELECT id FROM searches')).map(r => Number(r.id));
       const dealIds = await dealListingIds(query, targetSearchIds);
+      // An empty result is still an answer of the same shape. Returning early
+      // here meant an unparameterised caller got an array on most days and an
+      // object on the day its search held no deals, and `data.map` threw.
       whereConditions.push(
         dealIds.length ? `l.id IN (${dealIds.map(() => '?').join(',')})` : '1 = 0'
       );
