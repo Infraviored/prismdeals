@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { RadiusField } from '../components/RadiusField';
+import { RadiusChoice } from '../components/RadiusChoice';
+import { MaxPriceField } from '../components/MaxPriceField';
 import CategoryFilters from '../components/CategoryFilters';
 import { Bar } from '../components/surface';
 import PlaceInput, { type Place } from '../components/PlaceInput';
-import ModelPillGroup from '../components/ModelPillGroup';
+import SearchTermsField from '../components/SearchTermsField';
 import { RequirementsSheet } from './RequirementsSheet';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign, SearchTarget, SearchFamilyTerm } from '../types';
 import { composeSearchUrl, decomposeSearchUrl, slugify } from '../utils/searchUrl';
+import { broadenQuery } from '../utils/searchTerms';
 
 export interface EditScreenProps {
   campaign: Campaign | undefined;
@@ -88,11 +90,13 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           if (data.name) setName(data.name);
           if (Array.isArray(data.terms)) {
             setTerms(
-              data.terms.map((t: { id?: number; term: string; label?: string; enabled?: boolean | number }) => ({
+              data.terms.map((t: Omit<SearchFamilyTerm, 'enabled'> & { enabled?: boolean | number }) => ({
                 id: t.id,
                 term: t.term,
                 label: t.label || t.term,
                 enabled: t.enabled !== 0 && t.enabled !== false,
+                listings: t.listings,
+                fit_listings: t.fit_listings,
               }))
             );
           }
@@ -104,6 +108,20 @@ export const EditScreen: React.FC<EditScreenProps> = ({
       if (activeSearches.length > 0 && activeSearches[0].url) {
         applyDecomposedUrl(activeSearches[0].url);
       }
+      // A campaign of plain searches already asks Kleinanzeigen something. Show
+      // those terms, so saving converts them instead of replacing them with the
+      // hunt's name -- which is how "corsair vengeance 32gb" (50 found) once
+      // became "...-2x16-ddr4-3200-cl16" (almost nothing).
+      const seen = new Set<string>();
+      const existing: SearchFamilyTerm[] = [];
+      for (const search of activeSearches) {
+        const query = search.url ? decomposeSearchUrl(search.url)?.query : null;
+        if (query && !seen.has(query)) {
+          seen.add(query);
+          existing.push({ term: query, label: query.replace(/-/g, ' '), enabled: true });
+        }
+      }
+      if (existing.length > 0) setTerms(existing);
     }
   }, [campaign, searches, applyDecomposedUrl]);   
 
@@ -160,6 +178,19 @@ export const EditScreen: React.FC<EditScreenProps> = ({
     setSaving(true);
     setSaveError(null);
 
+    // Never the hunt's name as it stands: it is the narrow wish, and a search
+    // for the narrow wish misses what sellers describe more loosely.
+    const fallback = broadenQuery(trimmedName) || trimmedName;
+    const effectiveTerms =
+      terms.length > 0
+        ? terms.map((t) => ({
+            ...(t.id ? { id: t.id } : {}),
+            term: t.term,
+            label: t.label || t.term,
+            enabled: true,
+          }))
+        : [{ term: slugify(fallback), label: fallback, enabled: true }];
+
     const composedBaseUrl = composeSearchUrl({
       locationSlug: place ? slugify(place.name) : locationSlug,
       // Only a resolved Kleinanzeigen location id, never a postal code: they
@@ -169,20 +200,13 @@ export const EditScreen: React.FC<EditScreenProps> = ({
       locationId,
       radius: place || locationId ? radius : null,
       maxPrice,
-      query: trimmedName ? slugify(trimmedName) : undefined,
+      // The family replaces this per term; the first term keeps the stored
+      // base URL a search someone could actually run.
+      query: effectiveTerms[0]?.term ? slugify(effectiveTerms[0].term) : undefined,
       category: categoryId,
       attributes,
     });
 
-    const effectiveTerms =
-      terms.length > 0
-        ? terms.map((t) => ({
-            ...(t.id ? { id: t.id } : {}),
-            term: t.term,
-            label: t.label || t.term,
-            enabled: true,
-          }))
-        : [{ term: slugify(trimmedName), label: trimmedName, enabled: true }];
 
     try {
       const isUpdate = Boolean(campaign?.family_id);
@@ -267,16 +291,14 @@ export const EditScreen: React.FC<EditScreenProps> = ({
             placeholder={t('surface.whatPlaceholder')}
             className="w-full px-3.5 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] placeholder-[#8FA6A1]/40 focus:outline-none focus:border-[#8FA6A1] text-sm transition-colors"
           />
-
-          {/* Models as pills */}
-          <ModelPillGroup
-            terms={terms}
-            onAdd={handleAddModel}
-            onRemove={handleRemoveModel}
-            addPlaceholder={t('surface.addModel')}
-            addTitle={t('surface.addModel')}
-          />
         </div>
+
+        <SearchTermsField
+          terms={terms}
+          suggestion={broadenQuery(name)}
+          onAdd={handleAddModel}
+          onRemove={handleRemoveModel}
+        />
 
         {resolveFailed && (
           <p className="text-sm text-[#C9A227]">{t('surface.placeUnresolved')}</p>
@@ -309,37 +331,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           <label className="block text-xs font-medium text-[#8FA6A1]">
             {t('surface.howFar')}
           </label>
-          {!place && !locationId ? (
-            <p className="text-sm text-[#8FA6A1]">{t('surface.radiusNoPlace')}</p>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex gap-2" role="radiogroup" aria-label={t('surface.howFar')}>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={radius === null}
-                  onClick={() => setRadius(null)}
-                  className={`px-3 py-1.5 rounded border text-sm cursor-pointer transition-colors ${
-                    radius === null ? 'border-[#E4D6BE] text-[#F2F5F4]' : 'border-[#0E4A40] text-[#8FA6A1] hover:border-[#8FA6A1]'
-                  }`}
-                >
-                  {t('surface.radiusUnlimited')}
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={radius !== null}
-                  onClick={() => setRadius(radius ?? 50)}
-                  className={`px-3 py-1.5 rounded border text-sm cursor-pointer transition-colors ${
-                    radius !== null ? 'border-[#E4D6BE] text-[#F2F5F4]' : 'border-[#0E4A40] text-[#8FA6A1] hover:border-[#8FA6A1]'
-                  }`}
-                >
-                  {t('surface.radiusLimited')}
-                </button>
-              </div>
-              {radius !== null && <RadiusField value={radius} onChange={setRadius} />}
-            </div>
-          )}
+          <RadiusChoice hasPlace={Boolean(place || locationId)} radius={radius} onChange={setRadius} />
         </div>
 
         {/* Field 4: Bis wie viel (Max price) */}
@@ -347,24 +339,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           <label htmlFor="setup-price" className="block text-xs font-medium text-[#8FA6A1]">
             {t('surface.maxPrice')}
           </label>
-          <div className="relative w-36">
-            <input
-              id="setup-price"
-              type="number"
-              min="0"
-              step="5"
-              value={maxPrice !== null && maxPrice !== undefined ? maxPrice : ''}
-              onChange={(e) => {
-                const val = e.target.value.trim();
-                setMaxPrice(val ? parseInt(val, 10) : null);
-              }}
-              placeholder="150"
-              className="w-full pl-3.5 pr-8 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] placeholder-[#8FA6A1]/40 focus:outline-none focus:border-[#8FA6A1] text-sm tabular-nums text-right transition-colors"
-            />
-            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-[#8FA6A1] pointer-events-none font-medium">
-              €
-            </span>
-          </div>
+          <MaxPriceField value={maxPrice} onChange={setMaxPrice} />
         </div>
 
         {/* Field 5: what the site cannot filter on */}

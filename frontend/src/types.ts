@@ -158,6 +158,8 @@ export interface SearchFamilyTerm {
   enabled: boolean;
   position?: number;
   listings?: number;
+  /** How many of those listings the requirements judged a fit. */
+  fit_listings?: number;
 }
 
 export interface SearchFamily {

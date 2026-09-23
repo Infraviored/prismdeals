@@ -24,7 +24,7 @@ describe('EditScreen', () => {
               name: 'Drucker',
               base_url: 'https://www.kleinanzeigen.de/s-drucker/landsberg-am-lech/anzeige:angebote/preis::150/r30/k0l7437',
               terms: [
-                { id: 1, term: 'brother-hl-l2350dw', label: 'Brother HL-L2350DW', enabled: true },
+                { id: 1, term: 'brother-hl-l2350dw', label: 'Brother HL-L2350DW', enabled: true, listings: 12, fit_listings: 3 },
                 { id: 2, term: 'hp-m428', label: 'HP M428', enabled: true },
               ],
             }),
@@ -142,15 +142,36 @@ describe('EditScreen', () => {
     fireEvent.click(removeBtn);
     expect(screen.queryByText('Brother HL-L2350DW')).not.toBeInTheDocument();
 
-    // Add a new model
-    const addBtn = screen.getByTitle(/Add model|Modell hinzufügen/i);
-    fireEvent.click(addBtn);
-
-    const modelInput = screen.getByPlaceholderText(/Add model|Modell hinzufügen/i);
-    fireEvent.change(modelInput, { target: { value: 'Canon MF445dw' } });
-    fireEvent.keyDown(modelInput, { key: 'Enter', code: 'Enter' });
+    // Add a new term
+    const termInput = screen.getByLabelText(/Search terms on Kleinanzeigen|Suchbegriffe bei Kleinanzeigen/i);
+    fireEvent.change(termInput, { target: { value: 'Canon MF445dw' } });
+    fireEvent.keyDown(termInput, { key: 'Enter', code: 'Enter' });
 
     expect(screen.getByText('Canon MF445dw')).toBeInTheDocument();
+  });
+
+  it('never saves the narrow name as the search term', async () => {
+    // The Corsair incident: with no term set, the name itself became the term,
+    // "corsair-vengeance-32gb-2x16-ddr4-3200-cl16", and found almost nothing.
+    const plainCampaign = { id: 7, name: 'Corsair Vengeance 32GB (2x16) DDR4-3200 CL16' };
+    render(<EditScreen campaign={plainCampaign} searches={[]} onBack={vi.fn()} onSaved={vi.fn()} />);
+
+    expect(await screen.findByText('corsair vengeance 32gb')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/^(Save|Speichern)$/));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/search-families', expect.objectContaining({ method: 'POST' }));
+    });
+    const [, init] = fetchMock.mock.calls.find(([url]) => String(url) === '/api/search-families')!;
+    const saved = JSON.parse(String((init as RequestInit).body));
+    expect(saved.terms.map((t: { term: string }) => t.term)).toEqual(['corsair-vengeance-32gb']);
+    expect(saved.base_url).not.toContain('ddr4-3200');
+  });
+
+  it('shows what each term found', async () => {
+    render(<EditScreen campaign={mockCampaign} onBack={vi.fn()} />);
+    expect(await screen.findByText('Brother HL-L2350DW')).toBeInTheDocument();
+    expect(screen.getByText('12 found, 3 matching')).toBeInTheDocument();
   });
 
   it('saves and compiles structured search url when Speichern is clicked', async () => {
@@ -184,7 +205,8 @@ describe('EditScreen', () => {
       /^https:\/\/www\.kleinanzeigen\.de\/s-landsberg-am-lech\//
     );
     expect(saved.base_url).toContain('preis::150');
-    expect(saved.base_url).toContain('/drucker/');
+    // The first search term, not the hunt's name.
+    expect(saved.base_url).toContain('/brother-hl-l2350dw/');
     // No radius was chosen, so none is written: the search is not limited.
     expect(saved.base_url).toMatch(/\/k0(c\d+)?l7437$/);
 
