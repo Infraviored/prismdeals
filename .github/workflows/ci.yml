@@ -77,6 +77,9 @@ jobs:
       # and need the Python dependencies installed above.
       - name: Backend tests
         run: |
+          # The backend spawns scraper CLIs through .venv/bin/python3, the
+          # server's layout. Point it at the interpreter that has the deps.
+          mkdir -p .venv/bin && ln -sf "$(command -v python3)" .venv/bin/python3
           for t in backend/test_*.js; do
             echo "::group::$t"
             node "$t" || exit 1
