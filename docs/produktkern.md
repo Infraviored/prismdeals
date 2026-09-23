@@ -17,14 +17,15 @@ Arbeitsspeicher oder ein Schrank ist?**
 3. [Profile: 161 Kategorien auf zehn Arten zu urteilen](#3-profile)
 4. [Wann Recherche sich lohnt](#4-wann-recherche-sich-lohnt)
 5. [Was der Käufer will: Absicht und Bedürfnisse](#5-was-der-käufer-will)
-6. [Der Wissensbaum](#6-der-wissensbaum)
-7. [Der Markt wird beobachtet, nie recherchiert](#7-der-markt)
-8. [Die Recherche-Brücke](#8-die-recherche-brücke)
-9. [Wie die Prompts gebaut sind](#9-wie-die-prompts-gebaut-sind)
-10. [Bewertung in Stapeln](#10-bewertung-in-stapeln)
-11. [Was die Oberfläche je Profil zeigt](#11-was-die-oberfläche-zeigt)
-12. [Stand im Code und Reihenfolge](#12-stand-im-code-und-reihenfolge)
-13. [Offene Fragen](#13-offene-fragen)
+6. [Breit suchen, eng urteilen: wer die Suchbegriffe bestimmt](#6-breit-suchen-eng-urteilen)
+7. [Der Wissensbaum](#7-der-wissensbaum)
+8. [Der Markt wird beobachtet, nie recherchiert](#8-der-markt)
+9. [Die Recherche-Brücke](#9-die-recherche-brücke)
+10. [Wie die Prompts gebaut sind](#10-wie-die-prompts-gebaut-sind)
+11. [Bewertung in Stapeln](#11-bewertung-in-stapeln)
+12. [Was die Oberfläche je Profil zeigt](#12-was-die-oberfläche-zeigt)
+13. [Stand im Code und Reihenfolge](#13-stand-im-code-und-reihenfolge)
+14. [Offene Fragen](#14-offene-fragen)
 
 ---
 
@@ -319,7 +320,103 @@ Gespräch, in dem seine Absicht entsteht, und die Bewertung, die sie anwendet.
 
 ---
 
-## 6. Der Wissensbaum
+## 6. Breit suchen, eng urteilen
+
+### Der Vorfall, an dem das sichtbar wurde
+
+Die Corsair-Jagd hieß „Corsair Vengeance 32GB (2x16) DDR4-3200 CL16". Gesucht
+wurde bei Kleinanzeigen nach „corsair vengeance 32gb": **50 Treffer, 7 passend.**
+Als beim Speichern der Name selbst zum Suchbegriff wurde, suchte die Jagd nach
+„corsair-vengeance-32gb-2x16-ddr4-3200-cl16". Die meisten Verkäufer schreiben
+weder Takt noch Latenz in den Titel, also hätte diese Suche fast nichts
+gefunden. Und was sie nicht findet, sieht niemand je wieder.
+
+### Zwei Dinge, die entgegengesetzt funktionieren
+
+| | Was ich will | Wonach gesucht wird |
+|---|---|---|
+| Zweck | urteilen | finden |
+| soll sein | **eng**: 2×16 GB, DDR4, 3200 MHz, CL16 | **breit**: alles, was es sein *könnte* |
+| ein Fehler kostet | einen falschen Treffer, den das kostenlose Sieb verwirft | eine gute Anzeige, **die wir nie sehen** |
+| gehört zu | den Anforderungen, unserem Urteil | den Suchbegriffen bei Kleinanzeigen |
+
+Ein überflüssiger Treffer kostet eine Zeile im Sieb. Ein fehlender Treffer ist
+unsichtbar und nicht zurückzuholen. Daraus folgt die Regel:
+
+> **Breit suchen, eng urteilen.** Der Suchbegriff sucht, die Anforderungen
+> urteilen. Keins von beiden darf die Arbeit des anderen tun.
+
+### Wer bestimmt die Suchbegriffe
+
+**Das Produkt schlägt vor, der Käufer sieht und ändert.** Nie mehr stillschweigend
+der Name der Jagd.
+
+```mermaid
+flowchart LR
+    A[Absicht:<br/>„Corsair Vengeance 32GB<br/>2x16 DDR4-3200 CL16“] --> V[verbreitern]
+    V --> B1[„corsair vengeance 32gb“]
+    V --> B2[„vengeance 2x16gb“]
+    A --> F[Kategorie + Filter<br/>c225, Art = Speicher]
+    A --> R[Anforderungen<br/>2×16, DDR4, ≥3200, ≤CL16]
+    B1 --> K[Kleinanzeigen]
+    B2 --> K
+    F --> K
+    K --> S[Sieb nach Anforderungen]
+    R --> S
+    S --> M[je Begriff gemessen:<br/>Treffer, davon passend]
+    M -->|welche Begriffe taugen| W[(Wissensbaum)]
+    W -->|beim nächsten Mal| V
+```
+
+1. **Verbreitern ist eine Regel je Profil.** Es bleibt, was Verkäufer
+   zuverlässig schreiben. Es fällt weg, was sie oft weglassen.
+
+   | Profil | bleibt | fällt weg |
+   |---|---|---|
+   | Spezifikation (RAM) | Marke, Produktlinie, Kapazität | Takt, Latenz, Modulaufteilung, Revision |
+   | Fahrzeug | Marke, Modell | Baujahr, Leistung, Farbe |
+   | Leistungstechnik | Baureihe oder Prozessorklasse | exakte Konfiguration |
+   | Großmöbel | das Möbelstück, eventuell das System (PAX) | Maße, Farbe |
+
+   Für den Anfang reicht eine Regel, die Klammerinhalte, Takt, Latenz und
+   Aufteilungen streicht. Später schreibt das kleine Modell die Vorschläge, mit
+   dem Wissen des Knotens: „Wie heißt dieses Ding in Kleinanzeigen?" ist genau
+   die Art Wissen, die sich lohnt zu behalten.
+
+2. **Kategorie und Filter verengen strukturell.** Kategorie c225 und
+   „Art = Speicher" setzt der Verkäufer durch Anklicken, also verlässlich.
+   Damit muss der Suchbegriff das Ding nicht mehr von allem anderen
+   unterscheiden, sondern nur noch finden.
+
+3. **Die Anforderungen urteilen**, im kostenlosen Sieb und, wo nötig, im Stapel
+   (Abschnitt 11). Was im Titel fehlt, steht oft in der Beschreibung, und was
+   dort fehlt, wird zur Frage an den Verkäufer.
+
+4. **Jeder Begriff wird gemessen.** Treffer und davon passend, am Begriff
+   angezeigt: „corsair vengeance 32gb: 50 Treffer, 7 passend". Ein Begriff mit
+   vielen Treffern und null passenden ist zu breit, einer mit zwei Treffern und
+   zwei passenden vermutlich zu eng. Die Messung wandert in den Wissensbaum
+   („gute Suchbegriffe für diesen Knoten"). Auch so wird das Produkt klüger,
+   ohne dass jemand recherchiert.
+
+### Was Speichern bedeutet
+
+Eine geänderte Suche ist eine neue Frage an Kleinanzeigen, aber keine neue Jagd.
+
+- **Speichern ruft sofort ab und bewertet danach mit dem kostenlosen Sieb.**
+  Der Bildschirm zeigt, dass gesucht wird, nicht eine leere Liste.
+- **Nichts verschwindet vor dem ersten Abruf.** Die Funde der alten Suche
+  bleiben sichtbar, bis die neue einmal gelaufen ist.
+- **Ein Urteil hängt an den Anforderungen, nicht an der Suche.** Heute wird es
+  pro (Anzeige, Suche) gespeichert; jede Änderung an der Suche lässt es
+  scheinbar verschwinden. Richtig ist pro (Anzeige, Stand der Anforderungen):
+  Findet die neue Suche dieselbe Anzeige wieder und die Anforderungen sind
+  gleich, gilt das alte Urteil sofort. Bis das umgebaut ist, sorgt die
+  automatische Bewertung nach dem Abruf dafür, dass die Urteile zurückkommen.
+
+---
+
+## 7. Der Wissensbaum
 
 ### Lohnt sich eine Wissensdatenbank?
 
@@ -406,7 +503,7 @@ flowchart LR
 
 ---
 
-## 7. Der Markt
+## 8. Der Markt
 
 **Preise werden nie recherchiert.** Eine Recherche-KI kennt vor allem US-Foren
 und Neupreise; ihre Zahlen sind in einer Woche falsch. Unsere eigenen Anzeigen
@@ -436,7 +533,7 @@ Für Recherche und Bewertung wird der Markt zu einem Marktbild verdichtet:
 
 ---
 
-## 8. Die Recherche-Brücke
+## 9. Die Recherche-Brücke
 
 Vorerst betreiben wir **keinen eigenen Recherche-Agenten**. Der Käufer hat eine
 Recherche-KI mit Websuche (ChatGPT, Gemini, Perplexity, Claude). Wir sorgen
@@ -514,7 +611,7 @@ sich nicht lohnt.** Dann entsteht kein Auftrag, und die Jagd kostet nichts.
 
 ---
 
-## 9. Wie die Prompts gebaut sind
+## 10. Wie die Prompts gebaut sind
 
 Es gibt drei Prompts. Alle drei haben denselben Aufbau: **ein harter Rahmen,
 eine weiche Mitte**. Der Rahmen ist Code und ändert sich nie zufällig. Die
@@ -608,7 +705,7 @@ Danach prüft **Code**, nicht das Modell, jede URL auf Erreichbarkeit
 
 ---
 
-## 10. Bewertung in Stapeln
+## 11. Bewertung in Stapeln
 
 Bewertet wird nicht Anzeige für Anzeige, sondern **acht bis zwölf je Aufruf**.
 
@@ -660,7 +757,7 @@ ausdrücklich verletzte Pflichten, Beschaffung, Preis gegen Markt.
 
 ---
 
-## 11. Was die Oberfläche zeigt
+## 12. Was die Oberfläche zeigt
 
 Die Fundliste aus Musterbogen C bleibt für jedes Profil gleich: Foto, Titel,
 Ort, Preis als Held. **Die rechte Spalte wechselt mit dem Profil**, weil sie
@@ -677,7 +774,7 @@ zeigt, worauf es bei dieser Art Ding ankommt.
 
 ---
 
-## 12. Stand im Code und Reihenfolge
+## 13. Stand im Code und Reihenfolge
 
 | | gibt es | fehlt |
 |---|---|---|
@@ -689,6 +786,8 @@ zeigt, worauf es bei dieser Art Ding ankommt.
 | Anzeige → Knoten | `identity.py` für Autos, Motorräder, Laptops, Handys | Erkennungsmerkmale aus der Recherche; Zuordnung im Stapel |
 | Markt | Median je Suche (`reference_price.js`) | Markt je Knoten, ohne Defekte, bereinigt |
 | Absicht | Anforderungen je Kampagne (`requirements_api.js`) | Gespräch, vier Arten von Bedürfnissen |
+| Suchbegriffe | Begriffe je Familie (`search_family_terms`) | Vorschlag durch Verbreitern, Messung je Begriff, Name der Jagd nicht mehr als Begriff |
+| Urteil | pro (Anzeige, Suche) in `listing_fit` | pro (Anzeige, Stand der Anforderungen), damit Urteile eine geänderte Suche überleben |
 | Recherche-Brücke | Rechercheprompt in `dossiers.py` (für einen eigenen Agenten gedacht) | alle drei Prompts, Kopieren/Einfügen, Freigabe |
 | Stapelbewertung | Faktenblätter mit Belegzitat (`fact_sheets`) | Stapel, Prüfpunkte, Fragen an den Verkäufer |
 | Modellaufrufe erreichbar | `pipeline.py`, `extraction.py` | kein Knopf ruft sie auf; Zeitplan steht auf 0 |
@@ -710,7 +809,7 @@ Jedes Paket wird ausgeliefert und ist ohne die folgenden benutzbar.
 
 ---
 
-## 13. Offene Fragen
+## 14. Offene Fragen
 
 - **Gewicht einer Aussage an mehreren Knoten.** „Rennstrecke ist schlimm" gilt
   für alle Motorräder, für Supersportler mehr. Eine Aussage mit Gewicht je
@@ -718,7 +817,7 @@ Jedes Paket wird ausgeliefert und ist ohne die folgenden benutzbar.
 - **Wer gibt frei, wenn es mehrere Käufer gibt?** Solange es einen gibt, er.
   Danach braucht geteiltes Wissen eine Prüfung, bevor es für andere urteilt.
 - **Größe der Stapel.** Acht bis zwölf ist eine Annahme. Die wiederholte
-  Stichprobe (Abschnitt 10) misst, ab wann die Reihenfolge das Urteil färbt.
+  Stichprobe (Abschnitt 11) misst, ab wann die Reihenfolge das Urteil färbt.
 - **Wann verfällt ein Knoten ganz?** Modelle, die niemand mehr jagt, kosten
   nichts, solange sie liegen. Sie müssen nur beim nächsten Gebrauch als alt
   erkannt werden (Verfall je Aussage).
