@@ -284,12 +284,12 @@ module.exports = (query, get) => {
 
     if (kind === 'search') {
       fromSql = `
-        FROM listings l
-        LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = ?
-        LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = ?
+        FROM listing_search_hits lsh
+        JOIN listings l ON l.id = lsh.listing_id
+        LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = lsh.search_id
       `;
-      whereConditions.push('(l.search_id = ? OR lsh.search_id = ?)');
-      whereParams.push(primarySearchId, primarySearchId, primarySearchId, primarySearchId);
+      whereConditions.push('lsh.search_id = ?');
+      whereParams.push(primarySearchId);
     } else if (kind === 'route') {
       fromSql = `
         FROM listings l
@@ -330,16 +330,15 @@ module.exports = (query, get) => {
         }
       }
     } else {
-      // Plain campaign
+      // Plain campaign: listings found by searches of THIS campaign, fit evaluated for searches of THIS campaign
       fromSql = `
-        FROM listings l
-        LEFT JOIN searches s ON l.search_id = s.id
-        LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id
-        LEFT JOIN searches hs ON hs.id = lsh.search_id
-        LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND (fit.search_id = s.id OR fit.search_id = hs.id)
+        FROM listing_search_hits lsh
+        JOIN searches s ON s.id = lsh.search_id
+        JOIN listings l ON l.id = lsh.listing_id
+        LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = s.id
       `;
-      whereConditions.push('(s.campaign_id = ? OR hs.campaign_id = ?)');
-      whereParams.push(campaign.id, campaign.id);
+      whereConditions.push('s.campaign_id = ?');
+      whereParams.push(campaign.id);
     }
 
     // Active query text filter (q)
@@ -375,16 +374,33 @@ module.exports = (query, get) => {
 
     const whereSql = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
 
-    // Query listings with their verdicts and facts
+    // Query listings with their verdicts and facts:
+    // Best verdict wins (fit > unclear > no > unjudged) and reason / facts come from that exact row.
     const sql = `
-      SELECT l.id, l.price_eur,
-             MAX(lsh.first_seen_at) AS first_seen_at,
-             MAX(fit.verdict) AS verdict,
-             MAX(fit.reason) AS reason,
-             MAX(fit.facts_json) AS facts_json
-      ${fromSql}
-      ${whereSql}
-      GROUP BY l.id
+      WITH ranked AS (
+        SELECT l.id, l.price_eur,
+               lsh.first_seen_at,
+               fit.verdict,
+               fit.reason,
+               fit.facts_json,
+               ROW_NUMBER() OVER (
+                 PARTITION BY l.id
+                 ORDER BY
+                   CASE fit.verdict
+                     WHEN 'fit' THEN 1
+                     WHEN 'unclear' THEN 2
+                     WHEN 'no' THEN 3
+                     ELSE 4
+                   END ASC,
+                   lsh.first_seen_at DESC
+               ) AS rn,
+               MAX(lsh.first_seen_at) OVER (PARTITION BY l.id) AS max_seen_at
+        ${fromSql}
+        ${whereSql}
+      )
+      SELECT id, price_eur, max_seen_at AS first_seen_at, verdict, reason, facts_json
+        FROM ranked
+       WHERE rn = 1
     `;
 
     const rows = await query(sql, whereParams);

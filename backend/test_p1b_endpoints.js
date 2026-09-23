@@ -315,6 +315,68 @@ async function main() {
       );
     }
 
+    // --- Campaign 6 & 7 for #3: Cross-campaign fit isolation ---
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (6, 'Kampagne A')`);
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (7, 'Kampagne B')`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (601, 6, 'Suche A', 'https://example.com/a', 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (701, 7, 'Suche B', 'https://example.com/b', 1)`);
+
+    // Listing found first by Campaign A (search 601), rejected in A ('no')
+    await runDb(
+      db,
+      `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+       VALUES ('cross-camp-1', 'Cross-Campaign Listing', '100 €', 100, 'Berlin', 'https://example.com/cc1', 50, 601)`
+    );
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('cross-camp-1', 601, ?)`, [now.toISOString()]);
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('cross-camp-1', 601, 'no', 'Falsche Farbe', '{}', 'title', ?)`,
+      [now.toISOString()]
+    );
+
+    // Later, Campaign B also finds cross-camp-1, but has NO verdict for it in search 701
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('cross-camp-1', 701, ?)`, [now.toISOString()]);
+
+    // --- Campaign 8 for #4: Best verdict wins (fit > unclear > no) & exact row consistency ---
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (8, 'Multi Verdict Campaign')`);
+    await runDb(
+      db,
+      `INSERT INTO knowledge_sets (id, name, item_json) VALUES (8, 'Multi Knowledge', ?)`,
+      [
+        JSON.stringify({
+          fields: [
+            { id: 'gbPerStick', buyer_wants: { match: 16 } },
+          ],
+        }),
+      ]
+    );
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, knowledge_set_id, enabled) VALUES (801, 8, 'Suche 801', 'https://example.com/801', 8, 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, knowledge_set_id, enabled) VALUES (802, 8, 'Suche 802', 'https://example.com/802', 8, 1)`);
+
+    await runDb(
+      db,
+      `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+       VALUES ('multi-verdict-1', 'Multi Verdict Item', '80 €', 80, 'Hamburg', 'https://example.com/mv1', 50, 801)`
+    );
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('multi-verdict-1', 801, ?)`, [now.toISOString()]);
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('multi-verdict-1', 802, ?)`, [now.toISOString()]);
+
+    // In Search 801: verdict 'fit', reason 'matched 16GB', facts { gbPerStick: 16 }
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('multi-verdict-1', 801, 'fit', 'Passend 16GB', '{"gbPerStick": 16}', 'title', ?)`,
+      [now.toISOString()]
+    );
+    // In Search 802: verdict 'unclear', reason 'unclear speed', facts { gbPerStick: null }
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('multi-verdict-1', 802, 'unclear', 'Taktung unklar', '{"gbPerStick": null}', 'title', ?)`,
+      [now.toISOString()]
+    );
+
     db.close();
 
     console.log('--- TEST 1: Default Pagination (limit=50) for search-families/:id/listings ---');
@@ -756,6 +818,43 @@ async function main() {
     const bFfReq = reqs.find(r => r.id === 'formFactor');
     assert(bFfReq && bFfReq.text === 'DIMM', `expected "DIMM", got ${bFfReq?.text}`);
     assert(bFfReq.contradicted === 1, `expected 1 contradicted for formFactor ('sodimm' != match: 'dimm'), got ${bFfReq.contradicted}`);
+
+    console.log('--- TEST 21: cross-campaign fit isolation (#3) ---');
+    const campBOverview = await request('/api/campaigns/7/overview');
+    assert(campBOverview.status === 200, `status ${campBOverview.status}`);
+    assert(campBOverview.data.pots.all === 1, `Campaign B should hold 1 listing, got ${campBOverview.data.pots.all}`);
+    assert(
+      campBOverview.data.pots.no === 0,
+      `Campaign B must have 0 rejected, got ${campBOverview.data.pots.no} (rejection from Campaign A leaked!)`
+    );
+    assert(
+      campBOverview.data.pots.unjudged === 1,
+      `Campaign B listing should be unjudged, got ${campBOverview.data.pots.unjudged}`
+    );
+    assert(
+      campBOverview.data.rejections.length === 0,
+      `Campaign B should have 0 rejections, got ${campBOverview.data.rejections.length}`
+    );
+
+    console.log('--- TEST 22: best verdict wins (fit > unclear > no) & exact row data (#4) ---');
+    const camp8Overview = await request('/api/campaigns/8/overview');
+    assert(camp8Overview.status === 200, `status ${camp8Overview.status}`);
+    assert(camp8Overview.data.pots.all === 1, `Campaign 8 should hold 1 listing, got ${camp8Overview.data.pots.all}`);
+    assert(
+      camp8Overview.data.pots.fit === 1,
+      `Campaign 8 listing with fit in search A and unclear in search B must count as fit, got ${camp8Overview.data.pots.fit}`
+    );
+    assert(
+      camp8Overview.data.pots.unclear === 0,
+      `Campaign 8 unclear pot must be 0, got ${camp8Overview.data.pots.unclear}`
+    );
+    // Requirements must use facts from the winning row (Search 801: gbPerStick = 16)
+    const reqGb = camp8Overview.data.requirements.find(r => r.id === 'gbPerStick');
+    assert(reqGb, 'gbPerStick requirement must exist');
+    assert(
+      reqGb.survivors === 1,
+      `Winning fit row facts should survive requirement, got ${reqGb?.survivors}`
+    );
 
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
   } finally {
