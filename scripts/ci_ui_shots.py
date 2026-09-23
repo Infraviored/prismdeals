@@ -232,13 +232,14 @@ def main():
     if args.db and os.path.exists(args.db):
         db_path = args.db
     else:
-        db_path = os.path.join(args.out, "fixture.db")
+        db_path = os.path.abspath(os.path.join(args.out, "fixture.db"))
         print(f"Seeding fixture database: {db_path}")
         subprocess.run(
             ["node", os.path.join(ROOT, "scripts", "seed_fixture_db.js"), db_path],
             check=True,
             cwd=ROOT,
         )
+    db_path = os.path.abspath(db_path)
 
     port = free_port()
     server = None
