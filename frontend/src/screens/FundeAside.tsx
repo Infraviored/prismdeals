@@ -61,7 +61,9 @@ export interface FundeAsideProps {
 export const FundeAside: React.FC<FundeAsideProps> = ({ overview, bestListing }) => {
   const { t } = useTranslation();
 
-  if (!overview || !overview.market) return null;
+  // With no priced listing there is no market to describe; a median of 0 €
+  // over 0 listings is not a statement, and requirements count nothing.
+  if (!overview || !overview.market || !overview.market.count) return null;
 
   const { market, requirements, rejections } = overview;
   const bins = market?.bins || [];

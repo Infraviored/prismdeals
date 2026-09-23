@@ -134,7 +134,9 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   // Masthead verdict sentence
   const deal = bestListing?.is_deal;
   const delta = bestListing?.price_delta_eur;
-  const verdictText = (
+  const verdictText = potAll === 0 ? (
+    <span className="quiet">{t('surface.verdictEmpty')}</span>
+  ) : (
     <>
       {t('surface.verdictSummary', { fits: potFit, total: potAll })}{' '}
       {deal && delta ? (
@@ -281,9 +283,11 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
               )}
 
               {/* List Head */}
-              <p className="list-head" id="list-head">
-                {listHeadText}
-              </p>
+              {displayListings.length > 0 && (
+                <p className="list-head" id="list-head">
+                  {listHeadText}
+                </p>
+              )}
 
               {/* Rows */}
               <div id="rows">

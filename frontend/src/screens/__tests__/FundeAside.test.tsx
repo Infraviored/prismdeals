@@ -47,4 +47,16 @@ describe('FundeAside (#8 & #9)', () => {
     // Fallback lead should be translated
     expect(screen.getByText(/10 listings on the market/)).toBeInTheDocument();
   });
+
+  it('says nothing about a market that has no priced listing', () => {
+    // A campaign that has found nothing yet used to read "0 listings on the
+    // market with a median of 0 €".
+    const empty: CampaignOverviewData = {
+      ...mockOverview,
+      pots: { all: 0, fit: 0, unclear: 0, no: 0 },
+      market: { ...mockOverview.market!, count: 0, median: 0, min: 0, max: 0, bins: [] },
+    };
+    const { container } = render(<FundeAside overview={empty} bestListing={null} />);
+    expect(container).toBeEmptyDOMElement();
+  });
 });
