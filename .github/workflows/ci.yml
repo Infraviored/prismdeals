@@ -69,3 +69,16 @@ jobs:
 
       - name: pytest
         run: pytest scraper/ -q
+
+      # The backend's own tests. They existed for months and ran only when
+      # somebody remembered to start them by hand -- including the ones that
+      # pin listing membership to listing_search_hits, the bug class this
+      # project keeps reintroducing. Here because several spawn scraper CLIs
+      # and need the Python dependencies installed above.
+      - name: Backend tests
+        run: |
+          for t in backend/test_*.js; do
+            echo "::group::$t"
+            node "$t" || exit 1
+            echo "::endgroup::"
+          done
