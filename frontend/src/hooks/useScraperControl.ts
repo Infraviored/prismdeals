@@ -19,6 +19,11 @@ export function useScraperControl({
   const [processingStatus, setProcessingStatus] = useState('');
   const [activeProcessingListingIds, setActiveProcessingListingIds] = useState<string[]>([]);
 
+  // The campaign whose crawl is running. When it finishes, its listings are
+  // judged with the free title/description sieve, so a search that found the
+  // same listings again gets its verdicts back without anyone pressing a button.
+  const crawlingCampaignRef = useRef<number | null>(null);
+
   const refreshAllRef = useRef(refreshAll);
   const onScrapeCompletedRef = useRef(onScrapeCompleted);
   useEffect(() => {
@@ -46,6 +51,11 @@ export function useScraperControl({
           setIsScraping(false);
           setScrapingProgress(null);
           setScrapingStatus('Scraping completed!');
+          const judged = crawlingCampaignRef.current;
+          crawlingCampaignRef.current = null;
+          if (judged) {
+            await fetch(`/api/campaigns/${judged}/judge`, { method: 'POST' }).catch(() => {});
+          }
           refreshAllRef.current();
           onScrapeCompletedRef.current?.();
         }
@@ -80,6 +90,7 @@ export function useScraperControl({
   }, []);
 
   const handleStartScrape = async (campaignId: number | null) => {
+    crawlingCampaignRef.current = campaignId;
     setIsScraping(true);
     setScrapingStatus('Spawning scraper worker...');
     setLiveLogs('Initializing browser context and logging session...');

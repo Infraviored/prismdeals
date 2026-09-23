@@ -219,21 +219,24 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
               {verdictText}
             </p>
             {(() => {
+              // While a crawl runs, that is the news -- not when the last one was.
+              if (isScraping) {
+                return <p className="freshness" id="freshness" data-testid="freshness">{t('surface.searchRunning')}</p>;
+              }
               const rawTime = overview?.last_crawled_at || (listings.length > 0 ? (listings[0].first_seen_at || listings[0].last_seen_at) : null);
               if (!rawTime) return null;
               const f = formatFreshness(rawTime, t);
               if (!f) return null;
-              const rawInterval = overview?.schedule_interval ?? 0;
-              const intervalHours = rawInterval >= 60 && rawInterval % 60 === 0
-                ? rawInterval / 60
-                : rawInterval;
-
+              // schedule_interval is in minutes. 90 used to read "every 90 hours".
+              const minutes = overview?.schedule_interval ?? 0;
               const text =
-                intervalHours <= 0
+                minutes <= 0
                   ? t('surface.freshnessOnce', { when: f.label })
-                  : intervalHours === 1
+                  : minutes === 60
                   ? t('surface.freshnessHourly', { when: f.label })
-                  : t('surface.freshnessInterval', { when: f.label, interval: intervalHours });
+                  : minutes % 60 === 0
+                  ? t('surface.freshnessInterval', { when: f.label, interval: minutes / 60 })
+                  : t('surface.freshnessIntervalMin', { when: f.label, interval: minutes });
               return <p className="freshness" id="freshness" data-testid="freshness">{text}</p>;
             })()}
           </header>

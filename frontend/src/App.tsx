@@ -139,6 +139,10 @@ export default function App() {
             }
             appData.refreshAll();
             navigate('dashboard', currentCampaignId, null);
+            // A changed search is a new question to Kleinanzeigen. Ask it now:
+            // waiting for the schedule (which is usually off) left the buyer
+            // looking at a list that could not change.
+            scraper.handleStartScrape(currentCampaignId);
           }}
           onDelete={(camp) => {
             campaignEdit.handleDeleteCampaign(camp);

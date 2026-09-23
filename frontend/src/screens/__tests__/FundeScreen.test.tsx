@@ -234,6 +234,11 @@ describe('FundeScreen', () => {
     expect(await screen.findByTestId('mock-route-corridor-map')).toBeInTheDocument();
   });
 
+  it('says a search is running while it runs, not when the last one was', async () => {
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} isScraping />);
+    expect(await screen.findByText('Searching now …')).toBeInTheDocument();
+  });
+
   it('displays real schedule interval in freshness header (#7)', async () => {
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/campaigns/1/route')) {
@@ -246,7 +251,8 @@ describe('FundeScreen', () => {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({
-            schedule_interval: 6,
+            // Minutes, as the scheduler reads it (intervalMinutes * 60 * 1000).
+            schedule_interval: 360,
             last_crawled_at: new Date(Date.now() - 3600000).toISOString(),
             pots: { all: 3, fit: 2, unclear: 0, no: 1 },
           }),
