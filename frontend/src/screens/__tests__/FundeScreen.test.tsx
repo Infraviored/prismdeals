@@ -190,9 +190,39 @@ describe('FundeScreen', () => {
     render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
 
     expect(await screen.findByTestId('surface-empty-line')).toBeInTheDocument();
-    expect(screen.getByText('No matches within 30 km')).toBeInTheDocument();
+    // No radius was ever set, so none is named; the measured wider radii are.
+    expect(screen.getByText('Further out there are some:')).toBeInTheDocument();
+    expect(screen.queryByText(/within 30 km/)).not.toBeInTheDocument();
     expect(screen.getByText('50 km')).toBeInTheDocument();
     expect(screen.getByText('100 km')).toBeInTheDocument();
+  });
+
+  it('an empty match tab in a campaign with listings points to the unclear ones', async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/overview')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              campaign_id: 1,
+              pots: { all: 4, fit: 0, unclear: 4, no: 0 },
+              rejections: [],
+              market: null,
+              requirements: [],
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ total: 0, listings: [] }),
+      });
+    });
+
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
+
+    expect(await screen.findByText('Nothing matches for certain yet.')).toBeInTheDocument();
+    expect(screen.getByText('Show unclear')).toBeInTheDocument();
+    expect(screen.queryByText(/within \d+ km/)).not.toBeInTheDocument();
   });
 
   it('toggles map view when clicking Map pill', async () => {

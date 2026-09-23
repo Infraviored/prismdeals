@@ -25,6 +25,10 @@ EMAIL = "ui-shots@localhost"
 PASSWORD = "ui-shots-only"
 
 
+# scripts/seed_fixture_db.js stamps everything 2026-01-01T12:00:00Z.
+FROZEN_NOW_MS = 1767276000000  # 2026-01-01T14:00:00Z
+
+
 def free_port():
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -71,7 +75,27 @@ def build_driver(width, height):
     options.add_argument(f"--window-size={width},{height}")
 
     service = Service()
-    return webdriver.Chrome(service=service, options=options)
+    driver = webdriver.Chrome(service=service, options=options)
+    # The fixture's dates are fixed, but "vor 2 Std" is measured against the
+    # browser's clock, so an unfrozen clock made every baseline wrong the next
+    # day. Two hours after the fixture's timestamp, before any page script runs.
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {
+            "source": (
+                "(() => {"
+                f"  const frozen = {FROZEN_NOW_MS};"
+                "  const RealDate = Date;"
+                "  class FrozenDate extends RealDate {"
+                "    constructor(...a) { super(...(a.length ? a : [frozen])); }"
+                "    static now() { return frozen; }"
+                "  }"
+                "  globalThis.Date = FrozenDate;"
+                "})();"
+            )
+        },
+    )
+    return driver
 
 
 # Belt and braces alongside --force-prefers-reduced-motion: Tailwind's

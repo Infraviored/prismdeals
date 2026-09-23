@@ -305,13 +305,33 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
               {/* Empty state */}
               {displayListings.length === 0 && !loading && (
                 <EmptyLine
+                  // An empty tab in a campaign that has listings is not an empty
+                  // search: "no matches within 30 km" over four unclear laptops
+                  // sent the buyer to widen a radius the campaign never had.
                   message={
-                    radiusDiagnosis?.current_radius
+                    potAll > 0 && tab === 'fit'
+                      ? t('surface.emptyFit')
+                      : potAll > 0 && tab !== 'all'
+                      ? t('surface.emptyTab')
+                      : radiusDiagnosis?.current_radius
                       ? t('surface.noMatchesInRadius', { radius: radiusDiagnosis.current_radius })
-                      : t('surface.noMatchesInRadius', { radius: 30 })
+                      : radiusDiagnosis?.options?.length
+                      ? t('surface.emptyWider')
+                      : t('surface.emptySearch')
                   }
                   actions={
-                    radiusDiagnosis?.options && radiusDiagnosis.options.length > 0
+                    potAll > 0 && tab === 'fit' && potUnclear > 0
+                      ? [
+                          <Pill
+                            key="unclear"
+                            label={t('surface.showUnclear')}
+                            count={potUnclear}
+                            onClick={() => setTab('unclear')}
+                          />,
+                        ]
+                      : potAll > 0 && tab !== 'all'
+                      ? undefined
+                      : radiusDiagnosis?.options && radiusDiagnosis.options.length > 0
                       ? radiusDiagnosis.options.map((opt) => (
                           <Pill
                             key={opt.radius}

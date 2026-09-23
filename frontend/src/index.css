@@ -98,7 +98,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-button, a { font: inherit; color: inherit; }
+/* In the base layer, not bare. Tailwind v4 puts its utilities in a layer, and
+   any unlayered rule beats every layered one: bare, this reset overrode
+   text-*, font-* and text colour on every button and link in the app, so the
+   lampe buttons carried pale text on a pale ground. */
+@layer base {
+  button, a { font: inherit; color: inherit; }
+}
 :focus-visible { outline: 2px solid var(--lampe); outline-offset: 2px; }
 
 .num, .tabular-nums {

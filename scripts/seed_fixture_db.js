@@ -102,6 +102,17 @@ async function main() {
     last_ai_evaluated_at TEXT
   )`);
 
+  // Which search found which listing. The scraper writes a row here for every
+  // find, the first one included (scraper/main.py); the API reads membership
+  // and verdicts from it, never from listings.search_id alone. A fixture
+  // without it rendered an empty campaign that the landing page said held four.
+  await run(`CREATE TABLE IF NOT EXISTS listing_search_hits (
+    listing_id TEXT NOT NULL,
+    search_id INTEGER NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    PRIMARY KEY (listing_id, search_id)
+  )`);
+
   await run(`CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
     listing_id TEXT REFERENCES listings(id) ON DELETE CASCADE,
@@ -201,6 +212,10 @@ async function main() {
         `Synthetic fixture listing for CI screenshots.`,
         now,
       ]
+    );
+    await run(
+      'INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES (?, ?, ?)',
+      [l.id, l.search_id, now]
     );
   }
 
