@@ -112,35 +112,54 @@ async function referencePrices(query, searchIds) {
  * the "deals only" filter had selected then rendered with no coral and no
  * saving, because it was re-judged against a different search's market.
  */
-async function annotateDeals(query, listings) {
+async function annotateDeals(query, listings, scopeSearchIds = null) {
   if (listings.length === 0) return listings;
+  if (Array.isArray(scopeSearchIds) && scopeSearchIds.length === 0) {
+    for (const l of listings) {
+      l.is_deal = false;
+      l.price_delta_eur = null;
+    }
+    return listings;
+  }
+
+  const scopeSet = scopeSearchIds ? new Set(scopeSearchIds.map(Number)) : null;
 
   const searchesByListing = new Map();
   const addSearch = (listingId, searchId) => {
     if (!searchId) return;
+    const numId = Number(searchId);
+    if (scopeSet && !scopeSet.has(numId)) return;
     const key = String(listingId);
     if (!searchesByListing.has(key)) searchesByListing.set(key, new Set());
-    searchesByListing.get(key).add(Number(searchId));
+    searchesByListing.get(key).add(numId);
   };
 
   const ids = listings.map(l => String(l.id));
   const CHUNK_SIZE = 500;
   for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
     const chunk = ids.slice(i, i + CHUNK_SIZE);
-    const hits = await query(
-      `SELECT lsh.listing_id, lsh.search_id
-         FROM listing_search_hits lsh
-         LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = lsh.search_id
-        WHERE lsh.listing_id IN (${chunk.map(() => '?').join(',')})
-          AND (fit.verdict IS NULL OR fit.verdict <> 'no')`,
-      chunk
-    );
+    let hitsSql = `
+      SELECT lsh.listing_id, lsh.search_id
+        FROM listing_search_hits lsh
+        LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = lsh.search_id
+       WHERE lsh.listing_id IN (${chunk.map(() => '?').join(',')})
+         AND (fit.verdict IS NULL OR fit.verdict <> 'no')
+    `;
+    const params = [...chunk];
+    if (scopeSet) {
+      const scopeArr = [...scopeSet];
+      hitsSql += ` AND lsh.search_id IN (${scopeArr.map(() => '?').join(',')})`;
+      params.push(...scopeArr);
+    }
+    const hits = await query(hitsSql, params);
     for (const hit of hits) addSearch(hit.listing_id, hit.search_id);
   }
 
   // Fallback for listings that have no search hits in listing_search_hits but have listing.search_id:
   // only if not rejected in listing_fit for that search_id.
-  const missing = listings.filter(l => !searchesByListing.has(String(l.id)) && l.search_id);
+  const missing = listings.filter(
+    l => !searchesByListing.has(String(l.id)) && l.search_id && (!scopeSet || scopeSet.has(Number(l.search_id)))
+  );
   if (missing.length > 0) {
     const missingIds = missing.map(l => String(l.id));
     // Every chunk's verdicts are read before any listing is judged by them.

@@ -96,6 +96,7 @@ async function main() {
     // Create Campaign
     // The shortlist is per user, so there has to be one.
     await runDb(db, `INSERT OR IGNORE INTO users (id, email, password_hash, role) VALUES (1, 'test@localhost', 'x', 'admin')`);
+    await runDb(db, `ALTER TABLE searches ADD COLUMN item_json TEXT`);
 
     await runDb(db, `INSERT INTO campaigns (id, name) VALUES (1, 'Matratzen Jagd')`);
 
@@ -464,6 +465,132 @@ async function main() {
       `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
        VALUES ('fam-mv-1', 1312, 'fit', 'Perfekt 1312', '{"spec": "gold"}', 'title', ?)`,
       [now.toISOString()]
+    );
+
+    // --- Finding 1 Fixture: Route corridor best verdict (older fit vs newer unclear) ---
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (14, 'Route Multi-Circle Fit Campaign')`);
+    await runDb(
+      db,
+      `INSERT INTO route_searches (id, campaign_id, name, base_url, origin, destination, radius_km, half_width_km, plan_json, created_at)
+       VALUES (14, 14, 'Route 14 Corridor', 'https://example.com/route14', 'Nürnberg', 'Fürth', 25, 10, '{"polyline":[],"circles":[]}', datetime('now'))`
+    );
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1401, 14, 'Kreis 1401', 'https://example.com/1401', 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1402, 14, 'Kreis 1402', 'https://example.com/1402', 1)`);
+    await runDb(
+      db,
+      `INSERT INTO route_search_circles (route_search_id, search_id, radius_km, label, location_id)
+       VALUES (14, 1401, 20, 'Kreis 1401', 1401),
+              (14, 1402, 20, 'Kreis 1402', 1402)`
+    );
+    await runDb(
+      db,
+      `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+       VALUES ('route-mv-1', 'Route Multi Verdict Laptop', '250 €', 250, 'Nürnberg', 'https://example.com/rmv1', 80, 1401)`
+    );
+    await runDb(
+      db,
+      `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at)
+       VALUES ('route-mv-1', 1401, datetime('now', '-2 days'))`
+    );
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('route-mv-1', 1401, 'fit', 'Perfekter Zustand Kreis 1', '{"ram": 16}', 'title', datetime('now', '-2 days'))`
+    );
+    await runDb(
+      db,
+      `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at)
+       VALUES ('route-mv-1', 1402, datetime('now', '-1 days'))`
+    );
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('route-mv-1', 1402, 'unclear', 'Unklarer Zustand Kreis 2', '{"ram": 8}', 'title', datetime('now', '-1 days'))`
+    );
+
+    // --- Finding 3 Fixture: annotateDeals scope isolation ---
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (15, 'Campaign A Deals'), (16, 'Campaign B Deals')`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1501, 15, 'Search 1501', 'https://example.com/1501', 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1601, 16, 'Search 1601', 'https://example.com/1601', 1)`);
+    await runDb(
+      db,
+      `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id) VALUES
+        ('scope-deal-1', 'Cross-Campaign Deal Candidate', '100 €', 100, 'Berlin', 'https://example.com/sd1', 90, 1501),
+        ('s15-1', 'Item 15-1', '100 €', 100, 'Berlin', 'https://example.com/s151', 50, 1501),
+        ('s15-2', 'Item 15-2', '100 €', 100, 'Berlin', 'https://example.com/s152', 50, 1501),
+        ('s15-3', 'Item 15-3', '100 €', 100, 'Berlin', 'https://example.com/s153', 50, 1501),
+        ('s15-4', 'Item 15-4', '100 €', 100, 'Berlin', 'https://example.com/s154', 50, 1501),
+        ('s16-1', 'Item 16-1', '300 €', 300, 'Berlin', 'https://example.com/s161', 50, 1601),
+        ('s16-2', 'Item 16-2', '300 €', 300, 'Berlin', 'https://example.com/s162', 50, 1601),
+        ('s16-3', 'Item 16-3', '300 €', 300, 'Berlin', 'https://example.com/s163', 50, 1601),
+        ('s16-4', 'Item 16-4', '300 €', 300, 'Berlin', 'https://example.com/s164', 50, 1601)`
+    );
+    await runDb(
+      db,
+      `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES
+        ('scope-deal-1', 1501, datetime('now')),
+        ('scope-deal-1', 1601, datetime('now')),
+        ('s15-1', 1501, datetime('now')),
+        ('s15-2', 1501, datetime('now')),
+        ('s15-3', 1501, datetime('now')),
+        ('s15-4', 1501, datetime('now')),
+        ('s16-1', 1601, datetime('now')),
+        ('s16-2', 1601, datetime('now')),
+        ('s16-3', 1601, datetime('now')),
+        ('s16-4', 1601, datetime('now'))`
+    );
+
+    // --- Finding 4 Fixture: Kept listings best verdict across hits ---
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (17, 'Kampagne 17 Alt'), (18, 'Kampagne 18 Neu')`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1701, 17, 'Alt-Suche', 'https://example.com/1701', 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1702, 18, 'Neu-Suche', 'https://example.com/1702', 1)`);
+    await runDb(
+      db,
+      `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+       VALUES ('kept-item-1', 'Kept Multi Verdict Laptop', '400 €', 400, 'München', 'https://example.com/kmv1', 75, 1701)`
+    );
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('kept-item-1', 1701, datetime('now', '-3 days'))`);
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('kept-item-1', 1702, datetime('now', '-1 days'))`);
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('kept-item-1', 1701, 'no', 'Zu alt', '{"age": 10}', 'title', datetime('now', '-3 days'))`
+    );
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('kept-item-1', 1702, 'fit', 'Perfekt passend', '{"kept": true}', 'title', datetime('now', '-1 days'))`
+    );
+
+    // --- Finding 5 Fixture: recalculateItemScores via listing_search_hits ---
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1801, 18, 'Recalc Search', 'https://example.com/1801', 1)`);
+    await runDb(
+      db,
+      `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id, extracted_facts)
+       VALUES ('recalc-hit-1', 'Recalc Test Laptop', '500 €', 500, 'Köln', 'https://example.com/rh1', 0, 9998, '{"ssd": "yes"}')`
+    );
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('recalc-hit-1', 1801, datetime('now'))`);
+
+    // --- Finding 6 Fixture: Unfiltered /api/listings best verdict across hits ---
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (19, 'Campaign 19 Unfiltered')`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1901, 19, 'Search 1901', 'https://example.com/1901', 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1902, 19, 'Search 1902', 'https://example.com/1902', 1)`);
+    await runDb(
+      db,
+      `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+       VALUES ('unfiltered-mv-1', 'Unfiltered Multi Verdict Laptop', '600 €', 600, 'Hamburg', 'https://example.com/umv1', 70, 1901)`
+    );
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('unfiltered-mv-1', 1901, datetime('now', '-2 days'))`);
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('unfiltered-mv-1', 1902, datetime('now', '-1 days'))`);
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('unfiltered-mv-1', 1901, 'unclear', 'Erster Fund Unklar', '{"src": 1901}', 'title', datetime('now', '-2 days'))`
+    );
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('unfiltered-mv-1', 1902, 'fit', 'Zweiter Fund Fit', '{"src": 1902}', 'title', datetime('now', '-1 days'))`
     );
 
     db.close();
@@ -992,6 +1119,104 @@ async function main() {
     assert(famItem.fit && famItem.fit.verdict === 'fit', `expected best verdict 'fit', got ${famItem.fit?.verdict}`);
     assert(famItem.fit.reason === 'Perfekt 1312', `expected reason 'Perfekt 1312', got ${famItem.fit?.reason}`);
     assert(famItem.fit.facts.spec === 'gold', `expected facts.spec 'gold', got ${famItem.fit?.facts?.spec}`);
+
+    console.log('--- TEST 27: Finding 1 - GET /api/campaigns/:id/route: best verdict wins across circles ---');
+    const r14Res = await request('/api/campaigns/14/route');
+    assert(r14Res.status === 200, `status ${r14Res.status}`);
+    assert(r14Res.data.listings.length === 1, `expected 1 listing, got ${r14Res.data.listings.length}`);
+    const r14Item = r14Res.data.listings[0];
+    assert(r14Item.fit && r14Item.fit.verdict === 'fit', `expected best verdict 'fit', got ${r14Item.fit?.verdict}`);
+    assert(r14Item.fit.reason === 'Perfekter Zustand Kreis 1', `expected reason 'Perfekter Zustand Kreis 1', got ${r14Item.fit?.reason}`);
+    assert(r14Item.fit.facts.ram === 16, `expected facts.ram 16, got ${r14Item.fit?.facts?.ram}`);
+
+    const r14FitOnly = await request('/api/campaigns/14/route?verdict=fit');
+    assert(r14FitOnly.status === 200, `status ${r14FitOnly.status}`);
+    assert(r14FitOnly.data.total === 1, `verdict=fit should return 1, got ${r14FitOnly.data.total}`);
+
+    const r14Unclear = await request('/api/campaigns/14/route?verdict=unclear');
+    assert(r14Unclear.status === 200, `status ${r14Unclear.status}`);
+    assert(r14Unclear.data.total === 0, `verdict=unclear should return 0 since best is fit, got ${r14Unclear.data.total}`);
+
+    console.log('--- TEST 28: Finding 2 - GET /api/listings: verdict=all and unknown values do not filter out non-fit listings ---');
+    const c4All = await request('/api/listings?campaign_id=4&limit=50&verdict=all');
+    assert(c4All.status === 200, `status ${c4All.status}`);
+    assert(c4All.data.total === 10, `verdict=all should return all 10 listings, got ${c4All.data.total}`);
+
+    const c4Unknown = await request('/api/listings?campaign_id=4&limit=50&verdict=unknown_dummy');
+    assert(c4Unknown.status === 200, `status ${c4Unknown.status}`);
+    assert(c4Unknown.data.total === 10, `unknown verdict value should not filter, got ${c4Unknown.data.total}`);
+
+    console.log('--- TEST 29: Finding 3 - annotateDeals respects scopeSearchIds (badge matches deal filter) ---');
+    // In Campaign A (15):
+    const campAListings = await request('/api/listings?campaign_id=15&limit=50');
+    assert(campAListings.status === 200, `status ${campAListings.status}`);
+    const campAItem = campAListings.data.listings.find(l => l.id === 'scope-deal-1');
+    assert(campAItem, 'scope-deal-1 must be returned in Campaign A');
+    assert(campAItem.is_deal === false, `scope-deal-1 must NOT be marked as deal in Campaign A, got is_deal=${campAItem.is_deal}`);
+
+    const campADealsOnly = await request('/api/listings?campaign_id=15&limit=50&dealsOnly=1');
+    assert(campADealsOnly.status === 200, `status ${campADealsOnly.status}`);
+    assert(!campADealsOnly.data.listings.some(l => l.id === 'scope-deal-1'), 'scope-deal-1 must not be in Campaign A dealsOnly');
+
+    // In Campaign B (16):
+    const campBListings = await request('/api/listings?campaign_id=16&limit=50');
+    assert(campBListings.status === 200, `status ${campBListings.status}`);
+    const campBItem = campBListings.data.listings.find(l => l.id === 'scope-deal-1');
+    assert(campBItem, 'scope-deal-1 must be returned in Campaign B');
+    assert(campBItem.is_deal === true, `scope-deal-1 MUST be marked as deal in Campaign B, got is_deal=${campBItem.is_deal}`);
+
+    const campBDealsOnly = await request('/api/listings?campaign_id=16&limit=50&dealsOnly=1');
+    assert(campBDealsOnly.status === 200, `status ${campBDealsOnly.status}`);
+    assert(campBDealsOnly.data.listings.some(l => l.id === 'scope-deal-1'), 'scope-deal-1 MUST be in Campaign B dealsOnly');
+
+    console.log('--- TEST 30: Finding 4 - GET /api/kept?listings=true selects best verdict & fit details across hits ---');
+    await request('/api/kept/kept-item-1', { method: 'PUT', body: JSON.stringify({ note: 'Mein Merkzettel' }) });
+    const keptRes = await request('/api/kept?listings=1');
+    assert(keptRes.status === 200, `status ${keptRes.status}`);
+    const keptItem = keptRes.data.listings.find(l => l.id === 'kept-item-1');
+    assert(keptItem, 'kept-item-1 must be returned in kept listings');
+    assert(keptItem.search_name === 'Neu-Suche', `search_name should be from winning fit search 'Neu-Suche', got ${keptItem.search_name}`);
+    assert(keptItem.campaign_name === 'Kampagne 18 Neu', `campaign_name should be 'Kampagne 18 Neu', got ${keptItem.campaign_name}`);
+    assert(keptItem.fit && keptItem.fit.verdict === 'fit', `fit verdict must be 'fit', got ${keptItem.fit?.verdict}`);
+    assert(keptItem.fit.reason === 'Perfekt passend', `fit reason must be 'Perfekt passend', got ${keptItem.fit?.reason}`);
+    assert(keptItem.fit.facts.kept === true, `fit facts must have kept: true, got ${keptItem.fit?.facts?.kept}`);
+
+    console.log('--- TEST 31: Finding 5 - recalculateItemScores updates listings found via listing_search_hits ---');
+    const recalcRes = await request('/api/searches/recalculate', {
+      method: 'POST',
+      body: JSON.stringify({
+        search_id: 1801,
+        item_json: {
+          scoring_model: {
+            weights: {
+              ssd: { importance: 40, satisfied_if: 'yes' }
+            }
+          }
+        }
+      })
+    });
+    assert(recalcRes.status === 200, `status ${recalcRes.status}`);
+    const checkDb = new sqlite3.Database(TEST_DB);
+    const updatedListing = await new Promise((resolve, reject) => {
+      checkDb.get('SELECT id, niceness_score FROM listings WHERE id = ?', ['recalc-hit-1'], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+    checkDb.close();
+    assert(updatedListing && updatedListing.niceness_score === 40, `niceness_score must be recalculated to 40, got ${updatedListing?.niceness_score}`);
+
+    console.log('--- TEST 32: Finding 6 - unfiltered GET /api/listings uses best verdict across all searches that found it ---');
+    const unfiltRes = await request('/api/listings?q=Unfiltered+Multi+Verdict');
+    assert(unfiltRes.status === 200, `status ${unfiltRes.status}`);
+    assert(unfiltRes.data.listings.length === 1, `expected 1 listing, got ${unfiltRes.data.listings.length}`);
+    const unfiltItem = unfiltRes.data.listings[0];
+    assert(unfiltItem.fit && unfiltItem.fit.verdict === 'fit', `fit verdict must be 'fit' from winning search, got ${unfiltItem.fit?.verdict}`);
+    assert(unfiltItem.fit.reason === 'Zweiter Fund Fit', `fit reason must be 'Zweiter Fund Fit', got ${unfiltItem.fit?.reason}`);
+
+    const unfiltFitOnly = await request('/api/listings?q=Unfiltered+Multi+Verdict&verdict=fit');
+    assert(unfiltFitOnly.status === 200, `status ${unfiltFitOnly.status}`);
+    assert(unfiltFitOnly.data.total === 1, `verdict=fit must find unfiltered-mv-1, got ${unfiltFitOnly.data.total}`);
 
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
   } finally {

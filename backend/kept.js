@@ -12,6 +12,7 @@
 
 const express = require('express');
 const { annotateDeals } = require('./db/reference_price');
+const { BEST_FIT_ORDER_SQL, fitOf } = require('./db/fit');
 
 const router = express.Router();
 
@@ -47,18 +48,60 @@ module.exports = (query, get, run) => {
       }
 
       const rows = await query(
-        `SELECT l.*, s.name AS search_name, c.name AS campaign_name,
+        `WITH user_hits AS (
+           SELECT lsh.listing_id, lsh.search_id, lsh.first_seen_at
+             FROM kept_listings k
+             JOIN listing_search_hits lsh ON lsh.listing_id = k.listing_id
+            WHERE k.user_id = ?
+           UNION
+           SELECT l.id AS listing_id, l.search_id, COALESCE(l.last_seen_at, datetime('now')) AS first_seen_at
+             FROM kept_listings k
+             JOIN listings l ON l.id = k.listing_id
+            WHERE k.user_id = ?
+              AND l.search_id IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM listing_search_hits h
+                 WHERE h.listing_id = l.id AND h.search_id = l.search_id
+              )
+         ),
+         ranked_hits AS (
+           SELECT lsh.listing_id,
+                  lsh.search_id,
+                  lsh.first_seen_at,
+                  s.name AS search_name,
+                  c.name AS campaign_name,
+                  fit.verdict AS fit_verdict,
+                  fit.reason AS fit_reason,
+                  fit.facts_json AS fit_facts,
+                  fit.stage AS fit_stage,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY lsh.listing_id
+                    ORDER BY ${BEST_FIT_ORDER_SQL}
+                  ) AS rn,
+                  MAX(lsh.first_seen_at) OVER (PARTITION BY lsh.listing_id) AS max_seen_at
+             FROM user_hits lsh
+             LEFT JOIN searches s ON s.id = lsh.search_id
+             LEFT JOIN campaigns c ON c.id = s.campaign_id
+             LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = lsh.search_id
+         ),
+         best_hits AS (
+           SELECT * FROM ranked_hits WHERE rn = 1
+         )
+         SELECT l.*,
                 k.kept_at, k.note,
-                MAX(lsh.first_seen_at) AS first_seen_at
+                bh.search_name,
+                bh.campaign_name,
+                bh.fit_verdict,
+                bh.fit_reason,
+                bh.fit_facts,
+                bh.fit_stage,
+                COALESCE(bh.max_seen_at, l.last_seen_at) AS first_seen_at
            FROM kept_listings k
            JOIN listings l ON l.id = k.listing_id
-           LEFT JOIN searches s ON s.id = l.search_id
-           LEFT JOIN campaigns c ON c.id = s.campaign_id
-           LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id AND lsh.search_id = l.search_id
+           LEFT JOIN best_hits bh ON bh.listing_id = l.id
           WHERE k.user_id = ?
-          GROUP BY l.id
           ORDER BY k.kept_at DESC`,
-        [uid]
+        [uid, uid, uid]
       );
 
       const listings = rows.map(r => ({
@@ -70,6 +113,7 @@ module.exports = (query, get, run) => {
         details: JSON.parse(r.details || '{}'),
         images: JSON.parse(r.images || '[]'),
         matched_terms: [],
+        fit: fitOf(r),
       }));
 
       await annotateDeals(query, listings);
