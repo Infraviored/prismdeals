@@ -221,10 +221,20 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
               if (!rawTime) return null;
               const f = formatFreshness(rawTime, t);
               if (!f) return null;
-              const text = (overview?.schedule_interval ?? 0) > 0
-                ? t('surface.freshnessHourly', { when: f.label })
-                : t('surface.freshnessOnce', { when: f.label });
-              return <p className="freshness" id="freshness">{text}</p>;
+              const rawInterval = overview?.schedule_interval ?? 0;
+              const intervalHours = rawInterval >= 60 && rawInterval % 60 === 0
+                ? rawInterval / 60
+                : rawInterval;
+
+              let text = '';
+              if (intervalHours <= 0) {
+                text = t('surface.freshnessOnce', { when: f.label });
+              } else if (intervalHours === 1) {
+                text = t('surface.freshnessHourly', { when: f.label });
+              } else {
+                text = t('surface.freshnessInterval', { when: f.label, interval: intervalHours });
+              }
+              return <p className="freshness" id="freshness" data-testid="freshness">{text}</p>;
             })()}
           </header>
 

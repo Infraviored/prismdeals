@@ -203,4 +203,35 @@ describe('FundeScreen', () => {
 
     expect(await screen.findByTestId('mock-route-corridor-map')).toBeInTheDocument();
   });
+
+  it('displays real schedule interval in freshness header (#7)', async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/campaigns/1/route')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockRouteData),
+        });
+      }
+      if (url.includes('/api/campaigns/1/overview')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            schedule_interval: 6,
+            last_crawled_at: new Date(Date.now() - 3600000).toISOString(),
+            pots: { all: 3, fit: 2, unclear: 0, no: 1 },
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ total: 0, listings: [] }),
+      });
+    });
+
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
+
+    const freshnessEl = await screen.findByTestId('freshness');
+    expect(freshnessEl).toHaveTextContent(/searches every 6h|sucht alle 6 Std/);
+    expect(freshnessEl).not.toHaveTextContent(/searches hourly|stündlich/);
+  });
 });
