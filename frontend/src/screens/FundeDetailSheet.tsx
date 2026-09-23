@@ -130,18 +130,20 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
                 {priceText}
               </span>
 
-              {/* Reference price distance signal - ONLY Coral element */}
-              {typeof listing.price_delta_eur === 'number' && listing.price_delta_eur > 0 ? (
+              {/* Reference price distance signal - ONLY Coral element when is_deal */}
+              {listing.is_deal ? (
                 <span data-price-signal className="text-sm font-semibold text-[#E87967] tabular-nums whitespace-nowrap">
+                  {typeof listing.price_delta_eur === 'number' && listing.price_delta_eur > 0
+                    ? t('surface.belowReference', { amount: listing.price_delta_eur })
+                    : t('surface.dealBadge')}
+                </span>
+              ) : typeof listing.price_delta_eur === 'number' && listing.price_delta_eur > 0 ? (
+                <span className="text-sm font-semibold text-[#8FA6A1] tabular-nums whitespace-nowrap">
                   {t('surface.belowReference', { amount: listing.price_delta_eur })}
                 </span>
               ) : typeof listing.price_delta_eur === 'number' && listing.price_delta_eur < 0 ? (
                 <span className="text-sm font-semibold text-[#8FA6A1] tabular-nums whitespace-nowrap">
                   {t('surface.aboveReference', { amount: Math.abs(listing.price_delta_eur) })}
-                </span>
-              ) : listing.is_deal ? (
-                <span data-price-signal className="text-sm font-semibold text-[#E87967] whitespace-nowrap">
-                  {t('surface.dealBadge')}
                 </span>
               ) : null}
             </div>

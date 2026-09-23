@@ -81,4 +81,18 @@ describe('FundeDetailSheet', () => {
     rerender(<FundeDetailSheet listing={noAiListing} onClose={vi.fn()} />);
     expect(screen.queryByText('/100')).not.toBeInTheDocument();
   });
+
+  it('renders belowReference in neutral asche (#8FA6A1) without coral or data-price-signal when not a deal (#5)', () => {
+    const nonDealListing: RowListing = {
+      ...mockListing,
+      is_deal: false,
+      price_delta_eur: 5,
+    };
+    render(<FundeDetailSheet listing={nonDealListing} onClose={vi.fn()} />);
+    const deltaEl = screen.getByText('5 € below reference');
+    expect(deltaEl).toBeInTheDocument();
+    expect(deltaEl.className).toContain('text-[#8FA6A1]');
+    expect(deltaEl.className).not.toContain('text-[#E87967]');
+    expect(deltaEl).not.toHaveAttribute('data-price-signal');
+  });
 });
