@@ -30,7 +30,9 @@ export const EditScreen: React.FC<EditScreenProps> = ({
   const [place, setPlace] = useState<Place | null>(null);
   const [locationId, setLocationId] = useState<string | null>(null);
   const [locationSlug, setLocationSlug] = useState<string | null>(null);
-  const [radius, setRadius] = useState<number>(30);
+  // No limit until the buyer sets one. A radius only means something around a
+  // place, and 30 km preset on a search without one was a limit nobody chose.
+  const [radius, setRadius] = useState<number | null>(null);
   const [maxPrice, setMaxPrice] = useState<number | null>(null);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [attributes, setAttributes] = useState<string[]>([]);
@@ -165,7 +167,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
       // the PLZ into the tail produced a URL the scraper crawled somewhere
       // else entirely, with nothing to show for it.
       locationId,
-      radius,
+      radius: place || locationId ? radius : null,
       maxPrice,
       query: trimmedName ? slugify(trimmedName) : undefined,
       category: categoryId,
@@ -231,7 +233,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col font-sans w-full">
+    <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col font-sans w-full overflow-x-hidden">
       {/* 1. Header Bar (44px) */}
       <Bar
         measure="max-w-xl"
@@ -307,7 +309,37 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           <label className="block text-xs font-medium text-[#8FA6A1]">
             {t('surface.howFar')}
           </label>
-          <RadiusField value={radius} onChange={setRadius} />
+          {!place && !locationId ? (
+            <p className="text-sm text-[#8FA6A1]">{t('surface.radiusNoPlace')}</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex gap-2" role="radiogroup" aria-label={t('surface.howFar')}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={radius === null}
+                  onClick={() => setRadius(null)}
+                  className={`px-3 py-1.5 rounded border text-sm cursor-pointer transition-colors ${
+                    radius === null ? 'border-[#E4D6BE] text-[#F2F5F4]' : 'border-[#0E4A40] text-[#8FA6A1] hover:border-[#8FA6A1]'
+                  }`}
+                >
+                  {t('surface.radiusUnlimited')}
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={radius !== null}
+                  onClick={() => setRadius(radius ?? 50)}
+                  className={`px-3 py-1.5 rounded border text-sm cursor-pointer transition-colors ${
+                    radius !== null ? 'border-[#E4D6BE] text-[#F2F5F4]' : 'border-[#0E4A40] text-[#8FA6A1] hover:border-[#8FA6A1]'
+                  }`}
+                >
+                  {t('surface.radiusLimited')}
+                </button>
+              </div>
+              {radius !== null && <RadiusField value={radius} onChange={setRadius} />}
+            </div>
+          )}
         </div>
 
         {/* Field 4: Bis wie viel (Max price) */}

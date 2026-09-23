@@ -60,7 +60,6 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
   const [filters, setFilters] = useState<TaxonomyFilter[]>([]);
   const [categoryName, setCategoryName] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [openFilter, setOpenFilter] = useState<TaxonomyFilter | null>(null);
   const [search, setSearch] = useState('');
   const [unavailable, setUnavailable] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -199,40 +198,64 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
 
       {filters.map(filter => {
         const current = valueOf(filter.key);
+        const id = `filter-${filter.key}`;
 
         // A boolean has one useful state: on. The site writes it as
-        // `+key:true` and offers no second value to choose from.
+        // `+key:true` and offers no second value to choose from -- so it is a
+        // switch, not a list with one entry.
         if (filter.type === 'attribute_boolean') {
           const on = current === 'true';
           return (
-            <button
+            <label
               key={filter.key}
-              type="button"
-              aria-pressed={on}
-              onClick={() => setValue(filter.key, on ? null : 'true')}
-              className="w-full px-3.5 py-2.5 min-h-[40px] rounded bg-[#00100F] border border-[#0E4A40] flex items-center justify-between gap-3 text-sm hover:border-[#8FA6A1] transition-colors cursor-pointer"
+              htmlFor={id}
+              className="w-full px-3.5 py-2.5 min-h-[44px] rounded bg-[#00100F] border border-[#0E4A40] flex items-center justify-between gap-3 text-sm cursor-pointer hover:border-[#8FA6A1] transition-colors"
             >
-              <span className="text-[#8FA6A1]">{filter.label}</span>
-              <span className={on ? 'text-[#4E8C6A] font-semibold' : 'text-[#8FA6A1]/50'}>
-                {on ? '✓' : t('surface.anyValue')}
-              </span>
-            </button>
+              <span className={on ? 'text-[#F2F5F4]' : 'text-[#8FA6A1]'}>{filter.label}</span>
+              <button
+                id={id}
+                type="button"
+                role="switch"
+                aria-checked={on}
+                onClick={() => setValue(filter.key, on ? null : 'true')}
+                className={`relative shrink-0 w-10 h-6 rounded-full border transition-colors cursor-pointer ${
+                  on ? 'bg-[#4E8C6A] border-[#4E8C6A]' : 'bg-[#06322C] border-[#0E4A40]'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 w-4.5 h-4.5 rounded-full bg-[#F2F5F4] transition-all ${
+                    on ? 'left-[18px]' : 'left-0.5'
+                  }`}
+                />
+              </button>
+            </label>
           );
         }
 
-        const label = filter.options?.find(o => o.value === current)?.label || current;
         return (
-          <button
+          <div
             key={filter.key}
-            type="button"
-            onClick={() => setOpenFilter(filter)}
-            className="w-full px-3.5 py-2.5 min-h-[40px] rounded bg-[#00100F] border border-[#0E4A40] flex items-center justify-between gap-3 text-sm hover:border-[#8FA6A1] transition-colors cursor-pointer"
+            className="w-full px-3.5 min-h-[44px] rounded bg-[#00100F] border border-[#0E4A40] flex items-center justify-between gap-3 text-sm focus-within:border-[#8FA6A1] hover:border-[#8FA6A1] transition-colors"
           >
-            <span className="text-[#8FA6A1]">{filter.label}</span>
-            <span className={label ? 'text-[#F2F5F4]' : 'text-[#8FA6A1]/50'}>
-              {label || t('surface.anyValue')}
-            </span>
-          </button>
+            <label htmlFor={id} className="text-[#8FA6A1] shrink-0">
+              {filter.label}
+            </label>
+            <select
+              id={id}
+              value={current ?? ''}
+              onChange={e => setValue(filter.key, e.target.value || null)}
+              className={`min-w-0 max-w-[60%] py-2.5 bg-transparent text-right text-sm cursor-pointer focus:outline-none ${
+                current ? 'text-[#F2F5F4]' : 'text-[#8FA6A1]/60'
+              }`}
+            >
+              <option value="">{t('surface.anyValue')}</option>
+              {filter.options?.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
         );
       })}
 
@@ -267,35 +290,6 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
         )}
       </Sheet>
 
-      <Sheet
-        isOpen={openFilter !== null}
-        onClose={() => setOpenFilter(null)}
-        title={openFilter?.label || ''}
-      >
-        <div className="flex flex-col">
-          <button
-            onClick={() => {
-              if (openFilter) setValue(openFilter.key, null);
-              setOpenFilter(null);
-            }}
-            className={rowClass(openFilter ? valueOf(openFilter.key) === null : false)}
-          >
-            {t('surface.anyValue')}
-          </button>
-          {openFilter?.options?.map(option => (
-            <button
-              key={option.value}
-              onClick={() => {
-                setValue(openFilter.key, option.value);
-                setOpenFilter(null);
-              }}
-              className={rowClass(valueOf(openFilter.key) === option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </Sheet>
     </div>
   );
 };

@@ -32,7 +32,9 @@ export const Bar: React.FC<BarProps> = ({
       className={`sticky top-0 z-30 h-11 min-h-[44px] max-h-[44px] w-full bg-[#00100F] border-b border-[#0E4A40] px-4 sm:px-8 text-sm ${className}`}
     >
       <div className={`${measure} mx-auto w-full h-full flex items-center justify-between gap-3`}>
-        <div className="flex items-center gap-3 shrink-0 min-w-0">
+        {/* flex-1, not shrink-0: a long title has to give way, or it pushes the
+            actions off screen and the whole page scrolls sideways. */}
+        <div className="flex items-center gap-3 flex-1 min-w-0">
           {onBack && (
             <button
               type="button"

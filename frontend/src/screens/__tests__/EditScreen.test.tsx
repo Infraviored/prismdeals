@@ -81,11 +81,14 @@ describe('EditScreen', () => {
     // 3. Wie weit / How far -- a slider and a typed number, not four presets.
     //    10, 30, 50 and 100 km are not the distances people live at: Landsberg
     //    to Augsburg is 38, to Munich 57.
+    //    And no limit until one is chosen: a preset 30 km was a limit nobody set.
     expect(screen.getByText(/^(Wie weit|How far)$/i)).toBeInTheDocument();
+    expect(await screen.findByRole('radio', { name: /No limit|Ohne Grenze/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: /Limit radius|Umkreis begrenzen/ }));
     const slider = screen.getByRole('slider');
     expect(slider).toHaveAttribute('max', '200');
-    expect(slider).toHaveValue('30');
-    expect(screen.getByRole('spinbutton', { name: '' })).toHaveValue(30);
+    expect(slider).toHaveValue('50');
     expect(screen.getByText('km')).toBeInTheDocument();
 
     // 4. Bis wie viel / Up to how much (Price)
@@ -182,7 +185,8 @@ describe('EditScreen', () => {
     );
     expect(saved.base_url).toContain('preis::150');
     expect(saved.base_url).toContain('/drucker/');
-    expect(saved.base_url).toMatch(/\/k0(c\d+)?l7437r30$/);
+    // No radius was chosen, so none is written: the search is not limited.
+    expect(saved.base_url).toMatch(/\/k0(c\d+)?l7437$/);
 
     expect(onSavedMock).toHaveBeenCalled();
   });
