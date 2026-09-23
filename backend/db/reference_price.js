@@ -143,20 +143,20 @@ async function annotateDeals(query, listings) {
   const missing = listings.filter(l => !searchesByListing.has(String(l.id)) && l.search_id);
   if (missing.length > 0) {
     const missingIds = missing.map(l => String(l.id));
+    // Every chunk's verdicts are read before any listing is judged by them.
+    const rejectedPairs = new Set();
     for (let i = 0; i < missingIds.length; i += CHUNK_SIZE) {
       const chunk = missingIds.slice(i, i + CHUNK_SIZE);
-      const fits = await query(
-        `SELECT listing_id, search_id, verdict FROM listing_fit
-          WHERE listing_id IN (${chunk.map(() => '?').join(',')})`,
+      const rejected = await query(
+        `SELECT listing_id, search_id FROM listing_fit
+          WHERE verdict = 'no' AND listing_id IN (${chunk.map(() => '?').join(',')})`,
         chunk
       );
-      const rejectedPairs = new Set(
-        fits.filter(f => f.verdict === 'no').map(f => `${f.listing_id}:${f.search_id}`)
-      );
-      for (const listing of missing) {
-        if (!rejectedPairs.has(`${listing.id}:${listing.search_id}`)) {
-          addSearch(listing.id, listing.search_id);
-        }
+      for (const r of rejected) rejectedPairs.add(`${r.listing_id}:${r.search_id}`);
+    }
+    for (const listing of missing) {
+      if (!rejectedPairs.has(`${listing.id}:${listing.search_id}`)) {
+        addSearch(listing.id, listing.search_id);
       }
     }
   }
