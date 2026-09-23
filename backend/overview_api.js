@@ -14,6 +14,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { referencePrices, dealListingIds } = require('./db/reference_price');
+const { BEST_FIT_ORDER_SQL } = require('./db/fit');
 const { resolveCampaignScope } = require('./overview/scope');
 const { computeMarketStats } = require('./overview/market');
 const { normalizeReason, computeRequirementStats, aggregateRejections } = require('./overview/requirements');
@@ -132,17 +133,10 @@ module.exports = (query, get) => {
                fit.verdict,
                fit.reason,
                fit.facts_json,
-               ROW_NUMBER() OVER (
-                 PARTITION BY l.id
-                 ORDER BY
-                   CASE fit.verdict
-                     WHEN 'fit' THEN 1
-                     WHEN 'unclear' THEN 2
-                     WHEN 'no' THEN 3
-                     ELSE 4
-                   END ASC,
-                   lsh.first_seen_at DESC
-               ) AS rn,
+                ROW_NUMBER() OVER (
+                  PARTITION BY l.id
+                  ORDER BY ${BEST_FIT_ORDER_SQL}
+                ) AS rn,
                MAX(lsh.first_seen_at) OVER (PARTITION BY l.id) AS max_seen_at
         ${fromSql}
         ${whereSql}

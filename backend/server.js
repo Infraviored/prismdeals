@@ -1,5 +1,7 @@
 const express = require('express');
 const { annotateDeals, dealListingIds } = require('./db/reference_price');
+const { resolveCampaignScope } = require('./overview/scope');
+const { BEST_FIT_ORDER_SQL, FIT_FIRST_SQL, fitOf } = require('./db/fit');
 const fs = require('fs');
 const path = require('path');
 
@@ -420,18 +422,7 @@ async function attachPriceHistory(query, listings) {
 // else is the same list Kleinanzeigen shows, with a 4x8 kit between the
 // matches. A sort the buyer picked by hand is left alone: "price lowest" has to
 // mean price.
-const FIT_FIRST =
-  "CASE fit.verdict WHEN 'fit' THEN 0 WHEN 'unclear' THEN 1 WHEN 'no' THEN 2 ELSE 1 END ASC, ";
-
-function fitOf(row) {
-  if (!row.fit_verdict) return null;
-  return {
-    verdict: row.fit_verdict,
-    reason: row.fit_reason,
-    stage: row.fit_stage,
-    facts: JSON.parse(row.fit_facts || '{}'),
-  };
-}
+const FIT_FIRST = FIT_FIRST_SQL;
 
 app.get('/api/listings', async (req, res) => {
   try {
@@ -439,27 +430,41 @@ app.get('/api/listings', async (req, res) => {
     const isPaginated =
       limitParam !== undefined || offsetParam !== undefined || sort !== undefined || q !== undefined;
 
+    let scopeSearchIds = null;
+    let scopeCampaign = null;
+
+    if (search_id) {
+      const scopeSearch = await get(
+        'SELECT s.id, s.name, s.campaign_id, c.name as campaign_name FROM searches s LEFT JOIN campaigns c ON c.id = s.campaign_id WHERE s.id = ?',
+        [search_id]
+      );
+      if (scopeSearch) {
+        scopeSearchIds = [Number(scopeSearch.id)];
+        if (scopeSearch.campaign_id) {
+          scopeCampaign = { id: scopeSearch.campaign_id, name: scopeSearch.campaign_name };
+        }
+      } else {
+        scopeSearchIds = [Number(search_id)];
+      }
+    } else if (campaign_id) {
+      scopeCampaign = await get('SELECT id, name FROM campaigns WHERE id = ?', [campaign_id]);
+      const campaignSearches = await query(
+        'SELECT id FROM searches WHERE campaign_id = ?',
+        [campaign_id]
+      );
+      scopeSearchIds = campaignSearches.map(s => Number(s.id));
+    }
+
+    if (scopeSearchIds && scopeSearchIds.length === 0) {
+      if (isPaginated) {
+        return res.json({ listings: [], total: 0 });
+      } else {
+        return res.json([]);
+      }
+    }
+
     const whereConditions = [];
     const whereParams = [];
-
-    // A listing belongs to every search that found it, not only to the one
-    // that found it first. l.search_id is that first finder and never changes,
-    // so scoping on it alone made a search that had just harvested fifty rows
-    // answer with none of them, because another search had seen them first.
-    if (search_id) {
-      whereConditions.push(
-        '(l.search_id = ? OR EXISTS (SELECT 1 FROM listing_search_hits h' +
-          ' WHERE h.listing_id = l.id AND h.search_id = ?))'
-      );
-      whereParams.push(search_id, search_id);
-    } else if (campaign_id) {
-      whereConditions.push(
-        '(s.campaign_id = ? OR EXISTS (SELECT 1 FROM listing_search_hits h' +
-          ' JOIN searches hs ON hs.id = h.search_id' +
-          ' WHERE h.listing_id = l.id AND hs.campaign_id = ?))'
-      );
-      whereParams.push(campaign_id, campaign_id);
-    }
 
     if (q && q.trim() !== '') {
       const qVal = `%${q.trim()}%`;
@@ -478,36 +483,24 @@ app.get('/api/listings', async (req, res) => {
       whereParams.push(Number(maxPrice));
     }
 
-    // Filtered here, not in the browser. Hiding rejected rows from the fifty
-    // already loaded and calling the remainder the answer is the same mistake
-    // the deals filter made: it told a buyer a fifty-row search held twelve
-    // matches when it held fifty-three.
     const verdict = req.query.verdict;
     const fitOnly = req.query.fitOnly === '1' || req.query.fitOnly === 'true' || Boolean(verdict);
+    const verdictCol = scopeSearchIds ? 'bs.fit_verdict' : 'fit.verdict';
     if (verdict === 'fit') {
-      whereConditions.push("fit.verdict = 'fit'");
+      whereConditions.push(`${verdictCol} = 'fit'`);
     } else if (verdict === 'no') {
-      whereConditions.push("fit.verdict = 'no'");
+      whereConditions.push(`${verdictCol} = 'no'`);
     } else if (verdict === 'unclear') {
-      whereConditions.push("(fit.verdict = 'unclear' OR fit.verdict IS NULL)");
+      whereConditions.push(`(${verdictCol} = 'unclear' OR ${verdictCol} IS NULL)`);
     } else if (fitOnly) {
-      whereConditions.push("fit.verdict IS NOT NULL AND fit.verdict <> 'no'");
+      whereConditions.push(`${verdictCol} IS NOT NULL AND ${verdictCol} <> 'no'`);
     }
 
-    // Deals only. The family endpoint has had this since the filter moved to
-    // the server; here it was silently ignored, so pressing the pill on an
-    // ordinary search did nothing at all and said nothing about it.
     if (req.query.dealsOnly === '1' || req.query.dealsOnly === 'true') {
-      const scopeRows = search_id
-        ? [{ id: Number(search_id) }]
-        : campaign_id
-        ? await query('SELECT id FROM searches WHERE campaign_id = ?', [campaign_id])
-        : await query('SELECT id FROM searches');
-      const dealIds = await dealListingIds(query, scopeRows.map(r => Number(r.id)));
-      // An empty result is still an answer of the same shape. Returning the
-      // paginated object here regardless meant an unparameterised caller got an
-      // array on most days and an object on the day its search held no deals,
-      // and `data.map` threw.
+      const targetSearchIds = scopeSearchIds
+        ? scopeSearchIds
+        : (await query('SELECT id FROM searches')).map(r => Number(r.id));
+      const dealIds = await dealListingIds(query, targetSearchIds);
       whereConditions.push(
         dealIds.length ? `l.id IN (${dealIds.map(() => '?').join(',')})` : '1 = 0'
       );
@@ -516,22 +509,6 @@ app.get('/api/listings', async (req, res) => {
 
     const whereSql = whereConditions.length ? 'WHERE ' + whereConditions.join(' AND ') : '';
 
-    const FIT_JOIN = `LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = ${
-      search_id ? 'CAST(? AS INTEGER)' : 'l.search_id'
-    }`;
-
-    const countRow = await get(
-      `SELECT COUNT(DISTINCT l.id) as total
-         FROM listings l
-         LEFT JOIN searches s ON l.search_id = s.id
-         ${fitOnly ? FIT_JOIN : ''}
-        ${whereSql}`,
-      fitOnly && search_id ? [search_id, ...whereParams] : whereParams
-    );
-    const total = countRow ? Number(countRow.total || 0) : 0;
-
-    // Fit first by default. A list ordered by anything else is the same list
-    // Kleinanzeigen shows, with a 4x8 kit between the matches.
     let orderBy = FIT_FIRST + '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
     if (sort === 'price_asc') {
       orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
@@ -546,36 +523,117 @@ app.get('/api/listings', async (req, res) => {
     const limit = Math.max(1, parseInt(limitParam, 10) || 50);
     const offset = offsetParam ? Math.max(0, parseInt(offsetParam, 10) || 0) : 0;
 
-    const rows = await query(
-      `SELECT l.*, s.name as item_name, c.name as campaign_name,
-              -- When this search first saw it; with no search in view, when
-              -- anything did. Pinned to l.search_id it reported the first
-              -- finder's date under a search that had only just found it.
-              MIN(lsh.first_seen_at) as first_seen_at,
-              fit.verdict AS fit_verdict, fit.reason AS fit_reason,
-              fit.facts_json AS fit_facts, fit.stage AS fit_stage
-         FROM listings l
-         LEFT JOIN searches s ON l.search_id = s.id
-         LEFT JOIN campaigns c ON s.campaign_id = c.id
-         LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id${
-           search_id ? ' AND lsh.search_id = CAST(? AS INTEGER)' : ''
-         }
-         -- The verdict belongs to the search being looked at, not to whichever
-         -- search happened to find the listing first. With l.search_id, a
-         -- listing viewed under search 2 showed search 1's judgement, against
-         -- requirements that are not the ones on screen.
-         ${FIT_JOIN}
-        ${whereSql}
-        GROUP BY l.id
-        ORDER BY ${orderBy}
-        ${isPaginated ? 'LIMIT ? OFFSET ?' : ''}`,
-      [
-        // One for the first-seen join, one for the verdict join, then the scope.
-        ...(search_id ? [search_id, search_id] : []),
-        ...whereParams,
-        ...(isPaginated ? [limit, offset] : []),
-      ]
-    );
+    let total = 0;
+    let rows = [];
+
+    if (scopeSearchIds) {
+      const searchPlaceholders = scopeSearchIds.map(() => '?').join(',');
+      const cteSql = `
+        WITH scope_hits AS (
+          SELECT lsh.listing_id, lsh.search_id, lsh.first_seen_at
+            FROM listing_search_hits lsh
+           WHERE lsh.search_id IN (${searchPlaceholders})
+          UNION
+          SELECT l.id AS listing_id, l.search_id, COALESCE(l.last_seen_at, datetime('now')) AS first_seen_at
+            FROM listings l
+           WHERE l.search_id IN (${searchPlaceholders})
+             AND NOT EXISTS (
+               SELECT 1 FROM listing_search_hits h
+                WHERE h.listing_id = l.id AND h.search_id = l.search_id
+             )
+        ),
+        ranked_scope AS (
+          SELECT lsh.listing_id,
+                 lsh.search_id,
+                 lsh.first_seen_at,
+                 s.name AS search_name,
+                 c.name AS campaign_name,
+                 fit.verdict AS fit_verdict,
+                 fit.reason AS fit_reason,
+                 fit.facts_json AS fit_facts,
+                 fit.stage AS fit_stage,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY lsh.listing_id
+                   ORDER BY ${BEST_FIT_ORDER_SQL}
+                 ) AS rn,
+                 MIN(lsh.first_seen_at) OVER (PARTITION BY lsh.listing_id) AS min_seen_at
+            FROM scope_hits lsh
+            LEFT JOIN searches s ON s.id = lsh.search_id
+            LEFT JOIN campaigns c ON c.id = s.campaign_id
+            LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = lsh.search_id
+        ),
+        best_scope AS (
+          SELECT * FROM ranked_scope WHERE rn = 1
+        )
+      `;
+
+      const countRow = await get(
+        `${cteSql}
+         SELECT COUNT(*) AS total
+           FROM listings l
+           JOIN best_scope bs ON bs.listing_id = l.id
+          ${whereSql}`,
+        [...scopeSearchIds, ...scopeSearchIds, ...whereParams]
+      );
+      total = countRow ? Number(countRow.total || 0) : 0;
+
+      rows = await query(
+        `${cteSql}
+         SELECT l.*,
+                bs.search_name AS item_name,
+                COALESCE(bs.campaign_name, ?) AS campaign_name,
+                bs.min_seen_at AS first_seen_at,
+                bs.fit_verdict,
+                bs.fit_reason,
+                bs.fit_facts,
+                bs.fit_stage
+           FROM listings l
+           JOIN best_scope bs ON bs.listing_id = l.id
+          ${whereSql}
+          ORDER BY ${orderBy}
+          ${isPaginated ? 'LIMIT ? OFFSET ?' : ''}`,
+        [
+          ...scopeSearchIds,
+          ...scopeSearchIds,
+          scopeCampaign ? scopeCampaign.name : null,
+          ...whereParams,
+          ...(isPaginated ? [limit, offset] : []),
+        ]
+      );
+    } else {
+      const FIT_JOIN =
+        'LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = l.search_id';
+
+      const countRow = await get(
+        `SELECT COUNT(DISTINCT l.id) as total
+           FROM listings l
+           LEFT JOIN searches s ON l.search_id = s.id
+           ${fitOnly ? FIT_JOIN : ''}
+          ${whereSql}`,
+        whereParams
+      );
+      total = countRow ? Number(countRow.total || 0) : 0;
+
+      rows = await query(
+        `SELECT l.*, s.name as item_name, c.name as campaign_name,
+                MIN(lsh.first_seen_at) as first_seen_at,
+                fit.verdict AS fit_verdict, fit.reason AS fit_reason,
+                fit.facts_json AS fit_facts, fit.stage AS fit_stage
+           FROM listings l
+           LEFT JOIN searches s ON l.search_id = s.id
+           LEFT JOIN campaigns c ON s.campaign_id = c.id
+           LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id
+           ${FIT_JOIN}
+          ${whereSql}
+          GROUP BY l.id
+          ORDER BY ${orderBy}
+          ${isPaginated ? 'LIMIT ? OFFSET ?' : ''}`,
+        [
+          ...whereParams,
+          ...(isPaginated ? [limit, offset] : []),
+        ]
+      );
+    }
 
     const listings = rows.map(r => ({
       ...r,
@@ -641,9 +699,9 @@ app.get('/api/campaigns', async (req, res) => {
                   JOIN searches s2 ON s2.id = lsh.search_id
                  WHERE s2.campaign_id = c.id
              )) AS campaign_listings,
-             (SELECT COUNT(DISTINCT l.id)
-                FROM listings l
-                JOIN route_search_circles rsc ON rsc.search_id = l.search_id
+             (SELECT COUNT(DISTINCT lsh.listing_id)
+                FROM listing_search_hits lsh
+                JOIN route_search_circles rsc ON rsc.search_id = lsh.search_id
                WHERE rsc.route_search_id = (
                      SELECT id FROM route_searches r2
                       WHERE r2.campaign_id = c.id ORDER BY r2.id DESC LIMIT 1)
@@ -1233,7 +1291,7 @@ async function getRouteCorridorPayload(route, options = {}) {
            COUNT(DISTINCT CASE WHEN g.lat IS NULL THEN l.id END) AS unplaced
       FROM listings l
       ${CIRCLE_JOIN}
-      JOIN searches s ON s.id = l.search_id
+      LEFT JOIN searches s ON s.id = c.search_id
       LEFT JOIN search_family_searches sfs ON sfs.search_id = c.search_id AND sfs.active = 1
       LEFT JOIN search_family_terms t ON t.id = sfs.term_id
       ${FIT_JOIN}
@@ -1279,7 +1337,7 @@ async function getRouteCorridorPayload(route, options = {}) {
            fit.facts_json AS fit_facts, fit.stage AS fit_stage
       FROM listings l
       ${CIRCLE_JOIN}
-      JOIN searches s ON s.id = l.search_id
+      LEFT JOIN searches s ON s.id = c.search_id
       LEFT JOIN search_family_searches sfs ON sfs.search_id = c.search_id AND sfs.active = 1
       LEFT JOIN search_family_terms t ON t.id = sfs.term_id
       ${FIT_JOIN}
@@ -2065,23 +2123,58 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     // links so nothing is lost from the database, but showing their results as
     // current is misleading: those listings were found at a radius or a keyword
     // the buyer has since changed. Kept, not shown.
-    const whereConditions = ['sfs.family_id = ?', 'sfs.active = 1'];
-    const whereParams = [fam.id];
+    const termVal = req.query.term;
+    let termConditionSql = '';
+    const termParams = [];
+    if (termVal !== undefined && termVal !== '') {
+      const termNum = parseInt(termVal, 10);
+      if (!isNaN(termNum) && String(termNum) === String(termVal).trim()) {
+        termConditionSql = 'AND (sfs.term_id = ? OR t.term = ? OR t.label = ?)';
+        termParams.push(termNum, termVal, termVal);
+      } else {
+        termConditionSql = 'AND (t.term = ? OR t.label = ?)';
+        termParams.push(termVal, termVal);
+      }
+    }
 
-    // Same reason as the corridor: a family campaign had no verdict to filter
-    // or to show.
-    const FIT_JOIN =
-      'LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = sfs.search_id';
+    const cteSql = `
+      WITH ranked_family_listings AS (
+        SELECT sfs.search_id,
+               sfs.term_id,
+               s.name AS search_name,
+               lsh.listing_id,
+               lsh.first_seen_at,
+               fit.verdict AS fit_verdict,
+               fit.reason AS fit_reason,
+               fit.facts_json AS fit_facts,
+               fit.stage AS fit_stage,
+               ROW_NUMBER() OVER (
+                 PARTITION BY lsh.listing_id
+                 ORDER BY ${BEST_FIT_ORDER_SQL}
+               ) AS rn,
+               MAX(lsh.first_seen_at) OVER (PARTITION BY lsh.listing_id) AS max_seen_at
+          FROM search_family_searches sfs
+          LEFT JOIN search_family_terms t ON t.id = sfs.term_id
+          JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+          JOIN searches s ON s.id = sfs.search_id
+          LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = sfs.search_id
+         WHERE sfs.family_id = ? AND sfs.active = 1
+           ${termConditionSql}
+      )
+    `;
+
+    const whereConditions = [];
+    const whereParams = [];
 
     const verdict = req.query.verdict;
     if (verdict === 'fit') {
-      whereConditions.push("fit.verdict = 'fit'");
+      whereConditions.push("rfl.fit_verdict = 'fit'");
     } else if (verdict === 'no') {
-      whereConditions.push("fit.verdict = 'no'");
+      whereConditions.push("rfl.fit_verdict = 'no'");
     } else if (verdict === 'unclear') {
-      whereConditions.push("(fit.verdict = 'unclear' OR fit.verdict IS NULL)");
+      whereConditions.push("(rfl.fit_verdict = 'unclear' OR rfl.fit_verdict IS NULL)");
     } else if (req.query.fitOnly === '1' || req.query.fitOnly === 'true') {
-      whereConditions.push("fit.verdict IS NOT NULL AND fit.verdict <> 'no'");
+      whereConditions.push("rfl.fit_verdict IS NOT NULL AND rfl.fit_verdict <> 'no'");
     }
 
     // Deals only, decided here rather than in the browser. Filtering the fifty
@@ -2101,19 +2194,6 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
       whereParams.push(...dealIds);
     }
 
-    // Filter by term
-    if (req.query.term !== undefined && req.query.term !== '') {
-      const termVal = req.query.term;
-      const termNum = parseInt(termVal, 10);
-      if (!isNaN(termNum) && String(termNum) === String(termVal).trim()) {
-        whereConditions.push('(sfs.term_id = ? OR t.term = ? OR t.label = ?)');
-        whereParams.push(termNum, termVal, termVal);
-      } else {
-        whereConditions.push('(t.term = ? OR t.label = ?)');
-        whereParams.push(termVal, termVal);
-      }
-    }
-
     // Filter by maxDetour
     if (req.query.maxDetour !== undefined && req.query.maxDetour !== '') {
       const maxDetour = parseFloat(req.query.maxDetour);
@@ -2130,20 +2210,30 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
       whereParams.push(qVal, qVal);
     }
 
-    const whereSql = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+    const minPrice = req.query.min_price ?? req.query.minPrice;
+    if (minPrice !== undefined && minPrice !== '' && !isNaN(Number(minPrice))) {
+      whereConditions.push('l.price_eur >= ?');
+      whereParams.push(Number(minPrice));
+    }
+    const maxPrice = req.query.max_price ?? req.query.maxPrice;
+    if (maxPrice !== undefined && maxPrice !== '' && !isNaN(Number(maxPrice))) {
+      whereConditions.push('l.price_eur <= ?');
+      whereParams.push(Number(maxPrice));
+    }
+
+    const whereSql = whereConditions.length > 0 ? 'AND ' + whereConditions.join(' AND ') : '';
 
     // Total count query after filters
     const totalCountSql = `
-      SELECT COUNT(DISTINCT l.id) AS total
-        FROM search_family_searches sfs
-        LEFT JOIN search_family_terms t ON t.id = sfs.term_id
-        JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-        JOIN listings l ON l.id = lsh.listing_id
-        ${FIT_JOIN}
+      ${cteSql}
+      SELECT COUNT(*) AS total
+        FROM ranked_family_listings rfl
+        JOIN listings l ON l.id = rfl.listing_id
         LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
+       WHERE rfl.rn = 1
        ${whereSql}
     `;
-    const totalRow = await get(totalCountSql, [routeId, ...whereParams]);
+    const totalRow = await get(totalCountSql, [fam.id, ...termParams, routeId, ...whereParams]);
     const total = totalRow ? Number(totalRow.total || 0) : 0;
 
     // Sorting
@@ -2172,6 +2262,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     const offset = req.query.offset ? Math.max(0, parseInt(req.query.offset, 10) || 0) : 0;
 
     const listingsSql = `
+      ${cteSql}
       SELECT l.id, l.title, l.price, l.price_eur, l.location, l.url,
              l.short_description, l.detailed_description, l.details,
              l.extracted_facts, l.niceness_score, l.llm_processed,
@@ -2179,25 +2270,21 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
              l.search_id, l.images, l.last_description_changed_at,
              l.last_ai_evaluated_at, l.last_seen_at, l.delisted_at,
              l.source, l.source_id,
-             MAX(lsh.first_seen_at) AS first_seen_at,
-             s.name AS search_name,
+             rfl.max_seen_at AS first_seen_at,
+             rfl.search_name,
              g.lat, g.lon, g.offroute_km, g.detour_min, g.status AS geo_status,
-             fit.verdict AS fit_verdict, fit.reason AS fit_reason,
-             fit.facts_json AS fit_facts, fit.stage AS fit_stage
-        FROM search_family_searches sfs
-        LEFT JOIN search_family_terms t ON t.id = sfs.term_id
-        JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-        JOIN listings l ON l.id = lsh.listing_id
-        ${FIT_JOIN}
-        LEFT JOIN searches s ON s.id = l.search_id
+             rfl.fit_verdict, rfl.fit_reason,
+             rfl.fit_facts, rfl.fit_stage
+        FROM ranked_family_listings rfl
+        JOIN listings l ON l.id = rfl.listing_id
         LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
+       WHERE rfl.rn = 1
        ${whereSql}
-       GROUP BY l.id
        ORDER BY ${orderBy}
        LIMIT ? OFFSET ?
     `;
 
-    const rows = await query(listingsSql, [routeId, ...whereParams, limit, offset]);
+    const rows = await query(listingsSql, [fam.id, ...termParams, routeId, ...whereParams, limit, offset]);
 
     const listings = rows.map(r => ({
       ...r,

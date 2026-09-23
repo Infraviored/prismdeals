@@ -377,6 +377,95 @@ async function main() {
       [now.toISOString()]
     );
 
+    // --- Finding 3 Fixture: Route listing count over listing_search_hits ---
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (9, 'Route Count Campaign')`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (901, 9, 'Circle 901', 'https://example.com/901', 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (999, 9, 'Foreign Finder 999', 'https://example.com/999', 1)`);
+    await runDb(db, `INSERT INTO route_searches (id, campaign_id, name, base_url, origin, destination, radius_km, half_width_km, plan_json, created_at)
+                     VALUES (90, 9, 'Route 90', 'https://example.com/r90', 'A', 'B', 10, 10, '{}', datetime('now'))`);
+    await runDb(db, `INSERT INTO route_search_circles (route_search_id, search_id, radius_km, label) VALUES (90, 901, 10, 'Circle 901')`);
+    await runDb(
+      db,
+      `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+       VALUES ('foreign-route-1', 'Foreign Finder Listing', '50 €', 50, 'Ulm', 'https://example.com/fr1', 50, 999)`
+    );
+    // Listing found first by 999, then found by route circle 901:
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('foreign-route-1', 999, ?)`, [now.toISOString()]);
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('foreign-route-1', 901, ?)`, [now.toISOString()]);
+
+    // --- Finding 4 Fixture: Route corridor with deleted first finder ---
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (12, 'Deleted First Finder Campaign')`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1201, 12, 'Kreis 1201', 'https://example.com/1201', 1)`);
+    await runDb(db, `INSERT INTO route_searches (id, campaign_id, name, base_url, origin, destination, radius_km, half_width_km, plan_json, created_at)
+                     VALUES (120, 12, 'Route 120', 'https://example.com/r120', 'A', 'B', 10, 10, '{}', datetime('now'))`);
+    await runDb(db, `INSERT INTO route_search_circles (route_search_id, search_id, radius_km, label) VALUES (120, 1201, 10, 'Kreis 1201')`);
+    // First finder 998 is NOT in searches table (simulates deleted search):
+    await runDb(
+      db,
+      `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+       VALUES ('deleted-finder-1', 'Deleted Finder Listing', '60 €', 60, 'Kempten', 'https://example.com/df1', 50, 998)`
+    );
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('deleted-finder-1', 1201, ?)`, [now.toISOString()]);
+    await runDb(
+      db,
+      `INSERT INTO listing_route_geo (listing_id, route_search_id, lat, lon, offroute_km, detour_min, computed_at, status)
+       VALUES ('deleted-finder-1', 120, 47.7, 10.3, 1.0, 3.0, datetime('now'), 'routed')`
+    );
+
+    // --- Finding 1 within-campaign Fixture: Campaign 11 (Term 1 'unclear', Term 2 'fit') ---
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (11, 'Campaign 11 Multi Verdict')`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1101, 11, 'Suche 1101', 'https://example.com/1101', 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1102, 11, 'Suche 1102', 'https://example.com/1102', 1)`);
+    await runDb(
+      db,
+      `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+       VALUES ('c11-item-1', 'Campaign 11 Item', '70 €', 70, 'Augsburg', 'https://example.com/c11', 50, 1101)`
+    );
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('c11-item-1', 1101, ?)`, [now.toISOString()]);
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('c11-item-1', 1102, ?)`, [now.toISOString()]);
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('c11-item-1', 1101, 'unclear', 'Taktung unklar', '{"speedMhz": null}', 'title', ?)`,
+      [now.toISOString()]
+    );
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('c11-item-1', 1102, 'fit', 'Passend 16GB', '{"speedMhz": 3200}', 'title', ?)`,
+      [now.toISOString()]
+    );
+
+    // --- Finding 5 Fixture: Search family listings naked column / best verdict ---
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (13, 'Family 13 Campaign')`);
+    await runDb(db, `INSERT INTO search_families (id, campaign_id, name, base_url, enabled, created_at)
+                     VALUES (13, 13, 'Family 13', 'https://example.com/fam13', 1, datetime('now'))`);
+    await runDb(db, `INSERT INTO search_family_terms (id, family_id, term, label, enabled, position)
+                     VALUES (1301, 13, 'term-a', 'Term A', 1, 0),
+                            (1302, 13, 'term-b', 'Term B', 1, 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1311, 13, 'Suche 1311', 'https://example.com/1311', 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1312, 13, 'Suche 1312', 'https://example.com/1312', 1)`);
+    await runDb(db, `INSERT INTO search_family_searches (family_id, term_id, search_id) VALUES (13, 1301, 1311), (13, 1302, 1312)`);
+    await runDb(
+      db,
+      `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+       VALUES ('fam-mv-1', 'Family Multi Verdict Item', '95 €', 95, 'Nürnberg', 'https://example.com/fmv1', 50, 1311)`
+    );
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('fam-mv-1', 1311, ?)`, [now.toISOString()]);
+    await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('fam-mv-1', 1312, ?)`, [now.toISOString()]);
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('fam-mv-1', 1311, 'unclear', 'Unklar 1311', '{"spec": "unknown"}', 'title', ?)`,
+      [now.toISOString()]
+    );
+    await runDb(
+      db,
+      `INSERT INTO listing_fit (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
+       VALUES ('fam-mv-1', 1312, 'fit', 'Perfekt 1312', '{"spec": "gold"}', 'title', ?)`,
+      [now.toISOString()]
+    );
+
     db.close();
 
     console.log('--- TEST 1: Default Pagination (limit=50) for search-families/:id/listings ---');
@@ -855,6 +944,54 @@ async function main() {
       reqGb.survivors === 1,
       `Winning fit row facts should survive requirement, got ${reqGb?.survivors}`
     );
+
+    console.log('--- TEST 23: Finding 1 - /api/listings cross-campaign isolation & within-campaign best verdict ---');
+    // 1. Cross-campaign: cross-camp-1 was rejected in Campaign 6 (search 601), but unjudged in Campaign 7 (search 701)
+    const c7No = await request('/api/listings?campaign_id=7&limit=50&verdict=no');
+    assert(c7No.status === 200, `status ${c7No.status}`);
+    assert(c7No.data.total === 0, `Campaign 7 must have 0 rejected listings, got ${c7No.data.total} (rejection leaked from Campaign 6!)`);
+
+    const c7Unclear = await request('/api/listings?campaign_id=7&limit=50&verdict=unclear');
+    assert(c7Unclear.status === 200, `status ${c7Unclear.status}`);
+    assert(c7Unclear.data.total === 1, `Campaign 7 must have 1 unclear/unjudged listing, got ${c7Unclear.data.total}`);
+    assert(c7Unclear.data.listings[0].id === 'cross-camp-1', 'expected cross-camp-1 in unclear');
+    assert(c7Unclear.data.listings[0].item_name === 'Suche B', `item_name must belong to Campaign 7, got ${c7Unclear.data.listings[0].item_name}`);
+    assert(c7Unclear.data.listings[0].campaign_name === 'Kampagne B', `campaign_name must belong to Campaign 7, got ${c7Unclear.data.listings[0].campaign_name}`);
+
+    // 2. Within-campaign best verdict: c11-item-1 has 1101 'unclear', 1102 'fit'
+    const c11Fit = await request('/api/listings?campaign_id=11&limit=50&verdict=fit');
+    assert(c11Fit.status === 200, `status ${c11Fit.status}`);
+    assert(c11Fit.data.total === 1, `Campaign 11 fit tab must find c11-item-1, got ${c11Fit.data.total}`);
+    assert(c11Fit.data.listings[0].fit.verdict === 'fit', `fit verdict should be 'fit', got ${c11Fit.data.listings[0].fit.verdict}`);
+    assert(c11Fit.data.listings[0].fit.reason === 'Passend 16GB', `fit reason should be 'Passend 16GB', got ${c11Fit.data.listings[0].fit.reason}`);
+
+    const c11Unclear = await request('/api/listings?campaign_id=11&limit=50&verdict=unclear');
+    assert(c11Unclear.status === 200, `status ${c11Unclear.status}`);
+    assert(c11Unclear.data.total === 0, `Campaign 11 unclear tab must be 0 for winning fit listing, got ${c11Unclear.data.total}`);
+
+    console.log('--- TEST 24: Finding 3 - GET /api/campaigns route_listings counts via listing_search_hits ---');
+    const allCampaignsRes = await request('/api/campaigns');
+    assert(allCampaignsRes.status === 200, `status ${allCampaignsRes.status}`);
+    const camp9 = allCampaignsRes.data.find(c => c.id === 9);
+    assert(camp9, 'Campaign 9 must exist in campaigns response');
+    assert(camp9.listing_count === 1, `Campaign 9 route listing_count must be 1, got ${camp9.listing_count} (counted only l.search_id instead of hits)`);
+
+    console.log('--- TEST 25: Finding 4 - getRouteCorridorPayload handles deleted first finder ---');
+    const route12Res = await request('/api/campaigns/12/route');
+    assert(route12Res.status === 200, `status ${route12Res.status}`);
+    assert(route12Res.data.total === 1, `Route 12 total must be 1, got ${route12Res.data.total} (INNER JOIN searches dropped deleted finder!)`);
+    assert(route12Res.data.listings.length === 1, `Route 12 listings length must be 1, got ${route12Res.data.listings.length}`);
+    assert(route12Res.data.listings[0].id === 'deleted-finder-1', 'expected deleted-finder-1');
+    assert(route12Res.data.listings[0].search_name === 'Kreis 1201', `search_name should be 'Kreis 1201', got ${route12Res.data.listings[0].search_name}`);
+
+    console.log('--- TEST 26: Finding 5 - /api/search-families/:id/listings resolves best verdict consistently ---');
+    const fam13Res = await request('/api/search-families/13/listings');
+    assert(fam13Res.status === 200, `status ${fam13Res.status}`);
+    assert(fam13Res.data.listings.length === 1, `Family 13 listings length must be 1, got ${fam13Res.data.listings.length}`);
+    const famItem = fam13Res.data.listings[0];
+    assert(famItem.fit && famItem.fit.verdict === 'fit', `expected best verdict 'fit', got ${famItem.fit?.verdict}`);
+    assert(famItem.fit.reason === 'Perfekt 1312', `expected reason 'Perfekt 1312', got ${famItem.fit?.reason}`);
+    assert(famItem.fit.facts.spec === 'gold', `expected facts.spec 'gold', got ${famItem.fit?.facts?.spec}`);
 
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
   } finally {
