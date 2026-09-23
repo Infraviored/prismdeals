@@ -299,3 +299,12 @@ CREATE TABLE IF NOT EXISTS listing_price_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_price_history_listing ON listing_price_history(listing_id, seen_at);
+
+-- Tracking when a search was last successfully scraped.
+--
+-- A re-aimed family marks its old searches inactive (active = 0) and creates a
+-- new search for the new parameters. Until the new search runs its first crawl,
+-- the old search's listings and verdicts must stay visible in the campaign view
+-- so saving never looks like "everything was deleted".
+ALTER TABLE searches ADD COLUMN last_scraped_at TEXT;
+

@@ -612,6 +612,14 @@ def main():
                                     now_iso,
                                 ),
                             )
+                    if search_id is not None:
+                        now_scraped = datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat()
+                        cursor.execute(
+                            "UPDATE searches SET last_scraped_at = ? WHERE id = ?",
+                            (now_scraped, search_id),
+                        )
                     conn.commit()
 
             except ScrapeRefused as refusal:

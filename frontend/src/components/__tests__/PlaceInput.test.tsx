@@ -324,4 +324,26 @@ describe('PlaceInput', () => {
 
     expect(onChange).toHaveBeenCalledWith(null);
   });
+
+  it('renders X clear button when text is present and clears place on click', () => {
+    const onChange = vi.fn();
+    render(
+      <PlaceInput
+        label="Origin"
+        placeholder="Search..."
+        value={mockPlaces[0]}
+        onChange={onChange}
+        emptyHint="No matches"
+      />
+    );
+
+    const clearBtn = screen.getByTestId('clear-place-button');
+    expect(clearBtn).toBeInTheDocument();
+
+    fireEvent.click(clearBtn);
+
+    expect(onChange).toHaveBeenCalledWith(null);
+    expect(screen.getByRole('combobox')).toHaveValue('');
+    expect(screen.queryByTestId('clear-place-button')).not.toBeInTheDocument();
+  });
 });

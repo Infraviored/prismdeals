@@ -2,6 +2,23 @@ const express = require('express');
 const { annotateDeals, dealListingIds } = require('./db/reference_price');
 const { resolveCampaignScope } = require('./overview/scope');
 const { BEST_FIT_ORDER_SQL, FIT_FIRST_SQL, fitOf } = require('./db/fit');
+
+// Inactive family searches stay visible until their active successor finishes its first scrape.
+const SFS_ACTIVE_OR_PENDING_SQL = `(
+  sfs.active = 1
+  OR (
+    sfs.active = 0
+    AND EXISTS (
+      SELECT 1
+      FROM search_family_searches sfs_act
+      JOIN searches s_act ON s_act.id = sfs_act.search_id
+      WHERE sfs_act.family_id = sfs.family_id
+        AND sfs_act.term_id = sfs.term_id
+        AND sfs_act.active = 1
+        AND s_act.last_scraped_at IS NULL
+    )
+  )
+)`;
 const fs = require('fs');
 const path = require('path');
 
@@ -743,7 +760,7 @@ app.get('/api/campaigns', async (req, res) => {
                -- results screen counts them. A re-aimed family keeps its old
                -- links, and counting them here made the list promise rows the
                -- results screen then refused to show.
-               WHERE sfs.active = 1
+               WHERE ${SFS_ACTIVE_OR_PENDING_SQL}
                  AND sfs.family_id = (
                      SELECT id FROM search_families sf2
                       WHERE sf2.campaign_id = c.id ORDER BY sf2.id DESC LIMIT 1)
@@ -1678,7 +1695,7 @@ app.get('/api/search-families', async (req, res) => {
              (SELECT COUNT(DISTINCT lsh.listing_id)
                 FROM search_family_searches sfs
                 JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-               WHERE sfs.family_id = f.id AND sfs.active = 1) AS listings
+               WHERE sfs.family_id = f.id AND ${SFS_ACTIVE_OR_PENDING_SQL}) AS listings
         FROM search_families f
     `;
     const params = [];
@@ -1731,7 +1748,14 @@ app.get('/api/search-families/:id', async (req, res) => {
                  FROM search_family_searches sfs
                  JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
                 WHERE sfs.family_id = t.family_id AND sfs.term_id = t.id
-                  AND sfs.active = 1) AS listings
+                  AND ${SFS_ACTIVE_OR_PENDING_SQL}) AS listings,
+              (SELECT COUNT(DISTINCT lsh.listing_id)
+                 FROM search_family_searches sfs
+                 JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+                 JOIN listing_fit lf ON lf.listing_id = lsh.listing_id AND lf.search_id = sfs.search_id
+                WHERE sfs.family_id = t.family_id AND sfs.term_id = t.id
+                  AND lf.verdict = 'fit'
+                  AND ${SFS_ACTIVE_OR_PENDING_SQL}) AS fit_listings
          FROM search_family_terms t
         WHERE t.family_id = ?
         ORDER BY t.position ASC, t.id ASC`,
@@ -1743,7 +1767,8 @@ app.get('/api/search-families/:id', async (req, res) => {
       term: t.term,
       label: t.label || t.term,
       enabled: Boolean(t.enabled),
-      listings: Number(t.listings || 0)
+      listings: Number(t.listings || 0),
+      fit_listings: Number(t.fit_listings || 0)
     }));
 
     // Determine whether this family has been crawled (listings found or target scraped in scraper.log)
@@ -1757,7 +1782,7 @@ app.get('/api/search-families/:id', async (req, res) => {
         `SELECT MAX(lsh.first_seen_at) as last_hit
            FROM search_family_searches sfs
            JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-          WHERE sfs.family_id = ? AND sfs.active = 1`,
+          WHERE sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}`,
         [fam.id]
       );
       if (hitTimeRow && hitTimeRow.last_hit) last_crawled_at = hitTimeRow.last_hit;
@@ -2235,7 +2260,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
           JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
           JOIN searches s ON s.id = sfs.search_id
           LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = sfs.search_id
-         WHERE sfs.family_id = ? AND sfs.active = 1
+         WHERE sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}
            ${termConditionSql}
       )
     `;
@@ -2256,7 +2281,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
 
     const familySearchIds = (
       await query(
-        'SELECT search_id FROM search_family_searches WHERE family_id = ? AND active = 1',
+        `SELECT sfs.search_id FROM search_family_searches sfs WHERE sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}`,
         [fam.id]
       )
     ).map(r => Number(r.search_id));

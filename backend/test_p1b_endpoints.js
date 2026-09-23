@@ -161,11 +161,11 @@ async function main() {
     await runDb(db, `INSERT INTO search_family_terms (id, family_id, term, label, enabled, position)
                      VALUES (30, 2, 'Werkbank', 'Werkbank', 1, 0),
                             (40, 2, 'Schraubstock', 'Schraubstock', 1, 1)`);
-    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled)
-                     VALUES (201, 2, 'Werkbank Augsburg', 'https://kleinanzeigen.de/s-201', 1),
-                            (202, 2, 'Schraubstock Augsburg', 'https://kleinanzeigen.de/s-202', 1),
-                            (203, 2, 'Schraubstock alt', 'https://kleinanzeigen.de/s-203', 1),
-                            (204, 2, 'Ohne Familie', 'https://kleinanzeigen.de/s-204', 1)`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled, last_scraped_at)
+                     VALUES (201, 2, 'Werkbank Augsburg', 'https://kleinanzeigen.de/s-201', 1, datetime('now')),
+                            (202, 2, 'Schraubstock Augsburg', 'https://kleinanzeigen.de/s-202', 1, datetime('now')),
+                            (203, 2, 'Schraubstock alt', 'https://kleinanzeigen.de/s-203', 1, datetime('now')),
+                            (204, 2, 'Ohne Familie', 'https://kleinanzeigen.de/s-204', 1, datetime('now'))`);
     // 203 is a search the family was re-aimed away from: kept, not shown. The
     // results screen filters it out, so the number on the list must too.
     await runDb(db, `INSERT INTO search_family_searches (family_id, term_id, search_id, active)

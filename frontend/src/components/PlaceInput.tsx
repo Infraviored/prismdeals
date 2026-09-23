@@ -148,30 +148,54 @@ export default function PlaceInput({ label, placeholder, value, onChange, emptyH
     listRef.current?.children[active]?.scrollIntoView({ block: 'nearest' })
   }, [active, open])
 
+  const clear = () => {
+    skipNextLookup.current = true
+    setText('')
+    setMatches([])
+    setOpen(false)
+    onChange(null)
+  }
+
   return (
     <div className="space-y-1.5 relative" ref={containerRef}>
-      <label htmlFor={`${listId}-input`} className="text-xs text-[#8FA6A1] font-medium block">
-        {label}
-      </label>
-      <Input
-        id={`${listId}-input`}
-        type="text"
-        role="combobox"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        aria-activedescendant={open && matches.length ? `${listId}-${active}` : undefined}
-        autoComplete="off"
-        value={text}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-          setText(e.target.value)
-          // The typed text no longer describes the chosen place.
-          if (value) onChange(null)
-        }}
-        onFocus={() => { if (matches.length) setOpen(true) }}
-        onKeyDown={onKeyDown}
-        placeholder={placeholder}
-      />
+      {label ? (
+        <label htmlFor={`${listId}-input`} className="text-xs text-[#8FA6A1] font-medium block">
+          {label}
+        </label>
+      ) : null}
+      <div className="relative flex items-center">
+        <Input
+          id={`${listId}-input`}
+          type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={open && matches.length ? `${listId}-${active}` : undefined}
+          autoComplete="off"
+          value={text}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+            setText(e.target.value)
+            // The typed text no longer describes the chosen place.
+            if (value) onChange(null)
+          }}
+          onFocus={() => { if (matches.length) setOpen(true) }}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          className={text ? 'pr-9' : ''}
+        />
+        {text ? (
+          <button
+            type="button"
+            data-testid="clear-place-button"
+            aria-label="Ort löschen"
+            onClick={clear}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full text-[#8FA6A1] hover:text-[#F2F5F4] hover:bg-[#0E4A40]/50 cursor-pointer transition-colors text-xs font-bold"
+          >
+            ✕
+          </button>
+        ) : null}
+      </div>
 
       {/* The chosen place stood a second time underneath the field, in green,
           repeating what the field already said. The field is the answer; only

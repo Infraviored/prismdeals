@@ -66,7 +66,21 @@ module.exports = (query, get) => {
         JOIN listings l ON l.id = lsh.listing_id
         LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = sfs.search_id
       `;
-      whereConditions.push('sfs.family_id = ? AND sfs.active = 1');
+      whereConditions.push(`sfs.family_id = ? AND (
+        sfs.active = 1
+        OR (
+          sfs.active = 0
+          AND EXISTS (
+            SELECT 1
+            FROM search_family_searches sfs_act
+            JOIN searches s_act ON s_act.id = sfs_act.search_id
+            WHERE sfs_act.family_id = sfs.family_id
+              AND sfs_act.term_id = sfs.term_id
+              AND sfs_act.active = 1
+              AND s_act.last_scraped_at IS NULL
+          )
+        )
+      )`);
       whereParams.push(familyId);
 
       if (term !== undefined && term !== '') {

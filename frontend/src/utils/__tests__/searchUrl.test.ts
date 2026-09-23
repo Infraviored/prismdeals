@@ -58,6 +58,7 @@ describe('searchUrl utilities', () => {
       maxPrice: 150,
       query: 'drucker',
       category: null,
+      categorySlug: null,
       attributes: [],
     });
   });
@@ -86,6 +87,67 @@ describe('searchUrl utilities', () => {
     expect(composed).toBe(
       'https://www.kleinanzeigen.de/s-muenchen/preis::300/k0l6411r50'
     );
+  });
+
+  it('decomposes category-only URL without misidentifying category as location', () => {
+    const dec = decomposeSearchUrl('https://www.kleinanzeigen.de/s-pc-zubehoer-software/k0c225');
+    expect(dec).toEqual({
+      locationSlug: null,
+      locationId: null,
+      radius: null,
+      minPrice: null,
+      maxPrice: null,
+      query: null,
+      category: '225',
+      categorySlug: 'pc-zubehoer-software',
+      attributes: [],
+    });
+  });
+
+  it('decomposes category with query without misidentifying category as location', () => {
+    const dec = decomposeSearchUrl('https://www.kleinanzeigen.de/s-pc-zubehoer-software/corsair/k0c225');
+    expect(dec).toEqual({
+      locationSlug: null,
+      locationId: null,
+      radius: null,
+      minPrice: null,
+      maxPrice: null,
+      query: 'corsair',
+      category: '225',
+      categorySlug: 'pc-zubehoer-software',
+      attributes: [],
+    });
+  });
+
+  it('decomposes nationwide search without location without treating query as location', () => {
+    const dec = decomposeSearchUrl('https://www.kleinanzeigen.de/s-thinkpad-t14s/k0');
+    expect(dec).toEqual({
+      locationSlug: null,
+      locationId: null,
+      radius: null,
+      minPrice: null,
+      maxPrice: null,
+      query: 'thinkpad-t14s',
+      category: null,
+      categorySlug: null,
+      attributes: [],
+    });
+  });
+
+  it('composes search URL without location and without s-suchanfrage when query is provided', () => {
+    const composed = composeSearchUrl({
+      query: 'thinkpad-t14s',
+    });
+    expect(composed).toBe('https://www.kleinanzeigen.de/s-thinkpad-t14s/k0');
+  });
+
+  it('composes search URL without location with category slug and query', () => {
+    const composed = composeSearchUrl({
+      categorySlug: 'pc-zubehoer-software',
+      category: '225',
+      query: 'corsair',
+    });
+    expect(composed).toBe('https://www.kleinanzeigen.de/s-pc-zubehoer-software/corsair/k0c225');
   });
 });
 

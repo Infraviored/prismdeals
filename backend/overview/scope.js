@@ -47,7 +47,25 @@ async function resolveCampaignScope(campaignId, searchIdParam, { query, get }) {
   );
   if (family) {
     const rows = await query(
-      'SELECT DISTINCT search_id FROM search_family_searches WHERE family_id = ? AND active = 1',
+      `SELECT DISTINCT sfs.search_id
+         FROM search_family_searches sfs
+         JOIN searches s ON s.id = sfs.search_id
+        WHERE sfs.family_id = ?
+          AND (
+            sfs.active = 1
+            OR (
+              sfs.active = 0
+              AND EXISTS (
+                SELECT 1
+                FROM search_family_searches sfs_act
+                JOIN searches s_act ON s_act.id = sfs_act.search_id
+                WHERE sfs_act.family_id = sfs.family_id
+                  AND sfs_act.term_id = sfs.term_id
+                  AND sfs_act.active = 1
+                  AND s_act.last_scraped_at IS NULL
+              )
+            )
+          )`,
       [family.id]
     );
     const searchIds = rows.map(r => Number(r.search_id));
