@@ -3,22 +3,7 @@ const { annotateDeals, dealListingIds } = require('./db/reference_price');
 const { resolveCampaignScope } = require('./overview/scope');
 const { BEST_FIT_ORDER_SQL, FIT_FIRST_SQL, fitOf } = require('./db/fit');
 
-// Inactive family searches stay visible until their active successor finishes its first scrape.
-const SFS_ACTIVE_OR_PENDING_SQL = `(
-  sfs.active = 1
-  OR (
-    sfs.active = 0
-    AND EXISTS (
-      SELECT 1
-      FROM search_family_searches sfs_act
-      JOIN searches s_act ON s_act.id = sfs_act.search_id
-      WHERE sfs_act.family_id = sfs.family_id
-        AND sfs_act.term_id = sfs.term_id
-        AND sfs_act.active = 1
-        AND s_act.last_scraped_at IS NULL
-    )
-  )
-)`;
+const { SFS_ACTIVE_OR_PENDING_SQL } = require('./db/family_scope');
 const fs = require('fs');
 const path = require('path');
 
@@ -107,9 +92,10 @@ function seedDefaultUser() {
   });
 
   backfillListingTimestamps();
-  const { backfillCanonicalListings, backfillListingText } = require('./db/backfill');
+  const { backfillCanonicalListings, backfillListingText, backfillSearchLastScraped } = require('./db/backfill');
   backfillCanonicalListings(db);
   backfillListingText(db);
+  backfillSearchLastScraped(db);
 }
 
 /**

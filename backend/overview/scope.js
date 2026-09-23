@@ -1,3 +1,4 @@
+const { SFS_ACTIVE_OR_PENDING_SQL } = require('../db/family_scope');
 /**
  * Scope resolution for overview: Route -> Family -> Plain campaign.
  */
@@ -51,21 +52,7 @@ async function resolveCampaignScope(campaignId, searchIdParam, { query, get }) {
          FROM search_family_searches sfs
          JOIN searches s ON s.id = sfs.search_id
         WHERE sfs.family_id = ?
-          AND (
-            sfs.active = 1
-            OR (
-              sfs.active = 0
-              AND EXISTS (
-                SELECT 1
-                FROM search_family_searches sfs_act
-                JOIN searches s_act ON s_act.id = sfs_act.search_id
-                WHERE sfs_act.family_id = sfs.family_id
-                  AND sfs_act.term_id = sfs.term_id
-                  AND sfs_act.active = 1
-                  AND s_act.last_scraped_at IS NULL
-              )
-            )
-          )`,
+          AND ${SFS_ACTIVE_OR_PENDING_SQL}`,
       [family.id]
     );
     const searchIds = rows.map(r => Number(r.search_id));

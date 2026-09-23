@@ -180,4 +180,24 @@ function backfillListingText(db) {
   }
 }
 
-module.exports = { backfillCanonicalListings, backfillListingText, parsePriceEur };
+/**
+ * searches.last_scraped_at arrived after most searches had already run. Left
+ * NULL, every active search looks as if it had never crawled -- and the
+ * campaign view keeps a retired predecessor visible until its successor's first
+ * crawl, so every re-aimed family would suddenly show its old searches again.
+ * A search that has hits has evidently run; its latest hit is the lower bound
+ * of when. Guarded by IS NULL, so later starts do nothing.
+ */
+function backfillSearchLastScraped(db) {
+  db.run(
+    `UPDATE searches
+        SET last_scraped_at = (SELECT MAX(first_seen_at) FROM listing_search_hits h WHERE h.search_id = searches.id)
+      WHERE last_scraped_at IS NULL
+        AND EXISTS (SELECT 1 FROM listing_search_hits h WHERE h.search_id = searches.id)`,
+    err => {
+      if (err) console.error('backfillSearchLastScraped failed:', err.message);
+    }
+  );
+}
+
+module.exports = { backfillCanonicalListings, backfillListingText, backfillSearchLastScraped, parsePriceEur };

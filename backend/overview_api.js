@@ -11,6 +11,7 @@
  */
 
 const express = require('express');
+const { SFS_ACTIVE_OR_PENDING_SQL } = require('./db/family_scope');
 const fs = require('fs');
 const path = require('path');
 const { referencePrices, dealListingIds } = require('./db/reference_price');
@@ -66,21 +67,7 @@ module.exports = (query, get) => {
         JOIN listings l ON l.id = lsh.listing_id
         LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = sfs.search_id
       `;
-      whereConditions.push(`sfs.family_id = ? AND (
-        sfs.active = 1
-        OR (
-          sfs.active = 0
-          AND EXISTS (
-            SELECT 1
-            FROM search_family_searches sfs_act
-            JOIN searches s_act ON s_act.id = sfs_act.search_id
-            WHERE sfs_act.family_id = sfs.family_id
-              AND sfs_act.term_id = sfs.term_id
-              AND sfs_act.active = 1
-              AND s_act.last_scraped_at IS NULL
-          )
-        )
-      )`);
+      whereConditions.push(`sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}`);
       whereParams.push(familyId);
 
       if (term !== undefined && term !== '') {
