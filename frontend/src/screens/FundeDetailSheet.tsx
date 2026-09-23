@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sheet } from '../components/surface/Sheet';
 import { formatLocation } from '../utils/formatLocation';
 import { formatPrice } from '../utils/formatPrice';
+import { getSpecChips } from '../utils/specChips';
 import { useTranslation } from '../hooks/useTranslation';
 import type { RowListing } from '../components/surface/Row';
 import { formatFreshness } from '../utils/freshness';
@@ -181,12 +182,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
 
           {/* Specs / Merkmale Badges */}
           {(() => {
-            const facts = (listing.fit?.facts || {}) as Record<string, unknown>;
-            const chips: string[] = [];
-            if (facts.stickCount && facts.gbPerStick) chips.push(`${facts.stickCount}×${facts.gbPerStick} GB`);
-            if (facts.generation) chips.push(String(facts.generation).toUpperCase() + (facts.speedMhz ? `-${facts.speedMhz}` : ''));
-            if (facts.casLatency) chips.push(`CL${facts.casLatency}`);
-            if (facts.formFactor) chips.push(String(facts.formFactor).toUpperCase());
+            const chips = getSpecChips(listing.fit?.facts as Record<string, unknown>);
             if (chips.length === 0) return null;
             return (
               <div className="flex flex-wrap gap-2 pt-1 pb-1">

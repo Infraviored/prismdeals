@@ -3,6 +3,7 @@ import type { RowListing } from '../components/surface/Row';
 import { useTranslation } from '../hooks/useTranslation';
 import { formatFreshness } from '../utils/freshness';
 import { formatLocation } from '../utils/formatLocation';
+import { getSpecChips } from '../utils/specChips';
 
 export interface FundeBestHeroProps {
   listing: RowListing;
@@ -36,25 +37,7 @@ export const FundeBestHero: React.FC<FundeBestHeroProps> = ({
   const isDeal = listing.is_deal;
 
   // Facts specs
-  const facts = (listing.fit?.facts || {}) as Record<string, unknown>;
-  const chips: string[] = [];
-  const stickCount = Number(facts.stickCount);
-  const gbPerStick = Number(facts.gbPerStick);
-  if (!isNaN(stickCount) && stickCount > 0 && !isNaN(gbPerStick) && gbPerStick > 0) {
-    chips.push(`${stickCount}×${gbPerStick} GB`);
-  }
-  const genRaw = facts.generation != null ? String(facts.generation).trim() : '';
-  if (genRaw && genRaw.toLowerCase() !== 'undefined' && genRaw.toLowerCase() !== 'null') {
-    const speedRaw = facts.speedMhz != null ? String(facts.speedMhz).trim() : '';
-    const speed = speedRaw && speedRaw.toLowerCase() !== 'undefined' && speedRaw.toLowerCase() !== 'null'
-      ? `-${speedRaw}`
-      : '';
-    chips.push(genRaw.toUpperCase() + speed);
-  }
-  const cl = Number(facts.casLatency);
-  if (!isNaN(cl) && cl > 0) {
-    chips.push(`CL${cl}`);
-  }
+  const chips = getSpecChips(listing.fit?.facts as Record<string, unknown>);
 
   // Price history drop check
   const history = listing.price_history || [];

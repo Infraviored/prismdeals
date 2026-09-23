@@ -3,6 +3,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { formatFreshness } from '../../utils/freshness';
 import { formatLocation } from '../../utils/formatLocation';
 import { formatPrice } from '../../utils/formatPrice';
+import { getSpecChips } from '../../utils/specChips';
 
 export interface RowListing {
   id: string;
@@ -47,33 +48,11 @@ export interface RowProps {
 }
 
 function renderSpecs(facts: Record<string, unknown> = {}): React.ReactNode[] {
-  const chips: React.ReactNode[] = [];
-  const stickCount = Number(facts.stickCount);
-  const gbPerStick = Number(facts.gbPerStick);
-  if (!isNaN(stickCount) && stickCount > 0 && !isNaN(gbPerStick) && gbPerStick > 0) {
-    chips.push(
-      <span key="sticks" className="tabular-nums">
-        {stickCount}×{gbPerStick} GB
-      </span>
-    );
-  }
-  const genRaw = facts.generation != null ? String(facts.generation).trim() : '';
-  if (genRaw && genRaw.toLowerCase() !== 'undefined' && genRaw.toLowerCase() !== 'null') {
-    const speedRaw = facts.speedMhz != null ? String(facts.speedMhz).trim() : '';
-    const speed = speedRaw && speedRaw.toLowerCase() !== 'undefined' && speedRaw.toLowerCase() !== 'null'
-      ? `-${speedRaw}`
-      : '';
-    chips.push(
-      <span key="gen">
-        {genRaw.toUpperCase()}{speed}
-      </span>
-    );
-  }
-  const cl = Number(facts.casLatency);
-  if (!isNaN(cl) && cl > 0) {
-    chips.push(<span key="cl">CL{cl}</span>);
-  }
-  return chips;
+  return getSpecChips(facts).map((c, i) => (
+    <span key={i} className={c.includes('×') ? 'tabular-nums' : undefined}>
+      {c}
+    </span>
+  ));
 }
 
 export const Row: React.FC<RowProps> = ({

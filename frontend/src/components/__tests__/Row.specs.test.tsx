@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { Row, type RowListing } from '../surface/Row';
 import { FundeBestHero } from '../../screens/FundeBestHero';
+import { FundeDetailSheet } from '../../screens/FundeDetailSheet';
 
 const nonRamListing: RowListing = {
   id: 'auto-1',
@@ -42,6 +43,17 @@ describe('RAM specs row guarding (#9)', () => {
     );
     const specsEl = container.querySelector('.specs');
     expect(specsEl).toBeNull();
+    expect(container.textContent).not.toContain('undefined');
+    expect(container.textContent).not.toContain('UNDEFINED');
+  });
+
+  it('FundeDetailSheet cleanly omits specs row without empty chip or undefined for non-RAM listing', () => {
+    const { container } = render(
+      <FundeDetailSheet
+        listing={nonRamListing}
+        onClose={() => {}}
+      />
+    );
     expect(container.textContent).not.toContain('undefined');
     expect(container.textContent).not.toContain('UNDEFINED');
   });
