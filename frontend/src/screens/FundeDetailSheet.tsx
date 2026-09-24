@@ -7,7 +7,8 @@ import { getSpecChips } from '../utils/specChips';
 import { useTranslation } from '../hooks/useTranslation';
 import type { RowListing } from '../components/surface/Row';
 import { formatFreshness } from '../utils/freshness';
-import { ExternalLink, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { Bookmark, ExternalLink, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import ScoreBreakdown from './ScoreBreakdown';
 
 export interface FundeDetailSheetProps {
   listing: RowListing | null;
@@ -51,45 +52,42 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
   const isDirectlyOnRoute = hasDetour && Number(listing.detour_min) <= 0;
   const hasOffroute = !hasDetour && typeof listing.offroute_km === 'number' && listing.offroute_km > 0;
 
-  // 1-line AI evaluation (if present for the 10/1266 listings)
-  const aiText = listing.summary || listing.reference_comparison?.reasoning || null;
-
   return (
     <Sheet
       isOpen={listing !== null}
       onClose={onClose}
       title={t('surface.detailTitle')}
-      footer={
-        // The main action across the full width, the two quiet ones under it.
-        // Three buttons in a row squeezed "Auf Kleinanzeigen öffnen" onto
-        // three lines on a phone.
-        <div className="flex flex-col gap-2">
-          {listing.url ? (
+      // Three small controls in the header instead of a footer: the actions
+      // are not what the sheet is for, and a pinned footer of buttons took the
+      // space the listing needed.
+      actions={
+        <>
+          {onToggleKeep && (
+            <button
+              type="button"
+              aria-pressed={isKept}
+              onClick={() => onToggleKeep(listing.id)}
+              aria-label={isKept ? t('surface.unkeep') : t('surface.keep')}
+              title={isKept ? t('surface.kept') : t('surface.keep')}
+              className={`sheet-icon ${isKept ? 'text-[#F2F5F4]' : ''}`}
+            >
+              <Bookmark className="w-4 h-4" fill={isKept ? 'currentColor' : 'none'} />
+            </button>
+          )}
+          <ShareLinkButton title={listing.title} compact />
+          {listing.url && (
             <a
               href={listing.url}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ backgroundColor: '#E4D6BE', color: '#011F1F' }}
-              className="w-full py-3 px-4 rounded-[3px] font-semibold text-sm flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer hover:brightness-105"
+              aria-label={t('surface.openInKleinanzeigen')}
+              title={t('surface.openInKleinanzeigen')}
+              className="sheet-icon"
             >
-              <span style={{ color: '#011F1F' }}>{t('surface.openInKleinanzeigen')}</span>
-              <ExternalLink className="w-4 h-4 shrink-0" style={{ color: '#011F1F' }} />
+              <ExternalLink className="w-4 h-4" />
             </a>
-          ) : null}
-          <div className="grid grid-cols-2 gap-2">
-            {onToggleKeep && (
-              <button
-                type="button"
-                aria-pressed={isKept}
-                onClick={() => onToggleKeep(listing.id)}
-                className="py-2.5 px-3 rounded-[3px] border border-[#0E4A40] text-sm font-semibold text-[#F2F5F4] whitespace-nowrap hover:border-[#8FA6A1] cursor-pointer"
-              >
-                {isKept ? t('surface.kept') : t('surface.keep')}
-              </button>
-            )}
-            <ShareLinkButton title={listing.title} />
-          </div>
-        </div>
+          )}
+        </>
       }
     >
       <div className="flex flex-col min-h-full">
@@ -219,17 +217,8 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
             );
           })()}
 
-          {/* 4. AI rating */}
-          {aiText && (
-            <div className="text-xs text-[#8FA6A1] bg-[#00100F] px-3 py-2.5 rounded border border-[#0E4A40] flex items-start gap-2">
-              {typeof listing.niceness_score === 'number' && (
-                <span className="font-bold text-[#F2F5F4] shrink-0 tabular-nums">
-                  {listing.niceness_score}/100
-                </span>
-              )}
-              <span className="flex-1">{aiText}</span>
-            </div>
-          )}
+          {/* 4. Why this score: the gate and the graded axes */}
+          <ScoreBreakdown listing={listing} />
 
           {/* Price history */}
           {listing.price_history && listing.price_history.length > 1 && (

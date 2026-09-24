@@ -5,6 +5,8 @@ export interface SheetProps {
   isOpen: boolean;
   onClose: () => void;
   footer?: React.ReactNode;
+  /** Small controls in the header, before the close button. */
+  actions?: React.ReactNode;
   title?: React.ReactNode;
   children: React.ReactNode;
   side?: 'right' | 'bottom';
@@ -15,6 +17,7 @@ export const Sheet: React.FC<SheetProps> = ({
   isOpen,
   onClose,
   footer,
+  actions,
   title,
   children,
   side = 'right',
@@ -34,7 +37,9 @@ export const Sheet: React.FC<SheetProps> = ({
       ).filter((el) => el.offsetParent !== null);
 
     const returnTo = document.activeElement as HTMLElement | null;
-    (focusable()[0] ?? panelRef.current)?.focus();
+    // The panel, not its first control: with the actions in the header that
+    // control is "keep", and a ring around it on open read as already pressed.
+    panelRef.current?.focus();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -102,9 +107,10 @@ export const Sheet: React.FC<SheetProps> = ({
       >
         {/* Header */}
         <div className="h-11 min-h-[44px] max-h-[44px] px-4 border-b border-[#0E4A40] flex items-center justify-between gap-3 shrink-0">
-          <div className="text-sm font-semibold truncate text-[#F2F5F4]">
+          <div className="text-sm font-semibold truncate text-[#F2F5F4] flex-1 min-w-0">
             {title}
           </div>
+          {actions && <div className="flex items-center gap-1 shrink-0">{actions}</div>}
           <button
             type="button"
             data-testid="surface-sheet-close"

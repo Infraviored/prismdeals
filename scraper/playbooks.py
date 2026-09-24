@@ -695,6 +695,14 @@ register(
                         lambda m: int(m.group(1)),
                     ),
                     (r"\d{1,2}\s*gb\s*(?:mal|times)\s*(\d)", lambda m: int(m.group(1))),
+                    # "2 Stück RAM-Module je 16GB", "2 Riegel à 16 GB",
+                    # "zwei Module mit je 16GB": the count in words next to
+                    # what is being counted.
+                    (
+                        r"\b(\d|zwei|vier)\s*(?:stück|stk\.?)?\s*(?:ram[- ]?)?(?:module|riegel|sticks?)\b",
+                        lambda m: {"zwei": 2, "vier": 4}.get(m.group(1), None)
+                        or int(m.group(1)),
+                    ),
                 ],
             },
             {
@@ -712,6 +720,8 @@ register(
                         r"\b\d\s*(?:[x×*]|times|mal)\s*(16|8|4)\b",
                         lambda m: int(m.group(1)),
                     ),
+                    # "je 16GB", "à 16 GB", "a 16gb" -- per stick by wording.
+                    (r"(?:\bje|à|\ba)\s*(\d{1,2})\s*gb\b", lambda m: int(m.group(1))),
                 ],
             },
             {

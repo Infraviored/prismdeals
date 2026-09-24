@@ -160,6 +160,12 @@ def say_miss(playbook, field_id, wants, value):
     return f"{label} {_show(field, value)} statt {_wanted(field, wants)}"
 
 
+def say_missing(playbook, field_id):
+    """ "Taktung nicht angegeben" -- what the buyer would have to ask."""
+    field = _field(playbook, field_id)
+    return f"{field.get('label') or field_id} nicht angegeben"
+
+
 def say_fact(playbook, field_id, value):
     """What was checked and found, for a listing that passes."""
     field = _field(playbook, field_id)
@@ -231,5 +237,9 @@ def judge(playbook, intent_fields, text, settled=None):
     known = {**settled, **stated}
     missing = [f["id"] for f in intent_fields if f["id"] not in known]
     if missing or doubts:
-        return "unclear", known, reasons + doubts
+        # What is missing first: an unclear verdict that listed only what was
+        # found ("DDR4; DIMM; kein Defekt") said nothing about why it was
+        # unclear, and the stored reason keeps only the first few entries.
+        gaps = [say_missing(playbook, fid) for fid in missing]
+        return "unclear", known, gaps + doubts + reasons
     return "candidate", known, reasons

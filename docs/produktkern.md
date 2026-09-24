@@ -23,9 +23,10 @@ Arbeitsspeicher oder ein Schrank ist?**
 9. [Die Recherche-Brücke](#9-die-recherche-brücke)
 10. [Wie die Prompts gebaut sind](#10-wie-die-prompts-gebaut-sind)
 11. [Bewertung in Stapeln](#11-bewertung-in-stapeln)
-12. [Was die Oberfläche je Profil zeigt](#12-was-die-oberfläche-zeigt)
-13. [Stand im Code und Reihenfolge](#13-stand-im-code-und-reihenfolge)
-14. [Offene Fragen](#14-offene-fragen)
+12. [Der Score: ein Tor, fünf Achsen](#12-der-score)
+13. [Was die Oberfläche je Profil zeigt](#13-was-die-oberfläche-zeigt)
+14. [Stand im Code und Reihenfolge](#14-stand-im-code-und-reihenfolge)
+15. [Offene Fragen](#15-offene-fragen)
 
 ---
 
@@ -757,7 +758,77 @@ ausdrücklich verletzte Pflichten, Beschaffung, Preis gegen Markt.
 
 ---
 
-## 12. Was die Oberfläche zeigt
+## 12. Der Score
+
+Eine Zahl je Anzeige, dieselbe Formel für jedes Profil. Sie ersetzt den alten
+„niceness score", den ein Modell aus dem Gefühl vergab („vague, claim-heavy")
+und der je nach Referenzbeschreibung schwankte.
+
+### Die Formel
+
+```
+Score = Tor × Σ ( Gewicht_Achse × Teilnote_Achse ) / Σ Gewicht_Achse
+```
+
+- **Das Tor** kommt aus den Muss-Anforderungen.
+- **Die Teilnoten** kommen aus den fünf Achsen (Abschnitt 2), jede zwischen
+  0 und 1.
+- **Die Gewichte** kommen aus dem Profil (`scraper/profiles.py`, 0–3 je
+  Achse). Beim Fahrzeug zählt Zustand am meisten, beim Arbeitsspeicher
+  Identität und Wert, beim Schrank Beschaffung und Passung.
+
+### Das Tor: was erfüllt sein muss
+
+| Zustand je Muss-Anforderung | Wirkung |
+|---|---|
+| ausdrücklich verletzt | Score **0**, Urteil „abgelehnt" |
+| ausdrücklich erfüllt | nichts |
+| nicht angegeben | Deckel: **× 0,75** je offener Muss-Anforderung |
+
+Ein Angebot, bei dem der Takt fehlt, kann sehr gut sein, ist es aber nicht
+bestätigt. Es landet bei höchstens 75 %, zwei offene bei 56 %. So steht ein
+bestätigtes Angebot immer über einem ebenso billigen unbestätigten, und die
+Fragen an den Verkäufer (Abschnitt 11) sagen, was den Deckel hebt.
+
+### Die fünf Teilnoten
+
+| Achse | Teilnote | Quelle |
+|---|---|---|
+| **Identität** | Anteil erfüllter Soll-Anforderungen (Vorlieben) | Fakten aus Text, Merkmalen, später Fotos |
+| **Wert** | Preis gegen den Median vergleichbarer Angebote: Median = 0,5; 30 % darunter ≈ 0,85; 30 % darüber ≈ 0,15 | eigener Markt (Abschnitt 8), ohne Abgelehnte |
+| **Zustand und Risiko** | Zustand der Detailseite (Neu 1, Sehr gut 0,85, Gut 0,7, In Ordnung 0,5, Defekt 0), Anteil der Profilfelder, die die Anzeige selbst nennt, Anzahl Fotos; später die Prüfpunkte aus dem Wissensbaum | Detailseite, Fakten, Wissensbaum |
+| **Beschaffung** | Umweg in Minuten, Versand möglich hebt auf 1 | Route, Detailseite |
+| **Passung** | nur wo messbar (Maße, Größe), sonst neutral 0,5 | Anforderungen |
+
+Fehlt die Grundlage für eine Achse (kein Markt, kein Weg), fällt sie aus
+Zähler und Nenner, statt mit einer erfundenen Note mitzuzählen.
+
+### Was die KI darf
+
+Die KI liefert **Fakten**: Felder aus dem Text, die Teilenummer vom Foto, die
+Prüfpunkte eines Modells. Die **Note** rechnet Code. Damit ist der Score
+nachvollziehbar, wiederholbar und nicht davon abhängig, welche
+Referenzbeschreibung das Modell gerade gesehen hat.
+
+### Was man sieht
+
+- In der Liste: eine Zahl in Prozent, farbig (ab 90 grün, ab 70 hell,
+  darunter messing).
+- Im Blatt: die Aufschlüsselung. Welche Muss-Anforderungen erfüllt, verletzt
+  oder offen sind, und die Teilnoten mit einem Satz je Achse. So beantwortet
+  das Blatt die Frage „warum 87 %".
+
+### Fotos als zweite Quelle
+
+Wenn der Text eine Muss-Anforderung offen lässt, prüft eine zweite Stufe die
+Fotos: alle Bilder einer Anzeige zu **einer** Collage zusammengesetzt, ein
+Aufruf eines Bildmodells, gefragt wird nur nach den offenen Feldern (bei RAM
+etwa der Aufkleber mit Teilenummer, Takt und Latenz). Eine Collage statt vier
+Aufrufen hält die Kosten bei einem Aufruf je Anzeige.
+
+---
+
+## 13. Was die Oberfläche zeigt
 
 Die Fundliste aus Musterbogen C bleibt für jedes Profil gleich: Foto, Titel,
 Ort, Preis als Held. **Die rechte Spalte wechselt mit dem Profil**, weil sie
@@ -774,7 +845,7 @@ zeigt, worauf es bei dieser Art Ding ankommt.
 
 ---
 
-## 13. Stand im Code und Reihenfolge
+## 14. Stand im Code und Reihenfolge
 
 | | gibt es | fehlt |
 |---|---|---|
@@ -809,7 +880,7 @@ Jedes Paket wird ausgeliefert und ist ohne die folgenden benutzbar.
 
 ---
 
-## 14. Offene Fragen
+## 15. Offene Fragen
 
 - **Gewicht einer Aussage an mehreren Knoten.** „Rennstrecke ist schlimm" gilt
   für alle Motorräder, für Supersportler mehr. Eine Aussage mit Gewicht je

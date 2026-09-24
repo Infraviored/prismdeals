@@ -328,6 +328,24 @@ def profile_for(listing_url=None, search_url=None):
     return PROFILES["open"], None, None
 
 
+def export():
+    """What the backend needs to weigh a listing: the profile each category
+    proposes and each profile's axis weights. Written to
+    backend/db/profiles.json; test_profiles checks the two never drift."""
+    return {
+        "axes": list(AXES),
+        "profiles": {
+            k: {"label": p.label, "weights": list(p.weights)}
+            for k, p in PROFILES.items()
+        },
+        "categories": {
+            cid: profile_for_category(cid).key
+            for cid in sorted(taxonomy(), key=int)
+            if profile_for_category(cid) is not None
+        },
+    }
+
+
 def main(argv=None):
     """Print the proposed profile for each URL, or a coverage report of the
     live database's listings (read-only) with --db."""
@@ -338,7 +356,14 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=main.__doc__)
     ap.add_argument("urls", nargs="*")
     ap.add_argument("--db", help="SQLite path, opened read-only")
+    ap.add_argument(
+        "--export", action="store_true", help="print backend/db/profiles.json"
+    )
     args = ap.parse_args(argv)
+
+    if args.export:
+        print(json.dumps(export(), ensure_ascii=False, indent=1, sort_keys=True))
+        return
 
     for url in args.urls:
         is_listing = "/s-anzeige/" in url

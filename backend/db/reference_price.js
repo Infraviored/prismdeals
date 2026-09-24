@@ -185,8 +185,11 @@ async function annotateDeals(query, listings, scopeSearchIds = null) {
 
   for (const listing of listings) {
     let best = { isDeal: false, delta: null };
+    let median = null;
     for (const searchId of searchesByListing.get(String(listing.id)) || []) {
-      const verdict = judge(listing.price_eur, references.get(searchId));
+      const ref = references.get(searchId);
+      if (ref && median === null) median = ref.median;
+      const verdict = judge(listing.price_eur, ref);
       // A deal beats a non-deal; between two of either, the larger saving.
       const better =
         (verdict.isDeal && !best.isDeal) ||
@@ -195,6 +198,8 @@ async function annotateDeals(query, listings, scopeSearchIds = null) {
     }
     listing.is_deal = best.isDeal;
     listing.price_delta_eur = best.delta;
+    // The usual price this listing was judged against; the score weighs value by it.
+    listing.market_median = median;
   }
   return listings;
 }

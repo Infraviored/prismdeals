@@ -1,5 +1,6 @@
 const express = require('express');
 const { annotateDeals, dealListingIds } = require('./db/reference_price');
+const { attachScores } = require('./db/score');
 const { resolveCampaignScope } = require('./overview/scope');
 const { BEST_FIT_ORDER_SQL, FIT_FIRST_SQL, fitOf } = require('./db/fit');
 
@@ -476,6 +477,7 @@ app.get('/api/listings/:id', async (req, res) => {
       fit: fitOf(row),
     };
     await annotateDeals(query, [listing], [Number(row.hit_search_id)]);
+    await attachScores(query, [listing], [Number(row.hit_search_id)]);
     const [withHistory] = await attachPriceHistory(query, [listing]);
     res.json(withHistory || listing);
   } catch (err) {
@@ -759,6 +761,7 @@ app.get('/api/listings', async (req, res) => {
     }));
 
     await annotateDeals(query, listings, scopeSearchIds);
+    await attachScores(query, listings, scopeSearchIds);
     await attachPriceHistory(query, listings);
 
     if (isPaginated) {
@@ -1541,7 +1544,10 @@ async function getRouteCorridorPayload(route, options = {}) {
     total,
     offset,
     limit,
-    listings: await attachPriceHistory(query, await annotateDeals(query, parsedListings, circleSearchIds)),
+    listings: await attachPriceHistory(
+      query,
+      await attachScores(query, await annotateDeals(query, parsedListings, circleSearchIds), circleSearchIds)
+    ),
     counts: {
       total,
       routed,
@@ -2467,6 +2473,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     }
 
     await annotateDeals(query, listings, familySearchIds);
+    await attachScores(query, listings, familySearchIds);
     await attachPriceHistory(query, listings);
 
     res.json({ total, offset, limit, listings });

@@ -24,6 +24,10 @@ interface ApiListing {
   fit?: RowListing['fit'];
   matched_terms?: RowListing['matched_terms'];
   niceness_score?: number | null;
+  score?: RowListing['score'];
+  score_parts?: RowListing['score_parts'];
+  market_median?: RowListing['market_median'];
+  details?: RowListing['details'];
   detailed_description?: string | null;
   short_description?: string | null;
   description?: string | null;
@@ -262,6 +266,12 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
           description: l.detailed_description || l.short_description || l.description || null,
           summary: l.summary || l.extracted_facts?.summary || null,
           niceness_score: typeof l.niceness_score === 'number' ? l.niceness_score : null,
+          // Dropping these here is how the percent vanished from every row
+          // while the API sent it and the sheet showed it.
+          score: typeof l.score === 'number' ? l.score : null,
+          score_parts: l.score_parts || null,
+          market_median: typeof l.market_median === 'number' ? l.market_median : null,
+          details: l.details || null,
           reference_comparison: l.reference_comparison || l.extracted_facts?.reference_comparison || null,
         }));
 

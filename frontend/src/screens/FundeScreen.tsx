@@ -123,8 +123,8 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
       const pb = typeof b.price_eur === 'number' ? b.price_eur : 999999;
       if (pa !== pb) return pa - pb;
       // Same price: the better listing first, unscored last.
-      const sa = typeof a.niceness_score === 'number' ? a.niceness_score : -1;
-      const sb = typeof b.niceness_score === 'number' ? b.niceness_score : -1;
+      const sa = typeof a.score === 'number' ? a.score : -1;
+      const sb = typeof b.score === 'number' ? b.score : -1;
       return sb - sa;
     });
   }, [listings, heroShown, heroListing]);

@@ -56,30 +56,34 @@ describe('FundeDetailSheet', () => {
     expect(screen.getByText('Photo 2 / 3')).toBeInTheDocument();
   });
 
-  it('renders single primary action button to open in Kleinanzeigen with <= 4 buttons total', () => {
+  it('keeps its actions small, in the header: open, share (no footer)', () => {
     render(<FundeDetailSheet listing={mockListing} onClose={vi.fn()} />);
 
-    const openLink = screen.getByText('Open on Kleinanzeigen');
-    expect(openLink.closest('a')).toHaveAttribute('href', mockListing.url);
-
-    // Count all buttons in the sheet: close button (1), prev (1), next (1) -> 3 buttons
-    const buttons = screen.getAllByRole('button');
-    expect(buttons.length).toBeLessThanOrEqual(4);
+    const openLink = screen.getByLabelText('Open on Kleinanzeigen');
+    expect(openLink).toHaveAttribute('href', mockListing.url);
+    expect(screen.getByLabelText('Share link')).toBeInTheDocument();
+    // No text button reading "Open on Kleinanzeigen" pinned under the listing.
+    expect(screen.queryByText('Open on Kleinanzeigen')).not.toBeInTheDocument();
   });
 
-  it('renders 1-line AI rating when present and omits without gaps when absent', () => {
-    const { rerender } = render(<FundeDetailSheet listing={mockListing} onClose={vi.fn()} />);
-    expect(screen.getByText('Ausgezeichneter Zustand, 28% unter üblichem Marktwert.')).toBeInTheDocument();
-    expect(screen.getByText('92/100')).toBeInTheDocument();
-
-    const noAiListing: RowListing = {
+  it('explains the score with the must-haves instead of a model impression', () => {
+    const scored: RowListing = {
       ...mockListing,
-      summary: null,
-      niceness_score: null,
-      reference_comparison: null,
+      score: 42,
+      score_parts: {
+        score: 42,
+        gate: { met: ['DDR4'], violated: [], open: ['ab 3200 MHz'], factor: 0.75 },
+        axes: { identity: 1, value: 0.6, risk: 0.7, procurement: null, fit: null },
+      },
+      market_median: 150,
+      price_eur: 140,
     };
-    rerender(<FundeDetailSheet listing={noAiListing} onClose={vi.fn()} />);
-    expect(screen.queryByText('/100')).not.toBeInTheDocument();
+    render(<FundeDetailSheet listing={scored} onClose={vi.fn()} />);
+    const box = screen.getByTestId('score-breakdown');
+    expect(box).toHaveTextContent('42 %');
+    expect(box).toHaveTextContent('? ab 3200 MHz: not stated');
+    expect(box).toHaveTextContent('✓ DDR4');
+    expect(screen.queryByText('92/100')).not.toBeInTheDocument();
   });
 
   it('renders belowReference in neutral asche (#8FA6A1) without coral or data-price-signal when not a deal (#5)', () => {

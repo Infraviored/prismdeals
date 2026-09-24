@@ -30,6 +30,16 @@ export interface RowListing {
   price_history?: Array<{ price_eur: number | null; seen_at: string }> | null;
   reference_price_eur?: number | null;
   niceness_score?: number | null;
+  /** 0-100: gate from the must-haves times the profile-weighted axes. */
+  score?: number | null;
+  score_parts?: {
+    score: number | null;
+    gate: { met: string[]; violated: string[]; open: string[]; factor: number };
+    axes: Record<string, number | null>;
+  } | null;
+  market_median?: number | null;
+  /** Attributes from the detail page, e.g. { Zustand: 'Sehr Gut' }. */
+  details?: Record<string, unknown> | null;
   reference_comparison?: { closer_to: 'good' | 'bad' | 'mixed'; reasoning: string } | null;
   fit?: {
     verdict: 'fit' | 'unclear' | 'no';
@@ -176,14 +186,14 @@ export const Row: React.FC<RowProps> = ({
       >
         {priceInfo.text}
       </span>
-      {typeof listing.niceness_score === 'number' && (
+      {typeof listing.score === 'number' && (
         <span
           data-testid="listing-score"
           className={`score num ${
-            listing.niceness_score >= 90 ? 'high' : listing.niceness_score >= 70 ? 'mid' : 'low'
+            listing.score >= 90 ? 'high' : listing.score >= 70 ? 'mid' : 'low'
           }`}
         >
-          {t('surface.score', { score: Math.round(listing.niceness_score) })}
+          {t('surface.score', { score: Math.round(listing.score) })}
         </span>
       )}
     </article>

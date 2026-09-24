@@ -140,3 +140,16 @@ def test_research_depth_follows_the_profile():
         assert len(p.weights) == len(profiles.AXES)
         if p.research_headings:
             assert p.research_headings[-1] == "Quellen"
+
+
+def test_backend_copy_of_the_profiles_is_current():
+    """The backend weighs listings from backend/db/profiles.json. Regenerate it
+    with `python scraper/profiles.py --export > backend/db/profiles.json`."""
+    import json
+    import os
+
+    path = os.path.join(
+        os.path.dirname(profiles.TAXONOMY_PATH), "..", "backend", "db", "profiles.json"
+    )
+    with open(path, encoding="utf-8") as f:
+        assert json.load(f) == json.loads(json.dumps(profiles.export()))

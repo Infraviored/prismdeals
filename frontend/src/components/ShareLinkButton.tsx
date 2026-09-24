@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+import { Check, Share2 } from 'lucide-react';
 
 /** Shares the address of what is on screen.
  *
@@ -7,7 +8,7 @@ import { useTranslation } from '../hooks/useTranslation';
  * the link opens the same listing for whoever receives it. On a phone the
  * system share sheet, elsewhere the clipboard.
  */
-export const ShareLinkButton: React.FC<{ title?: string | null }> = ({ title }) => {
+export const ShareLinkButton: React.FC<{ title?: string | null; compact?: boolean }> = ({ title, compact = false }) => {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
@@ -25,6 +26,20 @@ export const ShareLinkButton: React.FC<{ title?: string | null }> = ({ title }) 
       // The share sheet was dismissed; nothing to report.
     }
   };
+
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={share}
+        aria-label={copied ? t('surface.linkCopied') : t('surface.shareLink')}
+        title={copied ? t('surface.linkCopied') : t('surface.shareLink')}
+        className={`sheet-icon ${copied ? 'text-[#7FC29B]' : ''}`}
+      >
+        {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+      </button>
+    );
+  }
 
   return (
     <button

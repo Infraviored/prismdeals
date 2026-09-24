@@ -350,3 +350,21 @@ input[type='range']:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 @media (prefers-reduced-motion: no-preference) {
   .row, .tab, .btn { transition: background-color .15s, border-color .15s, color .15s; }
 }
+
+/* ---------- Blatt: Kopf-Symbole, Aufschlüsselung ---------- */
+.sheet-icon {
+  width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 3px; color: var(--asche); cursor: pointer;
+}
+.sheet-icon:hover { color: var(--kalk); background: var(--tisch); }
+.breakdown { border-top: 1px solid var(--kante); padding-top: 12px; }
+.breakdown-head { display: flex; align-items: baseline; gap: 10px; }
+.breakdown-head .score { font-size: 22px; }
+.breakdown-head .score.high { color: #7FC29B; }
+.breakdown-head .score.mid { color: var(--kalk); opacity: 0.75; }
+.breakdown-head .score.low { color: var(--messing); }
+.breakdown-list { margin-top: 8px; font-size: 14px; line-height: 1.6; }
+.breakdown-list .met { color: #7FC29B; }
+.breakdown-list .open { color: var(--messing); }
+.breakdown-list .violated { color: var(--asche); text-decoration: line-through; }
+.breakdown-list.quiet { color: var(--asche); font-size: 13px; }
