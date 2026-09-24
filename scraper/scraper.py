@@ -11,6 +11,7 @@ import requests
 from bs4 import BeautifulSoup
 
 import result_list
+import rate_limiter
 
 # For the legacy interactive Selenium login route:
 from selenium import webdriver
@@ -21,7 +22,14 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-from config import DELAY_BETWEEN_PAGES, DELAY_BETWEEN_LISTINGS, PAGES_TO_SCRAPE
+try:
+    from config import DELAY_BETWEEN_PAGES, DELAY_BETWEEN_LISTINGS, PAGES_TO_SCRAPE
+except ImportError:
+    from config_template import (
+        DELAY_BETWEEN_PAGES,
+        DELAY_BETWEEN_LISTINGS,
+        PAGES_TO_SCRAPE,
+    )
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -48,6 +56,7 @@ def fetch(url, caller=None, timeout=10):
     `apparent_encoding` agrees. Setting it explicitly is the fix, and it belongs
     here so no call site can forget it.
     """
+    rate_limiter.wait()
     caller = caller if caller is not None else requests
     response = caller.get(url, headers=HEADERS, timeout=timeout)
     response.encoding = "utf-8"
