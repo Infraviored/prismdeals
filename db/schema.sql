@@ -364,7 +364,7 @@ CREATE INDEX IF NOT EXISTS idx_class_models_node ON class_models(node_key);
 -- P6: comparative judging runs.
 --
 -- One row per complete comparison session. A session is 3 shuffled runs whose
--- ranks are averaged; the row records the merged result.  The requirements_hash
+-- ranks are averaged, and the row records the merged result.  The requirements_hash
 -- and knowledge_hash let the code decide whether a cached run still applies
 -- after the buyer edits requirements or new research arrives.
 CREATE TABLE IF NOT EXISTS judge_runs (
@@ -388,7 +388,7 @@ CREATE INDEX IF NOT EXISTS idx_judge_runs_campaign ON judge_runs(campaign_id, cr
 -- P6: per-listing rank from a comparative run.
 --
 -- Each listing that entered the candidate set gets one row per run. The rank is
--- the mean across the 3 shuffled sub-runs; spread > 5 marks the listing
+-- the mean across the 3 shuffled sub-runs, and a spread > 5 marks the listing
 -- uncertain.  musts_json, facts_json and questions_json carry the structured
 -- output the prompt returned, validated (quotes checked) before storage.
 CREATE TABLE IF NOT EXISTS listing_ranks (

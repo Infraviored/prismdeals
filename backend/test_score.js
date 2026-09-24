@@ -56,13 +56,16 @@ assert.ok(bare.score > 0 && bare.axes.identity === null);
 
 // Score reads musts states from latest judge run when present (§9.6)
 const fromJudge = score({
-  fit: { facts: { stickCount: 2 } }, // speedMhz is missing in text facts (would be open)
+  fit: { facts: { stickCount: 2, productLine: 'vengeance lpx' } }, // speedMhz missing in the text
   rank_musts: { stickCount: 'met', speedMhz: 'met' }, // confirmed met by comparative judge run
   price_eur: 150,
   market_median: 150,
 });
 assert.strictEqual(fromJudge.gate.open.length, 0);
 assert.strictEqual(fromJudge.score, full.score);
+// A judged violation zeroes like a stated one; "retrofittable" stays open.
+assert.strictEqual(score({ fit: { facts: FULL }, rank_musts: { speedMhz: 'violated' }, price_eur: 150, market_median: 150 }).score, 0);
+assert.strictEqual(score({ fit: { facts: FULL }, rank_musts: { speedMhz: 'retrofittable' }, price_eur: 150, market_median: 150 }).gate.open.length, 1);
 
 console.log('score: all assertions passed');
 

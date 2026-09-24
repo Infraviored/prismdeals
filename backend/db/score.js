@@ -69,26 +69,27 @@ function mean(values) {
  */
 function scoreListing(listing, fields) {
   const facts = listing.fit?.facts || {};
-  const rankMusts = listing.rank_musts || listing.musts || null;
+  // Must states from the latest comparative run (quotes already checked there)
+  // override what the patterns read; "retrofittable" and anything else unknown
+  // counts as open.
+  const judged = listing.rank_musts || null;
   const requirements = Array.isArray(fields) ? fields : [];
 
   const gate = { met: [], violated: [], open: [] };
   const soft = { met: 0, total: 0 };
-  for (const field of requirements) {
-    let state;
-    if (rankMusts && rankMusts[field.id]) {
-      const rm = rankMusts[field.id];
-      state = rm === 'met' ? 'met' : (rm === 'violated' ? 'violated' : 'open');
-    } else {
-      state = stateOf(field, facts);
-    }
+  const states = requirements.map(field => {
+    const fromRun = judged?.[field.id];
+    if (fromRun) return fromRun === 'met' || fromRun === 'violated' ? fromRun : 'open';
+    return stateOf(field, facts);
+  });
+  requirements.forEach((field, i) => {
     if (isHard(field)) {
-      gate[state].push(formatRequirementText(field));
+      gate[states[i]].push(formatRequirementText(field));
     } else {
       soft.total += 1;
-      if (state === 'met') soft.met += 1;
+      if (states[i] === 'met') soft.met += 1;
     }
-  }
+  });
   const gateFactor = gate.violated.length ? 0 : Math.pow(OPEN_CAP, gate.open.length);
 
   // Identity: the preferences on top of the must-haves. Without any, a listing
@@ -106,7 +107,7 @@ function scoreListing(listing, fields) {
   const conditionText = String(listing.details?.Zustand || '').trim().toLowerCase();
   const condition = conditionText in CONDITION ? CONDITION[conditionText] : null;
   const stated = requirements.length
-    ? requirements.filter(f => facts[f.id] !== null && facts[f.id] !== undefined).length / requirements.length
+    ? states.filter(state => state !== 'open').length / requirements.length
     : null;
   const photoCount = Array.isArray(listing.images) ? listing.images.length : 0;
   const photos = clamp01(photoCount / 4);
