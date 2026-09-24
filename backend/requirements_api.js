@@ -16,6 +16,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { requirementsHash } = require('./db/requirements_hash');
 
 const router = express.Router();
 
@@ -130,6 +131,7 @@ module.exports = (query, get, run) => {
       if (!search) return res.status(404).json({ error: 'Unknown search' });
 
       const payload = JSON.stringify({ fields, dimensions_enabled: false });
+      const reqHash = requirementsHash(fields);
 
       let setId = search.knowledge_set_id;
       if (!setId) {
@@ -137,13 +139,13 @@ module.exports = (query, get, run) => {
         // create these and leave them empty; this is the same row with
         // something in it.
         const created = await run(
-          `INSERT INTO knowledge_sets (name, item_json) VALUES (?, ?)`,
-          [`${search.name} (${search.id})`, payload]
+          `INSERT INTO knowledge_sets (name, item_json, requirements_hash) VALUES (?, ?, ?)`,
+          [`${search.name} (${search.id})`, payload, reqHash]
         );
         setId = created.id;
         await run('UPDATE searches SET knowledge_set_id = ? WHERE id = ?', [setId, search.id]);
       } else {
-        await run('UPDATE knowledge_sets SET item_json = ? WHERE id = ?', [payload, setId]);
+        await run('UPDATE knowledge_sets SET item_json = ?, requirements_hash = ? WHERE id = ?', [payload, reqHash, setId]);
       }
 
       res.json({ success: true, knowledge_set_id: setId, requirements: fields });
@@ -230,6 +232,7 @@ module.exports = (query, get, run) => {
       );
 
       const payload = JSON.stringify({ fields, dimensions_enabled: false });
+      const reqHash = requirementsHash(fields);
 
       let existingSetId =
         (searches.find(s => s.knowledge_set_id) ||
@@ -237,14 +240,16 @@ module.exports = (query, get, run) => {
           routes.find(r => r.knowledge_set_id))?.knowledge_set_id;
 
       if (!existingSetId) {
-        const created = await run('INSERT INTO knowledge_sets (name, item_json) VALUES (?, ?)', [
+        const created = await run('INSERT INTO knowledge_sets (name, item_json, requirements_hash) VALUES (?, ?, ?)', [
           `${campaign.name} (${campaign.id})`,
           payload,
+          reqHash,
         ]);
         existingSetId = created.id;
       } else {
-        await run('UPDATE knowledge_sets SET item_json = ? WHERE id = ?', [
+        await run('UPDATE knowledge_sets SET item_json = ?, requirements_hash = ? WHERE id = ?', [
           payload,
+          reqHash,
           existingSetId,
         ]);
       }

@@ -23,6 +23,7 @@ import logging
 
 import playbooks
 import text_facts
+from requirements_hash import requirements_hash as _compute_hash
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,17 @@ def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted, tex
 
     verdict, known, reasons = text_facts.judge_facts(wanted, facts, playbook)
     stored = {"candidate": "fit", "reject": "no", "unclear": "unclear"}[verdict]
-    _store(conn, listing_id, search_id, stored, "; ".join(reasons[:3]), known, "model")
+    req_hash = _compute_hash(wanted)
+    _store(
+        conn,
+        listing_id,
+        search_id,
+        stored,
+        "; ".join(reasons[:3]),
+        known,
+        "model",
+        req_hash,
+    )
     return stored
 
 
@@ -116,17 +127,21 @@ def _typed(field_type, value):
     return value
 
 
-def _store(conn, listing_id, search_id, verdict, reason, facts, stage):
+def _store(
+    conn, listing_id, search_id, verdict, reason, facts, stage, requirements_hash=None
+):
     conn.execute(
         """INSERT INTO listing_fit
-               (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
+               (listing_id, search_id, verdict, reason, facts_json, stage, judged_at,
+                requirements_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(listing_id, search_id) DO UPDATE SET
                verdict = excluded.verdict,
                reason = excluded.reason,
                facts_json = excluded.facts_json,
                stage = excluded.stage,
-               judged_at = excluded.judged_at""",
+               judged_at = excluded.judged_at,
+               requirements_hash = excluded.requirements_hash""",
         (
             str(listing_id),
             int(search_id),
@@ -135,6 +150,7 @@ def _store(conn, listing_id, search_id, verdict, reason, facts, stage):
             json.dumps(facts, ensure_ascii=False),
             stage,
             datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+            requirements_hash,
         ),
     )
 
@@ -156,6 +172,7 @@ def judge_search(conn, search_id, use_descriptions=True):
         return {"error": "no playbook for this search's category"}
 
     wanted = intent_for(conn, search_id)
+    req_hash = _compute_hash(wanted)
     if not wanted:
         return {"error": "this search has no requirements to judge against"}
 
@@ -198,7 +215,14 @@ def judge_search(conn, search_id, use_descriptions=True):
         stored = {"candidate": "fit", "reject": "no", "unclear": "unclear"}[verdict]
         counts[stored] += 1
         _store(
-            conn, listing_id, search_id, stored, "; ".join(reasons[:3]), facts, stage
+            conn,
+            listing_id,
+            search_id,
+            stored,
+            "; ".join(reasons[:3]),
+            facts,
+            stage,
+            req_hash,
         )
 
     conn.commit()
