@@ -49,9 +49,7 @@ export interface RowProps {
 
 function renderSpecs(facts: Record<string, unknown> = {}): React.ReactNode[] {
   return getSpecChips(facts).map((c, i) => (
-    <span key={i} className={c.includes('×') ? 'tabular-nums' : undefined}>
-      {c}
-    </span>
+    <span key={i}>{c}</span>
   ));
 }
 
@@ -98,8 +96,9 @@ export const Row: React.FC<RowProps> = ({
       }
       className={`row ${isGone ? 'gone' : ''} ${onClick ? 'cursor-pointer' : ''} ${className}`}
     >
-      {/* Photo on lampe passepartout */}
-      <div className="mat shrink-0">
+      {/* Photo on lampe passepartout, with the keep toggle on its corner so it
+          takes no column of its own. */}
+      <div className="mat">
         {imageUrl ? (
           <img
             src={imageUrl}
@@ -111,40 +110,6 @@ export const Row: React.FC<RowProps> = ({
         ) : (
           <span className="text-[#8FA6A1]/60 text-2xs">{t('surface.noImage')}</span>
         )}
-      </div>
-
-      {/* Middle column: Title, Where, Specs/Reason/Note */}
-      <div className="min-w-0 flex flex-col justify-center">
-        <h3>{listing.title || '—'}</h3>
-
-        <p className="where">
-          {listing.location ? formatLocation(listing.location) : t('surface.noLocation')}
-          {freshness && (
-            <span className={`ml-3 ${freshness.isStale ? 'text-[#C9A227]' : ''}`}>
-              {freshness.label}
-            </span>
-          )}
-          {typeof listing.detour_min === 'number' && (
-            <span className={listing.detour_min <= 0 ? 'ml-3 text-[#4E8C6A]' : 'ml-3'}>
-              {listing.detour_min <= 0 ? t('surface.onRoute') : t('surface.minDetour', { min: Math.round(listing.detour_min) })}
-            </span>
-          )}
-          {typeof listing.offroute_km === 'number' && listing.offroute_km > 0 && !listing.detour_min && (
-            <span className="ml-3">{t('surface.kmDistance', { km: Math.round(listing.offroute_km) })}</span>
-          )}
-        </p>
-
-        {isGone ? (
-          <p className="reason">{listing.fit?.reason || t('surface.tabNo')}</p>
-        ) : listing.fit?.verdict === 'unclear' ? (
-          <p className="note">{listing.fit?.reason || t('surface.unclearGap')}</p>
-        ) : chips.length > 0 ? (
-          <p className="specs">{chips}</p>
-        ) : null}
-      </div>
-
-      {/* Price on right in large Archivo numbers & keep button */}
-      <div className="flex items-center gap-3 shrink-0">
         {onToggleKeep && (
           <button
             type="button"
@@ -156,12 +121,10 @@ export const Row: React.FC<RowProps> = ({
               e.stopPropagation();
               onToggleKeep(listing.id);
             }}
-            className={`cursor-pointer transition-colors p-1 ${
-              isKept ? 'text-[#F2F5F4]' : 'text-[#8FA6A1]/40 hover:text-[#8FA6A1]'
-            }`}
+            className={`keep cursor-pointer ${isKept ? 'text-[#F2F5F4]' : 'text-[#8FA6A1]'}`}
           >
             <svg
-              className="w-4 h-4"
+              className="w-3.5 h-3.5"
               viewBox="0 0 24 24"
               fill={isKept ? 'currentColor' : 'none'}
               stroke="currentColor"
@@ -171,20 +134,49 @@ export const Row: React.FC<RowProps> = ({
             </svg>
           </button>
         )}
+      </div>
 
-        <div className="flex flex-col items-end shrink-0">
-          <div
-            data-testid="listing-price"
-            className={`price num ${isDeal ? 'text-[#E87967]' : priceInfo.isMissing ? 'text-[#8FA6A1]' : 'text-[#F2F5F4]'}`}
-          >
-            {priceInfo.text}
-          </div>
-          {typeof listing.niceness_score === 'number' && (
-            <div data-testid="listing-score" className="text-xs text-[#8FA6A1] tabular-nums mt-0.5">
-              {t('surface.score', { score: Math.round(listing.niceness_score) })}
-            </div>
-          )}
-        </div>
+      {/* The title gets the full width; the price moves down to the last line,
+          where the location left room to spare. */}
+      <h3>{listing.title || '—'}</h3>
+
+      {isGone ? (
+        <p className="detail reason">{listing.fit?.reason || t('surface.tabNo')}</p>
+      ) : listing.fit?.verdict === 'unclear' ? (
+        <p className="detail note">{listing.fit?.reason || t('surface.unclearGap')}</p>
+      ) : chips.length > 0 ? (
+        <p className="detail specs">{chips}</p>
+      ) : null}
+
+      <p className="where">
+        {listing.location ? formatLocation(listing.location) : t('surface.noLocation')}
+        {freshness && (
+          <span className={`ml-3 ${freshness.isStale ? 'text-[#C9A227]' : ''}`}>
+            {freshness.label}
+          </span>
+        )}
+        {typeof listing.detour_min === 'number' && (
+          <span className={listing.detour_min <= 0 ? 'ml-3 text-[#4E8C6A]' : 'ml-3'}>
+            {listing.detour_min <= 0 ? t('surface.onRoute') : t('surface.minDetour', { min: Math.round(listing.detour_min) })}
+          </span>
+        )}
+        {typeof listing.offroute_km === 'number' && listing.offroute_km > 0 && !listing.detour_min && (
+          <span className="ml-3">{t('surface.kmDistance', { km: Math.round(listing.offroute_km) })}</span>
+        )}
+      </p>
+
+      <div className="pricebox">
+        {typeof listing.niceness_score === 'number' && (
+          <span data-testid="listing-score" className="score">
+            {t('surface.score', { score: Math.round(listing.niceness_score) })}
+          </span>
+        )}
+        <span
+          data-testid="listing-price"
+          className={`price num ${isDeal ? 'text-[#E87967]' : priceInfo.isMissing ? 'text-[#8FA6A1]' : 'text-[#F2F5F4]'}`}
+        >
+          {priceInfo.text}
+        </span>
       </div>
     </article>
   );

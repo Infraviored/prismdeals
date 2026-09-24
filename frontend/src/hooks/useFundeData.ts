@@ -136,8 +136,15 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
   // within 30 km, is genuinely empty, and only a wider net says so usefully.
   const searchedEmpty =
     Boolean(familyId) && !isScraping && overview?.pots?.all === 0 && Boolean(overview?.last_crawled_at);
+  // Once per family and crawl. Retrying whenever an answer came back without
+  // options restarted the probe in a loop, and the hint flickered ten times a
+  // second.
+  const diagnosedFor = useRef<string | null>(null);
+  const diagnosisKey = familyId ? `${familyId}@${overview?.last_crawled_at ?? ''}` : null;
   useEffect(() => {
-    if (!searchedEmpty || radiusDiagnosis || diagnosing) return;
+    if (!searchedEmpty || radiusDiagnosis || diagnosing || !diagnosisKey) return;
+    if (diagnosedFor.current === diagnosisKey) return;
+    diagnosedFor.current = diagnosisKey;
     setDiagnosing(true);
     fetch(`/api/search-families/${familyId}/diagnose-radius`, {
       method: 'POST',
@@ -150,7 +157,7 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
       })
       .catch(() => {})
       .finally(() => setDiagnosing(false));
-  }, [searchedEmpty, familyId, radiusDiagnosis, diagnosing]);
+  }, [searchedEmpty, familyId, radiusDiagnosis, diagnosing, diagnosisKey]);
 
   const applyRadius = useCallback(
     async (km: number) => {

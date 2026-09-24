@@ -1931,7 +1931,7 @@ app.post('/api/search-families/:id/diagnose-radius', async (req, res) => {
 
     const pythonScript = `
 import sys, os, time, json, requests
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scraper'))
+sys.path.insert(0, ${JSON.stringify(path.join(__dirname, '..', 'scraper'))})
 import result_list, search_url
 
 payload = json.loads(sys.argv[1])
@@ -2059,7 +2059,7 @@ app.put('/api/search-families/:id/radius', async (req, res) => {
 
     const pythonScript = `
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scraper'))
+sys.path.insert(0, ${JSON.stringify(path.join(__dirname, '..', 'scraper'))})
 import search_url
 
 base_url = sys.argv[1]
