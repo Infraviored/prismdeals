@@ -194,27 +194,15 @@ export const Row: React.FC<RowProps> = ({
       >
         {priceInfo.text}
       </span>
-      {(typeof listing.score === 'number' || (typeof listing.rank === 'number' && typeof listing.rank_of === 'number')) && (
-        <div className="eval-cluster">
-          {typeof listing.score === 'number' && (
-            <span
-              data-testid="listing-score"
-              className={`score num ${
-                listing.score >= 90 ? 'high' : listing.score >= 70 ? 'mid' : 'low'
-              }`}
-            >
-              {t('surface.score', { score: Math.round(listing.score) })}
-            </span>
-          )}
-          {typeof listing.rank === 'number' && typeof listing.rank_of === 'number' && (
-            <span
-              data-testid="listing-rank"
-              className={`rank num ${listing.uncertain ? 'uncertain' : ''}`}
-            >
-              {t('surface.rank', { rank: listing.rank, of: listing.rank_of })}
-            </span>
-          )}
-        </div>
+      {typeof listing.score === 'number' && (
+        <span
+          data-testid="listing-score"
+          className={`score num ${
+            listing.score >= 90 ? 'high' : listing.score >= 70 ? 'mid' : 'low'
+          }`}
+        >
+          {t('surface.score', { score: Math.round(listing.score) })}
+        </span>
       )}
     </article>
   );

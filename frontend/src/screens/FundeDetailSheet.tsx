@@ -224,7 +224,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
           {typeof listing.rank === 'number' && typeof listing.rank_of === 'number' && (
             <div className="pt-2 border-t border-[#0E4A40] space-y-1">
               <div className="flex items-baseline gap-2">
-                <span className={`text-lg font-bold tabular-nums ${listing.uncertain ? 'text-[#C9A227]' : 'text-[#F2F5F4]'}`}>
+                <span className={`text-sm font-semibold ${listing.uncertain ? 'text-[#C9A227]' : 'text-[#F2F5F4]'}`}>
                   {t('surface.rank', { rank: listing.rank, of: listing.rank_of })}
                 </span>
                 {listing.uncertain && (
@@ -236,7 +236,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
               )}
               {listing.same_as && listing.same_as.length > 0 && (
                 <p className="text-xs text-[#8FA6A1]">
-                  {t('surface.sameAs', { ids: listing.same_as.map(rank => `#${rank}`).join(', ') })}
+                  {t('surface.sameAs', { ids: listing.same_as.join(', ') })}
                 </p>
               )}
             </div>

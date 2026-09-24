@@ -267,13 +267,10 @@ body {
 /* The match reads by colour, not by a label: green is a strong match, pale a
    fair one, brass a weak one. Same face as the price, one step smaller, so the
    two decision numbers sit together as a pair. */
-.row .eval-cluster { grid-area: score; justify-self: end; align-self: start; display: flex; align-items: baseline; gap: 6px; }
-.row .score { font-size: 19px; line-height: 1.1; white-space: nowrap; }
+.row .score { grid-area: score; justify-self: end; align-self: start; font-size: 19px; line-height: 1.1; white-space: nowrap; }
 .row .score.high { color: #7FC29B; }
 .row .score.mid { color: var(--kalk); opacity: 0.75; }
 .row .score.low { color: var(--messing); }
-.row .rank { font-size: 13px; color: var(--asche); white-space: nowrap; }
-.row .rank.uncertain { color: var(--messing); }
 .row.gone .mat { filter: grayscale(0.8); opacity: 0.55; }
 .row.gone h3, .row.gone .price { color: var(--asche); }
 

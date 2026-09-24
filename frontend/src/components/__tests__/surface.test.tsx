@@ -229,3 +229,16 @@ describe('Row score', () => {
     expect(screen.getByTestId('listing-score')).toHaveTextContent('87 %');
   });
 });
+
+describe('Row keeps rank out of the list', () => {
+  it('shows the percent but not the comparison rank', () => {
+    render(
+      <Row
+        listing={{ id: '1', title: 'Corsair', price: '140 €', price_eur: 140, score: 80, rank: 2, rank_of: 12 }}
+        onClick={() => {}}
+      />
+    );
+    expect(screen.getByTestId('listing-score')).toHaveTextContent('80');
+    expect(screen.queryByText(/12/)).not.toBeInTheDocument();
+  });
+});

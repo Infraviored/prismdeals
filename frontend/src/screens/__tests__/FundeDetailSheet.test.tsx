@@ -99,4 +99,23 @@ describe('FundeDetailSheet', () => {
     expect(deltaEl.className).not.toContain('text-[#E87967]');
     expect(deltaEl).not.toHaveAttribute('data-price-signal');
   });
+
+  it('explains the comparison rank and lists seller questions to copy', () => {
+    render(
+      <FundeDetailSheet
+        listing={{
+          ...mockListing,
+          rank: 1,
+          rank_of: 12,
+          rank_reason: 'Alle Angaben vollständig',
+          same_as: [5, 4],
+          seller_questions: ['Ist ein Test vor Ort möglich?'],
+        }}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.getByText('Rank 1 of 12 in the comparison')).toBeInTheDocument();
+    expect(screen.getByText('Similar to rank 5, 4')).toBeInTheDocument();
+    expect(screen.getByText('Ist ein Test vor Ort möglich?')).toBeInTheDocument();
+  });
 });
