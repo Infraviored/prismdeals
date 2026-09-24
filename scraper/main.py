@@ -308,6 +308,36 @@ def _thin(points, limit):
     return thinned
 
 
+def run_probe_mode(args):
+    """Executes search probing: builds search ladders, measures gain/overlap, snowballs."""
+    import probe
+
+    conn = get_db_connection()
+    payload = {}
+    if args.payload_json:
+        try:
+            payload = json.loads(args.payload_json)
+        except Exception as exc:
+            print(f"__PROBE_ERROR__:Invalid payload_json: {exc}", flush=True)
+            return
+    elif not sys.stdin.isatty():
+        try:
+            payload = json.load(sys.stdin)
+        except Exception as exc:
+            print(f"__PROBE_ERROR__:Invalid stdin JSON: {exc}", flush=True)
+            return
+
+    def on_rung(rung):
+        print("__PROBE_RUNG__:" + json.dumps(rung), flush=True)
+
+    try:
+        result = probe.run_probe(payload, conn=conn, on_rung=on_rung)
+        print("__PROBE_RESULT__:" + json.dumps(result), flush=True)
+    except Exception as exc:
+        logger.exception("Probe execution failed: %s", exc)
+        print(f"__PROBE_ERROR__:{exc}", flush=True)
+
+
 def main():
     """Main entry point that acts as a wrapper for different functionalities"""
     parser = argparse.ArgumentParser(
@@ -329,12 +359,13 @@ def main():
             "family-create",
             "family-update",
             "family-delete",
+            "probe",
         ],
         default="both",
         help=(
             "Operation mode: scrape, process, both, preview, update-all, "
             "route-preview, route-replan, route-create, route-annotate, "
-            "family-preview, family-create, family-update, or family-delete"
+            "family-preview, family-create, family-update, family-delete, or probe"
         ),
     )
 
@@ -452,6 +483,10 @@ def main():
         "family-delete",
     ):
         run_family_mode(args)
+        return
+
+    if args.mode == "probe":
+        run_probe_mode(args)
         return
 
     if args.mode == "preview":
