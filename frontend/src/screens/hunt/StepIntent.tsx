@@ -35,7 +35,7 @@ export const StepIntent: React.FC<StepIntentProps> = ({
       <div className="space-y-2">
         <label
           htmlFor="hunt-intent-input"
-          className="block text-xs font-semibold uppercase tracking-wider text-[#8FA6A1]"
+          className="block text-lg font-semibold text-[#F2F5F4]"
         >
           {t('hunt.step1Title')}
         </label>

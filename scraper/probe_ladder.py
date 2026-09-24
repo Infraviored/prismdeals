@@ -174,31 +174,33 @@ def _strong_keywords(musts):
                 token = str(val).strip()
                 if token and len(token) >= 2:
                     keywords.append(token.lower())
-        elif "match" in want and want["match"]:
-            token = label.strip()
-            if token and len(token) >= 2:
-                keywords.append(token.lower())
+        elif ("match" in want and want["match"]) or want.get("present") is True:
+            from probe_sieve import label_words
+
+            words = label_words(label)
+            if words:
+                keywords.append(words[0])
         elif "min" in want or "max" in want:
             # Numeric must: use the label as keyword if it's short enough
             # e.g. "32 GB" → "32gb"
             combined = label.strip()
             if want.get("min"):
-                combined = f"{want['min']}{_guess_unit(label)}"
+                unit = _guess_unit(label)
+                # A bare number is no search term.
+                combined = f"{want['min']:g}{unit}" if unit else ""
             if combined and len(combined) <= 10:
                 keywords.append(combined.lower().replace(" ", ""))
     return keywords
 
 
 def _guess_unit(label):
-    """Extract the unit from a label like 'RAM (GB)' → 'gb'."""
-    match = re.search(r"\((\w+)\)", label)
-    if match:
-        return match.group(1).lower()
-    # Common units at the end of a label
-    for unit in ("gb", "tb", "zoll", "cm", "kg", "mhz"):
-        if label.lower().endswith(unit):
-            return unit
-    return ""
+    """The unit in a label: 'RAM (GB)' and '32 GB RAM' both -> 'gb'.
+
+    Only a trailing unit was read, so "32 GB RAM" became the search term "32"
+    (1.576 offers, measured).
+    """
+    match = re.search(r"\b(gb|tb|zoll|cm|kg|mhz|kw|ps|ccm)\b", label.lower())
+    return match.group(1) if match else ""
 
 
 def _fit_ladder(seed_terms, musts, prefs, models, category_code, filters):

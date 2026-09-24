@@ -87,6 +87,9 @@ def test_fixture_replay_post_processing(fixture_id):
         "use",
         "sizes",
         "budget",
+        "category_id",
+        "category_name",
+        "search_terms",
     }
     assert set(intent.keys()) == expected_keys
 
@@ -281,3 +284,34 @@ def test_malformed_musts_from_the_model_are_dropped():
         ]
     )
     assert [m["id"] for m in kept] == ["ramGb"]
+
+
+def test_model_output_becomes_clean_chips():
+    """Category from the model's pick, short terms, no filter or price echoes as musts."""
+    from intent import parse_intent
+
+    raw = {
+        "hunt_type": "features",
+        "category_id": "278",
+        "search_terms": [
+            "oled laptop",
+            "Notebook  OLED",
+            "laptop mit 32 gb ram und oled display full hd",
+        ],
+        "musts": [
+            {"id": "ram", "label": "32 GB RAM", "type": "number", "want": {"min": 32}},
+            {
+                "id": "price_max",
+                "label": "Maximalpreis 800€",
+                "type": "number",
+                "want": {"max": 800},
+            },
+        ],
+        "filters": {"ram": "32", "display": "OLED", "price_max": 800},
+        "budget": {"max": 800},
+    }
+    out = parse_intent("Laptop 32 GB RAM OLED bis 800 Euro", raw_response_override=raw)
+    assert out["category_id"] == "278"
+    assert out["search_terms"] == ["oled laptop", "notebook oled"]
+    assert [m["label"] for m in out["musts"]] == ["32 GB RAM"]
+    assert out["budget"]["max"] == 800

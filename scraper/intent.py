@@ -325,13 +325,31 @@ def parse_intent(text, category=None, offline=False, raw_response_override=None)
 
     budget = verify_and_sanitize_budget(parsed.get("budget"), text_clean)
 
+    # The category the buyer gave wins; otherwise the model's pick, if real.
+    if not cat_info and parsed.get("category_id"):
+        cat_info = find_category(str(parsed.get("category_id")).lstrip("c"))
     raw_filters = parsed.get("filters", {})
-    mapped_filters, extra_musts = map_filters_to_taxonomy(raw_filters, cat_info)
+    mapped_filters, _unmapped = map_filters_to_taxonomy(raw_filters, cat_info)
+    # Unmapped filters used to become musts ("Ram", "Display", "Price Max" next
+    # to the real "32 GB RAM"): the model already states real musts as musts.
+    mapped_filters.pop("preis", None)
+    extra_musts = []
 
-    musts = sanitize_requirements(parsed.get("musts")) + sanitize_requirements(
-        extra_musts
-    )
-    prefs = sanitize_requirements(parsed.get("prefs"))
+    search_terms = []
+    for term in parsed.get("search_terms") or []:
+        term = re.sub(r"\s+", " ", str(term)).strip().lower()
+        if term and len(term.split()) <= 4 and term not in search_terms:
+            search_terms.append(term)
+
+    # The budget is the price filter; as a must it showed up twice.
+    def not_price(req):
+        return not re.search(
+            r"preis|price|budget|€|euro", f"{req['id']} {req['label']}", re.I
+        )
+
+    musts = [m for m in sanitize_requirements(parsed.get("musts")) if not_price(m)]
+    musts += sanitize_requirements(extra_musts)
+    prefs = [p for p in sanitize_requirements(parsed.get("prefs")) if not_price(p)]
 
     raw_models = parsed.get("models", [])
     models = normalize_model_names(raw_models)
@@ -360,6 +378,9 @@ def parse_intent(text, category=None, offline=False, raw_response_override=None)
         "use": use,
         "sizes": sizes,
         "budget": budget,
+        "category_id": str(cat_info.get("id")) if cat_info else None,
+        "category_name": cat_info.get("name") if cat_info else None,
+        "search_terms": search_terms[:3],
     }
 
 

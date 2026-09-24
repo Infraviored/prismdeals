@@ -81,7 +81,7 @@ export const HuntSetupScreen: React.FC<HuntSetupScreenProps> = ({
             />
           ))}
         </div>
-        <span className="font-mono text-[11px] tabular-nums">
+        <span className="text-xs [font-variant-numeric:tabular-nums]">
           {displayStep} / {totalSteps}
         </span>
       </div>

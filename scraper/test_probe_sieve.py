@@ -66,3 +66,55 @@ def test_price_matches():
     assert probe_sieve.price_matches(card, {"max": 600}) is False
     assert probe_sieve.price_matches(card, {"min": 700}) is False
     assert probe_sieve.price_matches({"price_eur": None}, {"min": 500}) is True
+
+
+def test_intent_musts_are_read_from_laptop_titles_despite_a_playbook():
+    """ "32 GB RAM" and "OLED-Display" come from the intent model, not the playbook."""
+    import playbooks
+    from probe_sieve import sieve_card
+
+    laptop = playbooks.playbook_for_category_code("c278")
+    musts = [
+        {"id": "ram", "label": "32 GB RAM", "type": "number", "want": {"min": 32}},
+        {
+            "id": "display_oled",
+            "label": "OLED-Display",
+            "type": "boolean",
+            "want": {"present": True},
+        },
+    ]
+    card = lambda title: {"title": title, "description": ""}  # noqa: E731
+    assert (
+        sieve_card(card("Asus Zenbook 14 OLED 32GB RAM 1TB SSD"), musts, laptop)[0]
+        == "likely"
+    )
+    # 16 GB near "RAM" rules it out; the 1TB of the SSD is not read as RAM.
+    assert sieve_card(card("Lenovo Yoga 16GB RAM 1TB OLED"), musts, laptop)[0] == "no"
+    assert sieve_card(card("Dell XPS 13 OLED"), musts, laptop)[0] == "unclear"
+
+
+def test_a_width_in_the_title_decides_a_wardrobe():
+    from probe_sieve import sieve_card
+
+    musts = [
+        {
+            "id": "widthCm",
+            "label": "Breite höchstens 120 cm",
+            "type": "number",
+            "want": {"max": 120},
+        }
+    ]
+    assert sieve_card({"title": "Kleiderschrank Breite 118 cm"}, musts)[0] == "likely"
+    assert sieve_card({"title": "Kleiderschrank Breite 180 cm"}, musts)[0] == "no"
+    assert sieve_card({"title": "Kleiderschrank weiß"}, musts)[0] == "unclear"
+
+
+def test_a_bare_number_is_never_a_search_term():
+    import probe_ladder
+
+    musts = [{"id": "ram", "label": "32 GB RAM", "type": "number", "want": {"min": 32}}]
+    terms = [
+        r["term"]
+        for r in probe_ladder.build_ladder("features", [], musts, [], [], "c278", {})
+    ]
+    assert "32" not in terms and "32gb" in terms

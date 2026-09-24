@@ -44,7 +44,7 @@ export const StepLocation: React.FC<StepLocationProps> = ({
   return (
     <div className="w-full flex flex-col space-y-6">
       <div className="space-y-1">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-[#8FA6A1]">
+        <h2 className="text-lg font-semibold text-[#F2F5F4]">
           {t('hunt.step4Title')}
         </h2>
         <p className="text-xs text-[#8FA6A1]/80">

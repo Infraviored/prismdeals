@@ -111,11 +111,12 @@ describe('MarketPicture', () => {
       />
     );
 
-    expect(screen.getByText('oled laptop')).toBeInTheDocument();
-    expect(screen.getByText('oled 32gb')).toBeInTheDocument();
-    expect(screen.getByText('too wide')).toBeInTheDocument();
-    expect(screen.getAllByText(/behalten|kept/i)[0]).toBeInTheDocument();
-    expect(screen.getByText(/verworfen|dropped/i)).toBeInTheDocument();
+    // The term as it goes to Kleinanzeigen, not an internal label.
+    expect(screen.getByText('oled-laptop')).toBeInTheDocument();
+    expect(screen.getByText('oled-32gb')).toBeInTheDocument();
+    // A term that added nothing is struck through, not flagged.
+    expect(screen.getByText('too-wide').className).toContain('line-through');
+    expect(screen.getByTestId('market-rung-row-0')).toHaveTextContent('60 offers · 50 possible');
   });
 
   it('allows selecting budget thresholds', () => {
@@ -160,5 +161,23 @@ describe('MarketPicture', () => {
     fireEvent.click(relaxBtn);
 
     expect(handleRelax).toHaveBeenCalledWith('ram>=32');
+  });
+
+  it('shows what is still open next to what fits, and the usual price without the deal colour', () => {
+    render(
+      <MarketPicture
+        isProbing={false}
+        rungs={mockRungs}
+        marketPicture={mockMarketPicture}
+        error={null}
+        selectedBudgetMax={null}
+        effectiveLikelyCount={57}
+        relaxedMusts={new Set()}
+        onRelaxMust={vi.fn()}
+        onSelectBudget={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('market-hero-open-count')).toHaveTextContent('7');
+    expect(screen.getByTestId('market-hero-median-price').className).not.toContain('E87967');
   });
 });

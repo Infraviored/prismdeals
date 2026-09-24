@@ -144,6 +144,9 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
         if (Array.isArray(intent.models) && intent.models.length > 0) setModels(intent.models);
         if (Array.isArray(intent.sizes) && intent.sizes.length > 0) setSizes(intent.sizes);
         if (intent.budget?.max) setMaxPrice(intent.budget.max);
+        // Without a category the probe searched all of Kleinanzeigen: "32"
+        // alone found 384 058 offers.
+        if (intent.category_id) setCategoryId((current) => current ?? intent.category_id ?? null);
       }
     } catch (err) {
       console.error('Intent parsing request error:', err);
@@ -163,7 +166,10 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
       seedTerms = [...models];
     } else if (huntType === 'class' && proposedModels.length > 0) {
       seedTerms = proposedModels.filter((m) => m.selected !== false).map((m) => m.model);
+    } else if (parsedIntent?.search_terms && parsedIntent.search_terms.length > 0) {
+      seedTerms = [...parsedIntent.search_terms];
     } else if (intentText.trim()) {
+      // The whole sentence as a search term finds nothing; this is the fallback.
       seedTerms = [broadenQuery(intentText.trim()) || intentText.trim()];
     }
 
@@ -173,8 +179,10 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
       radius_km: radius,
       price: effectivePrice,
       hunt_type: huntType,
-      musts: musts.map((m) => ({ id: m.id, label: m.label || m.id, want: m.want || { text: m.id } })),
-      prefs: prefs.map((p) => ({ id: p.id, label: p.label || p.id, want: p.want || { text: p.id } })),
+      // The type tells the sieve that a width or a capacity cannot be read
+      // from a title and leaves the offer open instead of counting it.
+      musts: musts.map((m) => ({ id: m.id, label: m.label || m.id, type: m.type, want: m.want || { text: m.id } })),
+      prefs: prefs.map((p) => ({ id: p.id, label: p.label || p.id, type: p.type, want: p.want || { text: p.id } })),
       seed_terms: seedTerms,
       models:
         huntType === 'shortlist'
@@ -200,6 +208,7 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
     musts,
     prefs,
     probe,
+    parsedIntent,
   ]);
 
   // Step transitions

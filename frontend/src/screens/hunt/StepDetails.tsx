@@ -92,7 +92,7 @@ export const StepDetails: React.FC<StepDetailsProps> = ({
   return (
     <div className="w-full flex flex-col space-y-6">
       <div className="space-y-1">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-[#8FA6A1]">
+        <h2 className="text-lg font-semibold text-[#F2F5F4]">
           {t('hunt.step3Title')}
         </h2>
         <p className="text-xs text-[#8FA6A1]/80">
@@ -183,7 +183,7 @@ export const StepDetails: React.FC<StepDetailsProps> = ({
                     <div className="text-sm font-medium text-[#F2F5F4] truncate">
                       {item.model}
                     </div>
-                    <div className="text-xs text-[#8FA6A1] flex items-center gap-2 mt-0.5 font-mono tabular-nums">
+                    <div className="text-xs text-[#8FA6A1] flex items-center gap-2 mt-0.5 [font-variant-numeric:tabular-nums]">
                       {item.years && <span>{item.years}</span>}
                       {item.total !== undefined && item.total > 0 && (
                         <span>· {item.total} {t('hunt.marketRungHits')}</span>

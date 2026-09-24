@@ -304,6 +304,11 @@ export interface HuntParsedIntent {
   sizes: string[];
   budget: { min: number | null; max: number | null } | null;
   class: string | null;
+  /** The category the buyer's words point to, as a taxonomy id ("278"). */
+  category_id?: string | null;
+  category_name?: string | null;
+  /** Short terms the way sellers title such ads; specs stay in the musts. */
+  search_terms?: string[];
 }
 
 export interface ProposedModel {
@@ -341,6 +346,8 @@ export interface ProbeEstimate {
 export interface BudgetStep {
   max: number;
   likely: number;
+  /** Not ruled out by title and snippet; the detail page decides. */
+  unclear?: number;
 }
 
 export interface RelaxSignal {

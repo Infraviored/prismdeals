@@ -5,6 +5,18 @@ Follows product-core.md §8:
 """
 
 
+def _category_menu():
+    """Leaf categories as "id: name", for the model to pick one when none is set."""
+    from intent_taxonomy import load_taxonomy
+
+    cats = load_taxonomy().get("categories", [])
+    return "\n".join(
+        f"{c.get('id')}: {c.get('name')} ({c.get('parent_name') or '-'})"
+        for c in cats
+        if not c.get("is_top_level")
+    )
+
+
 def build_intent_prompt(text, category_info=None):
     """Builds prompt: hard frame + soft middle + output format at the end."""
     category_desc = "None"
@@ -36,7 +48,12 @@ def build_intent_prompt(text, category_info=None):
         "- 'sizes': dictionary of sizes/dimensions mentioned (e.g. {'width_cm': 120}, {'dimensions': '140x200'}).\n"
         "- 'musts': list of deal-breaker constraints. Each must has: id (slug), label (German), type ('number'|'enum'|'boolean'|'text'), want ({'min': ...} or {'max': ...} or {'match': ...} or {'oneOf': [...]} or {'present': true}).\n"
         "- 'prefs': list of nice-to-have wishes in the same shape as musts.\n"
-        "- 'filters': candidate marketplace filters (e.g. brand, km, ram, condition).\n"
+        "- 'filters': ONLY values for the category filters listed in the context, keyed by that\n"
+        "  exact filter key. Never repeat the budget here; never invent keys.\n"
+        "- 'category_id': the id of the one category from the list that fits the item best.\n"
+        "- 'search_terms': 1 to 3 SHORT search terms (1-3 words) the way sellers title such\n"
+        "  ads, broad enough to find everything that could fit: specs belong in musts, not\n"
+        "  here (e.g. 'oled laptop', 'notebook oled', not 'laptop 32 gb oled full hd').\n"
         "- 'use': list of intended uses (e.g. ['video editing', 'track day']).\n"
     )
 
@@ -44,7 +61,8 @@ def build_intent_prompt(text, category_info=None):
         f"--- CONTEXT ---\n"
         f"Category: {category_desc}\n"
         f"Available category filters: {available_filters_desc}\n"
-        f'Buyer query: "{text}"\n\n'
+        + ("" if category_info else f"Categories (id: name):\n{_category_menu()}\n")
+        + f'Buyer query: "{text}"\n\n'
         "--- OUTPUT FORMAT ---\n"
         "Return ONLY a single valid JSON object strictly matching this schema:\n"
         "{\n"
@@ -55,6 +73,8 @@ def build_intent_prompt(text, category_info=None):
         '  "musts": [{"id": "...", "label": "...", "type": "number|enum|boolean|text", "want": {...}}],\n'
         '  "prefs": [{"id": "...", "label": "...", "type": "...", "want": {...}}],\n'
         '  "filters": {"filter_key": "value"},\n'
+        '  "category_id": "278",\n'
+        '  "search_terms": ["oled laptop", "notebook oled"],\n'
         '  "use": ["use1", ...],\n'
         '  "sizes": {},\n'
         '  "budget": {"min": null, "max": 150} | null\n'
