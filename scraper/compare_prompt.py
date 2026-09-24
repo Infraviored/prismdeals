@@ -34,8 +34,14 @@ def build_compare_prompt(
         "- If a requirement cannot be verified from the listing text, mark it 'unstated'.\n"
         "- Key musts and facts by the requirement id in square brackets. A must marked\n"
         "  'met' or 'violated' needs a fact under the same id with its quote.\n"
-        "- Rank by overall fit: requirements met > price vs market > condition > completeness.\n"
+        "- Rank by the quality of the offer, NOT by price: how certain the requirements\n"
+        "  are, condition, completeness, how trustworthy the listing reads. Price is\n"
+        "  weighed by code elsewhere; do not mention it in the reason.\n"
         "- Be concise: reason is at most 20 words.\n"
+        "- Write reason, checks and seller_questions in German: the buyer reads them\n"
+        "  in a German app and sends the questions to German sellers.\n"
+        "- Say 'all requirements met' only if every requirement is 'met'.\n"
+        "- Plain German a buyer understands: no ids, no English words, no jargon.\n"
         "- Output ONLY the JSON lines block at the end. No other text.\n"
     )
 

@@ -281,6 +281,8 @@ Four kinds of needs; the kind decides where a need flows:
 - Weights from the profile.
 - **AI supplies facts, code computes the grade.**
 - The comparative **rank is its own statement** ("#3 of 28"), not folded into the percent.
+  It ranks the **quality of the offer without price** (certainty, condition, completeness, trust):
+  measured, the model ordered by price worse than code does.
   Weak market: "best found, market weak".
 - ~~Niceness score from the model's impression~~
   *dropped: shifted with whichever reference description the model had seen; not reproducible.*

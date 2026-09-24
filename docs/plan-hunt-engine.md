@@ -297,6 +297,24 @@ Replaces the edit screen for **new** hunts; edit screen stays for existing ones,
 - Output per listing ID (JSON lines, end of prompt): `node, facts{field: {value, quote}}, musts{id: met|violated|unstated|retrofittable}, checks[], seller_questions[], rank, reason (≤ 20 words), same_as[]`.
 - Code validates: every quote must occur in the listing text; facts without a matching quote are dropped.
 
+### 9.2a Review findings and measurement (2026-09-25)
+
+- ~~Rank by overall fit including price~~ *dropped: measured on campaign 7 (12 candidates), the
+  model put the cheapest fully matching offer on #3 behind two dearer ones; tau 0.39. The model now
+  ranks the **quality of the offer without price** (certainty of musts, condition, completeness,
+  trust); price stays with the score (code). Result: plausible order, tau 0.52.*
+- Reasons and seller questions are forced to plain German (they were English).
+- A must counts as met/violated only with a quoted fact under the requirement id; the prompt names
+  requirements by id (it did not, so no judged state matched a field).
+- Skipped listings rank last per run; answer budget grows with the set (4000 tokens cut 30 listings).
+- Run stores what each must meant (`judge_runs.requirements_json`); a judged state applies only while
+  the buyer wants the same thing.
+- `POST /compare` runs in the background (202), the ranks endpoint reports `running`.
+- Measured, campaign 7, `deepseek-v4.1-flash:nitro`: 3 runs, ~10k tokens in, ~13k out,
+  51 s, ≈ 0.004 USD per comparison.
+- ~~The list sorts by rank first~~ *dropped: the list keeps price order (owner's rule: cheaper first,
+  higher score first at equal price); rank is shown, not sorted by.*
+
 ### 9.3 Stability
 
 - 3 runs, shuffled order, same input. Final rank = mean rank; spread > 5 places → "uncertain".

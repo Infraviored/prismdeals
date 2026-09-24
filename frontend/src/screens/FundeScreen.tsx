@@ -142,9 +142,6 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
       list = list.filter((l) => l.id !== heroListing.id);
     }
     return [...list].sort((a, b) => {
-      const ra = typeof a.rank === 'number' ? a.rank : 999999;
-      const rb = typeof b.rank === 'number' ? b.rank : 999999;
-      if (ra !== rb) return ra - rb;
       const pa = typeof a.price_eur === 'number' ? a.price_eur : 999999;
       const pb = typeof b.price_eur === 'number' ? b.price_eur : 999999;
       if (pa !== pb) return pa - pb;
