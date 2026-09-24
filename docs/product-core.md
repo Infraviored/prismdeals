@@ -115,7 +115,7 @@ Four kinds of needs; the kind decides where a need flows:
 
 | kind | example | goes to |
 |---|---|---|
-| filter | ≤ 9000 €, automatic, colour, km, ccm, first registration | search URL **if Kleinanzeigen has the filter**, else treat as must |
+| filter | ≤ 9000 €, automatic, colour, km, ccm, first registration | search URL **if Kleinanzeigen has the filter**, else treat as must. Seller-set attributes (laptop `ram_s`, motorcycle `km_i`) are often unset → probe them as a rung before applying |
 | must | has towbar, no accident, 32 GB | gate; stated violation → out; unstated → seller question |
 | preference | rather black, ideally with cases | ranking, never exclusion |
 | use | two-up on country roads, tows 1.5 t, video editing | research **and** judging |
@@ -345,12 +345,15 @@ Four kinds of needs; the kind decides where a need flows:
 
 ### Order of work
 
+Detailed plan: [`plan-hunt-engine.md`](plan-hunt-engine.md) (packages P0–P9, benchmark hunts B1–B8).
+
 1. ✓ taxonomy lookup · ✓ score.
-2. **Probing + market picture before save** — every hunt type needs it.
-3. Hunt-type question at the start; filterable fields into the URL; drop the playbook form.
-4. Candidate set, one comparative call.
-5. Research bridge (three prompts, approval), tree with inheritance.
-6. Market per node, cleaned.
+2. P0 quick fixes (motorcycle screen) · P1 hunt model + benchmarks.
+3. P2 probe engine · P4 intent parsing → P3 setup flow with market picture · P5 model proposals.
+4. P6 candidate set, one comparative call.
+5. P7 knowledge nodes + research bridge · P8 market per node · P9 verdict per requirements version.
+- ~~Order: probing → hunt-type question → candidate set → research → market~~
+  *dropped: superseded by the package plan; hunt type and probing are built together because the ladder depends on the type.*
 - ~~Interview comes last (old step 7)~~ *dropped: the hunt type decides the search, so it comes first.*
 - Later: own research agent; knowledge shared between buyers (pasted research is foreign text, check before sharing).
 
