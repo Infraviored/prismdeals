@@ -14,10 +14,23 @@ import hashlib
 import json
 
 
+def _normal(value):
+    """Integral floats as ints, recursively: JSON from Node has no 3200.0."""
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, dict):
+        return {k: _normal(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_normal(v) for v in value]
+    return value
+
+
 def requirements_hash(fields):
     """SHA-256 prefix of the canonical buyer requirements.
 
-    Returns None when there are no requirements (nothing to hash).
+    Returns None when there are no requirements (nothing to hash). Must equal
+    backend/db/requirements_hash.js byte for byte: non-ASCII stays literal
+    ("grün", as JSON.stringify writes it) and 3200.0 is 3200.
     """
     if not fields:
         return None
@@ -26,8 +39,10 @@ def requirements_hash(fields):
         canonical.append(
             {
                 "id": f.get("id", ""),
-                "buyer_wants": f.get("buyer_wants", {}),
+                "buyer_wants": _normal(f.get("buyer_wants", {})),
             }
         )
-    blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    blob = json.dumps(
+        canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]

@@ -23,7 +23,7 @@ function canonicalStringify(val) {
   if (Array.isArray(val)) {
     return '[' + val.map(canonicalStringify).join(',') + ']';
   }
-  const keys = Object.keys(val).sort();
+  const keys = Object.keys(val).sort(); // code-point order, like sort_keys=True
   return '{' + keys.map(k => JSON.stringify(k) + ':' + canonicalStringify(val[k])).join(',') + '}';
 }
 
@@ -37,7 +37,8 @@ function requirementsHash(fields) {
   if (!fields || !Array.isArray(fields) || fields.length === 0) return null;
   const canonical = fields
     .map(f => ({ id: f.id || '', buyer_wants: f.buyer_wants || {} }))
-    .sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+    // Code-point order, as Python's sorted(); localeCompare puts 'Zustand' after 'akku'.
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const blob = canonicalStringify(canonical);
   return crypto.createHash('sha256').update(blob).digest('hex').slice(0, 16);
 }

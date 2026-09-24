@@ -56,6 +56,12 @@ applySchema(db)
   .then(() => {
     seedDefaultUser();
     require('./migrations/p1_backfill').backfillHuntTypes(query, run).catch(console.error);
+    // Idempotent: hashes knowledge sets and old verdicts so verdicts found
+    // under unchanged requirements survive a search edit (P9).
+    require('./migrations/p9_backfill')
+      .backfillP9Verdicts(query, run)
+      .then(stats => console.log('P9 backfill:', JSON.stringify(stats)))
+      .catch(console.error);
   })
   .catch(err => {
     console.error('Could not bring the database up to db/schema.sql:', err.message);
@@ -2621,25 +2627,28 @@ app.post('/api/knowledge-sets', async (req, res) => {
     const sourceUrlStr = source_search_url || '';
     const timestampStr = sample_timestamp || '';
 
+    // Readers find verdicts by this hash; a set saved without it hid them (P9).
+    const reqHash = require('./db/requirements_hash').requirementsHash((item_json || {}).fields);
     if (ksId) {
       await run(`
         UPDATE knowledge_sets 
         SET name = ?, expert_knowledge = ?, item_json = ?, market_memo = ?, 
             good_reference_description = ?, bad_reference_description = ?, 
-            market_samples_json = ?, source_search_url = ?, sample_timestamp = ? 
+            market_samples_json = ?, source_search_url = ?, sample_timestamp = ?,
+            requirements_hash = ?
         WHERE id = ?
       `, [
-        name, expertStr, jsonStr, memoStr, goodRefStr, badRefStr, samplesStr, sourceUrlStr, timestampStr, ksId
+        name, expertStr, jsonStr, memoStr, goodRefStr, badRefStr, samplesStr, sourceUrlStr, timestampStr, reqHash, ksId
       ]);
     } else {
       const result = await run(`
         INSERT INTO knowledge_sets (
           name, expert_knowledge, item_json, market_memo, 
           good_reference_description, bad_reference_description, 
-          market_samples_json, source_search_url, sample_timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          market_samples_json, source_search_url, sample_timestamp, requirements_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
-        name, expertStr, jsonStr, memoStr, goodRefStr, badRefStr, samplesStr, sourceUrlStr, timestampStr
+        name, expertStr, jsonStr, memoStr, goodRefStr, badRefStr, samplesStr, sourceUrlStr, timestampStr, reqHash
       ]);
       ksId = result.id;
     }

@@ -173,6 +173,15 @@ def judge_search(conn, search_id, use_descriptions=True):
 
     wanted = intent_for(conn, search_id)
     req_hash = _compute_hash(wanted)
+    # The verdicts below are found through the knowledge set's hash. A set
+    # written by a path that did not store it would hide them all.
+    if req_hash:
+        conn.execute(
+            """UPDATE knowledge_sets SET requirements_hash = ?
+                WHERE id = (SELECT knowledge_set_id FROM searches WHERE id = ?)
+                  AND requirements_hash IS NOT ?""",
+            (req_hash, int(search_id), req_hash),
+        )
     if not wanted:
         return {"error": "this search has no requirements to judge against"}
 

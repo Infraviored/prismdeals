@@ -210,3 +210,22 @@ def test_campaigns_with_different_requirements_dont_leak(db):
     # Campaign 2 does NOT see Campaign 1's verdict because its requirements_hash differs
     v2 = query_verdict_for_search(db, "kit-shared", 2)
     assert v2[0] is None, "Campaign 2 must not see Campaign 1's verdict"
+
+
+def test_judging_heals_a_knowledge_set_saved_without_a_hash(db):
+    """A set written by a path that stored no hash would hide every verdict."""
+    db.execute(
+        "INSERT INTO knowledge_sets (id, item_json) VALUES (1, ?)",
+        (json.dumps(WANTS_16GB),),
+    )
+    db.execute(
+        "INSERT INTO searches (id, url, knowledge_set_id) VALUES (1, ?, 1)",
+        (MEMORY_SEARCH,),
+    )
+    db.execute(
+        "INSERT INTO listings (id, search_id, title) VALUES ('kit-1', 1, ?)",
+        ("Corsair Vengeance LPX 32GB (2x16GB) DDR4-3200 CL16",),
+    )
+    db.execute("INSERT INTO listing_search_hits VALUES ('kit-1', 1, '2026-09-01')")
+    fit.judge_search(db, 1)
+    assert query_verdict_for_search(db, "kit-1", 1)[0] == "fit"
