@@ -78,7 +78,10 @@ export function useScraperControl({
         setActiveProcessingListingIds(prev => {
           const finished = prev.filter(id => !data.active.includes(id));
           if (finished.length > 0) refreshAllRef.current();
-          return data.active;
+          // Same ids, same array: a new one re-rendered the whole app every
+          // two seconds for nothing.
+          const same = prev.length === data.active.length && prev.every((id, i) => id === data.active[i]);
+          return same ? prev : data.active;
         });
       } catch {
         // silent

@@ -25,6 +25,14 @@ export const Sheet: React.FC<SheetProps> = ({
 }) => {
   const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
+  // Parents pass a fresh arrow function on every render, and the app renders
+  // every two seconds (the processing poll). With onClose as a dependency the
+  // effect below re-ran each time: focus went back to the page behind and then
+  // to the panel, which on Android threw away a text selection and its copy
+  // bar, over and over. Read it through a ref; open and close are the only
+  // moments focus should move.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -43,7 +51,7 @@ export const Sheet: React.FC<SheetProps> = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -75,7 +83,7 @@ export const Sheet: React.FC<SheetProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       returnTo?.focus?.();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

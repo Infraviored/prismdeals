@@ -184,6 +184,26 @@ describe('Surface Components P1', () => {
       fireEvent.keyDown(window, { key: 'Escape' });
       expect(handleClose).toHaveBeenCalledTimes(2);
     });
+
+    it('leaves focus alone when the parent re-renders with a new onClose', () => {
+      // The app re-renders every two seconds. Moving focus each time threw
+      // away a text selection on Android, copy bar and all.
+      const sheet = (onClose: () => void) => (
+        <Sheet isOpen={true} onClose={onClose} title="Anforderungen">
+          <input data-testid="inside" />
+        </Sheet>
+      );
+      const { rerender } = render(sheet(() => {}));
+      const input = screen.getByTestId('inside');
+      input.focus();
+      rerender(sheet(() => {}));
+      expect(document.activeElement).toBe(input);
+
+      const latest = vi.fn();
+      rerender(sheet(latest));
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(latest).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('EmptyLine component', () => {
