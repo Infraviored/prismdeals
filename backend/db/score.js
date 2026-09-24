@@ -69,12 +69,19 @@ function mean(values) {
  */
 function scoreListing(listing, fields) {
   const facts = listing.fit?.facts || {};
+  const rankMusts = listing.rank_musts || listing.musts || null;
   const requirements = Array.isArray(fields) ? fields : [];
 
   const gate = { met: [], violated: [], open: [] };
   const soft = { met: 0, total: 0 };
   for (const field of requirements) {
-    const state = stateOf(field, facts);
+    let state;
+    if (rankMusts && rankMusts[field.id]) {
+      const rm = rankMusts[field.id];
+      state = rm === 'met' ? 'met' : (rm === 'violated' ? 'violated' : 'open');
+    } else {
+      state = stateOf(field, facts);
+    }
     if (isHard(field)) {
       gate[state].push(formatRequirementText(field));
     } else {

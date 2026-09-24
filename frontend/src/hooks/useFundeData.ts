@@ -37,6 +37,12 @@ interface ApiListing {
     summary?: string | null;
     reference_comparison?: RowListing['reference_comparison'];
   } | null;
+  rank?: number | null;
+  rank_of?: number | null;
+  rank_reason?: string | null;
+  seller_questions?: string[] | null;
+  uncertain?: boolean;
+  same_as?: string[] | null;
 }
 
 export type FundeTabKey = 'fit' | 'unclear' | 'no' | 'all';
@@ -273,6 +279,12 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
           market_median: typeof l.market_median === 'number' ? l.market_median : null,
           details: l.details || null,
           reference_comparison: l.reference_comparison || l.extracted_facts?.reference_comparison || null,
+          rank: typeof l.rank === 'number' ? l.rank : null,
+          rank_of: typeof l.rank_of === 'number' ? l.rank_of : null,
+          rank_reason: l.rank_reason || null,
+          seller_questions: Array.isArray(l.seller_questions) ? l.seller_questions : null,
+          uncertain: !!l.uncertain,
+          same_as: Array.isArray(l.same_as) ? l.same_as : null,
         }));
 
         setTotal(fetchedTotal);
@@ -311,8 +323,10 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
     }
   }, [loading, loadingMore, listings.length, total, offset, limit, fetchPage]);
 
-  // Best deal or cheapest fitting listing
+  // Best deal or cheapest fitting listing, or top-ranked candidate from judge run
   const bestListing = useMemo(() => {
+    const ranked1 = listings.find((l) => l.rank === 1 && l.fit?.verdict !== 'no');
+    if (ranked1) return ranked1;
     const fits = listings
       .filter((l) => l.fit?.verdict === 'fit')
       .sort((a, b) => {

@@ -308,3 +308,50 @@ CREATE INDEX IF NOT EXISTS idx_price_history_listing ON listing_price_history(li
 -- so saving never looks like "everything was deleted".
 ALTER TABLE searches ADD COLUMN last_scraped_at TEXT;
 
+-- P6: comparative judging runs.
+--
+-- One row per complete comparison session. A session is 3 shuffled runs whose
+-- ranks are averaged; the row records the merged result.  The requirements_hash
+-- and knowledge_hash let the code decide whether a cached run still applies
+-- after the buyer edits requirements or new research arrives.
+CREATE TABLE IF NOT EXISTS judge_runs (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id      INTEGER NOT NULL,
+    requirements_hash TEXT,
+    knowledge_hash   TEXT,
+    created_at       TEXT NOT NULL,
+    model            TEXT,
+    tokens_in        INTEGER,
+    tokens_out       INTEGER,
+    cost_eur         REAL,
+    duration_s       REAL,
+    candidate_count  INTEGER,
+    kendall_tau      REAL,
+    status           TEXT NOT NULL DEFAULT 'complete'
+);
+
+CREATE INDEX IF NOT EXISTS idx_judge_runs_campaign ON judge_runs(campaign_id, created_at DESC);
+
+-- P6: per-listing rank from a comparative run.
+--
+-- Each listing that entered the candidate set gets one row per run. The rank is
+-- the mean across the 3 shuffled sub-runs; spread > 5 marks the listing
+-- uncertain.  musts_json, facts_json and questions_json carry the structured
+-- output the prompt returned, validated (quotes checked) before storage.
+CREATE TABLE IF NOT EXISTS listing_ranks (
+    run_id       INTEGER NOT NULL REFERENCES judge_runs(id) ON DELETE CASCADE,
+    listing_id   TEXT NOT NULL,
+    rank         INTEGER NOT NULL,
+    rank_of      INTEGER NOT NULL,
+    reason       TEXT,
+    musts_json   TEXT,
+    facts_json   TEXT,
+    questions_json TEXT,
+    same_as      TEXT,
+    uncertain    INTEGER NOT NULL DEFAULT 0,
+    spread       REAL,
+    PRIMARY KEY (run_id, listing_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_listing_ranks_listing ON listing_ranks(listing_id);
+

@@ -1,0 +1,223 @@
+"""Tests for comparative judging P6 (§9.8).
+
+- Quote validator drops invented facts.
+- Rank merge of 3 runs (pure).
+- Stability and Kendall tau calculation (pure).
+- Tournament grouping (pure).
+- Replay of one recorded call -> parsed, validated.
+"""
+
+import json
+
+from compare_prompt import parse_compare_response
+from compare_stability import merge_ranks, kendall_tau, compute_stability
+from compare import partition_tournament_groups
+
+
+# ---------------------------------------------------------------------------
+# 1. Quote validator drops invented facts
+# ---------------------------------------------------------------------------
+
+
+def test_quote_validator_keeps_verified_quotes():
+    candidates = [
+        {
+            "id": "100",
+            "title": "Lenovo ThinkPad T480s",
+            "detailed_description": "Sehr gepflegtes ThinkPad mit 16GB RAM und 512GB SSD. Akku hält noch 5 Stunden.",
+            "short_description": "ThinkPad T480s",
+        }
+    ]
+
+    response_text = json.dumps(
+        {
+            "id": "100",
+            "rank": 1,
+            "reason": "Top Zustand und viel RAM",
+            "musts": {"ram": "met", "ssd": "met"},
+            "facts": {
+                "ram": {"value": "16GB", "quote": "16GB RAM"},
+                "ssd": {"value": "512GB", "quote": "512GB SSD"},
+            },
+            "checks": ["Akkugesundheit prüfen"],
+            "seller_questions": ["Gibt es das originale Netzteil dazu?"],
+            "same_as": [],
+        }
+    )
+
+    parsed = parse_compare_response(response_text, candidates)
+    assert len(parsed) == 1
+    assert "ram" in parsed[0]["facts"]
+    assert parsed[0]["facts"]["ram"]["quote"] == "16GB RAM"
+    assert "ssd" in parsed[0]["facts"]
+
+
+def test_quote_validator_drops_invented_facts():
+    candidates = [
+        {
+            "id": "101",
+            "title": "ThinkPad T480s",
+            "detailed_description": "Guter Zustand, funktioniert einwandfrei.",
+            "short_description": "",
+        }
+    ]
+
+    response_text = json.dumps(
+        {
+            "id": "101",
+            "rank": 1,
+            "reason": "Solides Arbeitsgerät",
+            "musts": {"gpu": "met", "ram": "met"},
+            "facts": {
+                # Invented: RTX 3080 does not appear anywhere in text
+                "gpu": {
+                    "value": "RTX 3080",
+                    "quote": "dedizierte RTX 3080 Grafikkarte",
+                },
+                # Missing quote: no quote provided
+                "ram": {"value": "32GB"},
+            },
+        }
+    )
+
+    parsed = parse_compare_response(response_text, candidates)
+    assert len(parsed) == 1
+    # Both invented fact and quote-less fact must be dropped
+    assert "gpu" not in parsed[0]["facts"]
+    assert "ram" not in parsed[0]["facts"]
+
+
+# ---------------------------------------------------------------------------
+# 2. Rank merge of 3 runs (pure)
+# ---------------------------------------------------------------------------
+
+
+def test_rank_merge_averages_runs_and_sorts():
+    # 3 candidates evaluated in 3 shuffled runs
+    run1 = [
+        {"id": "A", "rank": 1, "reason": "Fast"},
+        {"id": "B", "rank": 2, "reason": "Cheap"},
+        {"id": "C", "rank": 3, "reason": "Old"},
+    ]
+    run2 = [
+        {"id": "B", "rank": 1, "reason": "Cheap"},
+        {"id": "A", "rank": 2, "reason": "Fast"},
+        {"id": "C", "rank": 3, "reason": "Old"},
+    ]
+    run3 = [
+        {"id": "A", "rank": 1, "reason": "Fast"},
+        {"id": "B", "rank": 2, "reason": "Cheap"},
+        {"id": "C", "rank": 3, "reason": "Old"},
+    ]
+
+    # Mean ranks:
+    # A: (1 + 2 + 1) / 3 = 1.33
+    # B: (2 + 1 + 2) / 3 = 1.67
+    # C: (3 + 3 + 3) / 3 = 3.0
+    merged = merge_ranks([run1, run2, run3], candidate_count=3)
+    assert len(merged) == 3
+    assert merged[0]["id"] == "A"
+    assert merged[0]["rank"] == 1
+    assert merged[0]["rank_of"] == 3
+    assert not merged[0]["uncertain"]
+
+    assert merged[1]["id"] == "B"
+    assert merged[1]["rank"] == 2
+
+    assert merged[2]["id"] == "C"
+    assert merged[2]["rank"] == 3
+
+
+def test_rank_merge_marks_uncertain_when_spread_exceeds_threshold():
+    # Listing X varies wildly between runs: rank 1 vs rank 8 (spread = 7 > 5)
+    run1 = [{"id": "X", "rank": 1}, {"id": "Y", "rank": 2}]
+    run2 = [{"id": "Y", "rank": 1}, {"id": "X", "rank": 8}]
+    run3 = [{"id": "Y", "rank": 2}, {"id": "X", "rank": 5}]
+
+    merged = merge_ranks([run1, run2, run3], candidate_count=2)
+    x_entry = next(e for e in merged if e["id"] == "X")
+    assert x_entry["spread"] == 7
+    assert x_entry["uncertain"] is True
+
+    y_entry = next(e for e in merged if e["id"] == "Y")
+    assert y_entry["spread"] <= 5
+    assert y_entry["uncertain"] is False
+
+
+# ---------------------------------------------------------------------------
+# 3. Kendall tau stability (pure)
+# ---------------------------------------------------------------------------
+
+
+def test_kendall_tau_perfect_agreement():
+    run_a = [{"id": "1", "rank": 1}, {"id": "2", "rank": 2}, {"id": "3", "rank": 3}]
+    run_b = [{"id": "1", "rank": 1}, {"id": "2", "rank": 2}, {"id": "3", "rank": 3}]
+    assert kendall_tau(run_a, run_b) == 1.0
+
+
+def test_kendall_tau_complete_disagreement():
+    run_a = [{"id": "1", "rank": 1}, {"id": "2", "rank": 2}, {"id": "3", "rank": 3}]
+    run_b = [{"id": "1", "rank": 3}, {"id": "2", "rank": 2}, {"id": "3", "rank": 1}]
+    assert kendall_tau(run_a, run_b) == -1.0
+
+
+def test_compute_stability_across_three_runs():
+    run1 = [{"id": "1", "rank": 1}, {"id": "2", "rank": 2}, {"id": "3", "rank": 3}]
+    run2 = [{"id": "1", "rank": 1}, {"id": "2", "rank": 2}, {"id": "3", "rank": 3}]
+    run3 = [{"id": "1", "rank": 1}, {"id": "2", "rank": 2}, {"id": "3", "rank": 3}]
+    stability = compute_stability([run1, run2, run3])
+    assert stability["mean_tau"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# 4. Tournament grouping (pure)
+# ---------------------------------------------------------------------------
+
+
+def test_partition_tournament_groups():
+    candidates = [{"id": str(i)} for i in range(75)]
+    groups = partition_tournament_groups(candidates, group_size=30)
+    assert len(groups) == 3
+    assert len(groups[0]) == 30
+    assert len(groups[1]) == 30
+    assert len(groups[2]) == 15
+
+
+def test_partition_tournament_groups_under_cap():
+    candidates = [{"id": str(i)} for i in range(25)]
+    groups = partition_tournament_groups(candidates, group_size=30)
+    assert len(groups) == 1
+    assert len(groups[0]) == 25
+
+
+# ---------------------------------------------------------------------------
+# 5. Replay of recorded comparative call
+# ---------------------------------------------------------------------------
+
+
+def test_parse_compare_response_with_markdown_fences():
+    candidates = [
+        {
+            "id": "201",
+            "title": "Dell XPS 13",
+            "detailed_description": "i7 16GB RAM 512GB SSD",
+        },
+        {
+            "id": "202",
+            "title": "MacBook Air",
+            "detailed_description": "M1 8GB 256GB Space Grey",
+        },
+    ]
+
+    raw_llm_output = """```json
+{"id": "201", "rank": 1, "reason": "Stärkere Ausstattung zum fairen Preis", "musts": {"ram": "met"}, "facts": {"ram": {"value": "16GB", "quote": "16GB RAM"}}, "checks": ["Batteriezustand"], "seller_questions": ["Wie viele Ladezyklen?"], "same_as": []}
+{"id": "202", "rank": 2, "reason": "Nur 8GB RAM, aber sehr effizient", "musts": {"ram": "unstated"}, "facts": {}, "checks": [], "seller_questions": [], "same_as": []},
+```"""
+
+    parsed = parse_compare_response(raw_llm_output, candidates)
+    assert len(parsed) == 2
+    assert parsed[0]["id"] == "201"
+    assert parsed[0]["rank"] == 1
+    assert parsed[0]["seller_questions"] == ["Wie viele Ladezyklen?"]
+    assert parsed[1]["id"] == "202"
+    assert parsed[1]["rank"] == 2

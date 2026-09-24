@@ -54,4 +54,15 @@ assert.ok(motoGood.score - motoWorn.score > ramGood.score - ramWorn.score, 'cond
 const bare = score({ fit: null, price_eur: 100, market_median: 150 }, []);
 assert.ok(bare.score > 0 && bare.axes.identity === null);
 
+// Score reads musts states from latest judge run when present (§9.6)
+const fromJudge = score({
+  fit: { facts: { stickCount: 2 } }, // speedMhz is missing in text facts (would be open)
+  rank_musts: { stickCount: 'met', speedMhz: 'met' }, // confirmed met by comparative judge run
+  price_eur: 150,
+  market_median: 150,
+});
+assert.strictEqual(fromJudge.gate.open.length, 0);
+assert.strictEqual(fromJudge.score, full.score);
+
 console.log('score: all assertions passed');
+
