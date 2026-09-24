@@ -77,6 +77,23 @@ Found in the review, before this run every hunt counted **0**:
 - B3 has no musts, so "likely" is everything called supersport: class hunts need P5 (models) to mean
   anything.
 
+## 1b. State after wave 1 + review (2026-09-25, live)
+
+- Live: P0, P1, P2, P3, P4, P5 (proposals + market check), P6, P9 on `feat/hunt-engine`.
+- Open: P7 (knowledge nodes, research bridge), P8 (market per node); P5 not yet in the setup UI's
+  class step end-to-end (API takes `frame` and probes each model); comparison is triggered by the
+  "Vergleichen" button, not yet after every crawl; ad-hoc fact extraction in the P6 funnel (§9.1
+  step 4) and incremental insertion (§9.5) not built.
+- Review findings worth remembering (details in the commits):
+  - agents reported success with a broken schema (semicolon in a comment) and a red test;
+    "tests pass" from an agent is checked, not trusted.
+  - the probe counted 0 offers live for every hunt (URL without category slug, totals not read);
+    its recorded fixtures were empty pages. Fixtures are now recorded from real pages.
+  - P9: Python and Node hashed German requirements differently; every new verdict would have
+    been invisible. Cross-runtime test added.
+  - intent: category, short seller-style search terms and clean musts are the model's job now;
+    the whole sentence as search term and "Price Max" as a must are gone.
+
 ## 2. Packages at a glance
 
 ```mermaid
@@ -151,7 +168,7 @@ Each package ships on its own and leaves the app usable.
 
 ---
 
-## 5. P2 — probe engine
+## 5. P2 — probe engine [done]
 
 New module `scraper/probe.py`; CLI mode `--mode probe` (JSON on stdout, like `family-preview`).
 
@@ -248,7 +265,7 @@ New module `scraper/probe.py`; CLI mode `--mode probe` (JSON on stdout, like `fa
 
 ---
 
-## 6. P3 — setup flow UI
+## 6. P3 — setup flow UI [done]
 
 Replaces the edit screen for **new** hunts; edit screen stays for existing ones, with a "probe again" button.
 
@@ -279,7 +296,7 @@ Replaces the edit screen for **new** hunts; edit screen stays for existing ones,
 
 ---
 
-## 7. P4 — intent parsing (small model)
+## 7. P4 — intent parsing (small model) [done]
 
 - ✓ Implemented in `scraper/intent.py`, `scraper/intent_taxonomy.py`, `scraper/intent_prompt.py`, `backend/intent_api.js`.
 - One call: free text (+ category if known) → `{hunt_type, confidence, musts, prefs, filters, use, models, sizes, budget, class}`.
@@ -308,7 +325,7 @@ Replaces the edit screen for **new** hunts; edit screen stays for existing ones,
 
 ---
 
-## 9. P6 — candidate set and comparative judging
+## 9. P6 — candidate set and comparative judging [done, partly]
 
 ### 9.1 Funnel
 
