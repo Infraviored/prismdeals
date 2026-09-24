@@ -1,0 +1,102 @@
+{
+  "ram_corsair": {
+    "text": "Corsair 2x16 GB DDR4-3200 CL16, max 150 €",
+    "category": "225",
+    "raw_response": "{\n  \"hunt_type\": \"exact\",\n  \"confidence\": 0.95,\n  \"class\": null,\n  \"models\": [\"Corsair 2x16 GB DDR4-3200 CL16\"],\n  \"musts\": [\n    {\n      \"id\": \"capacity\",\n      \"label\": \"Kapazität\",\n      \"type\": \"text\",\n      \"want\": {\"match\": \"2x16 GB\"}\n    },\n    {\n      \"id\": \"memory_type\",\n      \"label\": \"Speichertyp\",\n      \"type\": \"enum\",\n      \"want\": {\"match\": \"DDR4\"}\n    },\n    {\n      \"id\": \"speed\",\n      \"label\": \"Geschwindigkeit\",\n      \"type\": \"number\",\n      \"want\": {\"match\": 3200}\n    },\n    {\n      \"id\": \"cas_latency\",\n      \"label\": \"CAS Latency\",\n      \"type\": \"number\",\n      \"want\": {\"match\": 16}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"pc_zubehoer_software.art_s\": \"Arbeitsspeicher\",\n    \"global.zustand\": \"gebraucht\"\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 150}\n}"
+  },
+  "motorcycle_models": {
+    "text": "Yamaha R1 oder Honda CBR1000RR bis 9000 €",
+    "category": "305",
+    "raw_response": "{\n  \"hunt_type\": \"shortlist\",\n  \"confidence\": 0.95,\n  \"class\": null,\n  \"models\": [\"Yamaha R1\", \"Honda CBR1000RR\"],\n  \"musts\": [\n    {\n      \"id\": \"budget_max\",\n      \"label\": \"Maximalpreis\",\n      \"type\": \"number\",\n      \"want\": {\"max\": 9000}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"motorraeder_roller.marke_s\": [\"Yamaha\", \"Honda\"],\n    \"preis\": {\"max\": 9000}\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 9000}\n}"
+  },
+  "motorcycle_class": {
+    "text": "1000cc Supersportler bis 7000 Euro, max 40000 km",
+    "category": "305",
+    "raw_response": "{\n  \"hunt_type\": \"class\",\n  \"confidence\": 0.95,\n  \"class\": \"Supersportler\",\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"hubraum\",\n      \"label\": \"Hubraum ca. 1000 ccm\",\n      \"type\": \"number\",\n      \"want\": {\"min\": 950, \"max\": 1050}\n    },\n    {\n      \"id\": \"kilometer\",\n      \"label\": \"Maximale Laufleistung 40.000 km\",\n      \"type\": \"number\",\n      \"want\": {\"max\": 40000}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"motorraeder_roller.type_s\": \"Supersportler\",\n    \"motorraeder_roller.hubraum_i\": \"1000\",\n    \"motorraeder_roller.km_i\": \"40000\",\n    \"preis\": \"7000\"\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 7000}\n}"
+  },
+  "laptop_oled": {
+    "text": "Laptop 32 GB RAM, OLED, besser als Full HD bis 800 €",
+    "category": "278",
+    "raw_response": "{\n  \"hunt_type\": \"features\",\n  \"confidence\": 0.9,\n  \"class\": null,\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"ram\",\n      \"label\": \"32 GB RAM\",\n      \"type\": \"number\",\n      \"want\": {\"min\": 32}\n    },\n    {\n      \"id\": \"display_oled\",\n      \"label\": \"OLED-Display\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    },\n    {\n      \"id\": \"resolution\",\n      \"label\": \"Auflösung besser als Full HD\",\n      \"type\": \"text\",\n      \"want\": {\"match\": \">1920x1080\"}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"notebooks.ram_s\": \"32 GB\",\n    \"notebooks.screen_size_s\": \"OLED\"\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 800}\n}"
+  },
+  "mattress_fit": {
+    "text": "Matratze 140x200 cm bis 150 €",
+    "category": "81",
+    "raw_response": "{\n  \"hunt_type\": \"fit\",\n  \"confidence\": 0.95,\n  \"class\": null,\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"dimensions\",\n      \"label\": \"Größe 140x200 cm\",\n      \"type\": \"text\",\n      \"want\": {\n        \"match\": \"140x200\"\n      }\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"preis\": \"bis 150 €\"\n  },\n  \"use\": [],\n  \"sizes\": {\n    \"dimensions\": \"140x200\"\n  },\n  \"budget\": {\n    \"min\": null,\n    \"max\": 150\n  }\n}"
+  },
+  "wardrobe_fit": {
+    "text": "Kleiderschrank maximal 120 cm breit weiß bis 100€",
+    "category": "81",
+    "raw_response": "{\n  \"hunt_type\": \"fit\",\n  \"confidence\": 0.95,\n  \"class\": null,\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"width_max\",\n      \"label\": \"Maximale Breite 120 cm\",\n      \"type\": \"number\",\n      \"want\": {\"max\": 120}\n    },\n    {\n      \"id\": \"color_white\",\n      \"label\": \"Farbe Weiß\",\n      \"type\": \"enum\",\n      \"want\": {\"match\": \"weiß\"}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"preis\": {\"max\": 100},\n    \"global.farbe\": \"weiß\",\n    \"schlafzimmer.art_s\": \"kleiderschrank\"\n  },\n  \"use\": [],\n  \"sizes\": {\"width_cm\": 120},\n  \"budget\": {\"min\": null, \"max\": 100}\n}"
+  },
+  "armchair_taste": {
+    "text": "Vintage Sessel Mid-Century Leder braun bis 200 €",
+    "category": "88",
+    "raw_response": "{\n  \"hunt_type\": \"taste\",\n  \"confidence\": 0.92,\n  \"class\": null,\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"style\",\n      \"label\": \"Stil: Vintage / Mid-Century\",\n      \"type\": \"enum\",\n      \"want\": {\"oneOf\": [\"Vintage\", \"Mid-Century\"]}\n    },\n    {\n      \"id\": \"material\",\n      \"label\": \"Material: Leder\",\n      \"type\": \"enum\",\n      \"want\": {\"match\": \"Leder\"}\n    },\n    {\n      \"id\": \"farbe\",\n      \"label\": \"Farbe: braun\",\n      \"type\": \"enum\",\n      \"want\": {\"match\": \"braun\"}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"wohnzimmer.art_s\": \"Sessel\",\n    \"global.material\": \"Leder\",\n    \"global.farbe\": \"braun\",\n    \"preis\": \"bis:200\"\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 200}\n}"
+  },
+  "tools_opportunity": {
+    "text": "Werkzeug Konvolut Makita oder Bosch unter Marktpreis bis 100 €",
+    "category": "84",
+    "raw_response": "{\n  \"hunt_type\": \"opportunity\",\n  \"confidence\": 0.9,\n  \"class\": \"Werkzeug Konvolut\",\n  \"models\": [\"Makita\", \"Bosch\"],\n  \"musts\": [\n    {\n      \"id\": \"brand\",\n      \"label\": \"Marke\",\n      \"type\": \"enum\",\n      \"want\": {\"oneOf\": [\"Makita\", \"Bosch\"]}\n    },\n    {\n      \"id\": \"price\",\n      \"label\": \"Preis\",\n      \"type\": \"number\",\n      \"want\": {\"max\": 100}\n    }\n  ],\n  \"prefs\": [\n    {\n      \"id\": \"below_market\",\n      \"label\": \"Unter Marktpreis\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    }\n  ],\n  \"filters\": {\n    \"preis\": \"bis:100\",\n    \"global.zustand\": \"gebraucht\"\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 100}\n}"
+  },
+  "kids_bike_fit": {
+    "text": "Kinderfahrrad 20 Zoll Woom oder Frog bis 300 €",
+    "category": "217",
+    "raw_response": "{\n  \"hunt_type\": \"shortlist\",\n  \"confidence\": 0.95,\n  \"class\": null,\n  \"models\": [\"Woom\", \"Frog\"],\n  \"musts\": [\n    {\n      \"id\": \"wheel_size\",\n      \"label\": \"Laufradgröße 20 Zoll\",\n      \"type\": \"number\",\n      \"want\": {\"match\": 20}\n    },\n    {\n      \"id\": \"brand\",\n      \"label\": \"Marke Woom oder Frog\",\n      \"type\": \"enum\",\n      \"want\": {\"oneOf\": [\"Woom\", \"Frog\"]}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"fahrraeder.art_s\": \"Kinderfahrrad\",\n    \"preis\": \"max 300\"\n  },\n  \"use\": [\"Kinder\"],\n  \"sizes\": {\"wheel_size_inch\": 20},\n  \"budget\": {\"min\": null, \"max\": 300}\n}"
+  },
+  "child_seat_fit": {
+    "text": "Kindersitz Isofix Gruppe 2/3 unfallfrei bis 80 €",
+    "category": "21",
+    "raw_response": "{\n  \"hunt_type\": \"class\",\n  \"confidence\": 0.9,\n  \"class\": \"Kindersitz Gruppe 2/3 mit Isofix\",\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"isofix\",\n      \"label\": \"Isofix\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    },\n    {\n      \"id\": \"gruppe\",\n      \"label\": \"Gruppe 2/3\",\n      \"type\": \"enum\",\n      \"want\": {\"oneOf\": [\"2/3\"]}\n    },\n    {\n      \"id\": \"unfallfrei\",\n      \"label\": \"Unfallfrei\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"preis\": {\"max\": 80}\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 80}\n}"
+  },
+  "tv_features": {
+    "text": "55 Zoll OLED Fernseher 4K 120Hz unter 600€",
+    "category": "175",
+    "raw_response": "{\n  \"hunt_type\": \"features\",\n  \"confidence\": 0.95,\n  \"class\": null,\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"size_inch\",\n      \"label\": \"55 Zoll\",\n      \"type\": \"number\",\n      \"want\": {\"min\": 55, \"max\": 55}\n    },\n    {\n      \"id\": \"panel_oled\",\n      \"label\": \"OLED\",\n      \"type\": \"enum\",\n      \"want\": {\"match\": \"OLED\"}\n    },\n    {\n      \"id\": \"resolution_4k\",\n      \"label\": \"4K\",\n      \"type\": \"enum\",\n      \"want\": {\"match\": \"4K\"}\n    },\n    {\n      \"id\": \"refresh_120hz\",\n      \"label\": \"120Hz\",\n      \"type\": \"number\",\n      \"want\": {\"min\": 120}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"preis\": \"max 600\",\n    \"tv_video.art_s\": \"OLED\",\n    \"global.zustand\": \"gebraucht\"\n  },\n  \"use\": [],\n  \"sizes\": {\n    \"diagonal_inch\": 55\n  },\n  \"budget\": {\"min\": null, \"max\": 600}\n}"
+  },
+  "car_class": {
+    "text": "Kombi mit Anhängerkupplung Diesel bis 6000 Euro",
+    "category": "216",
+    "raw_response": "{\n  \"hunt_type\": \"class\",\n  \"confidence\": 0.95,\n  \"class\": \"Kombi\",\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"trailer_coupling\",\n      \"label\": \"Anhängerkupplung\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    },\n    {\n      \"id\": \"fuel\",\n      \"label\": \"Diesel\",\n      \"type\": \"enum\",\n      \"want\": {\"match\": \"Diesel\"}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"autos.typ_s\": \"Kombi\",\n    \"autos.fuel_s\": \"Diesel\",\n    \"autos.trailer_coupling_b\": true,\n    \"preis\": \"bis:6000\"\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 6000}\n}"
+  },
+  "phone_models": {
+    "text": "iPhone 13 oder iPhone 14 Pro 128GB bis 550 €",
+    "category": "173",
+    "raw_response": "{\n  \"hunt_type\": \"shortlist\",\n  \"confidence\": 0.95,\n  \"class\": null,\n  \"models\": [\"iPhone 13\", \"iPhone 14 Pro\"],\n  \"musts\": [\n    {\n      \"id\": \"storage\",\n      \"label\": \"Speicherkapazität\",\n      \"type\": \"number\",\n      \"want\": {\"min\": 128}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"preis\": {\"max\": 550},\n    \"global.zustand\": null\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 550}\n}"
+  },
+  "lego_exact": {
+    "text": "Lego 75192 Millennium Falcon vollständig OVP bis 650 €",
+    "category": "23",
+    "raw_response": "{\n  \"hunt_type\": \"exact\",\n  \"confidence\": 0.98,\n  \"class\": null,\n  \"models\": [\"Lego 75192 Millennium Falcon\"],\n  \"musts\": [\n    {\n      \"id\": \"vollstaendig\",\n      \"label\": \"Vollständig\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    },\n    {\n      \"id\": \"ovp\",\n      \"label\": \"Originalverpackung (OVP)\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"preis\": {\"max\": 650},\n    \"spielzeug.art_s\": \"Lego\",\n    \"global.zustand\": \"gebraucht\"\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 650}\n}"
+  },
+  "ebike_class": {
+    "text": "Trekking E-Bike mit Bosch Mittelmotor bis 1200 €",
+    "category": "217",
+    "raw_response": "{\n  \"hunt_type\": \"class\",\n  \"confidence\": 0.9,\n  \"class\": \"Trekking E-Bike\",\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"bike_type\",\n      \"label\": \"Trekking E-Bike\",\n      \"type\": \"enum\",\n      \"want\": {\"match\": \"Trekking E-Bike\"}\n    },\n    {\n      \"id\": \"motor\",\n      \"label\": \"Bosch Mittelmotor\",\n      \"type\": \"enum\",\n      \"want\": {\"match\": \"Bosch Mittelmotor\"}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"fahrraeder.art_s\": \"e-bike\",\n    \"fahrraeder.type_s\": \"trekking\"\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 1200}\n}"
+  },
+  "coffee_class": {
+    "text": "Kaffeevollautomat DeLonghi oder Jura mit Milchschaum bis 250 €",
+    "category": "176",
+    "raw_response": "{\n  \"hunt_type\": \"shortlist\",\n  \"confidence\": 0.95,\n  \"class\": null,\n  \"models\": [\"DeLonghi\", \"Jura\"],\n  \"musts\": [\n    {\n      \"id\": \"milchschaum\",\n      \"label\": \"Mit Milchschaumfunktion\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"haushaltsgeraete.art_s\": \"Kaffeevollautomat\",\n    \"preis_max\": 250\n  },\n  \"use\": [\"Kaffeezubereitung\"],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 250}\n}"
+  },
+  "desk_fit": {
+    "text": "Schreibtisch höhenverstellbar elektrisch 160x80 bis 200 €",
+    "category": "93",
+    "raw_response": "{\n  \"hunt_type\": \"features\",\n  \"confidence\": 0.9,\n  \"class\": null,\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"hoehenverstellbar\",\n      \"label\": \"Höhenverstellbar\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    },\n    {\n      \"id\": \"elektrisch\",\n      \"label\": \"Elektrisch\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    },\n    {\n      \"id\": \"breite\",\n      \"label\": \"Breite 160 cm\",\n      \"type\": \"number\",\n      \"want\": {\"min\": 160, \"max\": 160}\n    },\n    {\n      \"id\": \"tiefe\",\n      \"label\": \"Tiefe 80 cm\",\n      \"type\": \"number\",\n      \"want\": {\"min\": 80, \"max\": 80}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"preis\": \"bis 200\",\n    \"bueromoebel.versand_s\": true\n  },\n  \"use\": [\"büro\"],\n  \"sizes\": {\n    \"width_cm\": 160,\n    \"depth_cm\": 80\n  },\n  \"budget\": {\"min\": null, \"max\": 200}\n}"
+  },
+  "guitar_taste": {
+    "text": "Vintage Westerngitarre Akustik Dreadnought bis 300 €",
+    "category": "74",
+    "raw_response": "{\n  \"hunt_type\": \"class\",\n  \"confidence\": 0.9,\n  \"class\": \"Vintage Westerngitarre Dreadnought\",\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"guitar_type\",\n      \"label\": \"Westerngitarre (Akustik)\",\n      \"type\": \"enum\",\n      \"want\": {\n        \"match\": \"Westerngitarre\"\n      }\n    },\n    {\n      \"id\": \"body_shape\",\n      \"label\": \"Dreadnought-Form\",\n      \"type\": \"enum\",\n      \"want\": {\n        \"match\": \"Dreadnought\"\n      }\n    },\n    {\n      \"id\": \"vintage\",\n      \"label\": \"Vintage\",\n      \"type\": \"boolean\",\n      \"want\": {\n        \"present\": true\n      }\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"preis\": {\n      \"max\": 300\n    },\n    \"global.zustand\": \"Gebraucht\"\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\n    \"min\": null,\n    \"max\": 300\n  }\n}"
+  },
+  "washing_machine_features": {
+    "text": "Waschmaschine 8 kg Miele oder Bosch Frontlader bis 250 €",
+    "category": "176",
+    "raw_response": "{\n  \"hunt_type\": \"shortlist\",\n  \"confidence\": 0.95,\n  \"class\": null,\n  \"models\": [\"Miele\", \"Bosch\"],\n  \"musts\": [\n    {\n      \"id\": \"capacity_kg\",\n      \"label\": \"Fassungsvermögen 8 kg\",\n      \"type\": \"number\",\n      \"want\": {\"min\": 8, \"max\": 8}\n    },\n    {\n      \"id\": \"type_frontlader\",\n      \"label\": \"Frontlader\",\n      \"type\": \"enum\",\n      \"want\": {\"match\": \"Frontlader\"}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"haushaltsgeraete.art_s\": \"Waschmaschine\",\n    \"preis\": \"bis 250 €\"\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 250}\n}"
+  },
+  "drill_features": {
+    "text": "Akkuschrauber 18V bürstenlos mit 2 Akkus im Koffer bis 150 €",
+    "category": "84",
+    "raw_response": "{\n  \"hunt_type\": \"features\",\n  \"confidence\": 0.9,\n  \"class\": \"Akkuschrauber\",\n  \"models\": [],\n  \"musts\": [\n    {\n      \"id\": \"voltage\",\n      \"label\": \"18V Spannung\",\n      \"type\": \"number\",\n      \"want\": {\"match\": 18}\n    },\n    {\n      \"id\": \"buerstenlos\",\n      \"label\": \"Bürstenloser Motor\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    },\n    {\n      \"id\": \"akkus\",\n      \"label\": \"2 Akkus enthalten\",\n      \"type\": \"number\",\n      \"want\": {\"min\": 2}\n    },\n    {\n      \"id\": \"koffer\",\n      \"label\": \"Im Koffer\",\n      \"type\": \"boolean\",\n      \"want\": {\"present\": true}\n    }\n  ],\n  \"prefs\": [],\n  \"filters\": {\n    \"preis_max\": 150,\n    \"global.zustand\": \"gebraucht\"\n  },\n  \"use\": [],\n  \"sizes\": {},\n  \"budget\": {\"min\": null, \"max\": 150}\n}"
+  }
+}

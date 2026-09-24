@@ -316,3 +316,20 @@ ALTER TABLE campaigns ADD COLUMN hunt_type TEXT;
 ALTER TABLE campaigns ADD COLUMN profile_key TEXT;
 ALTER TABLE campaigns ADD COLUMN intent_json TEXT;
 
+-- Model proposals for class hunts (package P5).
+--
+-- Caches candidate models proposed by the small model per class node for 30 days.
+-- Also tracks probe counts and title hits so the hallucination guard can drop
+-- models never seen in marketplace titles after two probes.
+CREATE TABLE IF NOT EXISTS class_models (
+    node_key    TEXT NOT NULL,
+    model       TEXT NOT NULL,
+    years       TEXT,
+    proposed_at TEXT NOT NULL,
+    probe_count INTEGER NOT NULL DEFAULT 0,
+    title_hits  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (node_key, model)
+);
+
+CREATE INDEX IF NOT EXISTS idx_class_models_node ON class_models(node_key);
+

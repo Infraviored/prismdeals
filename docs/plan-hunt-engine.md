@@ -248,27 +248,30 @@ Replaces the edit screen for **new** hunts; edit screen stays for existing ones,
 
 ## 7. P4 — intent parsing (small model)
 
+- ✓ Implemented in `scraper/intent.py`, `scraper/intent_taxonomy.py`, `scraper/intent_prompt.py`, `backend/intent_api.js`.
 - One call: free text (+ category if known) → `{hunt_type, confidence, musts, prefs, filters, use, models, sizes, budget, class}`.
-- Frame: hard rules + output format at the end (product-core §8). Model: current
-  `LLM_MODEL` via OpenRouter, reasoning off, `:nitro`.
+- Frame: hard rules + soft middle + output format at the end (`docs/product-core.md` §8). Model: `LLM_MODEL` via OpenRouter, reasoning off.
 - Code post-processing:
-  - filters mapped to taxonomy keys; unknown → musts.
+  - filters mapped to taxonomy keys (`data/kleinanzeigen_taxonomy.json`); unknown → musts.
   - models checked against identity patterns; unknown kept as text.
-  - never invent a budget.
-- UI shows everything as editable chips; nothing applies silently.
+  - never invent a budget (sanitized against original query text).
+  - hunt_type validated against enum (`exact | shortlist | class | features | fit | taste | opportunity`).
 - Fallback without model: category default hunt type table + keyword musts.
-- Tests: 20 recorded utterances across benchmark categories → expected JSON (fixture replay, no live calls in CI).
+- Tests: `scraper/test_intent.py` replays 20 recorded utterances offline from `scraper/testdata/intent_fixtures.json`.
+- API: `POST /api/intent/parse` in `backend/intent_api.js`.
 
 ---
 
 ## 8. P5 — model proposals for class hunts
 
+- ✓ Model proposal half implemented in `scraper/model_proposals.py` and `backend/intent_api.js`.
 - Input: class text, budget, category, use.
 - Small model proposes 5–12 models **with years plausible under budget**.
-- Each proposal = one probe rung → `count, median, likely`. Models with 0 hits are shown struck ("none on the market").
-- Cached per class node (`node_terms` + `class_models(node_key, model, proposed_at)`), 30 days.
-- Buyer ticks → hunt becomes `shortlist` (hunt type switch stored, with the class kept in intent).
-- Guard: a model name the probe never finds in titles is dropped after 2 probes (hallucination filter).
+- Cached per class node in `class_models(node_key, model, years, proposed_at, probe_count, title_hits)` for 30 days.
+- Guard: `apply_hallucination_guard` pure function drops models never seen in titles after 2 probes (tracks counts in table).
+- Narrow interface for P2 integration: `probe_models(models, base) -> {model: {total, title_hits, median}}` defined with `NotImplementedError` stub.
+- API: `POST /api/intent/models` in `backend/intent_api.js`.
+- Probing half is built by Package P2 (`scraper/probe.py`).
 
 ---
 

@@ -980,6 +980,7 @@ app.use(require('./requirements_api')(query, get, run));
 app.use(require('./campaign_hunt_api')(query, get, run));
 app.use(require('./fit_api')(query, get));
 app.use(require('./overview_api')(query, get));
+app.use(require('./intent_api'));
 
 
 // API: Get search items
