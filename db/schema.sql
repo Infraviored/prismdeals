@@ -308,3 +308,34 @@ CREATE INDEX IF NOT EXISTS idx_price_history_listing ON listing_price_history(li
 -- so saving never looks like "everything was deleted".
 ALTER TABLE searches ADD COLUMN last_scraped_at TEXT;
 
+-- Probe cache: raw HTML of fetched search pages, reusable within 6 hours.
+--
+-- Editing a hunt and re-probing costs nothing when URLs repeat.
+CREATE TABLE IF NOT EXISTS probe_cache (
+    url        TEXT PRIMARY KEY,
+    fetched_at TEXT NOT NULL,
+    status     INTEGER NOT NULL,
+    html_gz    BLOB NOT NULL
+);
+
+-- Search memory: terms probed per knowledge node, remembered for next time.
+--
+-- Written after every probe - read as extra seed terms next time for the same
+-- node (node = profile key until P7 gives real nodes).
+CREATE TABLE IF NOT EXISTS node_terms (
+    node_key      TEXT NOT NULL,
+    term          TEXT NOT NULL,
+    category_code TEXT,
+    total         INTEGER NOT NULL,
+    likely_share  REAL NOT NULL,
+    probed_at     TEXT NOT NULL,
+    PRIMARY KEY (node_key, term)
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_terms_key ON node_terms(node_key, probed_at DESC);
+
+-- Hunt engine campaign intent and profile tracking
+ALTER TABLE campaigns ADD COLUMN hunt_type TEXT;
+ALTER TABLE campaigns ADD COLUMN profile_key TEXT;
+ALTER TABLE campaigns ADD COLUMN intent_json TEXT;
+
