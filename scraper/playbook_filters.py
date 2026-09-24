@@ -78,8 +78,20 @@ FILTER_TO_FIELD = {
 
 
 def taxonomy_filtered_field_ids(playbook_key):
-    """Set of field IDs that have a corresponding taxonomy filter."""
-    return set(PLAYBOOK_FIELD_TO_FILTER.get(playbook_key, {}).keys())
+    """Field IDs the search URL can filter on, so the sheet does not ask them.
+
+    A `*.art_s` filter is the site's sub-category ("Speicher" among
+    "Grafikkarten", "Monitore"), not the field's value: memory's productLine
+    ("Vengeance") mapped there, and the Corsair hunt lost its product-line
+    requirement from the sheet. Those stay askable.
+    """
+    return {
+        field_id
+        for field_id, filter_key in PLAYBOOK_FIELD_TO_FILTER.get(
+            playbook_key, {}
+        ).items()
+        if not filter_key.endswith(".art_s") or playbook_key == "electronics/phones"
+    }
 
 
 def filter_for_field(playbook_key, field_id):

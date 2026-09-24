@@ -85,3 +85,15 @@ def test_laptop_playbook_filters_table():
     assert mapping["screenInches"] == "notebooks.screen_size_s"
     assert mapping["storageGb"] == "notebooks.storage_s"
     assert mapping["modelYear"] == "notebooks.model_year_s"
+
+
+def test_memory_keeps_its_product_line_askable():
+    import playbook_filters
+
+    # pc_zubehoer_software.art_s is "Speicher" vs "Monitore", not "Vengeance".
+    assert "productLine" not in playbook_filters.taxonomy_filtered_field_ids(
+        "computing/memory"
+    )
+    assert "mileageKm" in playbook_filters.taxonomy_filtered_field_ids(
+        "vehicles/motorcycles"
+    )
