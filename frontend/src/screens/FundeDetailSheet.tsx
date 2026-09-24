@@ -220,6 +220,47 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
           {/* 4. Why this score: the gate and the graded axes */}
           <ScoreBreakdown listing={listing} />
 
+          {/* Comparative rank from judge run */}
+          {typeof listing.rank === 'number' && typeof listing.rank_of === 'number' && (
+            <div className="pt-2 border-t border-[#0E4A40] space-y-1">
+              <div className="flex items-baseline gap-2">
+                <span className={`text-lg font-bold tabular-nums ${listing.uncertain ? 'text-[#C9A227]' : 'text-[#F2F5F4]'}`}>
+                  {t('surface.rank', { rank: listing.rank, of: listing.rank_of })}
+                </span>
+                {listing.uncertain && (
+                  <span className="text-2xs text-[#C9A227]">{t('surface.rankUncertain')}</span>
+                )}
+              </div>
+              {listing.rank_reason && (
+                <p className="text-xs text-[#8FA6A1]">{listing.rank_reason}</p>
+              )}
+              {listing.same_as && listing.same_as.length > 0 && (
+                <p className="text-xs text-[#8FA6A1]">
+                  {t('surface.sameAs', { ids: listing.same_as.join(', ') })}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Seller questions with copy button */}
+          {listing.seller_questions && listing.seller_questions.length > 0 && (
+            <div className="pt-2 border-t border-[#0E4A40] space-y-2">
+              <div className="text-xs font-semibold text-[#8FA6A1]">{t('surface.sellerQuestions')}</div>
+              {listing.seller_questions.map((q, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <p className="text-sm text-[#F2F5F4]/80 flex-1">{q}</p>
+                  <button
+                    type="button"
+                    className="shrink-0 text-2xs text-[#8FA6A1] hover:text-[#F2F5F4] cursor-pointer px-1.5 py-0.5 border border-[#0E4A40] rounded transition-colors"
+                    onClick={() => navigator.clipboard.writeText(q)}
+                    aria-label={t('surface.copyQuestion')}
+                  >
+                    {t('surface.copyQuestion')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {/* Price history */}
           {listing.price_history && listing.price_history.length > 1 && (
             <div className="pt-2 border-t border-[#0E4A40] space-y-2">

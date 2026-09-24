@@ -227,7 +227,16 @@ export const translations = {
       secondKit: "Second kit from {{city}} at the same price",
       unclearGap: "Unclear",
       priceDevelopment: "Price history",
-      description: "Description"
+      description: "Description",
+      rank: "#{{rank}} / {{of}}",
+      rankUncertain: "uncertain",
+      sameAs: "Same as #{{ids}}",
+      sellerQuestions: "Questions for the seller",
+      copyQuestion: "Copy",
+      weakMarketAboveMedian: "Weak market: Best candidate is above the market median.",
+      weakMarketMissesMust: "Weak market: Best candidate does not meet all requirements.",
+      compare: "Compare",
+      comparing: "Comparing…"
     }
   },
   de: {
@@ -458,7 +467,16 @@ export const translations = {
       secondKit: "Zweites Kit aus {{city}} zum selben Preis",
       unclearGap: "Nicht eindeutig",
       priceDevelopment: "Preisentwicklung",
-      description: "Beschreibung"
+      description: "Beschreibung",
+      rank: "#{{rank}} / {{of}}",
+      rankUncertain: "unsicher",
+      sameAs: "Wie #{{ids}}",
+      sellerQuestions: "Fragen an den Verkäufer",
+      copyQuestion: "Kopieren",
+      weakMarketAboveMedian: "Schwacher Markt: Das beste Angebot liegt über dem Marktmedian.",
+      weakMarketMissesMust: "Schwacher Markt: Das beste Angebot erfüllt nicht alle Anforderungen.",
+      compare: "Vergleichen",
+      comparing: "Vergleicht…"
     }
   }
 } as const;

@@ -1,6 +1,7 @@
 const express = require('express');
 const { annotateDeals, dealListingIds } = require('./db/reference_price');
 const { attachScores } = require('./db/score');
+const { attachRanks } = require('./compare_api');
 const { resolveCampaignScope } = require('./overview/scope');
 const { BEST_FIT_ORDER_SQL, FIT_FIRST_SQL, fitOf } = require('./db/fit');
 
@@ -480,6 +481,7 @@ app.get('/api/listings/:id', async (req, res) => {
       fit: fitOf(row),
     };
     await annotateDeals(query, [listing], [Number(row.hit_search_id)]);
+    await attachRanks(query, get, [listing], req.query.campaign_id ? Number(req.query.campaign_id) : null);
     await attachScores(query, [listing], [Number(row.hit_search_id)]);
     const [withHistory] = await attachPriceHistory(query, [listing]);
     res.json(withHistory || listing);
@@ -764,6 +766,7 @@ app.get('/api/listings', async (req, res) => {
     }));
 
     await annotateDeals(query, listings, scopeSearchIds);
+    await attachRanks(query, get, listings, campaign_id ? Number(campaign_id) : null);
     await attachScores(query, listings, scopeSearchIds);
     await attachPriceHistory(query, listings);
 
@@ -981,6 +984,8 @@ app.use(require('./campaign_hunt_api')(query, get, run));
 app.use(require('./fit_api')(query, get));
 app.use(require('./overview_api')(query, get));
 app.use(require('./intent_api'));
+
+app.use(require('./compare_api')(query, get));
 
 
 // API: Get search items
@@ -1581,7 +1586,16 @@ async function getRouteCorridorPayload(route, options = {}) {
     limit,
     listings: await attachPriceHistory(
       query,
-      await attachScores(query, await annotateDeals(query, parsedListings, circleSearchIds), circleSearchIds)
+      await attachScores(
+        query,
+        await attachRanks(
+          query,
+          get,
+          await annotateDeals(query, parsedListings, circleSearchIds),
+          route.campaign_id || null
+        ),
+        circleSearchIds
+      )
     ),
     counts: {
       total,
@@ -2284,7 +2298,7 @@ app.delete('/api/search-families/:id', async (req, res) => {
 // every item so the frontend can display which model(s) hit and support filtering.
 app.get('/api/search-families/:id/listings', async (req, res) => {
   try {
-    const fam = await get('SELECT id FROM search_families WHERE id = ?', [req.params.id]);
+    const fam = await get('SELECT id, campaign_id FROM search_families WHERE id = ?', [req.params.id]);
     if (!fam) {
       return res.status(404).json({ error: 'Search family not found' });
     }
@@ -2508,6 +2522,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     }
 
     await annotateDeals(query, listings, familySearchIds);
+    await attachRanks(query, get, listings, fam.campaign_id || null);
     await attachScores(query, listings, familySearchIds);
     await attachPriceHistory(query, listings);
 

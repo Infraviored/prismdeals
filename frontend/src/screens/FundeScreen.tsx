@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Row } from '../components/surface';
 import RouteCorridorMap, { type RouteCircle, type RouteListingGeo } from '../components/RouteCorridorMap';
 import { FundeDetailSheet } from './FundeDetailSheet';
@@ -63,6 +63,26 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     applyRadius,
   } = useFundeData({ campaign, isScraping });
 
+  const [comparing, setComparing] = useState(false);
+
+  const handleCompare = useCallback(async () => {
+    if (!campaign?.id || comparing) return;
+    setComparing(true);
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/compare`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        reload();
+      }
+    } catch (e) {
+      console.error('Failed to trigger comparison:', e);
+    } finally {
+      setComparing(false);
+    }
+  }, [campaign?.id, comparing, reload]);
+
   const { selectedListing, openListing } = useLinkedListing(listings, campaign?.id ?? null);
 
   useEffect(() => {
@@ -119,6 +139,9 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
       list = list.filter((l) => l.id !== heroListing.id);
     }
     return [...list].sort((a, b) => {
+      const ra = typeof a.rank === 'number' ? a.rank : 999999;
+      const rb = typeof b.rank === 'number' ? b.rank : 999999;
+      if (ra !== rb) return ra - rb;
       const pa = typeof a.price_eur === 'number' ? a.price_eur : 999999;
       const pb = typeof b.price_eur === 'number' ? b.price_eur : 999999;
       if (pa !== pb) return pa - pb;
@@ -128,6 +151,22 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
       return sb - sa;
     });
   }, [listings, heroShown, heroListing]);
+
+  // Weak market banner (§9.7): best candidate is above median or misses a must
+  const isWeakMarket = useMemo(() => {
+    if (!bestListing) return false;
+    const median = overview?.market?.median;
+    if (typeof median === 'number' && typeof bestListing.price_eur === 'number' && bestListing.price_eur > median) {
+      return 'median';
+    }
+    if (
+      bestListing.fit?.verdict === 'no' ||
+      (bestListing.score_parts?.gate?.violated && bestListing.score_parts.gate.violated.length > 0)
+    ) {
+      return 'must';
+    }
+    return false;
+  }, [bestListing, overview?.market?.median]);
 
   // Masthead verdict sentence
   const deal = bestListing?.is_deal;
@@ -190,6 +229,17 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             {isScraping ? t('surface.searching') : t('surface.fetchListings')}
           </button>
         )}
+        {campaign?.id && (
+          <button
+            type="button"
+            className="edit cursor-pointer hidden sm:inline-flex"
+            onClick={handleCompare}
+            disabled={comparing}
+            data-testid="compare-btn"
+          >
+            {comparing ? t('surface.comparing') : t('surface.compare')}
+          </button>
+        )}
         <button type="button" className="edit cursor-pointer" onClick={onConfigure}>
           {t('surface.editRequirements')}
         </button>
@@ -250,7 +300,31 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
                 {isScraping ? t('surface.searching') : t('surface.fetchListings')}
               </button>
             )}
+            {campaign?.id && (
+              <button
+                type="button"
+                className="edit cursor-pointer whitespace-nowrap"
+                onClick={handleCompare}
+                disabled={comparing}
+              >
+                {comparing ? t('surface.comparing') : t('surface.compare')}
+              </button>
+            )}
           </div>
+
+          {/* Weak market banner (§9.7) */}
+          {isWeakMarket && (
+            <div
+              data-testid="weak-market-banner"
+              className="mx-4 sm:mx-8 mt-3 mb-1 px-4 py-2.5 rounded bg-[var(--messing)]/10 border border-[var(--messing)]/40 text-xs text-[var(--messing)] flex items-center gap-2"
+            >
+              <span>
+                {isWeakMarket === 'median'
+                  ? t('surface.weakMarketAboveMedian')
+                  : t('surface.weakMarketMissesMust')}
+              </span>
+            </div>
+          )}
 
           {/* 4. Raster: Main + 400px Aside via Container Query */}
           <div className="layout">
