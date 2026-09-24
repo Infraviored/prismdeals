@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Row, EmptyLine, Pill, type RowListing } from '../components/surface';
+import { Row } from '../components/surface';
 import RouteCorridorMap, { type RouteCircle, type RouteListingGeo } from '../components/RouteCorridorMap';
 import { FundeDetailSheet } from './FundeDetailSheet';
 import { FundeModelsSheet } from './FundeModelsSheet';
@@ -11,8 +11,9 @@ import { useFundeData, type FundeTabKey } from '../hooks/useFundeData';
 import { useKept } from '../hooks/useKept';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign } from '../types';
-import { formatFreshness } from '../utils/freshness';
-import { readListingIdFromHash, writeListingIdToHash } from '../utils/listingLink';
+import { useLinkedListing } from '../hooks/useLinkedListing';
+import FundeEmpty from './FundeEmpty';
+import Freshness from './Freshness';
 
 export interface FundeScreenProps {
   campaign: Campaign | undefined;
@@ -32,7 +33,6 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   const { t } = useTranslation();
   const { kept, toggle } = useKept();
 
-  const [selectedListing, setSelectedListing] = useState<RowListing | null>(null);
   const [requirementsOpen, setRequirementsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -59,45 +59,15 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     familyTerms,
     routeData,
     radiusDiagnosis,
+    diagnosing,
+    applyRadius,
   } = useFundeData({ campaign, isScraping });
 
-  // Every find has an address: its Kleinanzeigen id in the URL. Opening one
-  // writes it there, so the address bar is a link to share; opening such a
-  // link finds the listing in the list, or asks the server for it when it is
-  // on another page or filtered out.
-  const linkedId = readListingIdFromHash();
-  useEffect(() => {
-    if (!linkedId) {
-      setSelectedListing(null);
-      return;
-    }
-    if (selectedListing?.id === linkedId) return;
-    const found = listings.find((l) => l.id === linkedId);
-    if (found) {
-      setSelectedListing(found);
-      return;
-    }
-    let cancelled = false;
-    const qs = campaign?.id ? `?campaign_id=${campaign.id}` : '';
-    fetch(`/api/listings/${encodeURIComponent(linkedId)}${qs}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!cancelled && data) setSelectedListing(data);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [linkedId, listings, campaign?.id, selectedListing?.id]);
+  const { selectedListing, openListing } = useLinkedListing(listings, campaign?.id ?? null);
 
   useEffect(() => {
     if (/[?&]sheet=requirements/.test(window.location.hash)) setRequirementsOpen(true);
   }, []);
-
-  const openListing = (l: RowListing | null) => {
-    setSelectedListing(l);
-    writeListingIdToHash(l ? l.id : null);
-  };
 
   const isCorridor = Boolean(campaign?.route_id);
 
@@ -246,27 +216,11 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             <p className="verdict" id="verdict">
               {verdictText}
             </p>
-            {(() => {
-              // While a crawl runs, that is the news -- not when the last one was.
-              if (isScraping) {
-                return <p className="freshness" id="freshness" data-testid="freshness">{t('surface.searchRunning')}</p>;
-              }
-              const rawTime = overview?.last_crawled_at || (listings.length > 0 ? (listings[0].first_seen_at || listings[0].last_seen_at) : null);
-              if (!rawTime) return null;
-              const f = formatFreshness(rawTime, t);
-              if (!f) return null;
-              // schedule_interval is in minutes. 90 used to read "every 90 hours".
-              const minutes = overview?.schedule_interval ?? 0;
-              const text =
-                minutes <= 0
-                  ? t('surface.freshnessOnce', { when: f.label })
-                  : minutes === 60
-                  ? t('surface.freshnessHourly', { when: f.label })
-                  : minutes % 60 === 0
-                  ? t('surface.freshnessInterval', { when: f.label, interval: minutes / 60 })
-                  : t('surface.freshnessIntervalMin', { when: f.label, interval: minutes });
-              return <p className="freshness" id="freshness" data-testid="freshness">{text}</p>;
-            })()}
+            <Freshness
+              isScraping={isScraping}
+              lastCrawledAt={overview?.last_crawled_at || listings[0]?.first_seen_at || listings[0]?.last_seen_at}
+              scheduleMinutes={overview?.schedule_interval ?? 0}
+            />
           </header>
 
           {/* 3. Sticky Tabs */}
@@ -335,44 +289,20 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
 
               {/* Empty state */}
               {displayListings.length === 0 && !loading && (
-                <EmptyLine
-                  // An empty tab in a campaign that has listings is not an empty
-                  // search: "no matches within 30 km" over four unclear laptops
-                  // sent the buyer to widen a radius the campaign never had.
-                  message={
-                    potAll > 0 && tab === 'fit'
-                      ? t('surface.emptyFit')
-                      : potAll > 0 && tab !== 'all'
-                      ? t('surface.emptyTab')
-                      : radiusDiagnosis?.current_radius
-                      ? t('surface.noMatchesInRadius', { radius: radiusDiagnosis.current_radius })
-                      : radiusDiagnosis?.options?.length
-                      ? t('surface.emptyWider')
-                      : t('surface.emptySearch')
-                  }
-                  actions={
-                    potAll > 0 && tab === 'fit' && potUnclear > 0
-                      ? [
-                          <Pill
-                            key="unclear"
-                            label={t('surface.showUnclear')}
-                            count={potUnclear}
-                            onClick={() => setTab('unclear')}
-                          />,
-                        ]
-                      : potAll > 0 && tab !== 'all'
-                      ? undefined
-                      : radiusDiagnosis?.options && radiusDiagnosis.options.length > 0
-                      ? radiusDiagnosis.options.map((opt) => (
-                          <Pill
-                            key={opt.radius}
-                            label={`${opt.radius} km`}
-                            count={opt.count}
-                            onClick={onConfigure}
-                          />
-                        ))
-                      : undefined
-                  }
+                <FundeEmpty
+                  tab={tab}
+                  potAll={potAll}
+                  potUnclear={potUnclear}
+                  termCount={familyTerms.length || 1}
+                  lastCrawledAt={overview?.last_crawled_at}
+                  isScraping={isScraping}
+                  radiusDiagnosis={radiusDiagnosis}
+                  diagnosing={diagnosing}
+                  onShowUnclear={() => setTab('unclear')}
+                  onWiden={async (km) => {
+                    if (await applyRadius(km)) onStartScrape?.();
+                  }}
+                  onConfigure={onConfigure}
                 />
               )}
 

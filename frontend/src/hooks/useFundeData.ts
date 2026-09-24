@@ -77,6 +77,7 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
   const [routeData, setRouteData] = useState<RouteCorridorData | null>(null);
   const [familyTerms, setFamilyTerms] = useState<SearchFamilyTerm[]>([]);
   const [radiusDiagnosis, setRadiusDiagnosis] = useState<RadiusDiagnosis | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
 
   const campaignId = campaign?.id ?? null;
   const routeId = campaign?.route_id ?? null;
@@ -128,6 +129,42 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
   useEffect(() => {
     fetchOverview();
   }, [fetchOverview]);
+
+  // A search that ran and found nothing asks at once how far out there would
+  // be something. Without it the buyer pressed "Funde abrufen" again and again
+  // and watched nothing change -- the printer family, 13 exact model names
+  // within 30 km, is genuinely empty, and only a wider net says so usefully.
+  const searchedEmpty =
+    Boolean(familyId) && !isScraping && overview?.pots?.all === 0 && Boolean(overview?.last_crawled_at);
+  useEffect(() => {
+    if (!searchedEmpty || radiusDiagnosis || diagnosing) return;
+    setDiagnosing(true);
+    fetch(`/api/search-families/${familyId}/diagnose-radius`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh: true }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.options)) setRadiusDiagnosis(data);
+      })
+      .catch(() => {})
+      .finally(() => setDiagnosing(false));
+  }, [searchedEmpty, familyId, radiusDiagnosis, diagnosing]);
+
+  const applyRadius = useCallback(
+    async (km: number) => {
+      if (!familyId) return false;
+      const res = await fetch(`/api/search-families/${familyId}/radius`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ radius: km }),
+      }).catch(() => null);
+      if (res?.ok) setRadiusDiagnosis(null);
+      return Boolean(res?.ok);
+    },
+    [familyId]
+  );
 
   const activeFetchController = useRef<AbortController | null>(null);
 
@@ -304,5 +341,7 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
     routeData,
     familyTerms,
     radiusDiagnosis,
+    diagnosing,
+    applyRadius,
   };
 }

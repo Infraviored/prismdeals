@@ -181,6 +181,20 @@ describe('FundeScreen', () => {
             }),
         });
       }
+      if (url.includes('/overview')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              campaign_id: 1,
+              pots: { all: 0, fit: 0, unclear: 0, no: 0 },
+              last_crawled_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+              market: null,
+              requirements: [],
+              rejections: [],
+            }),
+        });
+      }
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ total: 0, listings: [] }),
@@ -189,12 +203,13 @@ describe('FundeScreen', () => {
 
     render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
 
-    expect(await screen.findByTestId('surface-empty-line')).toBeInTheDocument();
-    // No radius was ever set, so none is named; the measured wider radii are.
-    expect(screen.getByText('Further out there are some:')).toBeInTheDocument();
-    expect(screen.queryByText(/within 30 km/)).not.toBeInTheDocument();
-    expect(screen.getByText('50 km')).toBeInTheDocument();
-    expect(screen.getByText('100 km')).toBeInTheDocument();
+    // The printer case: a search that ran and found nothing says so, and
+    // offers the wider radii that would find something -- not "press fetch".
+    expect(await screen.findByText(/Searched .* nothing found/)).toBeInTheDocument();
+    expect(screen.getByText('Search 50 km')).toBeInTheDocument();
+    expect(screen.getByText('Search 100 km')).toBeInTheDocument();
+    expect(screen.getByText('Change search terms')).toBeInTheDocument();
+    expect(screen.queryByText(/Fetching listings starts it/)).not.toBeInTheDocument();
   });
 
   it('an empty match tab in a campaign with listings points to the unclear ones', async () => {

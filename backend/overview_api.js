@@ -245,6 +245,18 @@ module.exports = (query, get) => {
       }
     } catch {}
 
+    // When the search last ran, not when it last found something. Taken from
+    // hits alone, a search that ran and found nothing looked as if it had
+    // never run, and the screen could not tell the buyer "searched, empty".
+    let lastCrawled = latestSeen;
+    if (searchIds.length > 0) {
+      const ran = await get(
+        `SELECT MAX(last_scraped_at) AS at FROM searches WHERE id IN (${searchIds.map(() => '?').join(',')})`,
+        searchIds
+      );
+      if (ran && ran.at && (!lastCrawled || new Date(ran.at) > new Date(lastCrawled))) lastCrawled = ran.at;
+    }
+
     return {
       campaign_id: campaign.id,
       campaign_name: campaign.name,
@@ -256,7 +268,7 @@ module.exports = (query, get) => {
       market,
       price_distribution: market,
       requirements: requirementStats,
-      last_crawled_at: latestSeen,
+      last_crawled_at: lastCrawled,
       schedule_interval: scheduleInterval,
     };
   }
