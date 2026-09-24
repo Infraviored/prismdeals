@@ -330,14 +330,15 @@ Four kinds of needs; the kind decides where a need flows:
 |---|---|---|
 | taxonomy | `data/kleinanzeigen_taxonomy.json`, 161 categories with filters | — |
 | category → profile | `scraper/profiles.py` (listing + search URL) | small-model check per hunt |
-| hunt type | — | everything |
+| hunt type | 7 types validated in `scraper/intent.py` | UI integration (P3) |
 | probing / market picture | term counts after save | probing before save, snowball, overlap, per-node term memory |
 | playbooks | 5 in `scraper/playbooks.py` | tie to profile + hunt type; stop using as requirements form |
 | path keys | `dossiers.identity_key` | inheritance |
 | claims | table `dossiers`, `validate_claim` | axis, check path, weight; today one row = whole dossier |
 | listing → node | `identity.py` (cars, motorcycles, laptops, phones) | recognition marks from research |
 | market | median per search (`reference_price.js`) | per node, cleaned, adjusted |
-| intent | requirements per campaign (`requirements_api.js`) | interview, four need kinds, filters into URL |
+| intent | `scraper/intent.py`, `backend/intent_api.js` (`POST /api/intent/parse`), requirements per campaign | interview UI (P3) |
+| model proposals | `scraper/model_proposals.py`, table `class_models`, `backend/intent_api.js` (`POST /api/intent/models`) | probe integration (P2/P5) |
 | verdict | per (listing, search) in `listing_fit` | per (listing, requirements version) |
 | score | `backend/db/score.js`, breakdown in sheet | rank as separate statement |
 | research bridge | research prompt in `dossiers.py` | three prompts, copy/paste, approval |
