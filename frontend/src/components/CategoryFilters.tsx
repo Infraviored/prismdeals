@@ -239,7 +239,7 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
           return (
             <div
               key={filter.key}
-              className="w-full px-3.5 py-2.5 min-h-[44px] rounded bg-[#00100F] border border-[#0E4A40] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm focus-within:border-[#8FA6A1] hover:border-[#8FA6A1] transition-colors"
+              className="w-full px-3.5 py-1.5 min-h-[44px] rounded bg-[#00100F] border border-[#0E4A40] flex items-center justify-between gap-2 text-sm focus-within:border-[#8FA6A1] hover:border-[#8FA6A1] transition-colors"
             >
               <label htmlFor={id} className="text-[#8FA6A1] shrink-0">
                 {filter.label}
@@ -257,7 +257,7 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
                     if (!nextMin && !curMax) setValue(filter.key, null);
                     else setValue(filter.key, `${nextMin},${curMax}`);
                   }}
-                  className="w-24 bg-[#011F1F] border border-[#0E4A40] rounded px-2.5 py-1 text-sm text-[#F2F5F4] tabular-nums focus:outline-none focus:border-[#8FA6A1]"
+                  className="w-[4.5rem] bg-[#011F1F] border border-[#0E4A40] rounded px-2 py-1 text-sm text-right text-[#F2F5F4] [font-variant-numeric:tabular-nums] placeholder-[#8FA6A1]/50 focus:outline-none focus:border-[#8FA6A1]"
                 />
                 <span className="text-[#8FA6A1] text-xs">–</span>
                 <input
@@ -272,7 +272,7 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
                     if (!curMin && !nextMax) setValue(filter.key, null);
                     else setValue(filter.key, `${curMin},${nextMax}`);
                   }}
-                  className="w-24 bg-[#011F1F] border border-[#0E4A40] rounded px-2.5 py-1 text-sm text-[#F2F5F4] tabular-nums focus:outline-none focus:border-[#8FA6A1]"
+                  className="w-[4.5rem] bg-[#011F1F] border border-[#0E4A40] rounded px-2 py-1 text-sm text-right text-[#F2F5F4] [font-variant-numeric:tabular-nums] placeholder-[#8FA6A1]/50 focus:outline-none focus:border-[#8FA6A1]"
                 />
               </div>
             </div>

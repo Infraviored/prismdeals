@@ -117,4 +117,15 @@ describe('RequirementsSheet', () => {
     // Button flips to "Fewer criteria"
     expect(screen.getByRole('button', { name: /Fewer criteria|Weniger Kriterien/i })).toBeInTheDocument();
   });
+
+  it('says so when nothing is chosen yet, suggestions stay folded', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ playbook: 'vehicles/motorcycles', fields: MOCK_FIELDS, requirements: [], searches: 1 }),
+    });
+    render(<RequirementsSheet isOpen onClose={() => {}} campaignId={8} />);
+    // An empty sheet with one button was the result before.
+    expect(await screen.findByText(/No requirements yet/)).toBeInTheDocument();
+    expect(screen.queryByText('Unterstellung')).not.toBeInTheDocument();
+  });
 });

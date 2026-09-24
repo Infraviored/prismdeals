@@ -138,7 +138,7 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
             else next[operator] = Number(raw);
             setWant(field.id, next);
           }}
-          className="w-full min-w-0 bg-[#00100F] border border-[#0E4A40] rounded px-2.5 py-1.5 text-sm text-[#F2F5F4] tabular-nums focus:outline-none focus:border-[#8FA6A1]"
+          className="w-full min-w-0 bg-[#00100F] border border-[#0E4A40] rounded px-2.5 py-1.5 text-sm text-[#F2F5F4] [font-variant-numeric:tabular-nums] focus:outline-none focus:border-[#8FA6A1]"
         />
         {field.unit && <span className="shrink-0">{field.unit}</span>}
       </label>
@@ -237,6 +237,9 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
           </p>
 
           <div className="flex flex-col gap-5">
+            {storedFields.length === 0 && (
+              <p className="text-sm text-[#8FA6A1]">{t('surface.requirementsEmpty')}</p>
+            )}
             {storedFields.map(renderField)}
 
             {suggestionFields.length > 0 && (
