@@ -331,7 +331,7 @@ Four kinds of needs; the kind decides where a need flows:
 | taxonomy | `data/kleinanzeigen_taxonomy.json`, 161 categories with filters | — |
 | category → profile | `scraper/profiles.py` (listing + search URL) | small-model check per hunt |
 | hunt type | — | everything |
-| probing / market picture | term counts after save | probing before save, snowball, overlap, per-node term memory |
+| probing / market picture | ✓ probe engine, ladder, snowball, node memory (`scraper/probe.py`) | UI setup flow (P3) |
 | playbooks | 5 in `scraper/playbooks.py` | tie to profile + hunt type; stop using as requirements form |
 | path keys | `dossiers.identity_key` | inheritance |
 | claims | table `dossiers`, `validate_claim` | axis, check path, weight; today one row = whole dossier |
@@ -349,7 +349,7 @@ Detailed plan: [`plan-hunt-engine.md`](plan-hunt-engine.md) (packages P0–P9, b
 
 1. ✓ taxonomy lookup · ✓ score.
 2. P0 quick fixes (motorcycle screen) · P1 hunt model + benchmarks.
-3. P2 probe engine · P4 intent parsing → P3 setup flow with market picture · P5 model proposals.
+3. ✓ P2 probe engine · P4 intent parsing → P3 setup flow with market picture · P5 model proposals.
 4. P6 candidate set, one comparative call.
 5. P7 knowledge nodes + research bridge · P8 market per node · P9 verdict per requirements version.
 - ~~Order: probing → hunt-type question → candidate set → research → market~~

@@ -1,0 +1,124 @@
+[
+  {
+    "id": "B1",
+    "name": "Corsair 2x16 GB DDR4-3200 CL16",
+    "hunt_type": "exact",
+    "category_code": "c225",
+    "location_id": "6411",
+    "radius_km": 50,
+    "price": {"max": 150},
+    "seed_terms": ["Corsair Vengeance 32GB 3200MHz CL16"],
+    "musts": [
+      {"id": "capacityGb", "label": "32 GB", "want": {"min": 32}},
+      {"id": "ddrStandard", "label": "DDR4", "want": {"match": "ddr4"}}
+    ],
+    "prefs": [],
+    "models": [],
+    "budget_steps": [80, 120, 150]
+  },
+  {
+    "id": "B2",
+    "name": "Yamaha R1 or Honda CBR1000RR",
+    "hunt_type": "shortlist",
+    "category_code": "c305",
+    "location_id": "6411",
+    "radius_km": 100,
+    "price": {"max": 9000},
+    "seed_terms": [],
+    "musts": [],
+    "prefs": [],
+    "models": ["Yamaha YZF R1", "Honda CBR 1000 RR"],
+    "budget_steps": [5000, 7000, 9000]
+  },
+  {
+    "id": "B3",
+    "name": "1000cc supersport motorcycle",
+    "hunt_type": "class",
+    "category_code": "c305",
+    "location_id": "6411",
+    "radius_km": 100,
+    "price": {"max": 7000},
+    "seed_terms": ["supersportler"],
+    "musts": [],
+    "prefs": [],
+    "models": ["Yamaha R1", "Honda CBR1000RR", "Suzuki GSX-R 1000", "Kawasaki Ninja ZX-10R"],
+    "budget_steps": [4000, 5500, 7000]
+  },
+  {
+    "id": "B4",
+    "name": "laptop 32 GB, OLED, > FHD",
+    "hunt_type": "features",
+    "category_code": "c278",
+    "location_id": "6411",
+    "radius_km": 50,
+    "price": {"max": 800},
+    "seed_terms": ["laptop"],
+    "musts": [
+      {"id": "ramGb", "label": "RAM (GB)", "want": {"min": 32}},
+      {"id": "panelType", "label": "OLED", "want": {"match": true}}
+    ],
+    "prefs": [],
+    "models": ["ZenBook 14 OLED"],
+    "budget_steps": [500, 650, 800]
+  },
+  {
+    "id": "B5",
+    "name": "mattress 140x200",
+    "hunt_type": "fit",
+    "category_code": "c93",
+    "location_id": "6411",
+    "radius_km": 30,
+    "price": {"max": 150},
+    "seed_terms": ["matratze"],
+    "musts": [
+      {"id": "dim", "label": "Größe (cm)", "want": {"min": "140x200", "max": "140x200"}}
+    ],
+    "prefs": [],
+    "models": [],
+    "budget_steps": [50, 100, 150]
+  },
+  {
+    "id": "B6",
+    "name": "wardrobe <= 120 cm wide",
+    "hunt_type": "fit",
+    "category_code": "c88",
+    "location_id": "6411",
+    "radius_km": 30,
+    "price": {"max": 100},
+    "seed_terms": ["kleiderschrank"],
+    "musts": [
+      {"id": "width", "label": "Breite", "want": {"max": 120}}
+    ],
+    "prefs": [],
+    "models": [],
+    "budget_steps": [40, 70, 100]
+  },
+  {
+    "id": "B7",
+    "name": "vintage armchair",
+    "hunt_type": "taste",
+    "category_code": "c88",
+    "location_id": "6411",
+    "radius_km": 30,
+    "price": {"max": 200},
+    "seed_terms": ["vintage sessel", "retro armsessel"],
+    "musts": [],
+    "prefs": [],
+    "models": [],
+    "budget_steps": [60, 120, 200]
+  },
+  {
+    "id": "B8",
+    "name": "tools under market",
+    "hunt_type": "opportunity",
+    "category_code": "c84",
+    "location_id": "6411",
+    "radius_km": 30,
+    "price": {"max": 100},
+    "seed_terms": [],
+    "musts": [],
+    "prefs": [],
+    "models": [],
+    "budget_steps": [30, 60, 100]
+  }
+]
