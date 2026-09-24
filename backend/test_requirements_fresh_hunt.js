@@ -47,7 +47,8 @@ async function main() {
     CREATE TABLE knowledge_sets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT,
-      item_json TEXT
+      item_json TEXT,
+      requirements_hash TEXT
     );
   `);
   await runSql(db, `

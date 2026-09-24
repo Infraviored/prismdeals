@@ -79,7 +79,9 @@ async function rejectedListingsStayOutOfTheMedian() {
 
   await run('CREATE TABLE listings (id TEXT PRIMARY KEY, price_eur INTEGER)');
   await run('CREATE TABLE listing_search_hits (listing_id TEXT, search_id INTEGER, first_seen_at TEXT)');
-  await run('CREATE TABLE listing_fit (listing_id TEXT, search_id INTEGER, verdict TEXT)');
+  await run('CREATE TABLE searches (id INTEGER PRIMARY KEY, knowledge_set_id INTEGER)');
+  await run('CREATE TABLE knowledge_sets (id INTEGER PRIMARY KEY, requirements_hash TEXT)');
+  await run('CREATE TABLE listing_fit (listing_id TEXT, search_id INTEGER, verdict TEXT, requirements_hash TEXT)');
 
   // Five matching kits at 150, five rejected four-stick kits at 60.
   const rows = [
@@ -90,7 +92,7 @@ async function rejectedListingsStayOutOfTheMedian() {
   for (const [id, price, verdict] of rows) {
     await run('INSERT INTO listings VALUES (?, ?)', [id, price]);
     await run("INSERT INTO listing_search_hits VALUES (?, 7, '2026-09-22')", [id]);
-    if (verdict) await run('INSERT INTO listing_fit VALUES (?, 7, ?)', [id, verdict]);
+    if (verdict) await run('INSERT INTO listing_fit (listing_id, search_id, verdict) VALUES (?, 7, ?)', [id, verdict]);
   }
 
   const ref = (await referencePrices(query, [7])).get(7);
@@ -109,7 +111,9 @@ async function rejectedListingsAreNotDeals() {
 
   await run('CREATE TABLE listings (id TEXT PRIMARY KEY, price_eur INTEGER)');
   await run('CREATE TABLE listing_search_hits (listing_id TEXT, search_id INTEGER, first_seen_at TEXT)');
-  await run('CREATE TABLE listing_fit (listing_id TEXT, search_id INTEGER, verdict TEXT)');
+  await run('CREATE TABLE searches (id INTEGER PRIMARY KEY, knowledge_set_id INTEGER)');
+  await run('CREATE TABLE knowledge_sets (id INTEGER PRIMARY KEY, requirements_hash TEXT)');
+  await run('CREATE TABLE listing_fit (listing_id TEXT, search_id INTEGER, verdict TEXT, requirements_hash TEXT)');
 
   // Five matching kits at 150 (fit), one unjudged at 150
   const baseRows = [
@@ -119,18 +123,18 @@ async function rejectedListingsAreNotDeals() {
   for (const [id, price, verdict] of baseRows) {
     await run('INSERT INTO listings VALUES (?, ?)', [id, price]);
     await run("INSERT INTO listing_search_hits VALUES (?, 7, '2026-09-22')", [id]);
-    if (verdict) await run('INSERT INTO listing_fit VALUES (?, 7, ?)', [id, verdict]);
+    if (verdict) await run('INSERT INTO listing_fit (listing_id, search_id, verdict) VALUES (?, 7, ?)', [id, verdict]);
   }
 
   // A cheap listing that was rejected ('no') for search 7
   await run('INSERT INTO listings VALUES (?, ?)', ['cheap-rejected', 60]);
   await run("INSERT INTO listing_search_hits VALUES (?, 7, '2026-09-22')", ['cheap-rejected']);
-  await run("INSERT INTO listing_fit VALUES (?, 7, 'no')", ['cheap-rejected']);
+  await run("INSERT INTO listing_fit (listing_id, search_id, verdict) VALUES (?, 7, 'no')", ['cheap-rejected']);
 
   // A cheap listing that matches ('fit') for search 7
   await run('INSERT INTO listings VALUES (?, ?)', ['cheap-fit', 70]);
   await run("INSERT INTO listing_search_hits VALUES (?, 7, '2026-09-22')", ['cheap-fit']);
-  await run("INSERT INTO listing_fit VALUES (?, 7, 'fit')", ['cheap-fit']);
+  await run("INSERT INTO listing_fit (listing_id, search_id, verdict) VALUES (?, 7, 'fit')", ['cheap-fit']);
 
   // An unjudged cheap listing for search 7 (unjudged remains allowed)
   await run('INSERT INTO listings VALUES (?, ?)', ['cheap-unjudged', 70]);

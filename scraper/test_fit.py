@@ -19,7 +19,7 @@ import fit  # noqa: E402
 
 SCHEMA = """
 CREATE TABLE searches (id INTEGER PRIMARY KEY, url TEXT, knowledge_set_id INTEGER);
-CREATE TABLE knowledge_sets (id INTEGER PRIMARY KEY, item_json TEXT);
+CREATE TABLE knowledge_sets (id INTEGER PRIMARY KEY, item_json TEXT, requirements_hash TEXT);
 CREATE TABLE listings (
     id TEXT PRIMARY KEY, search_id INTEGER, title TEXT,
     detailed_description TEXT, short_description TEXT
@@ -31,6 +31,7 @@ CREATE TABLE listing_search_hits (
 CREATE TABLE listing_fit (
     listing_id TEXT NOT NULL, search_id INTEGER NOT NULL, verdict TEXT NOT NULL,
     reason TEXT, facts_json TEXT, stage TEXT NOT NULL, judged_at TEXT NOT NULL,
+    requirements_hash TEXT,
     PRIMARY KEY (listing_id, search_id)
 );
 """
