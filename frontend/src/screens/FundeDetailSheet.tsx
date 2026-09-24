@@ -236,7 +236,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
               )}
               {listing.same_as && listing.same_as.length > 0 && (
                 <p className="text-xs text-[#8FA6A1]">
-                  {t('surface.sameAs', { ids: listing.same_as.join(', ') })}
+                  {t('surface.sameAs', { ids: listing.same_as.map(rank => `#${rank}`).join(', ') })}
                 </p>
               )}
             </div>

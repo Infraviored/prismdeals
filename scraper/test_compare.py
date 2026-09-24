@@ -221,3 +221,71 @@ def test_parse_compare_response_with_markdown_fences():
     assert parsed[0]["seller_questions"] == ["Wie viele Ladezyklen?"]
     assert parsed[1]["id"] == "202"
     assert parsed[1]["rank"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Review fixes: judged musts need quotes, skipped listings keep a rank
+# ---------------------------------------------------------------------------
+
+
+def test_a_met_must_without_a_quoted_fact_counts_as_unstated():
+    candidates = [
+        {"id": "7", "title": "Corsair 2x16GB", "detailed_description": "DDR4 Kit"}
+    ]
+    line = json.dumps(
+        {
+            "id": "7",
+            "rank": 1,
+            "musts": {"speedMhz": "met", "ramType": "met", "stickCount": "violated"},
+            "facts": {
+                "ramType": {"value": "DDR4", "quote": "DDR4 Kit"},
+                "speedMhz": {"value": "3200", "quote": "3200 MHz"},
+            },
+        }
+    )
+    musts = parse_compare_response(line, candidates)[0]["musts"]
+    assert musts["ramType"] == "met"
+    # The 3200 quote is not in the text, so the fact went and the "met" with it.
+    assert musts["speedMhz"] == "unstated"
+    assert musts["stickCount"] == "unstated"
+
+
+def test_the_prompt_names_requirements_by_id():
+    from compare_prompt import build_compare_prompt
+
+    prompt = build_compare_prompt(
+        [{"id": "7", "title": "t"}],
+        [
+            {
+                "id": "speedMhz",
+                "label": "Takt",
+                "importance": "high",
+                "buyer_wants": {"min": 3200},
+            }
+        ],
+    )
+    assert "[speedMhz] Takt" in prompt
+
+
+def test_a_listing_the_model_skipped_ranks_last_instead_of_vanishing():
+    from compare import _fill_missing
+
+    candidates = [{"id": "1"}, {"id": "2"}, {"id": "3"}]
+    runs = [
+        # Run one skipped listing 3; run two put it first.
+        _fill_missing([{"id": "1", "rank": 1}, {"id": "2", "rank": 2}], candidates),
+        _fill_missing(
+            [{"id": "3", "rank": 1}, {"id": "1", "rank": 2}, {"id": "2", "rank": 3}],
+            candidates,
+        ),
+    ]
+    merged = merge_ranks(runs, 3)
+    # Unfilled, listing 3 would average rank 1 from its single appearance.
+    assert merged[0]["id"] == "1"
+
+
+def test_the_answer_budget_grows_with_the_candidates():
+    from compare import _output_budget
+
+    assert _output_budget(30) > 4000 * 2
+    assert _output_budget(200) == 16000

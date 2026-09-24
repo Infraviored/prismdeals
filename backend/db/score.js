@@ -53,6 +53,14 @@ function stateOf(field, facts) {
   return contradicts(wants, value) ? 'violated' : 'met';
 }
 
+function sortKeys(value) {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map(k => [k, sortKeys(value[k])]));
+  }
+  return value;
+}
+
 function clamp01(x) {
   return Math.max(0, Math.min(1, x));
 }
@@ -77,9 +85,15 @@ function scoreListing(listing, fields) {
 
   const gate = { met: [], violated: [], open: [] };
   const soft = { met: 0, total: 0 };
+  const judgedWants = listing.rank_wants || null;
   const states = requirements.map(field => {
     const fromRun = judged?.[field.id];
-    if (fromRun) return fromRun === 'met' || fromRun === 'violated' ? fromRun : 'open';
+    // Only while the buyer still wants what the run judged against: "met" for
+    // at least 16 GB says nothing once the must is 32 GB.
+    const sameWants =
+      !judgedWants ||
+      JSON.stringify(sortKeys(judgedWants[field.id] || {})) === JSON.stringify(sortKeys(field.buyer_wants || {}));
+    if (fromRun && sameWants) return fromRun === 'met' || fromRun === 'violated' ? fromRun : 'open';
     return stateOf(field, facts);
   });
   requirements.forEach((field, i) => {

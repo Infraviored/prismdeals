@@ -40,67 +40,77 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_text_numbers(text):
-    """Extracts all distinct numbers found in text."""
-    clean = re.sub(r"[^\w\s.,€-]", " ", text)
-    matches = re.findall(r"\b\d+(?:[.,]\d+)?\b", clean)
+    """Every number the buyer typed, as German writes them.
+
+    "7.000" is seven thousand, "7k" too, "1,5" is one and a half.
+    """
     numbers = set()
-    for m in matches:
-        try:
-            val = float(m.replace(",", "."))
-            numbers.add(val)
-            if val.is_integer():
-                numbers.add(int(val))
-        except ValueError:
-            continue
+    for match in re.finditer(
+        r"\d{1,3}(?:\.\d{3})+(?!\d)|\d+(?:,\d+)?(?:\s*k\b)?", text.lower()
+    ):
+        raw = match.group(0).replace(" ", "")
+        if raw.endswith("k"):
+            value = float(raw[:-1].replace(",", ".")) * 1000
+        elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", raw):
+            value = float(raw.replace(".", ""))
+        else:
+            value = float(raw.replace(",", "."))
+        numbers.add(int(value) if value.is_integer() else value)
     return numbers
 
 
 def verify_and_sanitize_budget(budget, original_text):
-    """Ensures no budget was hallucinated if not present in original text.
+    """Keeps a budget bound only if the buyer typed that number.
 
-    Plan rule: 'never invent a budget'.
+    Plan rule: never invent a budget. The earlier guard waved any number
+    through as soon as the text said "bis" or "€" anywhere.
     """
     if not budget or not isinstance(budget, dict):
         return None
+    typed = _extract_text_numbers(original_text)
 
-    b_min = budget.get("min")
-    b_max = budget.get("max")
-
-    text_numbers = _extract_text_numbers(original_text)
-
-    sanitized_min = None
-    sanitized_max = None
-    if b_min is not None:
+    def keep(value):
         try:
-            val = float(b_min)
-            sanitized_min = int(val) if val.is_integer() else val
-        except (ValueError, TypeError):
-            pass
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        number = int(number) if number.is_integer() else number
+        return number if number in typed else None
 
-    if b_max is not None:
-        try:
-            val = float(b_max)
-            sanitized_max = int(val) if val.is_integer() else val
-        except (ValueError, TypeError):
-            pass
-
-    has_currency = bool(re.search(r"(?:€|euro|eur)\b", original_text, re.IGNORECASE))
-    has_budget_word = bool(
-        re.search(r"\b(?:bis|unter|max|budget|preis)\b", original_text, re.IGNORECASE)
-    )
-
-    if sanitized_min is not None:
-        if sanitized_min not in text_numbers and not (has_currency or has_budget_word):
-            sanitized_min = None
-
-    if sanitized_max is not None:
-        if sanitized_max not in text_numbers and not (has_currency or has_budget_word):
-            sanitized_max = None
-
-    if sanitized_min is None and sanitized_max is None:
+    low = keep(budget.get("min")) if budget.get("min") is not None else None
+    high = keep(budget.get("max")) if budget.get("max") is not None else None
+    if low is None and high is None:
         return None
+    return {"min": low, "max": high}
 
-    return {"min": sanitized_min, "max": sanitized_max}
+
+def sanitize_requirements(items):
+    """Musts and prefs in the intent_json shape; anything else is dropped.
+
+    Each needs an id, a label and a `want` object; the type falls back to text.
+    """
+    clean = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        rid = str(item.get("id") or "").strip()
+        want = item.get("want")
+        if not rid or not isinstance(want, dict) or not want:
+            continue
+        kind = (
+            item.get("type")
+            if item.get("type") in ("number", "enum", "boolean", "text")
+            else "text"
+        )
+        clean.append(
+            {
+                "id": rid,
+                "label": str(item.get("label") or rid).strip(),
+                "type": kind,
+                "want": want,
+            }
+        )
+    return clean
 
 
 def normalize_model_names(models):
@@ -310,21 +320,18 @@ def parse_intent(text, category=None, offline=False, raw_response_override=None)
         confidence = float(confidence)
         confidence = max(0.0, min(1.0, confidence))
     except (TypeError, ValueError):
-        confidence = 0.85
+        # No stated confidence is no confidence: the UI asks rather than assumes.
+        confidence = 0.5
 
     budget = verify_and_sanitize_budget(parsed.get("budget"), text_clean)
 
     raw_filters = parsed.get("filters", {})
     mapped_filters, extra_musts = map_filters_to_taxonomy(raw_filters, cat_info)
 
-    musts = parsed.get("musts", [])
-    if not isinstance(musts, list):
-        musts = []
-    musts.extend(extra_musts)
-
-    prefs = parsed.get("prefs", [])
-    if not isinstance(prefs, list):
-        prefs = []
+    musts = sanitize_requirements(parsed.get("musts")) + sanitize_requirements(
+        extra_musts
+    )
+    prefs = sanitize_requirements(parsed.get("prefs"))
 
     raw_models = parsed.get("models", [])
     models = normalize_model_names(raw_models)

@@ -31,15 +31,7 @@ logger = logging.getLogger(__name__)
 CACHE_TTL_DAYS = 30
 
 
-def probe_models(models, base):
-    """Narrow interface for probing proposed models on Kleinanzeigen.
-
-    Defined for Package P2 (scraper.probe) integration.
-    """
-    raise NotImplementedError(
-        "probe_models is implemented by package P2 (scraper.probe). "
-        "Will be wired in integration step."
-    )
+from model_probe import probe_models  # noqa: E402,F401 -- the P2 interface, now real
 
 
 def make_node_key(category, class_text):
@@ -207,45 +199,6 @@ def update_probe_counts(node_key, probe_results, db_path=None):
         conn.close()
 
 
-def _fallback_models_for_class(class_text):
-    """Fallback candidate models when running offline or if LLM call fails."""
-    c_lower = str(class_text).lower()
-    if "supersport" in c_lower or "1000cc" in c_lower:
-        return [
-            {"model": "Yamaha YZF-R1", "years": "2004-2008"},
-            {"model": "Honda CBR1000RR Fireblade", "years": "2004-2007"},
-            {"model": "Suzuki GSX-R 1000", "years": "2003-2006"},
-            {"model": "Kawasaki Ninja ZX-10R", "years": "2004-2007"},
-            {"model": "Aprilia RSV 1000 R", "years": "2004-2008"},
-            {"model": "Ducati 999", "years": "2003-2006"},
-        ]
-    if "kombi" in c_lower:
-        return [
-            {"model": "Volkswagen Passat Variant", "years": "2010-2015"},
-            {"model": "Skoda Octavia Combi", "years": "2012-2017"},
-            {"model": "Ford Mondeo Turnier", "years": "2011-2015"},
-            {"model": "Opel Astra Sports Tourer", "years": "2012-2016"},
-            {"model": "BMW 3er Touring", "years": "2008-2012"},
-            {"model": "Audi A4 Avant", "years": "2008-2012"},
-        ]
-    if "e-bike" in c_lower or "ebike" in c_lower:
-        return [
-            {"model": "Cube Touring Hybrid", "years": "2019-2022"},
-            {"model": "KTM Macina Cross", "years": "2018-2021"},
-            {"model": "Haibike Trekking", "years": "2018-2022"},
-            {"model": "Kalkhoff Endeavour", "years": "2019-2023"},
-            {"model": "Pegasus Premio EVO", "years": "2019-2022"},
-            {"model": "Gazelle Medeo", "years": "2020-2023"},
-        ]
-    return [
-        {"model": f"{class_text} Modell A", "years": "2018-2022"},
-        {"model": f"{class_text} Modell B", "years": "2017-2021"},
-        {"model": f"{class_text} Modell C", "years": "2019-2023"},
-        {"model": f"{class_text} Modell D", "years": "2016-2020"},
-        {"model": f"{class_text} Modell E", "years": "2018-2022"},
-    ]
-
-
 def build_proposal_prompt(class_text, budget, category, use):
     """Constructs prompt for proposing candidate models under budget."""
     system_prompt = (
@@ -273,9 +226,11 @@ def propose_models(
     offline=False,
     raw_response_override=None,
 ):
-    """Proposes 5–12 candidate models with plausible years under budget.
+    """Proposes 5-12 candidate models with plausible years under budget.
 
-    Checks 30-day cache in class_models first.
+    Checks the 30-day cache in class_models first. Without a model answer there
+    are no proposals: a hard-coded list or "<class> Modell A" placeholders
+    looked like real candidates and were cached for a month.
     """
     class_clean = str(class_text or "").strip()
     if not class_clean:
@@ -296,17 +251,13 @@ def propose_models(
             else json.dumps(raw_response_override)
         )
     elif offline:
-        proposals = _fallback_models_for_class(class_clean)
-        save_proposals(node_key, proposals, db_path)
-        return proposals
+        return []
     else:
         try:
             from config import API_KEY
 
             if not API_KEY:
-                proposals = _fallback_models_for_class(class_clean)
-                save_proposals(node_key, proposals, db_path)
-                return proposals
+                return []
 
             from agent_worker import client, build_llm_kwargs, get_response_text
 
@@ -318,11 +269,9 @@ def propose_models(
             kwargs = build_llm_kwargs(messages, max_tokens=1000, temperature=0.2)
             response = client.chat.completions.create(**kwargs)
             raw_json_str = get_response_text(response)
-        except Exception as e:
-            logger.warning("Model proposal call failed (%s); using fallback.", e)
-            proposals = _fallback_models_for_class(class_clean)
-            save_proposals(node_key, proposals, db_path)
-            return proposals
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Model proposal call failed (%s).", e)
+            return []
 
     parsed = None
     if raw_json_str:
@@ -330,26 +279,49 @@ def propose_models(
         cleaned = m.group(0) if m else raw_json_str.strip()
         try:
             parsed = json.loads(cleaned)
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             logger.warning("Failed to decode model proposals JSON: %s", err)
 
-    if not parsed or not isinstance(parsed, list):
-        proposals = _fallback_models_for_class(class_clean)
-    else:
-        proposals = []
-        for item in parsed:
-            if isinstance(item, dict) and item.get("model"):
-                proposals.append(
-                    {
-                        "model": str(item["model"]).strip(),
-                        "years": str(item.get("years", "")).strip(),
-                    }
-                )
-        if len(proposals) < 3:
-            proposals = _fallback_models_for_class(class_clean)
-
-    save_proposals(node_key, proposals, db_path)
+    proposals = []
+    for item in parsed if isinstance(parsed, list) else []:
+        if isinstance(item, dict) and str(item.get("model") or "").strip():
+            proposals.append(
+                {
+                    "model": str(item["model"]).strip(),
+                    "years": str(item.get("years", "")).strip(),
+                }
+            )
+    if proposals:
+        save_proposals(node_key, proposals, db_path)
     return proposals
+
+
+def propose_and_probe(
+    class_text, base, budget=None, category=None, use=None, db_path=None
+):
+    """Proposals checked against the market: each with its count and median.
+
+    Models the guard has dropped (probed twice, never in a title) are left out;
+    the rest come back sorted by how many offers carry their name.
+    """
+    proposals = propose_models(
+        class_text, budget=budget, category=category, use=use, db_path=db_path
+    )
+    if not proposals:
+        return []
+    node_key = make_node_key(category, class_text)
+    results = probe_models([p["model"] for p in proposals], base)
+    _, dropped = update_probe_counts(node_key, results, db_path)
+    out = []
+    for p in proposals:
+        if p["model"] in dropped:
+            continue
+        seen = results.get(p["model"])
+        out.append(
+            {**p, **(seen or {"total": None, "title_hits": None, "median": None})}
+        )
+    out.sort(key=lambda p: -(p.get("title_hits") or 0))
+    return out
 
 
 def main():
@@ -364,7 +336,14 @@ def main():
     parser.add_argument("--category", "-c", default=None, help="Category ID or slug")
     parser.add_argument("--use", "-u", default=None, help="Intended use")
     parser.add_argument(
-        "--offline", action="store_true", help="Run offline fallback without LLM"
+        "--offline",
+        action="store_true",
+        help="Skip the model call (returns cached proposals only)",
+    )
+    parser.add_argument(
+        "--probe",
+        default=None,
+        help="JSON hunt frame; probe each proposal on the market",
     )
     args = parser.parse_args()
 
@@ -372,13 +351,22 @@ def main():
     if not c_text and not sys.stdin.isatty():
         c_text = sys.stdin.read().strip()
 
-    models = propose_models(
-        c_text,
-        budget=args.budget,
-        category=args.category,
-        use=args.use,
-        offline=args.offline,
-    )
+    if args.probe:
+        models = propose_and_probe(
+            c_text,
+            json.loads(args.probe),
+            budget=args.budget,
+            category=args.category,
+            use=args.use,
+        )
+    else:
+        models = propose_models(
+            c_text,
+            budget=args.budget,
+            category=args.category,
+            use=args.use,
+            offline=args.offline,
+        )
     print(json.dumps(models, indent=2, ensure_ascii=False))
 
 

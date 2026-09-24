@@ -32,6 +32,8 @@ def build_compare_prompt(
         "RULES:\n"
         "- Every fact you state MUST include a direct quote from the listing text.\n"
         "- If a requirement cannot be verified from the listing text, mark it 'unstated'.\n"
+        "- Key musts and facts by the requirement id in square brackets. A must marked\n"
+        "  'met' or 'violated' needs a fact under the same id with its quote.\n"
         "- Rank by overall fit: requirements met > price vs market > condition > completeness.\n"
         "- Be concise: reason is at most 20 words.\n"
         "- Output ONLY the JSON lines block at the end. No other text.\n"
@@ -45,7 +47,9 @@ def build_compare_prompt(
             wants = f.get("buyer_wants") or {}
             importance = f.get("importance", "medium")
             want_desc = _describe_want(wants)
-            parts.append(f"- {label} ({importance}): {want_desc}")
+            # The id is what the output keys musts and facts by; without it
+            # the model invented keys and no judged state ever matched a field.
+            parts.append(f"- [{f.get('id')}] {label} ({importance}): {want_desc}")
     else:
         parts.append("- No specific requirements stated.")
     parts.append("")
@@ -198,12 +202,22 @@ def parse_compare_response(
                 )
             # No quote = no fact (per §9.2 rules)
 
+        # A met or violated must counts only with a quoted fact under the same
+        # id. A bare "met" would otherwise lift the gate on the model's word.
+        musts = {}
+        raw_musts = obj.get("musts") if isinstance(obj.get("musts"), dict) else {}
+        for must_id, state in raw_musts.items():
+            state = str(state)
+            if state in ("met", "violated") and must_id not in validated_facts:
+                state = "unstated"
+            musts[str(must_id)] = state
+
         results.append(
             {
                 "id": lid,
                 "rank": obj.get("rank", len(results) + 1),
                 "reason": str(obj.get("reason", ""))[:100],
-                "musts": obj.get("musts") or {},
+                "musts": musts,
                 "facts": validated_facts,
                 "checks": obj.get("checks") or [],
                 "seller_questions": obj.get("seller_questions") or [],

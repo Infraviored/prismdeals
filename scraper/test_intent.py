@@ -252,3 +252,32 @@ def test_fallback_without_model():
     # Two models with 'oder' -> shortlist
     res_shortlist = fallback_intent("Yamaha R1 oder Honda CBR1000RR", category="305")
     assert res_shortlist["hunt_type"] == "shortlist"
+
+
+def test_a_budget_the_buyer_never_typed_is_dropped():
+    from intent import verify_and_sanitize_budget
+
+    # The text says "bis" and "€", but not 9000.
+    assert verify_and_sanitize_budget({"max": 9000}, "R1 bis 7.000 €") is None
+    assert verify_and_sanitize_budget({"max": 7000}, "R1 bis 7.000 €") == {
+        "min": None,
+        "max": 7000,
+    }
+    assert verify_and_sanitize_budget({"max": 7000}, "R1 bis 7k") == {
+        "min": None,
+        "max": 7000,
+    }
+
+
+def test_malformed_musts_from_the_model_are_dropped():
+    from intent import sanitize_requirements
+
+    kept = sanitize_requirements(
+        [
+            {"id": "ramGb", "label": "RAM", "type": "number", "want": {"min": 32}},
+            {"label": "no id", "want": {"min": 1}},
+            {"id": "x", "label": "no want"},
+            "OLED",
+        ]
+    )
+    assert [m["id"] for m in kept] == ["ramGb"]

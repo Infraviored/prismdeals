@@ -14,6 +14,9 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 
 const router = express.Router();
+// Campaigns with a comparison in flight, and the last failure per campaign.
+const running = new Map();
+const failures = new Map();
 
 function findPython() {
   const candidates = [
@@ -38,28 +41,30 @@ module.exports = (query, get) => {
     if (!campaignId || campaignId < 1) {
       return res.status(400).json({ error: 'Invalid campaign ID' });
     }
+    // Three model runs take minutes; holding the request open ran into the
+    // proxy timeout, and a second tap started a second paid run. Answer at
+    // once, run in the background, and let the ranks endpoint say when done.
+    if (running.has(campaignId)) return res.status(202).json({ running: true });
 
     const python = findPython();
     const script = path.join(__dirname, '..', 'scraper', 'compare_cli.py');
-
-    const args = [script, String(campaignId)];
-    // Forward PRISMDEALS_DB if set
-    const env = { ...process.env };
-
-    const child = spawn(python, args, { env, cwd: path.join(__dirname, '..', 'scraper') });
-
-    let stdout = '';
+    const child = spawn(python, [script, String(campaignId)], {
+      env: { ...process.env },
+      cwd: path.join(__dirname, '..', 'scraper'),
+    });
+    running.set(campaignId, { started_at: new Date().toISOString(), error: null });
     let stderr = '';
-    child.stdout.on('data', d => { stdout += d.toString(); });
-    child.stderr.on('data', d => { stderr += d.toString(); });
-
+    child.stderr.on('data', d => { stderr = (stderr + d.toString()).slice(-2000); });
     child.on('close', code => {
+      running.delete(campaignId);
       if (code !== 0) {
         console.error('compare_cli.py failed:', stderr);
-        return res.status(500).json({ error: 'Comparison failed', detail: stderr.slice(-500) });
+        failures.set(campaignId, stderr.slice(-500));
+      } else {
+        failures.delete(campaignId);
       }
-      res.json({ ok: true, output: stdout });
     });
+    res.status(202).json({ running: true });
   });
 
   /**
@@ -76,7 +81,8 @@ module.exports = (query, get) => {
           ORDER BY created_at DESC LIMIT 1`,
         [campaignId],
       );
-      if (!run) return res.json({ run: null, ranks: [] });
+      const status = { running: running.has(campaignId), error: failures.get(campaignId) || null };
+      if (!run) return res.json({ ...status, run: null, ranks: [] });
 
       const ranks = await query(
         `SELECT listing_id, rank, rank_of, reason, musts_json,
@@ -99,6 +105,7 @@ module.exports = (query, get) => {
       }));
 
       res.json({
+        ...status,
         run: {
           id: run.id,
           created_at: run.created_at,
@@ -128,7 +135,7 @@ async function attachRanks(query, get, listings, campaignId) {
   if (!listings.length || !campaignId) return listings;
 
   const run = await get(
-    `SELECT id FROM judge_runs
+    `SELECT id, requirements_json FROM judge_runs
       WHERE campaign_id = ? AND status = 'complete'
       ORDER BY created_at DESC LIMIT 1`,
     [campaignId],
@@ -149,6 +156,12 @@ async function attachRanks(query, get, listings, campaignId) {
   for (const r of ranks) {
     rankMap.set(String(r.listing_id), r);
   }
+  const judgedWants = safeJson(run.requirements_json) || {};
+  // "same as" names other listings of the run; the buyer knows them by rank.
+  const rankById = new Map(
+    (await query('SELECT listing_id, rank FROM listing_ranks WHERE run_id = ?', [run.id]))
+      .map(r => [String(r.listing_id), r.rank])
+  );
 
   for (const listing of listings) {
     const r = rankMap.get(String(listing.id));
@@ -158,8 +171,11 @@ async function attachRanks(query, get, listings, campaignId) {
       listing.rank_reason = r.reason;
       listing.seller_questions = safeJson(r.questions_json);
       listing.uncertain = !!r.uncertain;
-      listing.same_as = safeJson(r.same_as);
+      listing.same_as = (safeJson(r.same_as) || [])
+        .map(id => rankById.get(String(id)))
+        .filter(rank => typeof rank === 'number' && rank !== r.rank);
       listing.rank_musts = safeJson(r.musts_json);
+      listing.rank_wants = judgedWants;
     }
   }
 

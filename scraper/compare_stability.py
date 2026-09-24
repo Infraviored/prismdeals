@@ -40,8 +40,10 @@ def merge_ranks(
         for entry in run:
             lid = str(entry["id"])
             ranks_by_id.setdefault(lid, []).append(entry["rank"])
-            # Keep the latest run's data as the representative
-            data_by_id[lid] = entry
+            # Keep the latest real answer as the representative; a placeholder
+            # for a skipped listing only counts toward its rank.
+            if not entry.get("missing") or lid not in data_by_id:
+                data_by_id[lid] = entry
 
     # Compute mean rank and spread
     merged = []

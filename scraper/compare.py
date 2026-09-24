@@ -8,7 +8,6 @@ Ties together the funnel, prompt, stability, and storage.  Entry points:
 import datetime
 import json
 import logging
-import os
 import sqlite3
 import time
 from typing import Any
@@ -29,77 +28,82 @@ TOURNAMENT_GROUP_SIZE = 30
 TOURNAMENT_ADVANCE = 10
 
 
-def _llm_call(prompt: str) -> tuple[str, dict]:
-    """Makes one LLM call through the existing OpenRouter config.
+def _llm_call(prompt: str, max_tokens: int = 4000) -> tuple[str, dict]:
+    """One call through the configured model, in the dialect agent_worker uses.
 
     Returns (response_text, usage_info).
     """
-    from openai import OpenAI
+    from agent_worker import build_llm_kwargs, client, get_response_text
 
-    try:
-        from config import API_KEY, LLM_MODEL
-    except ImportError:
-        raise RuntimeError("config.py not found; copy config_template.py")
-
-    try:
-        from config import API_BASE_URL
-    except ImportError:
-        API_BASE_URL = None
-
-    try:
-        from config import LLM_REASONING
-    except ImportError:
-        LLM_REASONING = False
-
-    openai_key = os.environ.get("OPENAI_API_KEY") or API_KEY
-    openai_base_url = os.environ.get("OPENAI_BASE_URL") or API_BASE_URL
-
-    client = OpenAI(api_key=openai_key, base_url=openai_base_url or None)
-
-    messages = [{"role": "user", "content": prompt}]
-
-    kwargs: dict[str, Any] = {"model": LLM_MODEL, "messages": messages}
-
-    # Comparative judging needs more tokens than extraction (many listings)
-    max_tokens = 4000
-    kwargs["max_tokens"] = max_tokens
-    kwargs["temperature"] = 0.3  # Slight variation for shuffled runs
-
-    if LLM_REASONING is False:
-        kwargs["extra_body"] = {"reasoning": {"enabled": False}}
-
+    # A little temperature so the shuffled runs are independent samples.
+    kwargs = build_llm_kwargs(
+        [{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3
+    )
     response = client.chat.completions.create(**kwargs)
-    text = response.choices[0].message.content or ""
-
     usage = {}
-    if hasattr(response, "usage") and response.usage:
+    if getattr(response, "usage", None):
         usage = {
-            "tokens_in": getattr(response.usage, "prompt_tokens", 0),
-            "tokens_out": getattr(response.usage, "completion_tokens", 0),
+            "tokens_in": getattr(response.usage, "prompt_tokens", 0) or 0,
+            "tokens_out": getattr(response.usage, "completion_tokens", 0) or 0,
         }
+    return get_response_text(response), usage
 
-    return text, usage
+
+def _output_budget(candidate_count: int) -> int:
+    """Tokens for the answer: one JSON line per listing with facts and questions.
+
+    A flat 4000 cut a 30-listing answer off after about half the listings,
+    and the missing half silently fell out of the ranking.
+    """
+    return min(16000, 600 + 350 * candidate_count)
+
+
+def _fill_missing(parsed: list[dict], candidates: list[dict]) -> list[dict]:
+    """Listings the model skipped rank last in that run instead of vanishing."""
+    seen = {str(entry["id"]) for entry in parsed}
+    last = len(candidates)
+    for c in candidates:
+        if str(c["id"]) not in seen:
+            parsed.append(
+                {
+                    "id": str(c["id"]),
+                    "rank": last,
+                    "reason": "",
+                    "musts": {},
+                    "facts": {},
+                    "checks": [],
+                    "seller_questions": [],
+                    "same_as": [],
+                    "missing": True,
+                }
+            )
+    return parsed
 
 
 def _market_stats(conn: sqlite3.Connection, campaign_id: int) -> dict:
-    """Basic market statistics for the prompt context."""
-    row = conn.execute(
-        """SELECT COUNT(*), AVG(l.price_eur)
+    """Count and median price of the campaign's live listings, for the prompt."""
+    rows = conn.execute(
+        """SELECT DISTINCT l.id, l.price_eur
              FROM listings l
-             JOIN searches s ON l.search_id = s.id
+             JOIN listing_search_hits h ON h.listing_id = l.id
+             JOIN searches s ON s.id = h.search_id
             WHERE s.campaign_id = ? AND l.price_eur IS NOT NULL
-              AND l.delisted_at IS NULL""",
+              AND l.price_eur > 0 AND l.delisted_at IS NULL""",
         (campaign_id,),
-    ).fetchone()
-    if not row or not row[0]:
+    ).fetchall()
+    prices = [r[1] for r in rows]
+    if not prices:
         return {}
-    return {"count": row[0], "median": round(row[1])}
+    import statistics
+
+    return {"count": len(prices), "median": round(statistics.median(prices))}
 
 
 def _store_run(
     conn: sqlite3.Connection,
     campaign_id: int,
     req_hash: str,
+    fields: list[dict],
     merged: list[dict],
     stability: dict,
     total_usage: dict,
@@ -111,13 +115,24 @@ def _store_run(
 
     cursor = conn.execute(
         """INSERT INTO judge_runs
-               (campaign_id, requirements_hash, created_at, model,
+               (campaign_id, requirements_hash, requirements_json, created_at, model,
                 tokens_in, tokens_out, cost_eur, duration_s,
                 candidate_count, kendall_tau, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'complete')""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'complete')""",
         (
             campaign_id,
             req_hash,
+            # What each must meant when it was judged: the score applies a
+            # judged state only while the buyer still wants the same thing.
+            json.dumps(
+                {
+                    f.get("id"): f.get("buyer_wants") or {}
+                    for f in fields
+                    if f.get("id")
+                },
+                sort_keys=True,
+                ensure_ascii=False,
+            ),
             now,
             model,
             total_usage.get("tokens_in", 0),
@@ -196,7 +211,7 @@ def _tournament(candidates: list[dict], fields: list[dict], market: dict) -> lis
     for gi, group in enumerate(groups):
         logger.info("Tournament group %d: %d candidates", gi + 1, len(group))
         prompt = build_compare_prompt(group, fields, market)
-        response_text, _ = _llm_call(prompt)
+        response_text, _ = _llm_call(prompt, _output_budget(len(group)))
         parsed = parse_compare_response(response_text, group)
         # Take top TOURNAMENT_ADVANCE
         parsed.sort(key=lambda e: e["rank"])
@@ -268,12 +283,14 @@ def compare_campaign(
     for run_idx in range(num_runs):
         shuffled = shuffle_candidates(candidates, seed=run_idx * 7919)
         prompt = build_compare_prompt(shuffled, fields, market)
-        response_text, usage = _llm_call(prompt)
+        response_text, usage = _llm_call(prompt, _output_budget(len(candidates)))
 
         total_usage["tokens_in"] += usage.get("tokens_in", 0)
         total_usage["tokens_out"] += usage.get("tokens_out", 0)
 
-        parsed = parse_compare_response(response_text, candidates)
+        parsed = _fill_missing(
+            parse_compare_response(response_text, candidates), candidates
+        )
         all_runs.append(parsed)
         logger.info(
             "Run %d/%d: %d listings ranked",
@@ -294,6 +311,7 @@ def compare_campaign(
         conn,
         campaign_id,
         req_hash,
+        fields,
         merged,
         stability,
         total_usage,

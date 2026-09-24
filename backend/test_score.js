@@ -67,5 +67,23 @@ assert.strictEqual(fromJudge.score, full.score);
 assert.strictEqual(score({ fit: { facts: FULL }, rank_musts: { speedMhz: 'violated' }, price_eur: 150, market_median: 150 }).score, 0);
 assert.strictEqual(score({ fit: { facts: FULL }, rank_musts: { speedMhz: 'retrofittable' }, price_eur: 150, market_median: 150 }).gate.open.length, 1);
 
+// A judged state stops counting once the buyer changed what the must asks for.
+const stale = score({
+  fit: { facts: { stickCount: 2, productLine: 'x' } },
+  rank_musts: { speedMhz: 'met' },
+  rank_wants: { speedMhz: { min: 2400 } },
+  price_eur: 150,
+  market_median: 150,
+});
+assert.strictEqual(stale.gate.open.length, 1, 'met for 2400 MHz is not met for 3200 MHz');
+const current = score({
+  fit: { facts: { stickCount: 2, productLine: 'x' } },
+  rank_musts: { speedMhz: 'met' },
+  rank_wants: { speedMhz: { min: 3200 } },
+  price_eur: 150,
+  market_median: 150,
+});
+assert.strictEqual(current.gate.open.length, 0);
+
 console.log('score: all assertions passed');
 

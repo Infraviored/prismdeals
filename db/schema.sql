@@ -385,6 +385,10 @@ CREATE TABLE IF NOT EXISTS judge_runs (
 
 CREATE INDEX IF NOT EXISTS idx_judge_runs_campaign ON judge_runs(campaign_id, created_at DESC);
 
+-- What each must meant when a run judged it, as a JSON map id to buyer_wants.
+-- A judged state is applied only while the buyer still wants the same thing.
+ALTER TABLE judge_runs ADD COLUMN requirements_json TEXT;
+
 -- P6: per-listing rank from a comparative run.
 --
 -- Each listing that entered the candidate set gets one row per run. The rank is

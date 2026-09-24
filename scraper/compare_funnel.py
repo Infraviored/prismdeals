@@ -18,6 +18,8 @@ import text_facts
 logger = logging.getLogger(__name__)
 
 CANDIDATE_CAP = 30
+# Beyond this even a tournament gets expensive; the lowest scores are cut.
+TOURNAMENT_CEILING = 90
 STALE_DAYS = 7
 
 
@@ -147,7 +149,7 @@ def build_candidate_set(
     conn: sqlite3.Connection,
     campaign_id: int,
     *,
-    max_candidates: int = CANDIDATE_CAP,
+    max_candidates: int = TOURNAMENT_CEILING,
 ) -> dict[str, Any]:
     """Builds the candidate set for one campaign.
 

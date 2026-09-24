@@ -12,7 +12,6 @@ import os
 import sqlite3
 import sys
 import tempfile
-import pytest
 
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 _ROOT_DIR = os.path.dirname(_CURRENT_DIR)
@@ -25,18 +24,56 @@ from model_proposals import (
     apply_hallucination_guard,
     get_cached_proposals,
     make_node_key,
-    probe_models,
     propose_models,
     save_proposals,
     update_probe_counts,
 )
 
 
-def test_probe_models_interface_stub():
-    """Narrow interface raises NotImplementedError until P2 wires scraper.probe."""
-    with pytest.raises(NotImplementedError) as exc_info:
-        probe_models(["Yamaha R1", "Honda CBR1000RR"], base={"category": "305"})
-    assert "probe_models is implemented by package P2" in str(exc_info.value)
+def test_title_tokens_find_the_model_the_way_sellers_write_it():
+    from model_probe import title_matches, title_tokens
+
+    r1 = title_tokens("Yamaha YZF-R1")
+    assert title_matches("Yamaha R1 RN19 2008 top Zustand", r1)
+    assert not title_matches("Yamaha MT-07 wenig km", r1)
+    cbr = title_tokens("Honda CBR1000RR Fireblade")
+    assert title_matches("Honda CBR 1000 RR SC57", cbr)
+    assert not title_matches("Honda Fireblade 900", cbr)
+
+
+def test_probe_models_counts_title_hits_and_median_offline():
+    from model_probe import probe_models
+
+    page = open(
+        __import__("os").path.join(
+            __import__("os").path.dirname(__file__), "testdata", "model_probe_page.html"
+        ),
+        encoding="utf-8",
+    ).read()
+
+    class Response:
+        status_code = 200
+        text = page
+
+    out = probe_models(
+        ["Yamaha YZF-R1"], {"category_code": "c305"}, fetch_fn=lambda url: Response()
+    )
+    assert out["Yamaha YZF-R1"]["title_hits"] == 2
+    assert (
+        out["Yamaha YZF-R1"]["median"] == 52
+    )  # 60 and 45; the MT-07 at 100 is not an R1
+
+
+def test_no_model_answer_means_no_proposals_and_nothing_cached(tmp_path):
+    db = str(tmp_path / "p.db")
+    assert propose_models("1000cc supersport", offline=True, db_path=db) == []
+    import sqlite3
+
+    import db_schema
+
+    conn = sqlite3.connect(db)
+    db_schema.apply_schema(conn)
+    assert conn.execute("SELECT COUNT(*) FROM class_models").fetchone()[0] == 0
 
 
 def test_hallucination_guard_pure_function():

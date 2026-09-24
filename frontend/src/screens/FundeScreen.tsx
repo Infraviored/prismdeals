@@ -69,13 +69,16 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     if (!campaign?.id || comparing) return;
     setComparing(true);
     try {
-      const res = await fetch(`/api/campaigns/${campaign.id}/compare`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (res.ok) {
-        reload();
+      const res = await fetch(`/api/campaigns/${campaign.id}/compare`, { method: 'POST' });
+      if (!res.ok) return;
+      // The comparison runs in the background for a minute or two; ask until
+      // it is done, then show the ranks.
+      for (let i = 0; i < 100; i++) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        const status = await fetch(`/api/campaigns/${campaign.id}/ranks`).then(r => r.json());
+        if (!status.running) break;
       }
+      reload();
     } catch (e) {
       console.error('Failed to trigger comparison:', e);
     } finally {

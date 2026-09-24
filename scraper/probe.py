@@ -10,7 +10,6 @@ Implements plan §5:
 
 import collections
 import logging
-import re
 import statistics
 import time
 
@@ -27,15 +26,8 @@ logger = logging.getLogger(__name__)
 
 
 def _url_with_page(url, page):
-    """Insert or replace pagination parameter /seite:N in a Kleinanzeigen URL."""
-    if page <= 1:
-        return url
-    if "/seite:" in url:
-        return re.sub(r"/seite:\d+(/|$)", f"/seite:{page}\\1", url)
-    parts = url.rstrip("/").rsplit("/", 1)
-    if len(parts) == 2:
-        return f"{parts[0]}/seite:{page}/{parts[1]}"
-    return f"{url}/seite:{page}"
+    """The same page URL the crawler builds (`search_url.with_page`)."""
+    return search_url.with_page(url, page)
 
 
 def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
@@ -310,25 +302,30 @@ def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
     ]
     median_price = int(statistics.median(likely_prices)) if likely_prices else None
 
-    total_site_kept = sum(r["total"] for r in rung_records if r["kept"])
-    total_sampled_kept = sum(r["sampled"] for r in rung_records if r["kept"])
-    scale = (
-        (total_site_kept / max(1, total_sampled_kept))
-        if total_sampled_kept > 0
-        else 1.0
+    # The rungs overlap, so their totals do not add up: summing them counted
+    # the same offer once per search term that found it. The widest single
+    # rung's likely share times its total is a floor for the union, and the
+    # sample itself is another.
+    rung_floors = [
+        round(r["likely_share"] * r["total"])
+        for r in rung_records
+        if r["kept"] and r["sampled"]
+    ]
+    union_likely_est = max([len(sample_likely)] + rung_floors)
+    unclear_share = len(sample_unclear) / max(1, len(sample_all))
+    union_unclear_est = max(
+        len(sample_unclear),
+        max(
+            [
+                round(unclear_share * r["total"])
+                for r in rung_records
+                if r["kept"] and r["sampled"]
+            ]
+            or [0]
+        ),
     )
-    scale = max(1.0, scale)
-
-    union_likely_est = (
-        min(total_site_kept, round(len(sample_likely) * scale))
-        if total_site_kept > 0
-        else len(sample_likely)
-    )
-    union_unclear_est = (
-        min(total_site_kept, round(len(sample_unclear) * scale))
-        if total_site_kept > 0
-        else len(sample_unclear)
-    )
+    # Sample counts scale to the estimate by this factor.
+    scale = union_likely_est / len(sample_likely) if sample_likely else 1.0
 
     # Budget steps estimation
     if not budget_steps:
@@ -341,11 +338,7 @@ def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
             for c in sample_likely
             if c["price_eur"] is not None and c["price_eur"] <= step
         )
-        est_count = (
-            min(union_likely_est, round(count * scale))
-            if total_site_kept > 0
-            else count
-        )
+        est_count = min(union_likely_est, round(count * scale))
         budget_list.append({"max": step, "likely": est_count})
 
     # Relax requirements signals (only if absence changes count >= 2x)

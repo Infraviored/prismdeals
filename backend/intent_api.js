@@ -121,6 +121,11 @@ router.post('/api/intent/models', async (req, res) => {
   if (req.body.use) {
     args.push('--use', String(req.body.use));
   }
+  // With a hunt frame, each proposal is looked up on the market: count, median,
+  // and whether its name appears in titles at all.
+  if (req.body.frame && typeof req.body.frame === 'object') {
+    args.push('--probe', JSON.stringify(req.body.frame));
+  }
 
   try {
     const models = await runPythonJson('model_proposals.py', args);

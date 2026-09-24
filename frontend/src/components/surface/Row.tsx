@@ -53,7 +53,8 @@ export interface RowListing {
   rank_reason?: string | null;
   seller_questions?: string[] | null;
   uncertain?: boolean;
-  same_as?: string[] | null;
+  /** Ranks of listings the run found to be the same item. */
+  same_as?: number[] | null;
 }
 
 export interface RowProps {

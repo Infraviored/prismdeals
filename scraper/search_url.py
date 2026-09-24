@@ -336,3 +336,20 @@ def compose_search_url(
 
     path = "/".join(segments)
     return f"{origin.rstrip('/')}{path}"
+
+
+def with_page(url, page):
+    """Result page `page` of a search URL: `/seite:N/` after the first path part.
+
+    The crawler (`scraper.scrape_listings_requests`) has always built page two
+    this way; the probe used to insert it elsewhere.
+    """
+    if page <= 1:
+        return url
+    if "/seite:" in url:
+        return re.sub(r"/seite:\d+(/|$)", f"/seite:{page}\\1", url)
+    parts = url.split("/")
+    if len(parts) < 4:
+        return url
+    rest = "/".join(parts[4:]) if len(parts) > 4 else ""
+    return f"{'/'.join(parts[:3])}/{parts[3]}/seite:{page}/{rest}"

@@ -183,3 +183,47 @@ def test_probe_cache_and_node_terms(tmp_path):
     res2 = probe.run_probe(payload, conn=conn, fetch_fn=mock_fetch)
     assert fetch_count == 1
     assert len(res2["rungs"]) == len(res1["rungs"])
+
+
+def test_a_wide_term_does_not_inflate_the_estimate(tmp_path):
+    """A narrow term finds 20 fitting of 100; a wide one 0 fitting of 1000.
+
+    Scaling the fitting sample by the summed totals made that 550 offers.
+    """
+    narrow = _make_page_html(
+        100,
+        [
+            _make_card_html(f"40{i}", f"ZenBook 14 OLED 32GB RAM {i}", "Top", 500 + i)
+            for i in range(20)
+        ],
+    )
+    wide = _make_page_html(
+        1000,
+        [
+            _make_card_html(f"50{i}", f"Laptop 8GB RAM {i}", "Top", 200 + i)
+            for i in range(20)
+        ],
+    )
+
+    def fetch(url):
+        return MockResponse(narrow if "zenbook" in url else wide)
+
+    payload = {
+        "category_code": "c278",
+        "hunt_type": "shortlist",
+        "musts": [{"id": "ramGb", "label": "32 GB RAM", "want": {"min": 32}}],
+        "models": ["zenbook oled", "laptop"],
+    }
+    conn = db_schema.connect(str(tmp_path / "wide.db"))
+    result = probe.run_probe(payload, conn=conn, fetch_fn=fetch)
+    assert result["estimate"]["union_likely"] == 100
+
+
+def test_page_two_goes_where_the_crawler_puts_it():
+    import search_url
+
+    url = "https://www.kleinanzeigen.de/s-oled-laptop/preis::800/k0c278"
+    assert search_url.with_page(url, 2) == (
+        "https://www.kleinanzeigen.de/s-oled-laptop/seite:2/preis::800/k0c278"
+    )
+    assert search_url.with_page(url, 1) == url
