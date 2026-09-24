@@ -437,6 +437,53 @@ async function attachPriceHistory(query, listings) {
 // mean price.
 const FIT_FIRST = FIT_FIRST_SQL;
 
+// One listing, by its Kleinanzeigen id, so a find can be shared as a link.
+//
+// Its verdict is the best one any search gave it (fit > unclear > no), the
+// same rule the lists use; with campaign_id it is the best one within that
+// campaign, so a link opened in the campaign shows that campaign's judgement.
+app.get('/api/listings/:id', async (req, res) => {
+  try {
+    const params = [req.params.id];
+    let scopeSql = '';
+    if (req.query.campaign_id) {
+      scopeSql = ' AND s.campaign_id = ?';
+      params.push(req.query.campaign_id);
+    }
+    const row = await get(
+      `WITH ranked AS (
+         SELECT l.*, s.name AS item_name, c.name AS campaign_name,
+                lsh.first_seen_at,
+                fit.verdict AS fit_verdict, fit.reason AS fit_reason,
+                fit.facts_json AS fit_facts, fit.stage AS fit_stage,
+                lsh.search_id AS hit_search_id,
+                ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY ${BEST_FIT_ORDER_SQL}) AS rn
+           FROM listings l
+           JOIN listing_search_hits lsh ON lsh.listing_id = l.id
+           JOIN searches s ON s.id = lsh.search_id
+           LEFT JOIN campaigns c ON c.id = s.campaign_id
+           LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = lsh.search_id
+          WHERE l.id = ?${scopeSql}
+       )
+       SELECT * FROM ranked WHERE rn = 1`,
+      params
+    );
+    if (!row) return res.status(404).json({ error: 'Listing not found' });
+    const listing = {
+      ...row,
+      images: row.images ? JSON.parse(row.images) : [],
+      details: row.details ? JSON.parse(row.details) : {},
+      fit: fitOf(row),
+    };
+    await annotateDeals(query, [listing], [Number(row.hit_search_id)]);
+    const [withHistory] = await attachPriceHistory(query, [listing]);
+    res.json(withHistory || listing);
+  } catch (err) {
+    console.error('GET /api/listings/:id failed:', err);
+    res.status(500).json({ error: 'Could not load listing' });
+  }
+});
+
 app.get('/api/listings', async (req, res) => {
   try {
     const { campaign_id, search_id, limit: limitParam, offset: offsetParam, sort, q } = req.query;
@@ -538,11 +585,11 @@ app.get('/api/listings', async (req, res) => {
 
     const whereSql = whereConditions.length ? 'WHERE ' + whereConditions.join(' AND ') : '';
 
-    let orderBy = FIT_FIRST + '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+    let orderBy = FIT_FIRST + '(l.price_eur IS NULL) ASC, l.price_eur ASC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
     if (sort === 'price_asc') {
-      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
     } else if (sort === 'price_desc') {
-      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, l.id DESC';
+      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
     } else if (sort === 'newest' || sort === 'freshness') {
       orderBy = 'first_seen_at DESC, l.id DESC';
     } else if (sort === 'score') {
@@ -1390,9 +1437,9 @@ async function getRouteCorridorPayload(route, options = {}) {
   let orderBy = '';
   const sort = options.sort;
   if (sort === 'price_asc') {
-    orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+    orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
   } else if (sort === 'price_desc') {
-    orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, l.id DESC';
+    orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
   } else if (sort === 'newest' || sort === 'freshness') {
     orderBy = 'first_seen_at DESC, l.id DESC';
   } else if (sort === 'score') {
@@ -2329,9 +2376,9 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     let orderBy = '';
     const sort = req.query.sort;
     if (sort === 'price_asc') {
-      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
     } else if (sort === 'price_desc') {
-      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, l.id DESC';
+      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
     } else if (sort === 'newest' || sort === 'freshness') {
       orderBy = 'first_seen_at DESC, l.id DESC';
     } else if (sort === 'score') {

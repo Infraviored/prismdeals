@@ -172,11 +172,18 @@ export const Row: React.FC<RowProps> = ({
           </button>
         )}
 
-        <div
-          data-testid="listing-price"
-          className={`price num ${isDeal ? 'text-[#E87967]' : priceInfo.isMissing ? 'text-[#8FA6A1]' : 'text-[#F2F5F4]'}`}
-        >
-          {priceInfo.text}
+        <div className="flex flex-col items-end shrink-0">
+          <div
+            data-testid="listing-price"
+            className={`price num ${isDeal ? 'text-[#E87967]' : priceInfo.isMissing ? 'text-[#8FA6A1]' : 'text-[#F2F5F4]'}`}
+          >
+            {priceInfo.text}
+          </div>
+          {typeof listing.niceness_score === 'number' && (
+            <div data-testid="listing-score" className="text-xs text-[#8FA6A1] tabular-nums mt-0.5">
+              {t('surface.score', { score: Math.round(listing.niceness_score) })}
+            </div>
+          )}
         </div>
       </div>
     </article>

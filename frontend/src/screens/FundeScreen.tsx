@@ -12,6 +12,7 @@ import { useKept } from '../hooks/useKept';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign } from '../types';
 import { formatFreshness } from '../utils/freshness';
+import { readListingIdFromHash, writeListingIdToHash } from '../utils/listingLink';
 
 export interface FundeScreenProps {
   campaign: Campaign | undefined;
@@ -60,20 +61,43 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     radiusDiagnosis,
   } = useFundeData({ campaign, isScraping });
 
+  // Every find has an address: its Kleinanzeigen id in the URL. Opening one
+  // writes it there, so the address bar is a link to share; opening such a
+  // link finds the listing in the list, or asks the server for it when it is
+  // on another page or filtered out.
+  const linkedId = readListingIdFromHash();
   useEffect(() => {
-    try {
-      const match = window.location.hash.match(/[?&]listingId=([^&]+)/);
-      if (match && match[1] && listings.length > 0) {
-        const found = listings.find((l) => l.id === match[1]);
-        if (found) setSelectedListing(found);
-      }
-      if (/[?&]sheet=requirements/.test(window.location.hash)) {
-        setRequirementsOpen(true);
-      }
-    } catch {
-      /* ignore */
+    if (!linkedId) {
+      setSelectedListing(null);
+      return;
     }
-  }, [listings]);
+    if (selectedListing?.id === linkedId) return;
+    const found = listings.find((l) => l.id === linkedId);
+    if (found) {
+      setSelectedListing(found);
+      return;
+    }
+    let cancelled = false;
+    const qs = campaign?.id ? `?campaign_id=${campaign.id}` : '';
+    fetch(`/api/listings/${encodeURIComponent(linkedId)}${qs}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setSelectedListing(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [linkedId, listings, campaign?.id, selectedListing?.id]);
+
+  useEffect(() => {
+    if (/[?&]sheet=requirements/.test(window.location.hash)) setRequirementsOpen(true);
+  }, []);
+
+  const openListing = (l: RowListing | null) => {
+    setSelectedListing(l);
+    writeListingIdToHash(l ? l.id : null);
+  };
 
   const isCorridor = Boolean(campaign?.route_id);
 
@@ -127,7 +151,11 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     return [...list].sort((a, b) => {
       const pa = typeof a.price_eur === 'number' ? a.price_eur : 999999;
       const pb = typeof b.price_eur === 'number' ? b.price_eur : 999999;
-      return pa - pb;
+      if (pa !== pb) return pa - pb;
+      // Same price: the better listing first, unscored last.
+      const sa = typeof a.niceness_score === 'number' ? a.niceness_score : -1;
+      const sb = typeof b.niceness_score === 'number' ? b.niceness_score : -1;
+      return sb - sa;
     });
   }, [listings, heroShown, heroListing]);
 
@@ -206,7 +234,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             selectedListingId={selectedListing?.id || null}
             onSelectListing={(id) => {
               const found = listings.find((l) => l.id === id);
-              if (found) setSelectedListing(found);
+              if (found) openListing(found);
             }}
           />
         </div>
@@ -281,7 +309,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
                   tab={tab}
                   isKept={kept.has(heroListing.id)}
                   onToggleKeep={toggle}
-                  onOpenListing={(l) => setSelectedListing(l)}
+                  onOpenListing={(l) => openListing(l)}
                 />
               )}
 
@@ -300,7 +328,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
                     listing={listing}
                     isKept={kept.has(listing.id)}
                     onToggleKeep={toggle}
-                    onClick={(l) => setSelectedListing(l)}
+                    onClick={(l) => openListing(l)}
                   />
                 ))}
               </div>
@@ -387,7 +415,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
       {/* Sheets */}
       <FundeDetailSheet
         listing={selectedListing}
-        onClose={() => setSelectedListing(null)}
+        onClose={() => openListing(null)}
       />
 
       <RequirementsSheet

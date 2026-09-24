@@ -44,6 +44,8 @@ describe('Surface Components P1', () => {
 
       expect(screen.getByText('Federkern-Matratze Ikea 140x200')).toBeInTheDocument();
       expect(screen.getByTestId('listing-price')).toHaveTextContent('90 €');
+      // No score, no score line: nothing invented under the price.
+      expect(screen.queryByTestId('listing-score')).not.toBeInTheDocument();
       expect(screen.getByText('Landsberg')).toBeInTheDocument();
       // The wording follows the interface language: German says "auf Route".
       expect(screen.getByText(/on route|auf Route/)).toBeInTheDocument();
@@ -198,5 +200,12 @@ describe('Surface Components P1', () => {
       expect(screen.getByText('Keine Treffer in 30 km')).toBeInTheDocument();
       expect(screen.getByText('100 km')).toBeInTheDocument();
     });
+  });
+});
+
+describe('Row score', () => {
+  it('shows the score under the price', () => {
+    render(<Row listing={{ id: 's1', title: 'Kit', price_eur: 150, price: '150 €', niceness_score: 86.6 }} onClick={() => {}} />);
+    expect(screen.getByTestId('listing-score')).toHaveTextContent('Score 87');
   });
 });

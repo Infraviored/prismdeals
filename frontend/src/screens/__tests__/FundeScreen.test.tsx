@@ -234,6 +234,23 @@ describe('FundeScreen', () => {
     expect(await screen.findByTestId('mock-route-corridor-map')).toBeInTheDocument();
   });
 
+  it('a shared link opens the find even when it is not in the loaded list', async () => {
+    window.location.hash = '#dashboard?campaignId=1&listingId=shared-42';
+    const base = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/listings/shared-42')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ id: 'shared-42', title: 'Geteilter Fund', price_eur: 99, images: [] }),
+        });
+      }
+      return (base as typeof fetch)(url);
+    });
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
+    expect(await screen.findByTestId('listing-number')).toHaveTextContent('shared-42');
+    window.location.hash = '';
+  });
+
   it('says a search is running while it runs, not when the last one was', async () => {
     render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} isScraping />);
     expect(await screen.findByText('Searching now …')).toBeInTheDocument();

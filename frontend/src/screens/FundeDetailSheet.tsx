@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ShareLinkButton from '../components/ShareLinkButton';
 import { Sheet } from '../components/surface/Sheet';
 import { formatLocation } from '../utils/formatLocation';
 import { formatPrice } from '../utils/formatPrice';
@@ -57,18 +58,21 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
       onClose={onClose}
       title={t('surface.detailTitle')}
       footer={
-        listing.url ? (
+        <div className="flex gap-2">
+        <ShareLinkButton title={listing.title} />
+        {listing.url ? (
           <a
             href={listing.url}
             target="_blank"
             rel="noopener noreferrer"
             style={{ backgroundColor: '#E4D6BE', color: '#011F1F' }}
-            className="w-full py-3 px-4 rounded-[3px] font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md hover:brightness-105"
+            className="flex-1 py-3 px-4 rounded-[3px] font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md hover:brightness-105"
           >
             <span style={{ color: '#011F1F' }}>{t('surface.openInKleinanzeigen')}</span>
             <ExternalLink className="w-4 h-4" style={{ color: '#011F1F' }} />
           </a>
-        ) : null
+        ) : null}
+        </div>
       }
     >
       <div className="flex flex-col min-h-full">
@@ -179,6 +183,9 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
           <h1 className="text-base sm:text-lg font-semibold text-[#F2F5F4] leading-snug">
             {listing.title || '—'}
           </h1>
+          <p className="text-xs text-[#8FA6A1] tabular-nums -mt-2" data-testid="listing-number">
+            {t('surface.listingNumber', { id: listing.id })}
+          </p>
 
           {/* Specs / Merkmale Badges */}
           {(() => {

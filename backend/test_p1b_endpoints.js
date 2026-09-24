@@ -593,6 +593,19 @@ async function main() {
        VALUES ('unfiltered-mv-1', 1902, 'fit', 'Zweiter Fund Fit', '{"src": 1902}', 'title', datetime('now', '-1 days'))`
     );
 
+    // --- One listing by id, and equal prices ordered by score ---
+    await runDb(db, `INSERT INTO campaigns (id, name) VALUES (20, 'Campaign 20 Same Price')`);
+    await runDb(db, `INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (2001, 20, 'Search 2001', 'https://example.com/2001', 1)`);
+    for (const [id, score] of [['same-low', 40], ['same-high', 90], ['same-none', null]]) {
+      await runDb(
+        db,
+        `INSERT INTO listings (id, title, price, price_eur, location, url, niceness_score, search_id)
+         VALUES (?, 'Same Price Kit', '150 €', 150, 'Ulm', 'https://example.com/sp', ?, 2001)`,
+        [id, score]
+      );
+      await runDb(db, `INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES (?, 2001, datetime('now'))`, [id]);
+    }
+
     db.close();
 
     console.log('--- TEST 1: Default Pagination (limit=50) for search-families/:id/listings ---');
@@ -1217,6 +1230,24 @@ async function main() {
     const unfiltFitOnly = await request('/api/listings?q=Unfiltered+Multi+Verdict&verdict=fit');
     assert(unfiltFitOnly.status === 200, `status ${unfiltFitOnly.status}`);
     assert(unfiltFitOnly.data.total === 1, `verdict=fit must find unfiltered-mv-1, got ${unfiltFitOnly.data.total}`);
+
+    console.log('--- TEST 33: equal price, higher score first ---');
+    const sameRes = await request('/api/listings?campaign_id=20&limit=10&sort=price_asc');
+    assert(sameRes.status === 200, `status ${sameRes.status}`);
+    const order = sameRes.data.listings.map(l => l.id);
+    assert(
+      JSON.stringify(order) === JSON.stringify(['same-high', 'same-low', 'same-none']),
+      `equal prices must rank by score, unscored last; got ${JSON.stringify(order)}`
+    );
+
+    console.log('--- TEST 34: one listing by id, with its best verdict, for sharing as a link ---');
+    const oneRes = await request('/api/listings/unfiltered-mv-1');
+    assert(oneRes.status === 200, `status ${oneRes.status}`);
+    assert(oneRes.data.id === 'unfiltered-mv-1', `wrong listing ${oneRes.data.id}`);
+    assert(oneRes.data.fit && oneRes.data.fit.verdict === 'fit', `best verdict expected, got ${oneRes.data.fit?.verdict}`);
+    assert(Array.isArray(oneRes.data.images), 'images must be parsed');
+    const missingRes = await request('/api/listings/does-not-exist');
+    assert(missingRes.status === 404, `unknown id must be 404, got ${missingRes.status}`);
 
     console.log('ALL P1B ENDPOINT TESTS PASSED SUCCESSFULLY!');
   } finally {
