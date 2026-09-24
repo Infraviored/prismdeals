@@ -3,7 +3,7 @@ const { annotateDeals, dealListingIds } = require('./db/reference_price');
 const { attachScores } = require('./db/score');
 const { attachRanks } = require('./compare_api');
 const { resolveCampaignScope } = require('./overview/scope');
-const { BEST_FIT_ORDER_SQL, FIT_FIRST_SQL, fitOf } = require('./db/fit');
+const { BEST_FIT_ORDER_SQL, FIT_FIRST_SQL, fitOf, fitJoinOn } = require('./db/fit');
 
 const { SFS_ACTIVE_OR_PENDING_SQL } = require('./db/family_scope');
 const fs = require('fs');
@@ -467,7 +467,7 @@ app.get('/api/listings/:id', async (req, res) => {
            JOIN listing_search_hits lsh ON lsh.listing_id = l.id
            JOIN searches s ON s.id = lsh.search_id
            LEFT JOIN campaigns c ON c.id = s.campaign_id
-           LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = lsh.search_id
+           LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 'lsh.search_id')}
           WHERE l.id = ?${scopeSql}
        )
        SELECT * FROM ranked WHERE rn = 1`,
@@ -643,7 +643,7 @@ app.get('/api/listings', async (req, res) => {
             FROM scope_hits lsh
             LEFT JOIN searches s ON s.id = lsh.search_id
             LEFT JOIN campaigns c ON c.id = s.campaign_id
-            LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = lsh.search_id
+            LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'lsh.search_id')}
         ),
         best_scope AS (
           SELECT * FROM ranked_scope WHERE rn = 1
@@ -715,7 +715,7 @@ app.get('/api/listings', async (req, res) => {
             FROM all_hits lsh
             LEFT JOIN searches s ON s.id = lsh.search_id
             LEFT JOIN campaigns c ON c.id = s.campaign_id
-            LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = lsh.search_id
+            LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'lsh.search_id')}
         ),
         best_scope AS (
           SELECT * FROM ranked_scope WHERE rn = 1
@@ -1415,7 +1415,7 @@ async function getRouteCorridorPayload(route, options = {}) {
         JOIN searches s ON s.id = c.search_id
         LEFT JOIN search_family_searches sfs ON sfs.search_id = c.search_id AND sfs.active = 1
         LEFT JOIN search_family_terms t ON t.id = sfs.term_id
-        LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = c.search_id
+        LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'c.search_id')}
        WHERE c.route_search_id = ?
          ${termConditionSql}
     )
@@ -1842,7 +1842,7 @@ app.get('/api/search-families/:id', async (req, res) => {
               (SELECT COUNT(DISTINCT lsh.listing_id)
                  FROM search_family_searches sfs
                  JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-                 JOIN listing_fit lf ON lf.listing_id = lsh.listing_id AND lf.search_id = sfs.search_id
+                 JOIN listing_fit lf ON ${fitJoinOn('lsh.listing_id', 'sfs.search_id', 'lf')}
                 WHERE sfs.family_id = t.family_id AND sfs.term_id = t.id
                   AND lf.verdict = 'fit'
                   AND ${SFS_ACTIVE_OR_PENDING_SQL}) AS fit_listings
@@ -2349,7 +2349,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
           LEFT JOIN search_family_terms t ON t.id = sfs.term_id
           JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
           JOIN searches s ON s.id = sfs.search_id
-          LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = sfs.search_id
+          LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'sfs.search_id')}
          WHERE sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}
            ${termConditionSql}
       )

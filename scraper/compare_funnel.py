@@ -62,10 +62,18 @@ def _listings_for_campaign(
               FROM listings l
               LEFT JOIN listing_search_hits h ON h.listing_id = l.id
               LEFT JOIN listing_fit fit ON fit.listing_id = l.id
-                   AND fit.search_id IN ({placeholders})
+                   AND (
+                     (fit.requirements_hash IS NOT NULL AND fit.requirements_hash = (
+                       SELECT ks.requirements_hash FROM searches s_rh
+                       JOIN knowledge_sets ks ON ks.id = s_rh.knowledge_set_id
+                       WHERE s_rh.id IN ({placeholders}) LIMIT 1
+                     ))
+                     OR (fit.requirements_hash IS NULL
+                         AND fit.search_id IN ({placeholders}))
+                   )
              WHERE (l.search_id IN ({placeholders}) OR h.search_id IN ({placeholders}))
                AND l.delisted_at IS NULL""",
-        search_ids * 3,
+        search_ids * 4,
     ).fetchall()
 
     listings = []

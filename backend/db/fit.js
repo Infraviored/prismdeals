@@ -7,6 +7,8 @@
  * Tied verdicts resolve in favor of the newest first_seen_at.
  */
 
+const { fitJoinOn } = require('./requirements_hash');
+
 const BEST_FIT_ORDER_SQL = `
   CASE fit.verdict
     WHEN 'fit' THEN 1
@@ -34,4 +36,5 @@ module.exports = {
   BEST_FIT_ORDER_SQL,
   FIT_FIRST_SQL,
   fitOf,
+  fitJoinOn,
 };

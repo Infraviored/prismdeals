@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const { referencePrices, dealListingIds } = require('./db/reference_price');
 const { BEST_FIT_ORDER_SQL } = require('./db/fit');
+const { fitJoinOn } = require('./db/requirements_hash');
 const { resolveCampaignScope } = require('./overview/scope');
 const { computeMarketStats } = require('./overview/market');
 const { normalizeReason, computeRequirementStats, aggregateRejections } = require('./overview/requirements');
@@ -37,7 +38,7 @@ module.exports = (query, get) => {
       fromSql = `
         FROM listing_search_hits lsh
         JOIN listings l ON l.id = lsh.listing_id
-        LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = lsh.search_id
+        LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 'lsh.search_id')}
       `;
       whereConditions.push('lsh.search_id = ?');
       whereParams.push(primarySearchId);
@@ -47,7 +48,7 @@ module.exports = (query, get) => {
         JOIN listing_search_hits lsh ON lsh.listing_id = l.id
         JOIN route_search_circles c ON c.search_id = lsh.search_id
         LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
-        LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = c.search_id
+        LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 'c.search_id')}
       `;
       whereConditions.push('c.route_search_id = ?');
       whereParams.push(routeId, routeId);
@@ -65,7 +66,7 @@ module.exports = (query, get) => {
         LEFT JOIN search_family_terms t ON t.id = sfs.term_id
         JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
         JOIN listings l ON l.id = lsh.listing_id
-        LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = sfs.search_id
+        LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 'sfs.search_id')}
       `;
       whereConditions.push(`sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}`);
       whereParams.push(familyId);
@@ -86,7 +87,7 @@ module.exports = (query, get) => {
         FROM listing_search_hits lsh
         JOIN searches s ON s.id = lsh.search_id
         JOIN listings l ON l.id = lsh.listing_id
-        LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = s.id
+        LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 's.id')}
       `;
       whereConditions.push('s.campaign_id = ?');
       whereParams.push(campaign.id);

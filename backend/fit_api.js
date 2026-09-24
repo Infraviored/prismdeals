@@ -101,8 +101,18 @@ module.exports = (query, get) => {
     try {
       const rows = await query(
         `SELECT listing_id, verdict, reason, facts_json, stage, judged_at
-           FROM listing_fit WHERE search_id = ?`,
-        [req.params.id]
+           FROM (
+             SELECT listing_id, verdict, reason, facts_json, stage, judged_at,
+                    ROW_NUMBER() OVER (PARTITION BY listing_id ORDER BY judged_at DESC) AS rn
+               FROM listing_fit
+              WHERE (requirements_hash IS NOT NULL AND requirements_hash = (
+                       SELECT ks.requirements_hash FROM searches s_rh
+                       JOIN knowledge_sets ks ON ks.id = s_rh.knowledge_set_id
+                       WHERE s_rh.id = ?
+                     ))
+                 OR (requirements_hash IS NULL AND search_id = ?)
+           ) WHERE rn = 1`,
+        [req.params.id, req.params.id]
       );
       res.json({
         fit: rows.map(r => ({

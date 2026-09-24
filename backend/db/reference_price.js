@@ -19,6 +19,8 @@
  * docs/ROADMAP.md requires of scoring.
  */
 
+const { fitJoinOn } = require('./requirements_hash');
+
 // How often the accent may fire. Measured against the stored 1,266 listings:
 // "20 % under the median" marked 35 % of every list, and a colour a third of
 // the rows wear says nothing. The cheapest twentieth of a search marks 75 of
@@ -83,7 +85,7 @@ async function referencePrices(query, searchIds) {
                MAX(1, CAST(COUNT(*) OVER (PARTITION BY lsh.search_id) * ${DEAL_PERCENTILE} AS INTEGER)) AS cheap_rn
           FROM listing_search_hits lsh
           JOIN listings l ON l.id = lsh.listing_id
-          LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = lsh.search_id
+          LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 'lsh.search_id')}
          WHERE lsh.search_id IN (${placeholders})
            AND l.price_eur IS NOT NULL
            AND l.price_eur > 0
@@ -141,7 +143,7 @@ async function annotateDeals(query, listings, scopeSearchIds = null) {
     let hitsSql = `
       SELECT lsh.listing_id, lsh.search_id
         FROM listing_search_hits lsh
-        LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = lsh.search_id
+        LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'lsh.search_id')}
        WHERE lsh.listing_id IN (${chunk.map(() => '?').join(',')})
          AND (fit.verdict IS NULL OR fit.verdict <> 'no')
     `;
@@ -230,7 +232,7 @@ async function dealListingIds(query, searchIds) {
     `SELECT DISTINCT lsh.search_id AS search_id, l.id AS id, l.price_eur AS price_eur
        FROM listing_search_hits lsh
        JOIN listings l ON l.id = lsh.listing_id
-       LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = lsh.search_id
+       LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 'lsh.search_id')}
       WHERE lsh.search_id IN (${searchIdList.map(() => '?').join(',')})
         AND l.price_eur IS NOT NULL
         AND l.price_eur > 0

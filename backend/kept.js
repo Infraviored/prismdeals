@@ -12,7 +12,7 @@
 
 const express = require('express');
 const { annotateDeals } = require('./db/reference_price');
-const { BEST_FIT_ORDER_SQL, fitOf } = require('./db/fit');
+const { BEST_FIT_ORDER_SQL, fitOf, fitJoinOn } = require('./db/fit');
 
 const router = express.Router();
 
@@ -82,7 +82,7 @@ module.exports = (query, get, run) => {
              FROM user_hits lsh
              LEFT JOIN searches s ON s.id = lsh.search_id
              LEFT JOIN campaigns c ON c.id = s.campaign_id
-             LEFT JOIN listing_fit fit ON fit.listing_id = lsh.listing_id AND fit.search_id = lsh.search_id
+             LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'lsh.search_id')}
          ),
          best_hits AS (
            SELECT * FROM ranked_hits WHERE rn = 1
