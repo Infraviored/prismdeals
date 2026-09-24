@@ -175,7 +175,7 @@ Four kinds of needs; the kind decides where a need flows:
 - Save crawls immediately, then runs the free sieve. Screen shows "searching", not an empty list.
 - Old finds stay visible until the new search ran once.
 - Verdict belongs to (listing, requirements version), not (listing, search).
-  *Today still per (listing, search) in `listing_fit`.*
+  *Implemented in P9: keyed by `(listing_id, requirements_hash)` with fallback to `search_id`.*
 - ~~Default radius 30 km~~ *dropped: default is no limit; the buyer narrows.*
 
 ---
@@ -341,7 +341,7 @@ Four kinds of needs; the kind decides where a need flows:
 | market | median per search (`reference_price.js`) | per node, cleaned, adjusted |
 | intent | requirements per campaign, filter mapping to URL (P0), `campaigns.intent_json` (P1), `scraper/intent.py` + `POST /api/intent/parse` (P4) | interview UI (P3) |
 | model proposals | `scraper/model_proposals.py`, table `class_models`, `POST /api/intent/models` (P5) | probe integration |
-| verdict | per (listing, search) in `listing_fit` | per (listing, requirements version) |
+| verdict | per (listing, requirements version) via `requirements_hash` in `listing_fit` + `knowledge_sets` (P9) | — |
 | score | `backend/db/score.js`, breakdown in sheet | rank as separate statement |
 | research bridge | research prompt in `dossiers.py` | three prompts, copy/paste, approval |
 | comparative judging | fact sheets with quotes (`fact_sheets`) | candidate set, one call, shuffled runs |
@@ -354,7 +354,7 @@ Detailed plan: [`plan-hunt-engine.md`](plan-hunt-engine.md) (packages P0–P9, b
 2. ✓ P0 quick fixes (motorcycle screen) · ✓ P1 hunt model + benchmarks.
 3. ✓ P2 probe engine · P4 intent parsing → P3 setup flow with market picture · P5 model proposals.
 4. P6 candidate set, one comparative call.
-5. P7 knowledge nodes + research bridge · P8 market per node · P9 verdict per requirements version.
+5. P7 knowledge nodes + research bridge · P8 market per node · ✓ P9 verdict per requirements version.
 - ~~Order: probing → hunt-type question → candidate set → research → market~~
   *dropped: superseded by the package plan; hunt type and probing are built together because the ladder depends on the type.*
 - ~~Interview comes last (old step 7)~~ *dropped: the hunt type decides the search, so it comes first.*
