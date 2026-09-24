@@ -66,7 +66,7 @@ flowchart LR
 |---|---|---|---|
 | P0 | motorcycle screen sane | — | everything |
 | P1 | `hunt_type` stored, benchmarks runnable | — | P0 |
-| P2 | probe engine (scraper + API), no UI | P1 | P4 |
+| P2 | ✓ probe engine (scraper + API), no UI | P1 | P4 |
 | P3 | new setup flow with market picture | P2, P4 | P5 |
 | P4 | free text → intent chips | P1 | P2 |
 | P5 | class → model proposals, probed | P2, P4 | P3 |
@@ -80,6 +80,7 @@ Each package ships on its own and leaves the app usable.
 ---
 
 ## 3. P0 — quick fixes (motorcycle case) [done]
+
 
 - Requirements sheet:
   - hide `description` (English extractor instructions); show label + unit only. (done)

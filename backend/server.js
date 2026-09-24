@@ -987,6 +987,8 @@ app.use(require('./intent_api'));
 
 app.use(require('./compare_api')(query, get));
 
+require('./probe_api')(app);
+
 
 // API: Get search items
 app.get('/api/search-urls', async (req, res) => {
