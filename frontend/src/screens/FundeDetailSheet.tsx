@@ -12,9 +12,11 @@ import { ExternalLink, ChevronLeft, ChevronRight, Image as ImageIcon } from 'luc
 export interface FundeDetailSheetProps {
   listing: RowListing | null;
   onClose: () => void;
+  isKept?: boolean;
+  onToggleKeep?: (id: string) => void;
 }
 
-export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onClose }) => {
+export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onClose, isKept = false, onToggleKeep }) => {
   const { t } = useTranslation();
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
 
@@ -59,6 +61,16 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
       title={t('surface.detailTitle')}
       footer={
         <div className="flex gap-2">
+        {onToggleKeep && (
+          <button
+            type="button"
+            aria-pressed={isKept}
+            onClick={() => onToggleKeep(listing.id)}
+            className="shrink-0 py-3 px-4 rounded-[3px] border border-[#0E4A40] text-sm font-semibold text-[#F2F5F4] hover:border-[#8FA6A1] cursor-pointer"
+          >
+            {isKept ? t('surface.kept') : t('surface.keep')}
+          </button>
+        )}
         <ShareLinkButton title={listing.title} />
         {listing.url ? (
           <a

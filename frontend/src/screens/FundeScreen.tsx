@@ -346,6 +346,8 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
       <FundeDetailSheet
         listing={selectedListing}
         onClose={() => openListing(null)}
+        isKept={selectedListing ? kept.has(selectedListing.id) : false}
+        onToggleKeep={toggle}
       />
 
       <RequirementsSheet

@@ -1,3 +1,4 @@
+import { shortTitle } from '../../utils/shortTitle';
 import React, { useState } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import { formatFreshness } from '../../utils/freshness';
@@ -48,7 +49,9 @@ export interface RowProps {
 }
 
 function renderSpecs(facts: Record<string, unknown> = {}): React.ReactNode[] {
-  return getSpecChips(facts).map((c, i) => (
+  // DIMM is what a desktop kit is anyway; in a row it only pushed CL16 off
+  // the edge. The sheet still names it, and SODIMM is still shown here.
+  return getSpecChips(facts).filter((c) => c !== 'DIMM').map((c, i) => (
     <span key={i}>{c}</span>
   ));
 }
@@ -138,7 +141,9 @@ export const Row: React.FC<RowProps> = ({
 
       {/* The title gets the full width; the price moves down to the last line,
           where the location left room to spare. */}
-      <h3>{listing.title || '—'}</h3>
+      <h3 title={listing.title || undefined}>
+        {(chips.length > 0 && listing.title && shortTitle(listing.title)) || listing.title || '—'}
+      </h3>
 
       {isGone ? (
         <p className="detail reason">{listing.fit?.reason || t('surface.tabNo')}</p>
@@ -150,7 +155,7 @@ export const Row: React.FC<RowProps> = ({
 
       <p className="where">
         {listing.location ? formatLocation(listing.location) : t('surface.noLocation')}
-        {freshness && (
+        {freshness && freshness.label !== t('surface.today') && (
           <span className={`ml-3 ${freshness.isStale ? 'text-[#C9A227]' : ''}`}>
             {freshness.label}
           </span>
@@ -165,19 +170,22 @@ export const Row: React.FC<RowProps> = ({
         )}
       </p>
 
-      <div className="pricebox">
-        {typeof listing.niceness_score === 'number' && (
-          <span data-testid="listing-score" className="score">
-            {t('surface.score', { score: Math.round(listing.niceness_score) })}
-          </span>
-        )}
+      <span
+        data-testid="listing-price"
+        className={`price num ${isDeal ? 'text-[#E87967]' : priceInfo.isMissing ? 'text-[#8FA6A1]' : 'text-[#F2F5F4]'}`}
+      >
+        {priceInfo.text}
+      </span>
+      {typeof listing.niceness_score === 'number' && (
         <span
-          data-testid="listing-price"
-          className={`price num ${isDeal ? 'text-[#E87967]' : priceInfo.isMissing ? 'text-[#8FA6A1]' : 'text-[#F2F5F4]'}`}
+          data-testid="listing-score"
+          className={`score num ${
+            listing.niceness_score >= 90 ? 'high' : listing.niceness_score >= 70 ? 'mid' : 'low'
+          }`}
         >
-          {priceInfo.text}
+          {t('surface.score', { score: Math.round(listing.niceness_score) })}
         </span>
-      </div>
+      )}
     </article>
   );
 };

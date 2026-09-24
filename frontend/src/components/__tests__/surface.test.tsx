@@ -206,6 +206,6 @@ describe('Surface Components P1', () => {
 describe('Row score', () => {
   it('shows the score under the price', () => {
     render(<Row listing={{ id: 's1', title: 'Kit', price_eur: 150, price: '150 €', niceness_score: 86.6 }} onClick={() => {}} />);
-    expect(screen.getByTestId('listing-score')).toHaveTextContent('Score 87');
+    expect(screen.getByTestId('listing-score')).toHaveTextContent('87 %');
   });
 });
