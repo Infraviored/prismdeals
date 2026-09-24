@@ -74,17 +74,14 @@ def probe_models(models, base, fetch_fn=None):
     """
     fetch = fetch_fn or scraper.fetch
     price = base.get("price") or {}
-    category = str(base.get("category_code") or "").lstrip("c") or None
     results = {}
     for model in models:
-        url = search_url.compose_search_url(
-            location_id=base.get("location_id"),
-            radius=base.get("radius_km"),
-            min_price=price.get("min"),
-            max_price=price.get("max"),
+        url = search_url.for_hunt(
+            category_code=base.get("category_code"),
             query=model,
-            category=category,
-            attributes=[],
+            price=price,
+            location_id=base.get("location_id"),
+            radius_km=base.get("radius_km"),
         )
         try:
             response = fetch(url)

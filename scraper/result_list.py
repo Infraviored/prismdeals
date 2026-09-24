@@ -45,6 +45,9 @@ ADID_RE = re.compile(r'data-adid="(\d+)"')
 HREF_RE = re.compile(r'data-href="([^"]+)"')
 LD_JSON_RE = re.compile(r'<script type="application/ld\+json">(.*?)</script>', re.S)
 TOTAL_RE = re.compile(r"([\d.]+)\s+Ergebnisse?")
+# Category searches say "1 - 25 von 139 gebrauchte Notebooks" instead, measured
+# 2026-09-25; only keyword-only searches still print "21 Ergebnisse".
+RANGE_TOTAL_RE = re.compile(r"\d+\s*-\s*\d+\s+von\s+([\d.]+)")
 
 # "<title> <Bundesland> - <Ort> Vorschau" — the state name anchors the split, so
 # a title that itself contains a hyphen cannot be mistaken for the location. The
@@ -144,7 +147,7 @@ def result_list_html(page_html):
 
 def total_results(page_html):
     """The count the site reports, or None."""
-    match = TOTAL_RE.search(page_html)
+    match = RANGE_TOTAL_RE.search(page_html) or TOTAL_RE.search(page_html)
     if not match:
         return None
     return int(match.group(1).replace(".", ""))

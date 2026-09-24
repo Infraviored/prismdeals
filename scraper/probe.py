@@ -105,18 +105,16 @@ def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
         rung = rungs[rung_idx]
         rung_idx += 1
 
-        clean_cat = category_code.lstrip("c") if category_code else None
         merged_filters = dict(filters)
         merged_filters.update(rung.get("filters") or {})
         attrs = [f"{k}:{v}" for k, v in merged_filters.items() if v]
 
-        url = search_url.compose_search_url(
-            location_id=location_id,
-            radius=radius_km,
-            min_price=price.get("min"),
-            max_price=price.get("max"),
+        url = search_url.for_hunt(
+            category_code=category_code,
             query=rung.get("term"),
-            category=clean_cat,
+            price=price,
+            location_id=location_id,
+            radius_km=radius_km,
             attributes=attrs,
         )
 
@@ -168,6 +166,7 @@ def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
         # Sieve and tally
         rung_card_ids = []
         rung_new_likely = 0
+        rung_new_candidates = 0
         rung_likely = 0
         rung_unclear = 0
         rung_no = 0
@@ -202,6 +201,8 @@ def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
                 is_new = False
 
             card_info = all_cards[cid]
+            if is_new and card_info["verdict"] != "no":
+                rung_new_candidates += 1
             if card_info["verdict"] == "likely":
                 rung_likely += 1
                 if is_new:
@@ -215,7 +216,11 @@ def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
         new_ids_count = sum(1 for cid in rung_card_ids if cid not in seen_card_ids)
         seen_card_ids.update(rung_card_ids)
 
-        gain = (rung_new_likely / sampled) if sampled > 0 else 0.0
+        # Gain counts new offers the sieve did not rule out. Counting only
+        # "likely" stopped every exact or fit hunt after two terms: from a
+        # title alone, clock, latency or width are rarely readable, so almost
+        # nothing is "likely" before the detail page.
+        gain = (rung_new_candidates / sampled) if sampled > 0 else 0.0
         overlap = (1.0 - (new_ids_count / sampled)) if sampled > 0 else 0.0
         likely_share = (rung_likely / sampled) if sampled > 0 else 0.0
 
@@ -254,9 +259,14 @@ def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
                 logger.warning("on_rung callback error: %s", exc)
 
         # Stop logic
-        if gain < 0.05:
+        # A term that finds nothing says nothing about saturation; only rungs
+        # that found offers without adding fitting ones count toward stopping.
+        # Named models are what the buyer asked for; each gets its search
+        # however little the one before added.
+        named = hunt_type in ("shortlist", "class") and rung.get("source") == "ladder"
+        if sampled and gain < 0.05 and not named:
             consecutive_low_gain += 1
-        else:
+        elif sampled:
             consecutive_low_gain = 0
         if consecutive_low_gain >= 2:
             break
@@ -300,7 +310,18 @@ def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
     likely_prices = [
         c["price_eur"] for c in sample_likely if c["price_eur"] is not None
     ]
-    median_price = int(statistics.median(likely_prices)) if likely_prices else None
+    # Before detail pages, an exact or fit hunt has almost nothing "likely";
+    # the market's price then comes from what was not ruled out.
+    open_prices = [
+        c["price_eur"]
+        for c in sample_likely + sample_unclear
+        if c["price_eur"] is not None
+    ]
+    median_price = (
+        int(statistics.median(likely_prices))
+        if likely_prices
+        else (int(statistics.median(open_prices)) if open_prices else None)
+    )
 
     # The rungs overlap, so their totals do not add up: summing them counted
     # the same offer once per search term that found it. The widest single
@@ -339,7 +360,22 @@ def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
             if c["price_eur"] is not None and c["price_eur"] <= step
         )
         est_count = min(union_likely_est, round(count * scale))
-        budget_list.append({"max": step, "likely": est_count})
+        unclear_under = sum(
+            1
+            for c in sample_unclear
+            if c["price_eur"] is not None and c["price_eur"] <= step
+        )
+        unclear_scale = (
+            union_unclear_est / len(sample_unclear) if sample_unclear else 1.0
+        )
+        budget_list.append(
+            {
+                "max": step,
+                "likely": est_count,
+                # Not ruled out by title and snippet; the detail page decides.
+                "unclear": min(union_unclear_est, round(unclear_under * unclear_scale)),
+            }
+        )
 
     # Relax requirements signals (only if absence changes count >= 2x)
     relax_list = []

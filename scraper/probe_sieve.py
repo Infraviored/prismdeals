@@ -121,8 +121,10 @@ def _sieve_keywords(text, musts):
         want = must.get("want", {})
         must_type = must.get("type", "text")
 
-        # Skip numeric range musts — not reliably in titles
+        # A width or a capacity is rarely in a title. Unread, it leaves the
+        # card unclear -- counting it as met made every wardrobe "likely".
         if must_type == "number" and ("min" in want or "max" in want):
+            total_checkable += 1
             continue
 
         total_checkable += 1

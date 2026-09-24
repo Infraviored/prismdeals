@@ -353,3 +353,38 @@ def with_page(url, page):
         return url
     rest = "/".join(parts[4:]) if len(parts) > 4 else ""
     return f"{'/'.join(parts[:3])}/{parts[3]}/seite:{page}/{rest}"
+
+
+def for_hunt(
+    category_code=None,
+    query=None,
+    price=None,
+    location_id=None,
+    radius_km=None,
+    attributes=None,
+):
+    """A search URL from a hunt's frame, with the category's own path slug.
+
+    `compose_search_url` needs a slug for the first path part. Without one the
+    query took its place (`/s-oled-laptop/.../k0c278`), a page the site answers
+    with zero results -- every probe and every benchmark counted nothing.
+    """
+    from intent_taxonomy import find_category
+
+    price = price or {}
+    category = str(category_code or "").lstrip("c") or None
+    known = find_category(category) if category else None
+    # No radius means no limit: a location without a radius is that one town
+    # only, which answered "0 laptops" for all of Germany.
+    if radius_km in (None, "", 0):
+        location_id = None
+    return compose_search_url(
+        location_id=location_id,
+        radius=radius_km,
+        min_price=price.get("min"),
+        max_price=price.get("max"),
+        query=query,
+        category=category,
+        category_slug=(known or {}).get("slug") or "suchanfrage",
+        attributes=attributes or [],
+    )

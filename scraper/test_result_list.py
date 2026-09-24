@@ -432,3 +432,11 @@ def test_the_card_photograph_is_read_and_asked_for_at_a_usable_size(with_carouse
         assert "rule=$_59." in item["image"], item["image"]
 
     assert result_list.as_db_listing(withimage[0])["images"] == [withimage[0]["image"]]
+
+
+def test_total_from_a_category_search_page():
+    page = (
+        '<span class="text-bodyRegular">1 - 25 von 1.139 gebrauchte Notebooks für '
+        "„oled laptop“</span>"
+    )
+    assert result_list.total_results(page) == 1139

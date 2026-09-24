@@ -9,18 +9,56 @@
     "location_id": "7091",
     "location_slug": "landsberg-am-lech",
     "seed_terms": [
-      "corsair 2x16gb ddr4 3200",
-      "corsair 32gb ddr4 3200",
-      "vengeance 32gb 3200"
+      "corsair vengeance 32gb 2x16gb ddr4 3200 cl16"
     ],
     "intent": {
       "musts": [
-        {"id": "stickCount", "label": "Riegel", "buyer_wants": {"min": 2, "max": 2}},
-        {"id": "gbPerStick", "label": "GB pro Riegel", "buyer_wants": {"min": 16, "max": 16}},
-        {"id": "generation", "label": "Generation", "buyer_wants": {"preferred": ["ddr4"]}},
-        {"id": "speedMhz", "label": "Taktung", "buyer_wants": {"min": 3200}},
-        {"id": "casLatency", "label": "Latenz", "buyer_wants": {"max": 16}},
-        {"id": "hasFunctionalDefect", "label": "Defekt", "buyer_wants": {"match": false}}
+        {
+          "id": "stickCount",
+          "label": "Riegel",
+          "buyer_wants": {
+            "min": 2,
+            "max": 2
+          }
+        },
+        {
+          "id": "gbPerStick",
+          "label": "GB pro Riegel",
+          "buyer_wants": {
+            "min": 16,
+            "max": 16
+          }
+        },
+        {
+          "id": "generation",
+          "label": "Generation",
+          "buyer_wants": {
+            "preferred": [
+              "ddr4"
+            ]
+          }
+        },
+        {
+          "id": "speedMhz",
+          "label": "Taktung",
+          "buyer_wants": {
+            "min": 3200
+          }
+        },
+        {
+          "id": "casLatency",
+          "label": "Latenz",
+          "buyer_wants": {
+            "max": 16
+          }
+        },
+        {
+          "id": "hasFunctionalDefect",
+          "label": "Defekt",
+          "buyer_wants": {
+            "match": false
+          }
+        }
       ]
     },
     "what_good_means": "no regression: ≥ 7 fit found, reasons name missing fields"
@@ -45,9 +83,15 @@
       "fireblade"
     ],
     "intent": {
-      "models": ["Yamaha R1", "Honda CBR1000RR"],
+      "models": [
+        "Yamaha R1",
+        "Honda CBR1000RR"
+      ],
       "musts": [
-        {"id": "accidentFree", "label": "Unfallfrei"}
+        {
+          "id": "accidentFree",
+          "label": "Unfallfrei"
+        }
       ]
     },
     "what_good_means": "one rung per model, counts per model, model weaknesses as checks"
@@ -68,7 +112,8 @@
     ],
     "intent": {
       "class": "supersportler",
-      "displacement_min": 950
+      "displacement_min": 950,
+      "musts": []
     },
     "what_good_means": "models proposed, each probed, buyer ticks → B2-like hunt"
   },
@@ -88,8 +133,22 @@
     ],
     "intent": {
       "musts": [
-        {"id": "ramGb", "label": "RAM", "buyer_wants": {"min": 32}},
-        {"id": "displayTechnology", "label": "Display", "buyer_wants": {"preferred": ["oled"]}}
+        {
+          "id": "ramGb",
+          "label": "RAM",
+          "buyer_wants": {
+            "min": 32
+          }
+        },
+        {
+          "id": "displayTechnology",
+          "label": "Display",
+          "buyer_wants": {
+            "preferred": [
+              "oled"
+            ]
+          }
+        }
       ]
     },
     "what_good_means": "ladder + snowball finds model names; market picture per budget; ranked top 30"
@@ -108,9 +167,23 @@
       "matratze 140 200"
     ],
     "intent": {
-      "sizes": {"width": 140, "length": 200}
+      "sizes": {
+        "width": 140,
+        "length": 200
+      },
+      "musts": [
+        {
+          "id": "size",
+          "label": "140x200",
+          "type": "text",
+          "buyer_wants": {
+            "match": "140x200"
+          }
+        }
+      ]
     },
-    "what_good_means": "size in term (sellers write it); hygiene checks"
+    "what_good_means": "size in term (sellers write it); hygiene checks",
+    "radius_km": 50
   },
   {
     "id": "B6",
@@ -126,9 +199,22 @@
       "schrank 2 tuerig"
     ],
     "intent": {
-      "sizes": {"max_width": 120}
+      "sizes": {
+        "max_width": 120
+      },
+      "musts": [
+        {
+          "id": "widthCm",
+          "label": "Breite",
+          "type": "number",
+          "buyer_wants": {
+            "max": 120
+          }
+        }
+      ]
     },
-    "what_good_means": "size NOT in term; width read from text/photo or asked"
+    "what_good_means": "size NOT in term; width read from text/photo or asked",
+    "radius_km": 50
   },
   {
     "id": "B7",
@@ -145,9 +231,11 @@
       "cocktailsessel"
     ],
     "intent": {
-      "style": "vintage"
+      "style": "vintage",
+      "musts": []
     },
-    "what_good_means": "no musts; photo grid; no model judging"
+    "what_good_means": "no musts; photo grid; no model judging",
+    "radius_km": 50
   },
   {
     "id": "B8",
@@ -162,8 +250,10 @@
       "werkzeug"
     ],
     "intent": {
-      "category": "tools"
+      "category": "tools",
+      "musts": []
     },
-    "what_good_means": "category only; deviation from market"
+    "what_good_means": "category only; deviation from market",
+    "radius_km": 50
   }
 ]

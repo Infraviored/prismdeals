@@ -1,307 +1,166 @@
-#!/usr/bin/env python3
-"""Benchmark runner for Kleinanzeigen hunt engine.
+"""Benchmark runner: the probe over hunts B1-B8, live or from recordings (plan §1, §4.2).
 
-Runs benchmark hunts B1-B8 defined in scripts/benchmarks/hunts.json.
-Respects rate limiting (<= 1 req/s), supports fixture recording and offline replay,
-and runs exclusively against copy databases via PRISMDEALS_DB.
+Usage:
+    python scripts/benchmarks/run.py [--offline] [--record] [--hunts B1,B4]
 """
 
 import argparse
 import hashlib
 import json
 import os
-import re
 import sys
 import time
 
-# Ensure repo root and scraper directory are in sys.path
+# Ensure repo root and scraper/ are on sys.path
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRAPER_DIR = os.path.join(REPO_ROOT, "scraper")
-if SCRAPER_DIR not in sys.path:
-    sys.path.insert(0, SCRAPER_DIR)
-
-import playbooks
-import result_list
-import scraper
-import search_url
-import text_facts
-
 FIXTURES_DIR = os.path.join(SCRAPER_DIR, "fixtures", "probe")
-HUNTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hunts.json")
-PROD_DB = "/home/flo/docker-projects/prismdeals/data/scraper.db"
+sys.path.insert(0, SCRAPER_DIR)
 
-_last_request_time = 0.0
-
-
-def check_database_safety(db_path):
-    """Enforces that benchmarks never run against the live production database."""
-    abs_db = os.path.abspath(db_path)
-    if abs_db == os.path.abspath(PROD_DB):
-        raise RuntimeError(
-            f"Safety violation: Refusing to run benchmarks against production database: {abs_db}."
-            " Please point PRISMDEALS_DB to a copy database (e.g. /tmp/p0p1_test.db)."
-        )
+import probe
+import scraper
 
 
-def fetch_url(url, live=False, offline=False, record=False):
-    """Fetches a URL respecting rate limits (<= 1 req/s) or reads from fixture cache."""
-    global _last_request_time
-
-    os.makedirs(FIXTURES_DIR, exist_ok=True)
-    url_hash = hashlib.sha1(url.encode("utf-8")).hexdigest()
-    fixture_path = os.path.join(FIXTURES_DIR, f"{url_hash}.html")
-
-    if not live and os.path.exists(fixture_path):
-        with open(fixture_path, "r", encoding="utf-8") as f:
-            return f.read(), False
-
-    if offline:
-        raise FileNotFoundError(
-            f"Offline mode requested but fixture does not exist for URL: {url} ({fixture_path})"
-        )
-
-    # Rate limiting: strictly ensure at least 1.0 second between network requests
-    now = time.time()
-    elapsed = now - _last_request_time
-    if elapsed < 1.0:
-        time.sleep(1.0 - elapsed)
-
-    resp = scraper.fetch(url, timeout=15)
-    _last_request_time = time.time()
-    html = resp.text
-
-    if record:
-        with open(fixture_path, "w", encoding="utf-8") as f:
-            f.write(html)
-
-    return html, True
+def _url_hash(url):
+    return hashlib.sha1(url.encode("utf-8")).hexdigest()
 
 
-def evaluate_fit(hunt, card):
-    """Evaluates whether a candidate listing fits the hunt's criteria."""
-    title = (card.get("title") or "").strip()
-    desc = (card.get("description") or "").strip()
-    text = f"{title} {desc}".lower()
-    price = card.get("price_eur")
-    max_price = hunt.get("max_price")
+class FixtureFetcher:
+    def __init__(self, record=False, offline=False):
+        self.record = record
+        self.offline = offline
+        os.makedirs(FIXTURES_DIR, exist_ok=True)
 
-    if max_price is not None and price is not None and price > max_price:
-        return False
+    def fetch(self, url):
+        sha = _url_hash(url)
+        fixture_path = os.path.join(FIXTURES_DIR, f"{sha}.html")
 
-    cat_code = hunt.get("category_code")
-    playbook = playbooks.playbook_for_category_code(cat_code)
-    intent = hunt.get("intent") or {}
-    musts = intent.get("musts") or []
+        if self.offline:
+            # Offline never reaches the site: a missing page is a missing
+            # recording, not a reason to fetch.
+            if not os.path.exists(fixture_path):
+                raise FileNotFoundError(f"no recording for {url} ({fixture_path})")
+            with open(fixture_path, "r", encoding="utf-8") as f:
+                return MockResponse(f.read(), status_code=200)
 
-    # 1. Playbook-driven judgment if musts exist (e.g. B1 RAM)
-    if playbook and musts:
-        verdict, facts, reasons = text_facts.judge(playbook, musts, title)
-        if verdict == "candidate":
-            return True
-        if verdict == "unclear" and desc:
-            verdict, facts, reasons = text_facts.judge(
-                playbook, musts, f"{title}\n{desc}"
-            )
-            if verdict == "candidate":
-                return True
-        if verdict == "reject":
-            return False
+        # Live fetch
+        res = scraper.fetch(url)
 
-    # 2. Model shortlist match (e.g. B2)
-    models = intent.get("models") or hunt.get("models") or []
-    if models:
-        for model in models:
-            norm_m = model.lower()
-            tokens = [t for t in re.split(r"[^a-z0-9]+", norm_m) if len(t) > 1]
-            if all(t in text for t in tokens):
-                return True
-        return False
+        if self.record and res.status_code == 200:
+            with open(fixture_path, "w", encoding="utf-8") as f:
+                f.write(res.text)
 
-    # 3. Class hunt (e.g. B3 supersportler)
-    if hunt.get("hunt_type") == "class":
-        if any(
-            term in text
-            for term in [
-                "supersport",
-                "superbike",
-                "1000",
-                "cbr",
-                "r1",
-                "gsx-r",
-                "zx-10r",
-                "ninja",
-            ]
-        ):
-            return True
-        return False
-
-    # 4. Features hunt (e.g. B4 oled laptop)
-    if hunt.get("hunt_type") == "features":
-        if "oled" in text:
-            return True
-        return False
-
-    # 5. Fit hunts (e.g. B5 mattress, B6 wardrobe)
-    if hunt.get("id") == "B5":
-        if "140" in text and "200" in text:
-            return True
-        return False
-    if hunt.get("id") == "B6":
-        if "schrank" in text or "kleiderschrank" in text:
-            return True
-        return False
-
-    # 6. Taste / Opportunity (B7 vintage armchair, B8 tools)
-    if hunt.get("id") == "B7":
-        if any(
-            w in text
-            for w in ["sessel", "armchair", "vintage", "retro", "cocktailsessel"]
-        ):
-            return True
-        return False
-
-    if hunt.get("id") == "B8":
-        if any(
-            w in text
-            for w in ["werkzeug", "bohrer", "schrauber", "saege", "zange", "koffer"]
-        ):
-            return True
-        return False
-
-    return True
+        return res
 
 
-def clean_title(title, max_len=45):
-    """Sanitizes and truncates listing titles for table display."""
-    t = re.sub(r"\s+", " ", title or "").strip()
-    t = t.replace("|", "/")
-    if len(t) > max_len:
-        return t[: max_len - 1] + "…"
-    return t
+class MockResponse:
+    def __init__(self, text, status_code=200):
+        self.text = text
+        self.status_code = status_code
 
 
-def run_benchmark(hunt, live=False, offline=False, record=False):
-    """Runs a single benchmark hunt across its seed rungs."""
-    hunt_id = hunt["id"]
-    seed_terms = hunt.get("seed_terms") or []
-    cat_code = hunt.get("category_code", "").lstrip("c")
-    max_price = hunt.get("max_price")
-    loc_id = hunt.get("location_id", "7091")
-    loc_slug = hunt.get("location_slug", "landsberg-am-lech")
-
-    start_time = time.time()
-    network_requests = 0
-    seen_cards = {}
-    rungs_count = len(seed_terms)
-
-    rad = hunt.get("radius_km")
-    for term in seed_terms:
-        if rad:
-            url = search_url.compose_search_url(
-                location_slug=loc_slug,
-                location_id=loc_id,
-                radius=rad,
-                min_price=None,
-                max_price=max_price,
-                query=term,
-                category=cat_code,
-            )
-        else:
-            url = search_url.compose_search_url(
-                category_slug="suchanfrage",
-                min_price=None,
-                max_price=max_price,
-                query=term,
-                category=cat_code,
-            )
-
-        html, is_network = fetch_url(url, live=live, offline=offline, record=record)
-        if is_network:
-            network_requests += 1
-
-        cards = result_list.parse(html)
-        for card in cards:
-            cid = card.get("id") or card.get("source_id")
-            if cid and cid not in seen_cards:
-                seen_cards[cid] = card
-
-    elapsed_seconds = time.time() - start_time
-    candidates = list(seen_cards.values())
-    fit_candidates = [c for c in candidates if evaluate_fit(hunt, c)]
-
-    top_titles = [clean_title(c.get("title", "")) for c in fit_candidates[:3]]
-    if len(top_titles) < 3:
-        for c in candidates:
-            ct = clean_title(c.get("title", ""))
-            if ct not in top_titles:
-                top_titles.append(ct)
-            if len(top_titles) >= 3:
-                break
-
+def to_payload(hunt):
+    """A benchmark hunt (hunts.json) in the probe's input shape (plan §5.1)."""
+    musts = [
+        {
+            "id": m["id"],
+            "label": m.get("label", m["id"]),
+            "type": m.get("type", "text"),
+            "want": m.get("buyer_wants") or m.get("want") or {},
+        }
+        for m in (hunt.get("intent") or {}).get("musts", [])
+    ]
     return {
-        "id": hunt_id,
-        "name": hunt["name"],
-        "hunt_type": hunt["hunt_type"],
-        "rungs": rungs_count,
-        "requests": network_requests,
-        "seconds": elapsed_seconds,
-        "candidates": len(candidates),
-        "fit": len(fit_candidates),
-        "top_titles": "; ".join(top_titles) if top_titles else "None found",
+        "category_code": hunt.get("category_code"),
+        "filters": hunt.get("filters") or {},
+        "location_id": hunt.get("location_id"),
+        "radius_km": hunt.get("radius_km"),
+        "price": {"min": hunt.get("min_price"), "max": hunt.get("max_price")},
+        "hunt_type": hunt.get("hunt_type"),
+        "musts": musts,
+        "prefs": [],
+        "seed_terms": hunt.get("seed_terms") or [],
+        "models": hunt.get("models") or [],
+        "budget_steps": hunt.get("budget_steps") or [],
     }
 
 
+def run_benchmark(hunts_file, target_ids=None, record=False, offline=False):
+    with open(hunts_file, "r", encoding="utf-8") as f:
+        hunts = json.load(f)
+
+    fetcher = FixtureFetcher(record=record, offline=offline)
+    results = []
+
+    print(f"\nRunning benchmark hunts ({'offline' if offline else 'live'} mode)...\n")
+    print(
+        f"{'ID':<4} | {'Hunt Type':<11} | {'Rungs':<5} | {'Req':<4} | {'Sec':<6} | {'Likely':<7} | {'Unclear':<7} | {'Med.€':<6} | {'Chosen Terms'}"
+    )
+    print("-" * 85)
+
+    for h in hunts:
+        hid = h["id"]
+        if target_ids and hid not in target_ids:
+            continue
+
+        start = time.time()
+        res = probe.run_probe(to_payload(h), conn=None, fetch_fn=fetcher.fetch)
+        dur = round(time.time() - start, 1)
+
+        rungs_count = len(res.get("rungs", []))
+        reqs = res.get("requests", 0)
+        est_likely = res.get("estimate", {}).get("union_likely", 0)
+        med_price = res.get("estimate", {}).get("median_price", "-")
+        terms = ", ".join(res.get("chosen_terms", []))[:30]
+
+        print(
+            f"{hid:<4} | {h['hunt_type']:<11} | {rungs_count:<5} | {reqs:<4} | {dur:<6.1f} | {est_likely:<7} | {res.get('estimate', {}).get('union_unclear', 0):<7} | {str(med_price):<6} | {terms}"
+        )
+
+        results.append(
+            {
+                "id": hid,
+                "name": h["name"],
+                "hunt_type": h["hunt_type"],
+                "rungs": rungs_count,
+                "requests": reqs,
+                "seconds": dur,
+                "estimate": res.get("estimate", {}),
+                "chosen_terms": res.get("chosen_terms", []),
+                "per_budget": res.get("per_budget", []),
+                "relax": res.get("relax", []),
+                "models_seen": res.get("models_seen", []),
+            }
+        )
+
+    print("-" * 85)
+    return results
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Run Kleinanzeigen benchmark hunts")
-    parser.add_argument("--hunt", help="Run a specific hunt by ID (e.g. B1)")
+    parser = argparse.ArgumentParser(description="Run probe benchmark hunts")
     parser.add_argument(
-        "--record", action="store_true", help="Record fetched HTML pages to fixtures"
+        "--record", action="store_true", help="Record fetched pages as offline fixtures"
     )
     parser.add_argument(
-        "--live",
+        "--offline",
         action="store_true",
-        help="Force live network fetches instead of fixtures",
+        help="Use recorded fixtures instead of network",
     )
     parser.add_argument(
-        "--offline", action="store_true", help="Only read from saved fixtures"
-    )
-    parser.add_argument(
-        "--db",
-        default=os.environ.get("PRISMDEALS_DB", "/tmp/p0p1_test.db"),
-        help="Path to test copy database (never production database)",
+        "--hunts",
+        type=str,
+        default=None,
+        help="Comma-separated hunt IDs (e.g. B1,B2,B4,B5)",
     )
     args = parser.parse_args()
 
-    check_database_safety(args.db)
-    os.environ["PRISMDEALS_DB"] = args.db
+    hunts_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hunts.json")
+    target_ids = set(args.hunts.split(",")) if args.hunts else None
 
-    with open(HUNTS_FILE, "r", encoding="utf-8") as f:
-        hunts = json.load(f)
-
-    if args.hunt:
-        hunts = [h for h in hunts if h["id"].upper() == args.hunt.upper()]
-        if not hunts:
-            print(f"Error: Hunt {args.hunt} not found in {HUNTS_FILE}", file=sys.stderr)
-            sys.exit(1)
-
-    results = []
-    for hunt in hunts:
-        res = run_benchmark(
-            hunt, live=args.live, offline=args.offline, record=args.record
-        )
-        results.append(res)
-
-    print("\n### Benchmark Results\n")
-    print(
-        "| # | Hunt | Type | Rungs | Requests | Seconds | Candidates | Fit | Top 3 Titles |"
+    run_benchmark(
+        hunts_file, target_ids=target_ids, record=args.record, offline=args.offline
     )
-    print("|---|---|---|---|---|---|---|---|---|")
-    for r in results:
-        print(
-            f"| {r['id']} | {r['name']} | {r['hunt_type']} | {r['rungs']} | {r['requests']} | "
-            f"{r['seconds']:.1f}s | {r['candidates']} | {r['fit']} | {r['top_titles']} |"
-        )
-    print()
 
 
 if __name__ == "__main__":

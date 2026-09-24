@@ -45,6 +45,38 @@ Every package is measured on all of these, not on the one it was built for.
 
 ---
 
+### Benchmark run, live, 2026-09-25 (after review fixes)
+
+`python scripts/benchmarks/run.py` — the probe over B1–B8, nationwide unless a radius is set
+(B5–B8: 50 km around Landsberg). "Likely" = every must readable in title/snippet; "unclear" = not
+ruled out, the detail page decides.
+
+| # | rungs | requests | s | likely | unclear | median € |
+|---|---|---|---|---|---|---|
+| B1 RAM exact | 3 | 5 | 4 | 0 | 220 | 150 |
+| B2 R1 / CBR | 8 | 15 | 15 | 30 | – | 6790 |
+| B3 supersport class | 8 | 15 | 15 | 2104 | – | 4269 |
+| B4 laptop OLED 32 GB | 8 | 14 | 14 | 350 | – | 599 |
+| B5 mattress 140×200 | 2 | 4 | 4 | 141 | – | 77 |
+| B6 wardrobe ≤ 120 cm | 4 | 5 | 5 | 0 | 550 | – |
+| B7 vintage armchair | 3 | 6 | 6 | 161 | – | 55 |
+| B8 tools | 2 | 3 | 3 | 1781 | – | 39 |
+
+Found in the review, before this run every hunt counted **0**:
+- ~~probe URLs from `compose_search_url` without a category slug~~ *dropped: the query became the
+  first path part (`/s-oled-laptop/…/k0c278`), a page with no results. `search_url.for_hunt` adds
+  the taxonomy slug; no radius now means nationwide, not "this one town".*
+- the site prints "1 - 25 von 139 …" on category searches; `result_list.total_results` read only
+  "N Ergebnisse" → totals were None.
+- ~~gain = new "likely" offers~~ *dropped: exact and fit hunts have almost nothing "likely" before the
+  detail page, so the ladder stopped after two terms (R1/CBR never searched the CBR). Gain counts new
+  offers not ruled out; named models are always searched.*
+- ~~exact ladder narrow first~~ *dropped: "corsair 2x16gb ddr4 3200" finds 0. Widest first: line +
+  capacity, line, then the full name.*
+- unread numeric musts (width ≤ 120 cm) made a card "likely"; now "unclear".
+- B3 has no musts, so "likely" is everything called supersport: class hunts need P5 (models) to mean
+  anything.
+
 ## 2. Packages at a glance
 
 ```mermaid

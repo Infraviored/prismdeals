@@ -52,28 +52,51 @@ def _make_rung(term, label, source="ladder", filters=None):
 
 
 def _exact_ladder(seed_terms, musts, prefs, models, category_code, filters):
-    """Exact hunt: seed name → broadened name → line + capacity."""
+    """Exact hunt, widest first: line + capacity, line alone, then the seed.
+
+    Sellers leave clock, latency and module split out of titles, so the full
+    name finds almost nothing ("corsair 2x16gb ddr4 3200": 0 offers, measured
+    2026-09-25). Search wide, judge narrow (product-core §4).
+    """
     rungs = []
+    seen = set()
+
+    def add(term, label):
+        if term and term.lower() not in seen:
+            seen.add(term.lower())
+            rungs.append(_make_rung(term, label))
+
     for term in seed_terms:
-        rungs.append(_make_rung(term, f"exact: {term}"))
-        # Broaden: drop revision/speed suffixes (e.g. "CL16" from RAM)
         broad = _broaden_exact(term)
-        if broad and broad != term.lower():
-            rungs.append(_make_rung(broad, f"broadened: {broad}"))
+        add(broad, f"broadened: {broad}")
+        line = _product_line(broad or term)
+        add(line, f"line: {line}")
+    for term in seed_terms:
+        add(term, f"exact: {term}")
     if not rungs and models:
         for model in models[:3]:
-            rungs.append(_make_rung(model, f"model: {model}"))
+            add(model, f"model: {model}")
     return rungs
 
 
+_SPEC_TOKEN = re.compile(
+    r"\b(cl\d+|rev\.?\s*\d+|\d+\s*(?:mhz|mt/s)|\d{4}|ddr\d|\d+\s*x\s*\d+\s*gb|\(.*?\))",
+    re.I,
+)
+
+
 def _broaden_exact(term):
-    """Drop trailing spec tokens like CL16, 3200MHz, Rev.2 etc."""
-    # Remove tokens that look like clock speeds, latencies, revisions
-    broad = re.sub(
-        r"\b(cl\d+|rev\.?\d+|\d+\s*mhz|\d+\s*mt/s)\b", "", term, flags=re.I
-    ).strip()
+    """Drop the tokens sellers leave out: clock, latency, generation, split, revision."""
+    broad = _SPEC_TOKEN.sub(" ", term)
+    broad = re.sub(r"[-/]+", " ", broad)
     broad = re.sub(r"\s+", " ", broad).strip()
     return broad.lower() if broad else None
+
+
+def _product_line(term):
+    """Brand and line without capacity: "corsair vengeance 32gb" -> "corsair vengeance"."""
+    words = [w for w in term.lower().split() if not re.search(r"\d", w)]
+    return " ".join(words[:2]) if len(words) >= 2 else None
 
 
 def _shortlist_ladder(seed_terms, musts, prefs, models, category_code, filters):
