@@ -8,6 +8,7 @@ import AppScreen from './screens/AppScreen';
 import LandingScreen from './screens/LandingScreen';
 import FundeScreen from './screens/FundeScreen';
 import EditScreen from './screens/EditScreen';
+import HuntSetupScreen from './screens/HuntSetupScreen';
 import CreateCampaignScreen from './screens/CreateCampaignScreen';
 import KeptScreen from './screens/KeptScreen';
 
@@ -94,11 +95,24 @@ export default function App() {
             const campaignSearches = appData.searches.filter(s => s.campaign_id === c.id);
             navigate(campaignSearches.length === 0 ? 'edit' : 'dashboard', c.id, null);
           }}
-          onCreateCampaign={() => setView('create-campaign')}
+          onCreateCampaign={() => navigate('hunt-setup', null, null)}
           onOpenKept={() => setView('kept')}
           onOpenApp={() => setView('settings')}
         />
       </div>
+    );
+  }
+
+  if (view === 'hunt-setup') {
+    return (
+      <HuntSetupScreen
+        onBack={() => navigate('landing', null, null)}
+        onSaved={({ campaignId }) => {
+          appData.refreshAll();
+          navigate('dashboard', campaignId, null);
+          scraper.handleStartScrape(campaignId);
+        }}
+      />
     );
   }
 

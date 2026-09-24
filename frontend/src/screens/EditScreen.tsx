@@ -6,6 +6,7 @@ import { Bar } from '../components/surface';
 import PlaceInput, { type Place } from '../components/PlaceInput';
 import SearchTermsField from '../components/SearchTermsField';
 import { RequirementsSheet } from './RequirementsSheet';
+import { EditProbeSheet } from './EditProbeSheet';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign, SearchTarget, SearchFamilyTerm } from '../types';
 import { composeSearchUrl, decomposeSearchUrl, slugify } from '../utils/searchUrl';
@@ -42,6 +43,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
   const [saving, setSaving] = useState(false);
   const [requirementsOpen, setRequirementsOpen] = useState(false);
+  const [probeOpen, setProbeOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const lookupSeq = useRef(0);
@@ -89,16 +91,9 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           if (!data) return;
           if (data.name) setName(data.name);
           if (Array.isArray(data.terms)) {
-            setTerms(
-              data.terms.map((t: Omit<SearchFamilyTerm, 'enabled'> & { enabled?: boolean | number }) => ({
-                id: t.id,
-                term: t.term,
-                label: t.label || t.term,
-                enabled: t.enabled !== 0 && t.enabled !== false,
-                listings: t.listings,
-                fit_listings: t.fit_listings,
-              }))
-            );
+            setTerms(data.terms.map((t: Omit<SearchFamilyTerm, 'enabled'> & { enabled?: boolean | number }) => ({
+              id: t.id, term: t.term, label: t.label || t.term, enabled: t.enabled !== 0 && t.enabled !== false, listings: t.listings, fit_listings: t.fit_listings,
+            })));
           }
           if (data.base_url) applyDecomposedUrl(data.base_url);
         })
@@ -178,35 +173,20 @@ export const EditScreen: React.FC<EditScreenProps> = ({
     setSaving(true);
     setSaveError(null);
 
-    // Never the hunt's name as it stands: it is the narrow wish, and a search
-    // for the narrow wish misses what sellers describe more loosely.
     const fallback = broadenQuery(trimmedName) || trimmedName;
-    const effectiveTerms =
-      terms.length > 0
-        ? terms.map((t) => ({
-            ...(t.id ? { id: t.id } : {}),
-            term: t.term,
-            label: t.label || t.term,
-            enabled: true,
-          }))
-        : [{ term: slugify(fallback), label: fallback, enabled: true }];
+    const effectiveTerms = terms.length > 0
+      ? terms.map((t) => ({ ...(t.id ? { id: t.id } : {}), term: t.term, label: t.label || t.term, enabled: true }))
+      : [{ term: slugify(fallback), label: fallback, enabled: true }];
 
     const composedBaseUrl = composeSearchUrl({
       locationSlug: place ? slugify(place.name) : locationSlug,
-      // Only a resolved Kleinanzeigen location id, never a postal code: they
-      // are different namespaces, and l86899 is not Landsberg (7091). Writing
-      // the PLZ into the tail produced a URL the scraper crawled somewhere
-      // else entirely, with nothing to show for it.
       locationId,
       radius: place || locationId ? radius : null,
       maxPrice,
-      // The family replaces this per term; the first term keeps the stored
-      // base URL a search someone could actually run.
       query: effectiveTerms[0]?.term ? slugify(effectiveTerms[0].term) : undefined,
       category: categoryId,
       attributes,
     });
-
 
     try {
       const isUpdate = Boolean(campaign?.family_id);
@@ -216,10 +196,8 @@ export const EditScreen: React.FC<EditScreenProps> = ({
         name: trimmedName,
         base_url: composedBaseUrl,
         terms: effectiveTerms,
+        ...(!isUpdate && campaign?.id ? { campaign_id: campaign.id } : {}),
       };
-      if (!isUpdate && campaign?.id) {
-        payload.campaign_id = campaign.id;
-      }
 
       const res = await fetch(endpoint, {
         method,
@@ -358,6 +336,21 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           </div>
         )}
 
+        {/* Field 6: Markt neu prüfen (Plan §6) */}
+        <div className="space-y-2">
+          <label className="block text-xs font-medium text-[#8FA6A1]">
+            {t('hunt.step5Title')}
+          </label>
+          <button
+            type="button"
+            data-testid="edit-probe-btn"
+            onClick={() => setProbeOpen(true)}
+            className="w-full px-3.5 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-left text-sm text-[#8FA6A1] hover:text-[#F2F5F4] hover:border-[#8FA6A1] transition-colors cursor-pointer"
+          >
+            {t('hunt.probeAgain')}
+          </button>
+        </div>
+
         {saveError && (
           <p className="text-xs text-[#E87967] font-semibold">{saveError}</p>
         )}
@@ -380,6 +373,16 @@ export const EditScreen: React.FC<EditScreenProps> = ({
         isOpen={requirementsOpen}
         onClose={() => setRequirementsOpen(false)}
         campaignId={campaign?.id ?? null}
+      />
+
+      <EditProbeSheet
+        isOpen={probeOpen}
+        onClose={() => setProbeOpen(false)}
+        terms={terms}
+        locationId={locationId}
+        radius={radius}
+        maxPrice={maxPrice}
+        categoryId={categoryId}
       />
     </div>
   );

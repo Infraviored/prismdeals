@@ -1,12 +1,13 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import type { Campaign, KnowledgeSet, SearchTarget, Listing, RouteCorridorData } from '../types';
+import type { ViewState } from './useHashRouter';
 import { transformListing } from '../utils/listingTransformer';
 
 interface UseAppDataProps {
   currentCampaignId: number | null;
   setCurrentCampaignId: (id: number | null) => void;
   view: string;
-  navigate: (view: 'landing' | 'dashboard' | 'edit' | 'create-campaign' | 'settings', campaignId?: number | null, searchId?: number | null) => void;
+  navigate: (view: ViewState, campaignId?: number | null, searchId?: number | null) => void;
   appUser: { email: string; role: string } | null;
 }
 

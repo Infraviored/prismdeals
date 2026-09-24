@@ -282,3 +282,88 @@ export interface RouteCorridorData {
   };
 }
 
+export type HuntType = 'exact' | 'shortlist' | 'class' | 'features' | 'fit' | 'taste' | 'opportunity';
+
+export interface HuntRequirement {
+  id: string;
+  label?: string;
+  want?: Record<string, unknown>;
+  type?: string;
+}
+
+export interface HuntParsedIntent {
+  text?: string;
+  query?: string;
+  hunt_type: HuntType;
+  confidence: number;
+  musts: HuntRequirement[];
+  prefs: HuntRequirement[];
+  filters: Record<string, string>;
+  use: string[];
+  models: string[];
+  sizes: string[];
+  budget: { min: number | null; max: number | null } | null;
+  class: string | null;
+}
+
+export interface ProposedModel {
+  model: string;
+  years?: string;
+  total?: number;
+  title_hits?: number;
+  median?: number | null;
+  selected?: boolean;
+}
+
+export interface ProbeRung {
+  term: string;
+  label: string;
+  source: string;
+  total: number;
+  sampled: number;
+  likely: number;
+  unclear: number;
+  no: number;
+  new_likely: number;
+  gain: number;
+  overlap: number;
+  likely_share: number;
+  kept: boolean;
+  prices: number[];
+}
+
+export interface ProbeEstimate {
+  union_likely: number;
+  union_unclear: number;
+  median_price: number | null;
+}
+
+export interface BudgetStep {
+  max: number;
+  likely: number;
+}
+
+export interface RelaxSignal {
+  must: string;
+  label: string;
+  likely_without: number;
+}
+
+export interface ModelSeen {
+  name: string;
+  count: number;
+  median: number | null;
+}
+
+export interface MarketPicture {
+  rungs: ProbeRung[];
+  chosen_terms: string[];
+  estimate: ProbeEstimate;
+  per_budget: BudgetStep[];
+  relax: RelaxSignal[];
+  models_seen: ModelSeen[];
+  requests: number;
+  seconds: number;
+  partial: boolean;
+}
+
