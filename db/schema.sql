@@ -412,4 +412,19 @@ CREATE TABLE IF NOT EXISTS listing_ranks (
 
 CREATE INDEX IF NOT EXISTS idx_listing_ranks_listing ON listing_ranks(listing_id);
 
+-- P9: verdict per requirements version
+--
+-- A verdict is keyed by (listing, requirements hash) rather than by
+-- (listing, search).  Editing search terms creates new searches but the
+-- requirements are the same, so verdicts stay visible without re-judging.
+-- Editing musts changes the hash and the old verdicts no longer match.
+--
+-- The column is nullable so old rows survive the migration.  The backfill
+-- script (backend/migrations/p9_backfill.js) fills them in.
+ALTER TABLE listing_fit ADD COLUMN requirements_hash TEXT;
 
+CREATE INDEX IF NOT EXISTS idx_listing_fit_reqhash ON listing_fit(requirements_hash, listing_id);
+
+-- Cached hash on the knowledge set itself, so readers can resolve it
+-- without re-parsing item_json at query time.
+ALTER TABLE knowledge_sets ADD COLUMN requirements_hash TEXT;
