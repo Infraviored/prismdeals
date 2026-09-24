@@ -4,7 +4,7 @@
 Jede Zahl unten ist gezählt, nicht geschätzt. Wer sie aktualisiert: nachzählen.*
 
 Dieses Dokument beschreibt den **Ist-Zustand**. Wohin es gehen soll, steht in
-[`produktkern.md`](produktkern.md).
+[`product-core.md`](product-core.md).
 
 ---
 

@@ -4,7 +4,7 @@ A motorcycle, a RAM kit and a wardrobe are not judged the same way: the risk of
 the motorcycle hides in its model, the RAM kit is all specification, and for the
 wardrobe the real cost is fetching it. A profile records that difference once per
 kind of thing, so the rest of the system can ask "how do we judge this?" instead
-of hard-coding one answer. The reasoning lives in docs/produktkern.md.
+of hard-coding one answer. The reasoning lives in docs/product-core.md.
 
 The category is only a proposal. Kleinanzeigen files mattresses under "Schlafzimmer"
 next to wardrobes; the hunt's own intent may overrule it. This module answers the

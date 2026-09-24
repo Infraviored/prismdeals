@@ -5,7 +5,7 @@
  *
  * The gate comes from the must-have requirements: one stated violation is 0,
  * every requirement the listing leaves open caps the score at 0.75 of what it
- * would be. The grades come from the five axes of docs/produktkern.md, the
+ * would be. The grades come from the five axes of docs/product-core.md, the
  * weights from the listing's profile (scraper/profiles.py, exported to
  * profiles.json). An axis without a basis -- no market, no route -- drops out
  * of both sums instead of counting with an invented grade.

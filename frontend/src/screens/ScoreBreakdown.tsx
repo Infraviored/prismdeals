@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import type { RowListing } from '../components/surface/Row';
 
-/** Why a listing scores what it scores (docs/produktkern.md, section 12).
+/** Why a listing scores what it scores (docs/product-core.md, section 10).
  *
  * The must-haves first -- met, broken, or not stated -- because they decide
  * whether the rest matters; then one line per graded axis. This replaces a

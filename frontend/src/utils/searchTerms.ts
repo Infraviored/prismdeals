@@ -8,7 +8,7 @@
  *
  * Measured on the Corsair hunt: "corsair vengeance 32gb" found 50 listings, 7
  * of them matching. The full wish as a search term would have found almost
- * none. See docs/produktkern.md, section 6.
+ * none. See docs/product-core.md, section 4.
  */
 
 const DROP: RegExp[] = [

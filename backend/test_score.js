@@ -1,6 +1,6 @@
 /**
  * The score: a gate from the must-haves, five graded axes weighed by profile.
- * docs/produktkern.md, section 12.
+ * docs/product-core.md, section 10.
  */
 const assert = require('assert');
 const { scoreListing } = require('./db/score');
