@@ -217,6 +217,20 @@ def walk(driver, base, out_dir, width, height):
     time.sleep(2)
     shoot(driver, out_dir, "05-settings")
 
+    # A find's sheet. Never photographed before, which is how a footer of
+    # three buttons with its main action broken over three lines went live.
+    listing_id = driver.execute_async_script(
+        "const done = arguments[arguments.length - 1];"
+        "fetch('/api/listings?campaign_id=' + arguments[0] + '&limit=1&sort=price_asc')"
+        ".then(r => r.json()).then(d => done((d.listings || [])[0]?.id || null))"
+        ".catch(() => done(null));",
+        cid,
+    )
+    if listing_id:
+        driver.get(f"{base}/#dashboard?campaignId={cid}&listingId={listing_id}")
+        time.sleep(2)
+        shoot(driver, out_dir, "06-detail-sheet")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

@@ -33,7 +33,7 @@ describe('FundeDetailSheet', () => {
     expect(priceEl.className).toContain('font-bold');
 
     // Reference distance is displayed in coral
-    const refDiffEl = screen.getByText('35 € below reference');
+    const refDiffEl = screen.getByText('35 € below market');
     expect(refDiffEl).toBeInTheDocument();
     expect(refDiffEl.className).toContain('text-[#E87967]');
   });
@@ -89,7 +89,7 @@ describe('FundeDetailSheet', () => {
       price_delta_eur: 5,
     };
     render(<FundeDetailSheet listing={nonDealListing} onClose={vi.fn()} />);
-    const deltaEl = screen.getByText('5 € below reference');
+    const deltaEl = screen.getByText('5 € below market');
     expect(deltaEl).toBeInTheDocument();
     expect(deltaEl.className).toContain('text-[#8FA6A1]');
     expect(deltaEl.className).not.toContain('text-[#E87967]');

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RowListing } from '../components/surface';
 import { readListingIdFromHash, writeListingIdToHash } from '../utils/listingLink';
 
@@ -13,9 +13,14 @@ export function useLinkedListing(listings: RowListing[], campaignId: number | nu
   const [selectedListing, setSelectedListing] = useState<RowListing | null>(null);
   const linkedId = readListingIdFromHash();
 
+  // Close only when an id leaves the address (back button), never merely
+  // because none is there: a click opens the sheet before the address changes.
+  const previousId = useRef<string | null>(linkedId);
   useEffect(() => {
+    const hadId = previousId.current;
+    previousId.current = linkedId;
     if (!linkedId) {
-      setSelectedListing(null);
+      if (hadId) setSelectedListing(null);
       return;
     }
     if (selectedListing?.id === linkedId) return;

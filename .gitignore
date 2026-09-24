@@ -53,3 +53,4 @@ data/*
 !data/kleinanzeigen_taxonomy.json
 extension/test_data/
 .wt/
+.claude/settings.local.json

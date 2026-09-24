@@ -30,7 +30,7 @@ export const ShareLinkButton: React.FC<{ title?: string | null }> = ({ title }) 
     <button
       type="button"
       onClick={share}
-      className="shrink-0 py-3 px-4 rounded-[3px] border border-[#0E4A40] text-sm font-semibold text-[#F2F5F4] hover:border-[#8FA6A1] cursor-pointer"
+      className="py-2.5 px-3 rounded-[3px] border border-[#0E4A40] text-sm font-semibold text-[#F2F5F4] whitespace-nowrap hover:border-[#8FA6A1] cursor-pointer"
     >
       {copied ? t('surface.linkCopied') : t('surface.shareLink')}
     </button>

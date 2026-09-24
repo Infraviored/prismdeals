@@ -60,30 +60,35 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
       onClose={onClose}
       title={t('surface.detailTitle')}
       footer={
-        <div className="flex gap-2">
-        {onToggleKeep && (
-          <button
-            type="button"
-            aria-pressed={isKept}
-            onClick={() => onToggleKeep(listing.id)}
-            className="shrink-0 py-3 px-4 rounded-[3px] border border-[#0E4A40] text-sm font-semibold text-[#F2F5F4] hover:border-[#8FA6A1] cursor-pointer"
-          >
-            {isKept ? t('surface.kept') : t('surface.keep')}
-          </button>
-        )}
-        <ShareLinkButton title={listing.title} />
-        {listing.url ? (
-          <a
-            href={listing.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ backgroundColor: '#E4D6BE', color: '#011F1F' }}
-            className="flex-1 py-3 px-4 rounded-[3px] font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md hover:brightness-105"
-          >
-            <span style={{ color: '#011F1F' }}>{t('surface.openInKleinanzeigen')}</span>
-            <ExternalLink className="w-4 h-4" style={{ color: '#011F1F' }} />
-          </a>
-        ) : null}
+        // The main action across the full width, the two quiet ones under it.
+        // Three buttons in a row squeezed "Auf Kleinanzeigen öffnen" onto
+        // three lines on a phone.
+        <div className="flex flex-col gap-2">
+          {listing.url ? (
+            <a
+              href={listing.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ backgroundColor: '#E4D6BE', color: '#011F1F' }}
+              className="w-full py-3 px-4 rounded-[3px] font-semibold text-sm flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer hover:brightness-105"
+            >
+              <span style={{ color: '#011F1F' }}>{t('surface.openInKleinanzeigen')}</span>
+              <ExternalLink className="w-4 h-4 shrink-0" style={{ color: '#011F1F' }} />
+            </a>
+          ) : null}
+          <div className="grid grid-cols-2 gap-2">
+            {onToggleKeep && (
+              <button
+                type="button"
+                aria-pressed={isKept}
+                onClick={() => onToggleKeep(listing.id)}
+                className="py-2.5 px-3 rounded-[3px] border border-[#0E4A40] text-sm font-semibold text-[#F2F5F4] whitespace-nowrap hover:border-[#8FA6A1] cursor-pointer"
+              >
+                {isKept ? t('surface.kept') : t('surface.keep')}
+              </button>
+            )}
+            <ShareLinkButton title={listing.title} />
+          </div>
         </div>
       }
     >
@@ -149,17 +154,17 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
 
               {/* Reference price distance signal - ONLY Coral element when is_deal */}
               {listing.is_deal ? (
-                <span data-price-signal className="text-sm font-semibold text-[#E87967] tabular-nums whitespace-nowrap">
+                <span data-price-signal className="text-sm font-semibold text-[#E87967] [font-variant-numeric:tabular-nums] whitespace-nowrap">
                   {typeof listing.price_delta_eur === 'number' && listing.price_delta_eur > 0
                     ? t('surface.belowReference', { amount: listing.price_delta_eur })
                     : t('surface.dealBadge')}
                 </span>
               ) : typeof listing.price_delta_eur === 'number' && listing.price_delta_eur > 0 ? (
-                <span className="text-sm font-semibold text-[#8FA6A1] tabular-nums whitespace-nowrap">
+                <span className="text-sm font-semibold text-[#8FA6A1] [font-variant-numeric:tabular-nums] whitespace-nowrap">
                   {t('surface.belowReference', { amount: listing.price_delta_eur })}
                 </span>
               ) : typeof listing.price_delta_eur === 'number' && listing.price_delta_eur < 0 ? (
-                <span className="text-sm font-semibold text-[#8FA6A1] tabular-nums whitespace-nowrap">
+                <span className="text-sm font-semibold text-[#8FA6A1] [font-variant-numeric:tabular-nums] whitespace-nowrap">
                   {t('surface.aboveReference', { amount: Math.abs(listing.price_delta_eur) })}
                 </span>
               ) : null}
@@ -195,7 +200,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
           <h1 className="text-base sm:text-lg font-semibold text-[#F2F5F4] leading-snug">
             {listing.title || '—'}
           </h1>
-          <p className="text-xs text-[#8FA6A1] tabular-nums -mt-2" data-testid="listing-number">
+          <p className="text-xs text-[#8FA6A1] -mt-2" data-testid="listing-number">
             {t('surface.listingNumber', { id: listing.id })}
           </p>
 
