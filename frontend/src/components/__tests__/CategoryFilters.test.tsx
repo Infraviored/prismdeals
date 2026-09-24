@@ -126,4 +126,44 @@ describe('CategoryFilters', () => {
     const asked = fetchMock.mock.calls.some(c => String(c[0]).includes('suggest'));
     expect(asked).toBe(false);
   });
+
+  it('renders attribute_range filters with min and max inputs and updates attributes', async () => {
+    const fetchMock = mockFetch({
+      '/api/taxonomy/categories/305': {
+        id: '305',
+        name: 'Motorräder & Motorroller',
+        filters: [
+          {
+            key: 'motorraeder_roller.km_i',
+            label: 'Kilometerstand',
+            type: 'attribute_range',
+            location: 'tail',
+          },
+        ],
+      },
+    });
+    globalThis.fetch = fetchMock as never;
+    const onAttributesChange = vi.fn();
+
+    render(
+      <CategoryFilters
+        categoryId="305"
+        attributes={[]}
+        term="R1"
+        onCategoryChange={vi.fn()}
+        onAttributesChange={onAttributesChange}
+      />
+    );
+
+    expect(await screen.findByText('Kilometerstand')).toBeInTheDocument();
+    const minInput = screen.getByPlaceholderText(/from|ab/i);
+    const maxInput = screen.getByPlaceholderText(/to|bis/i);
+
+    fireEvent.change(minInput, { target: { value: '5000' } });
+    expect(onAttributesChange).toHaveBeenCalledWith(['motorraeder_roller.km_i:5000,']);
+
+    fireEvent.change(maxInput, { target: { value: '50000' } });
+    expect(onAttributesChange).toHaveBeenCalledWith(['motorraeder_roller.km_i:,50000']);
+  });
 });
+

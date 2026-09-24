@@ -304,14 +304,6 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           <p className="text-sm text-[#C9A227]">{t('surface.placeUnresolved')}</p>
         )}
 
-        <CategoryFilters
-          categoryId={categoryId}
-          attributes={attributes}
-          term={name}
-          onCategoryChange={setCategoryId}
-          onAttributesChange={setAttributes}
-        />
-
         {/* Field 2: Wo (Where) */}
         <div className="space-y-2">
           <label className="block text-xs font-medium text-[#8FA6A1]">
@@ -341,6 +333,14 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           </label>
           <MaxPriceField value={maxPrice} onChange={setMaxPrice} />
         </div>
+
+        <CategoryFilters
+          categoryId={categoryId}
+          attributes={attributes}
+          term={name}
+          onCategoryChange={setCategoryId}
+          onAttributesChange={setAttributes}
+        />
 
         {/* Field 5: what the site cannot filter on */}
         {campaign && (

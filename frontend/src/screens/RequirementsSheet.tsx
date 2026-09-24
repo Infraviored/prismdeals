@@ -48,12 +48,15 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchCount, setSearchCount] = useState(0);
+  const [showMore, setShowMore] = useState(false);
+  const [configuredFieldIds, setConfiguredFieldIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isOpen || !campaignId) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setShowMore(false);
 
     fetch(`/api/campaigns/${campaignId}/requirements`, { credentials: 'same-origin' })
       .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
@@ -62,10 +65,15 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
         setFields(data.fields || []);
         setSearchCount(data.searches || 0);
         const stored: Record<string, Record<string, unknown>> = {};
+        const configured = new Set<string>();
         for (const requirement of data.requirements || []) {
-          stored[requirement.id] = requirement.buyer_wants || {};
+          if (requirement.buyer_wants && Object.keys(requirement.buyer_wants).length > 0) {
+            stored[requirement.id] = requirement.buyer_wants;
+            configured.add(requirement.id);
+          }
         }
         setWants(stored);
+        setConfiguredFieldIds(configured);
       })
       .catch(() => !cancelled && setError(t('surface.requirementsLoadFailed')))
       .finally(() => !cancelled && setLoading(false));
@@ -137,6 +145,67 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
     );
   };
 
+  const renderField = (field: AskableField) => (
+    <div key={field.id} className="flex flex-col gap-2">
+      <div className="text-sm font-medium text-[#F2F5F4]">
+        {field.label}
+        {field.unit ? ` (${field.unit})` : ''}
+      </div>
+
+      {field.type === 'number' && (
+        <div className="flex gap-3">
+          {numberInput(field, 'min', t('surface.atLeast'))}
+          {numberInput(field, 'max', t('surface.atMost'))}
+        </div>
+      )}
+
+      {field.type === 'enum' && (
+        <div className="flex flex-wrap gap-1.5">
+          {(field.options || []).map(option => {
+            const chosen = ((wants[field.id]?.preferred as string[]) || []).includes(
+              option
+            );
+            return (
+              <Pill
+                key={option}
+                label={option.toUpperCase()}
+                active={chosen}
+                onClick={() => {
+                  const list = [...((wants[field.id]?.preferred as string[]) || [])];
+                  const at = list.indexOf(option);
+                  if (at === -1) list.push(option);
+                  else list.splice(at, 1);
+                  setWant(field.id, list.length ? { preferred: list } : {});
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {field.type === 'boolean' && (
+        <div className="flex gap-1.5">
+          {[true, false].map(value => (
+            <Pill
+              key={String(value)}
+              label={value ? t('surface.yes') : t('surface.no')}
+              active={wants[field.id]?.match === value}
+              onClick={() =>
+                setWant(
+                  field.id,
+                  wants[field.id]?.match === value ? {} : { match: value }
+                )
+              }
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const storedFields = fields.filter(f => configuredFieldIds.has(f.id));
+  const suggestionFields = fields.filter(f => !configuredFieldIds.has(f.id));
+
   return (
     <Sheet
       isOpen={isOpen}
@@ -168,67 +237,24 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
           </p>
 
           <div className="flex flex-col gap-5">
-            {fields.map(field => (
-              <div key={field.id} className="flex flex-col gap-2">
-                <div className="text-sm font-medium text-[#F2F5F4]">
-                  {field.label}
-                  {field.unit ? ` (${field.unit})` : ''}
-                </div>
+            {storedFields.map(renderField)}
 
-                {field.type === 'number' && (
-                  <div className="flex gap-3">
-                    {numberInput(field, 'min', t('surface.atLeast'))}
-                    {numberInput(field, 'max', t('surface.atMost'))}
+            {suggestionFields.length > 0 && (
+              <div className="flex flex-col gap-4 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowMore(prev => !prev)}
+                  className="w-full py-2.5 px-3 text-xs font-medium text-[#8FA6A1] hover:text-[#F2F5F4] border border-[#0E4A40] hover:border-[#8FA6A1] rounded text-center transition-colors cursor-pointer bg-transparent"
+                >
+                  {showMore ? t('surface.fewerCriteria') : t('surface.moreCriteria')}
+                </button>
+                {showMore && (
+                  <div className="flex flex-col gap-5 pt-1" data-testid="suggestion-fields">
+                    {suggestionFields.map(renderField)}
                   </div>
-                )}
-
-                {field.type === 'enum' && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {(field.options || []).map(option => {
-                      const chosen = ((wants[field.id]?.preferred as string[]) || []).includes(
-                        option
-                      );
-                      return (
-                        <Pill
-                          key={option}
-                          label={option.toUpperCase()}
-                          active={chosen}
-                          onClick={() => {
-                            const list = [...((wants[field.id]?.preferred as string[]) || [])];
-                            const at = list.indexOf(option);
-                            if (at === -1) list.push(option);
-                            else list.splice(at, 1);
-                            setWant(field.id, list.length ? { preferred: list } : {});
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-
-                {field.type === 'boolean' && (
-                  <div className="flex gap-1.5">
-                    {[true, false].map(value => (
-                      <Pill
-                        key={String(value)}
-                        label={value ? t('surface.yes') : t('surface.no')}
-                        active={wants[field.id]?.match === value}
-                        onClick={() =>
-                          setWant(
-                            field.id,
-                            wants[field.id]?.match === value ? {} : { match: value }
-                          )
-                        }
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {field.description && (
-                  <p className="text-2xs text-[#8FA6A1] leading-snug">{field.description}</p>
                 )}
               </div>
-            ))}
+            )}
           </div>
         </>
       )}

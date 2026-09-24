@@ -123,7 +123,9 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
           (d.filters || []).filter(
             (f: TaxonomyFilter) =>
               f.location === 'tail' &&
-              (f.type === 'attribute_boolean' || (f.options || []).length > 0)
+              (f.type === 'attribute_boolean' ||
+                f.type === 'attribute_range' ||
+                (f.options || []).length > 0)
           )
         );
       })
@@ -229,6 +231,51 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
                 />
               </button>
             </label>
+          );
+        }
+
+        if (filter.type === 'attribute_range') {
+          const [minVal, maxVal] = (current || '').split(',');
+          return (
+            <div
+              key={filter.key}
+              className="w-full px-3.5 py-2.5 min-h-[44px] rounded bg-[#00100F] border border-[#0E4A40] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm focus-within:border-[#8FA6A1] hover:border-[#8FA6A1] transition-colors"
+            >
+              <label htmlFor={id} className="text-[#8FA6A1] shrink-0">
+                {filter.label}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  id={`${id}-min`}
+                  type="number"
+                  inputMode="numeric"
+                  placeholder={t('surface.atLeast')}
+                  value={minVal || ''}
+                  onChange={e => {
+                    const nextMin = e.target.value.trim();
+                    const curMax = maxVal || '';
+                    if (!nextMin && !curMax) setValue(filter.key, null);
+                    else setValue(filter.key, `${nextMin},${curMax}`);
+                  }}
+                  className="w-24 bg-[#011F1F] border border-[#0E4A40] rounded px-2.5 py-1 text-sm text-[#F2F5F4] tabular-nums focus:outline-none focus:border-[#8FA6A1]"
+                />
+                <span className="text-[#8FA6A1] text-xs">–</span>
+                <input
+                  id={`${id}-max`}
+                  type="number"
+                  inputMode="numeric"
+                  placeholder={t('surface.atMost')}
+                  value={maxVal || ''}
+                  onChange={e => {
+                    const curMin = minVal || '';
+                    const nextMax = e.target.value.trim();
+                    if (!curMin && !nextMax) setValue(filter.key, null);
+                    else setValue(filter.key, `${curMin},${nextMax}`);
+                  }}
+                  className="w-24 bg-[#011F1F] border border-[#0E4A40] rounded px-2.5 py-1 text-sm text-[#F2F5F4] tabular-nums focus:outline-none focus:border-[#8FA6A1]"
+                />
+              </div>
+            </div>
           );
         }
 

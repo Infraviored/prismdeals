@@ -28,7 +28,10 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS campaigns (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT UNIQUE
+      name TEXT UNIQUE,
+      hunt_type TEXT,
+      profile_key TEXT,
+      intent_json TEXT
     );
 
 CREATE TABLE IF NOT EXISTS dossiers (
@@ -307,4 +310,9 @@ CREATE INDEX IF NOT EXISTS idx_price_history_listing ON listing_price_history(li
 -- the old search's listings and verdicts must stay visible in the campaign view
 -- so saving never looks like "everything was deleted".
 ALTER TABLE searches ADD COLUMN last_scraped_at TEXT;
+
+-- P1: Hunt engine model columns on campaigns
+ALTER TABLE campaigns ADD COLUMN hunt_type TEXT;
+ALTER TABLE campaigns ADD COLUMN profile_key TEXT;
+ALTER TABLE campaigns ADD COLUMN intent_json TEXT;
 

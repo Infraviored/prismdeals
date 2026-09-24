@@ -330,14 +330,14 @@ Four kinds of needs; the kind decides where a need flows:
 |---|---|---|
 | taxonomy | `data/kleinanzeigen_taxonomy.json`, 161 categories with filters | — |
 | category → profile | `scraper/profiles.py` (listing + search URL) | small-model check per hunt |
-| hunt type | — | everything |
-| probing / market picture | term counts after save | probing before save, snowball, overlap, per-node term memory |
-| playbooks | 5 in `scraper/playbooks.py` | tie to profile + hunt type; stop using as requirements form |
+| hunt type | `campaigns.hunt_type` stored, validated, backfilled (P1) | UI setup flow (P3) |
+| probing / market picture | term counts after save; B1-B8 benchmark runner + recorded fixtures (P1) | probing before save, snowball, overlap, per-node term memory (P2) |
+| playbooks | 5 in `scraper/playbooks.py`, mapped to filters (`playbook_filters.json`) (P0) | tie to profile + hunt type; stop using as requirements form |
 | path keys | `dossiers.identity_key` | inheritance |
 | claims | table `dossiers`, `validate_claim` | axis, check path, weight; today one row = whole dossier |
 | listing → node | `identity.py` (cars, motorcycles, laptops, phones) | recognition marks from research |
 | market | median per search (`reference_price.js`) | per node, cleaned, adjusted |
-| intent | requirements per campaign (`requirements_api.js`) | interview, four need kinds, filters into URL |
+| intent | requirements per campaign, filter mapping to URL (P0), `campaigns.intent_json` (P1) | interview, four need kinds |
 | verdict | per (listing, search) in `listing_fit` | per (listing, requirements version) |
 | score | `backend/db/score.js`, breakdown in sheet | rank as separate statement |
 | research bridge | research prompt in `dossiers.py` | three prompts, copy/paste, approval |
@@ -348,7 +348,7 @@ Four kinds of needs; the kind decides where a need flows:
 Detailed plan: [`plan-hunt-engine.md`](plan-hunt-engine.md) (packages P0–P9, benchmark hunts B1–B8).
 
 1. ✓ taxonomy lookup · ✓ score.
-2. P0 quick fixes (motorcycle screen) · P1 hunt model + benchmarks.
+2. ✓ P0 quick fixes (motorcycle screen) · ✓ P1 hunt model + benchmarks.
 3. P2 probe engine · P4 intent parsing → P3 setup flow with market picture · P5 model proposals.
 4. P6 candidate set, one comparative call.
 5. P7 knowledge nodes + research bridge · P8 market per node · P9 verdict per requirements version.

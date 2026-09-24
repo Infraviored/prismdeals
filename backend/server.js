@@ -52,7 +52,10 @@ const { applySchema } = require('./db/schema');
 // five places, and the campaign dashboard returned 500 on every fresh install
 // because this file queried route_searches while only Python created it.
 applySchema(db)
-  .then(() => seedDefaultUser())
+  .then(() => {
+    seedDefaultUser();
+    require('./migrations/p1_backfill').backfillHuntTypes(query, run).catch(console.error);
+  })
   .catch(err => {
     console.error('Could not bring the database up to db/schema.sql:', err.message);
     process.exit(1);
@@ -846,15 +849,45 @@ app.get('/api/campaigns', async (req, res) => {
 // API: Create/Update campaign
 app.post('/api/campaigns', async (req, res) => {
   try {
-    const { id, name } = req.body;
+    const { id, name, hunt_type, profile_key, intent_json } = req.body;
     if (!name) {
       return res.status(400).json({ error: 'Missing campaign name' });
     }
+    const valErr = require('./campaign_hunt_api').validateHuntPayload({ hunt_type, profile_key, intent_json });
+    if (valErr) return res.status(400).json({ error: valErr });
+
+    const storedIntent =
+      intent_json === undefined
+        ? undefined
+        : intent_json === null
+        ? null
+        : typeof intent_json === 'object'
+        ? JSON.stringify(intent_json)
+        : intent_json;
+
     let campaignId = id;
     if (campaignId) {
-      await run('UPDATE campaigns SET name = ? WHERE id = ?', [name, campaignId]);
+      const updates = ['name = ?'];
+      const values = [name];
+      if (hunt_type !== undefined) {
+        updates.push('hunt_type = ?');
+        values.push(hunt_type);
+      }
+      if (profile_key !== undefined) {
+        updates.push('profile_key = ?');
+        values.push(profile_key);
+      }
+      if (storedIntent !== undefined) {
+        updates.push('intent_json = ?');
+        values.push(storedIntent);
+      }
+      values.push(campaignId);
+      await run(`UPDATE campaigns SET ${updates.join(', ')} WHERE id = ?`, values);
     } else {
-      const result = await run('INSERT INTO campaigns (name) VALUES (?)', [name]);
+      const result = await run(
+        'INSERT INTO campaigns (name, hunt_type, profile_key, intent_json) VALUES (?, ?, ?, ?)',
+        [name, hunt_type || null, profile_key || null, storedIntent || null]
+      );
       campaignId = result.id;
     }
     res.json({ success: true, id: campaignId });
@@ -944,6 +977,7 @@ app.use(require('./location_resolver'));
 app.use(require('./taxonomy'));
 app.use(require('./kept')(query, get, run));
 app.use(require('./requirements_api')(query, get, run));
+app.use(require('./campaign_hunt_api')(query, get, run));
 app.use(require('./fit_api')(query, get));
 app.use(require('./overview_api')(query, get));
 

@@ -79,24 +79,25 @@ Each package ships on its own and leaves the app usable.
 
 ---
 
-## 3. P0 — quick fixes (motorcycle case)
+## 3. P0 — quick fixes (motorcycle case) [done]
 
 - Requirements sheet:
-  - hide `description` (English extractor instructions); show label + unit only.
-  - playbook fields become **suggestions** (collapsed "more criteria"), not the default form.
+  - hide `description` (English extractor instructions); show label + unit only. (done)
+  - playbook fields become **suggestions** (collapsed "more criteria"), not the default form. (done)
 - Filterable fields go to the URL, not requirements:
   - map playbook field → taxonomy filter where one exists
-    (motorcycles: `km_i`, `ez_i`, `hubraum_i`, `leistung_i`, `tuevy_i`; laptops: `ram_s`, `screen_size_s`, …).
-  - shown in the setup form as range/enum inputs next to price.
+    (motorcycles: `km_i`, `ez_i`, `hubraum_i`, `leistung_i`, `tuevy_i`; laptops: `ram_s`, `screen_size_s`, …). (done)
+  - canonical mapping in `data/playbook_filters.json`, `scraper/playbook_filters.py`, `backend/taxonomy_mapping.js`.
+  - shown in the setup form as range/enum inputs next to price (`CategoryFilters.tsx` / `EditScreen.tsx`). (done)
   - ⚠ seller-set attributes are often **unset** → filtering on them can drop good listings.
     P0 shows them; P2 measures coverage before they are applied (§4.4).
 - First-open bug: the requirements sheet loads nothing until requirements were edited once.
-  Reproduce on a copy DB, fix, test.
-- Tests: sheet renders no description; field→filter mapping per category (table-driven).
+  Fixed in `backend/requirements_api.js` and `scraper/requirements_cli.py`. (done)
+- Tests: sheet renders no description; field→filter mapping per category (table-driven); fresh hunt requirements loading test. (all passing)
 
 ---
 
-## 4. P1 — hunt model
+## 4. P1 — hunt model [done]
 
 ### 4.1 Data
 
@@ -105,14 +106,15 @@ Each package ships on its own and leaves the app usable.
 - `campaigns.intent_json` TEXT: `{text, musts[], prefs[], filters{}, use[], models[], sizes{}, budget{min,max}}`.
   - `musts`/`prefs`: `{id, label, type: number|enum|boolean|text, want: {min|max|oneOf|match|present}}`.
   - fields may be **ad-hoc** (buyer-defined, no playbook) — extraction must handle them (P6).
-- Migration: additive columns only; `VACUUM INTO` backup before running on live.
-- Backfill: existing hunts with a family + one memory playbook → `exact`; else null (asked on next edit).
+- Migration: additive columns only in `db/schema.sql`; API endpoints in `backend/campaign_hunt_api.js`. (done)
+- Backfill: existing hunts with a family + one memory playbook → `exact`; else null (`backend/migrations/p1_backfill.js`). (done)
 
 ### 4.2 Benchmarks
 
-- `scripts/benchmarks/hunts.json`, `run.py` (§1). Runs against a **copy** DB via `PRISMDEALS_DB`.
+- `scripts/benchmarks/hunts.json`, `run.py` (§1). Runs against a **copy** DB via `PRISMDEALS_DB`. (done)
 - Fixture recorder: `run.py --record` saves every fetched page under
-  `scraper/fixtures/probe/<sha1(url)>.html` for offline tests.
+  `scraper/fixtures/probe/<sha1(url)>.html` for offline tests. (done, 23 probe fixtures recorded)
+- Acceptance benchmark run results: B1-B8 live probe completed, rate-limited to <= 1 req/s, B1 found 12 fits (>= 7 required).
 
 ---
 

@@ -51,6 +51,7 @@ Thumbs.db
 # Local databases and chrome profiles
 data/*
 !data/kleinanzeigen_taxonomy.json
+!data/playbook_filters.json
 extension/test_data/
 .wt/
 .claude/settings.local.json
