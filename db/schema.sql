@@ -308,3 +308,20 @@ CREATE INDEX IF NOT EXISTS idx_price_history_listing ON listing_price_history(li
 -- so saving never looks like "everything was deleted".
 ALTER TABLE searches ADD COLUMN last_scraped_at TEXT;
 
+-- Model proposals for class hunts (package P5).
+--
+-- Caches candidate models proposed by the small model per class node for 30 days.
+-- Also tracks probe counts and title hits so the hallucination guard can drop
+-- models never seen in marketplace titles after two probes.
+CREATE TABLE IF NOT EXISTS class_models (
+    node_key    TEXT NOT NULL,
+    model       TEXT NOT NULL,
+    years       TEXT,
+    proposed_at TEXT NOT NULL,
+    probe_count INTEGER NOT NULL DEFAULT 0,
+    title_hits  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (node_key, model)
+);
+
+CREATE INDEX IF NOT EXISTS idx_class_models_node ON class_models(node_key);
+
