@@ -1,11 +1,12 @@
 """The product graph: taxonomy root, placing, aliases, inherited attributes."""
 
+import json
 import sqlite3
 
 import pytest
 
 import db_schema
-from graph import place, readers, store, taxonomy
+from graph import facts, place, readers, store, taxonomy
 
 
 @pytest.fixture(scope="module")
@@ -127,3 +128,107 @@ def test_readers_read_details_numbers_and_denials():
     assert readers.read(ez, listing)[0] == 2009
     assert readers.read(abs_, listing)[0] is False
     assert readers.read(cl, listing)[0] == 16
+
+
+def _r1_answer(prompt):
+    return {
+        "path": [
+            {"name": "Yamaha", "kind": "brand", "aliases": ["yamaha"]},
+            {
+                "name": "R1",
+                "kind": "model",
+                "aliases": ["yzf-r1", "r1"],
+                "generations": [
+                    {"name": "RN12", "years": [2004, 2006], "aliases": ["rn12"]},
+                    {"name": "RN19", "years": [2007, 2008], "aliases": ["rn19"]},
+                    {"name": "RN22", "years": [2009, 2014], "aliases": ["rn22"]},
+                ],
+            },
+            {
+                "name": "RN19",
+                "kind": "generation",
+                "aliases": ["rn19"],
+                "years": [2007, 2008],
+            },
+        ],
+        "attributes": [],
+    }
+
+
+@pytest.fixture
+def bikes():
+    conn = sqlite3.connect(":memory:")
+    db_schema.apply_schema(conn)
+    taxonomy.seed(conn)
+    target = place.place(conn, "Yamaha R1 RN19", "305", ask=_r1_answer)
+    rows = [
+        ("a", "YAMAHA R1 RN12 1. Hand - 13.000 km", {"Erstzulassung": "Mai 2005"}),
+        (
+            "b",
+            "Yamaha R1 -wenig Kilometer-",
+            {"Erstzulassung": "Juli 2008", "Kilometerstand": "2.152 km"},
+        ),
+        ("c", "Yamaha WR 125 R - 1. HAND", {}),
+        ("d", "Suche Yamaha R1", {}),
+        ("e", "R1 Tankdeckel", {}),
+    ]
+    for n, (lid, title, details) in enumerate(rows):
+        conn.execute(
+            "INSERT INTO listings (id, title, url, details) VALUES (?, ?, ?, ?)",
+            (
+                lid,
+                title,
+                f"https://www.kleinanzeigen.de/s-anzeige/x/{n}-305-1",
+                json.dumps(details),
+            ),
+        )
+    return conn, target
+
+
+def _key(conn, node_id):
+    return store.node(conn, node_id)["key"].split("motorraeder-roller/")[-1]
+
+
+def test_a_generation_is_named_or_found_by_the_year(bikes):
+    conn, target = bikes
+    assert _key(conn, facts.process(conn, "a")) == "yamaha/r1/rn12"
+    assert _key(conn, facts.process(conn, "b")) == "yamaha/r1/rn19"
+    assert facts.facts_of(conn, "b")["km"] == 2152
+    method = conn.execute(
+        "SELECT method FROM listing_resolution WHERE listing_id='b'"
+    ).fetchone()[0]
+    assert method == "years"
+
+
+def test_an_unknown_model_stays_at_its_brand_and_a_request_says_so(bikes):
+    conn, _ = bikes
+    assert _key(conn, facts.process(conn, "c")) == "yamaha"
+    facts.process(conn, "d")
+    assert facts.facts_of(conn, "d")["is_request"] is True
+
+
+def test_a_model_name_without_its_brand_is_not_that_model(bikes):
+    """ "R1 Tankdeckel" names no Yamaha: it is not the R1."""
+    conn, _ = bikes
+    node = store.node(conn, facts.process(conn, "e"))
+    assert node["kind"] == "category"
+
+
+def test_a_searching_target_counts_as_its_brand(bikes):
+    conn, target = bikes
+    assert _key(conn, facts.process(conn, "e", prior=[target])) == "yamaha/r1"
+
+
+def test_a_year_on_the_border_of_two_generations_decides_nothing(bikes):
+    """ "Juli 2007" can be a late RN12 or an early RN19."""
+    conn, _ = bikes
+    model = store.node(
+        conn,
+        store.node(
+            conn, place.find(conn, "RN19", taxonomy.category_node_id(conn, "305"))
+        )["parent_id"],
+    )
+    from graph import resolve
+
+    assert resolve.by_years(conn, model["id"], 2007) is None
+    assert store.node(conn, resolve.by_years(conn, model["id"], 2005))["name"] == "RN12"

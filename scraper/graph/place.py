@@ -28,6 +28,9 @@ Produkt gemeint ist:
 - Eine reine Klasse ("Ventilator") ist ein einzelner Knoten der Art "class".
 - aliases: wie Verkäufer es in Anzeigentiteln schreiben (Schreibweisen, Codes, Spitznamen).
 - years: [von, bis] für Modelle und Generationen, sonst weglassen.
+- generations: beim Modell-Schritt ALLE Generationen dieses Modells (auch die nicht
+  gesuchten), je {{"name", "years", "aliases"}} -- damit ein Angebot einer anderen Generation
+  als solche erkannt wird.
 
 Dazu 0 bis 6 Merkmale, die für GENAU diese Art Produkt beim Gebrauchtkauf zählen und
 NICHT schon unter den vorhandenen Merkmalen sind. Je Merkmal:
@@ -39,7 +42,8 @@ NICHT schon unter den vorhandenen Merkmalen sind. Je Merkmal:
 - at: Index im Pfad, ab dem es gilt (0 = oberster Pfad-Knoten).
 
 Antworte NUR mit JSON:
-{{"path": [{{"name": "...", "kind": "...", "aliases": ["..."], "years": [2008, 2011]}}],
+{{"path": [{{"name": "...", "kind": "...", "aliases": ["..."], "years": [2008, 2011],
+             "generations": [{{"name": "...", "years": [2004, 2007], "aliases": ["..."]}}]}}],
   "attributes": [{{"id": "...", "label": "...", "type": "...", "unit": "...",
                    "readers": ["..."], "at": 0}}]}}
 """
@@ -84,18 +88,42 @@ def _clean_path(raw):
         kind = step.get("kind")
         if not name or kind not in KINDS:
             raise PlaceError(f"Ungültiger Pfad-Schritt: {step!r}")
-        years = step.get("years")
-        if not (
-            isinstance(years, list)
-            and len(years) == 2
-            and all(isinstance(y, int) for y in years)
-        ):
-            years = None
         aliases = [str(a) for a in step.get("aliases") or [] if str(a).strip()]
-        path.append({"name": name, "kind": kind, "aliases": aliases, "years": years})
+        generations = [
+            g for g in map(_clean_generation, step.get("generations") or []) if g
+        ]
+        path.append(
+            {
+                "name": name,
+                "kind": kind,
+                "aliases": aliases,
+                "years": _years(step.get("years")),
+                "generations": generations,
+            }
+        )
     if not path:
         raise PlaceError("Die KI hat keinen Pfad geliefert.")
     return path
+
+
+def _years(value):
+    if (
+        isinstance(value, list)
+        and len(value) == 2
+        and all(isinstance(y, int) for y in value)
+    ):
+        return value
+    return None
+
+
+def _clean_generation(raw):
+    if not isinstance(raw, dict) or not str(raw.get("name") or "").strip():
+        return None
+    return {
+        "name": str(raw["name"]).strip(),
+        "years": _years(raw.get("years")),
+        "aliases": [str(a) for a in raw.get("aliases") or [] if str(a).strip()],
+    }
 
 
 def _clean_attributes(raw, depth):
@@ -151,17 +179,29 @@ def place(conn, text, category_code, ask=llm.ask_json):
     known = find(conn, text, category["id"])
     if known:
         return known
-    existing = sorted(store.effective_attributes(conn, category["id"]))
+    existing = store.effective_attributes(conn, category["id"])
     raw = ask(
         PROMPT.format(
             category=category["name"],
             code=category["category_code"],
-            attributes=", ".join(existing) or "keine",
+            attributes=", ".join(
+                f"{a['label']} ({i})" for i, a in sorted(existing.items())
+            )
+            or "keine",
             text=text,
         )
     )
     path = _clean_path(raw)
-    attributes = _clean_attributes(raw, len(path))
+    # A fact the category already has under another id is not a new one
+    # ("kilometerstand" beside the site's "km" labelled "Kilometerstand").
+    taken = {store.fold(a["label"]) for a in existing.values()} | {
+        store.fold(i) for i in existing
+    }
+    attributes = [
+        a
+        for a in _clean_attributes(raw, len(path))
+        if store.fold(a["label"]) not in taken and store.fold(a["id"]) not in taken
+    ]
     parent_id, names, ids = category["id"], [], []
     for step in path:
         node_id = store.create_node(
@@ -175,6 +215,20 @@ def place(conn, text, category_code, ask=llm.ask_json):
         )
         for alias in _aliases(step["name"], names) | set(step["aliases"]):
             store.add_alias(conn, node_id, alias, "name", "model")
+        # Every generation of a model, the wanted one or not: an offer of
+        # another generation is then recognised as that one.
+        for generation in step["generations"]:
+            child = store.create_node(
+                conn,
+                node_id,
+                "generation",
+                generation["name"],
+                "model",
+                years_from=(generation["years"] or [None, None])[0],
+                years_to=(generation["years"] or [None, None])[1],
+            )
+            for alias in {generation["name"], *generation["aliases"]}:
+                store.add_alias(conn, child, alias, "code", "model")
         names.append(step["name"])
         ids.append(node_id)
         parent_id = node_id
@@ -197,16 +251,25 @@ def place(conn, text, category_code, ask=llm.ask_json):
 
 
 def describe(conn, node_id):
-    """The node as a hunt shows it: name path, years, key."""
+    """The node as a hunt shows it: its name path, years, key.
+
+    A name that already contains the one above it stands for both ("CBR" ->
+    "CBR 1000 RR" reads "Honda CBR 1000 RR", not "Honda CBR CBR 1000 RR").
+    """
     chain = store.ancestors(conn, node_id)
     target = chain[-1]
+    parts = []
+    for n in chain:
+        if n["kind"] in ("category", "class"):
+            continue
+        if parts and n["name"].lower().startswith(parts[-1].lower()):
+            parts[-1] = n["name"]
+        else:
+            parts.append(n["name"])
     return {
         "id": target["id"],
         "key": target["key"],
-        "name": " ".join(
-            n["name"] for n in chain if n["kind"] not in ("category", "class")
-        )
-        or target["name"],
+        "name": " ".join(parts) or target["name"],
         "kind": target["kind"],
         "status": target["status"],
         "years": [target["years_from"], target["years_to"]]
