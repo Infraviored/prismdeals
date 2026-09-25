@@ -86,14 +86,9 @@ def is_market_excluded(listing):
     if zustand == "defekt":
         return True
 
-    text = " ".join(
-        filter(None, [listing.get("title"), listing.get("short_description")])
-    )
-    if EXCLUSION_RE.search(text):
-        return True
-
-    fit = listing.get("fit") or {}
-    if fit.get("verdict") == "no":
+    # Title only ("keine Defekte" in a description is the opposite), and no
+    # verdict: a kit one hunt rejects is still a price for its own node.
+    if EXCLUSION_RE.search(listing.get("title") or ""):
         return True
 
     price = listing.get("price_eur")

@@ -28,10 +28,8 @@ function isMarketExcluded(listing) {
   const condition = listing.details?.Zustand || listing.details?.zustand || '';
   if (String(condition).toLowerCase().trim() === 'defekt') return true;
 
-  const text = [listing.title, listing.short_description].filter(Boolean).join(' ');
-  if (EXCLUSION_RE.test(text)) return true;
-
-  if (listing.fit?.verdict === 'no') return true;
+  // Title only, no verdict: see MARKET_EXCLUSION_SQL.
+  if (EXCLUSION_RE.test(listing.title || '')) return true;
 
   const price = Number(listing.price_eur);
   if (typeof listing.price_eur !== 'undefined' && listing.price_eur !== null && (isNaN(price) || price <= 0)) {
@@ -62,6 +60,26 @@ function medianOf(prices) {
   return { median: Math.round(median), count: sorted.length };
 }
 
+/**
+ * SQL that keeps a listing out of a market median: defect by the detail page,
+ * or a title that says parts, tinkerer, defect or wanted. Title only: "keine
+ * Defekte" in a description is the opposite, and "%suche%" in a text matched
+ * "Besucher". A verdict is not a reason: a kit one hunt rejects (4x8 GB for a
+ * 2x16 GB hunt) is still a price for its own node.
+ */
+const MARKET_EXCLUSION_SQL = `
+  COALESCE(json_extract(l.details, '$.Zustand'), '') <> 'Defekt'
+  AND NOT (
+    LOWER(COALESCE(l.title, '')) LIKE '%defekt%'
+    OR LOWER(COALESCE(l.title, '')) LIKE '%bastler%'
+    OR LOWER(COALESCE(l.title, '')) LIKE '%ersatzteil%'
+    OR LOWER(COALESCE(l.title, '')) LIKE '%schlacht%'
+    OR LOWER(COALESCE(l.title, '')) LIKE '%kaputt%'
+    OR LOWER(COALESCE(l.title, '')) LIKE '%teilespender%'
+    OR LOWER(COALESCE(l.title, '')) LIKE 'suche %'
+    OR LOWER(COALESCE(l.title, '')) LIKE '% gesucht%'
+  )`;
+
 async function nodeMedians(query, nodeKeys, scopeSearchIds = []) {
   const result = new Map();
   if (!nodeKeys || !nodeKeys.length) return result;
@@ -82,28 +100,10 @@ async function nodeMedians(query, nodeKeys, scopeSearchIds = []) {
     SELECT ln.node_key, l.price_eur
       FROM listing_nodes ln
       JOIN listings l ON l.id = ln.listing_id
-      LEFT JOIN listing_fit fit ON fit.listing_id = l.id
      WHERE (${conds})
        AND l.price_eur IS NOT NULL
        AND l.price_eur > 0
-       AND (fit.verdict IS NULL OR fit.verdict <> 'no')
-       AND COALESCE(json_extract(l.details, '$.Zustand'), '') <> 'Defekt'
-       AND NOT (
-         LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-         LIKE '%defekt%'
-         OR LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-         LIKE '%bastler%'
-         OR LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-         LIKE '%ersatzteil%'
-         OR LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-         LIKE '%schlacht%'
-         OR LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-         LIKE '%kaputt%'
-         OR LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-         LIKE '%teilespender%'
-         OR LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-         LIKE '%suche%'
-       )
+       AND ${MARKET_EXCLUSION_SQL}
   `, params);
 
   const pricesByNode = new Map();
@@ -126,7 +126,7 @@ async function nodeMedians(query, nodeKeys, scopeSearchIds = []) {
   if (scopeSearchIds && scopeSearchIds.length > 0) {
     const scopePlaceholders = scopeSearchIds.map(() => '?').join(',');
     const scopeRows = await query(`
-      SELECT l.price_eur
+      SELECT DISTINCT l.id, l.price_eur
         FROM listing_search_hits lsh
         JOIN listings l ON l.id = lsh.listing_id
         LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 'lsh.search_id')}
@@ -134,19 +134,7 @@ async function nodeMedians(query, nodeKeys, scopeSearchIds = []) {
          AND l.price_eur IS NOT NULL
          AND l.price_eur > 0
          AND (fit.verdict IS NULL OR fit.verdict <> 'no')
-         AND COALESCE(json_extract(l.details, '$.Zustand'), '') <> 'Defekt'
-         AND NOT (
-           LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-           LIKE '%defekt%'
-           OR LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-           LIKE '%bastler%'
-           OR LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-           LIKE '%ersatzteil%'
-           OR LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-           LIKE '%schlacht%'
-           OR LOWER(COALESCE(l.title, '') || ' ' || COALESCE(l.short_description, ''))
-           LIKE '%suche%'
-         )
+         AND ${MARKET_EXCLUSION_SQL}
     `, scopeSearchIds);
     const scopePrices = scopeRows.map(r => Number(r.price_eur));
     scopeMedian = medianOf(scopePrices);
@@ -392,4 +380,5 @@ module.exports = {
   MIN_NODE_SAMPLE,
   EXCLUSION_KEYWORDS,
   EXCLUSION_RE,
+  MARKET_EXCLUSION_SQL,
 };

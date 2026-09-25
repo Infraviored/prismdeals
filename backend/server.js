@@ -63,6 +63,11 @@ applySchema(db)
       .backfillP9Verdicts(query, run)
       .then(stats => console.log('P9 backfill:', JSON.stringify(stats)))
       .catch(console.error);
+    // Which product each listing is (P8): nothing else assigns it yet.
+    require('./migrations/p8_backfill_nodes')
+      .backfillP8Nodes(query, run)
+      .then(stats => console.log('P8 nodes:', JSON.stringify(stats)))
+      .catch(console.error);
   })
   .catch(err => {
     console.error('Could not bring the database up to db/schema.sql:', err.message);
@@ -3072,6 +3077,9 @@ app.post('/api/scrape', (req, res) => {
       console.log(`Python scraper exited with code ${code}`);
       activeScraperProcess = null;
       // Fresh offers deserve a fresh comparison (about 0.004 USD a run).
+      if (code === 0) {
+        require('./migrations/p8_backfill_nodes').backfillP8Nodes(query, run).catch(console.error);
+      }
       if (code === 0 && campaignId) require('./compare_api').startCompare(Number(campaignId));
     });
     

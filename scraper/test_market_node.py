@@ -18,15 +18,23 @@ def test_market_exclusion():
         is True
     )
     assert market_node.is_market_excluded({"title": "Laptop gesucht z.B. Dell"}) is True
+    # The description does not count: "keine Defekte" is the opposite.
     assert (
         market_node.is_market_excluded(
-            {"short_description": "Nur für Bastler oder Schlachtung"}
+            {
+                "title": "Corsair 2x16GB",
+                "short_description": "Top Zustand, keine Defekte",
+            }
         )
-        is True
+        is False
     )
-
-    assert market_node.is_market_excluded({"fit": {"verdict": "no"}}) is True
-    assert market_node.is_market_excluded({"fit": {"verdict": "fit"}}) is False
+    # A verdict is the hunt's, not the product's: a rejected kit is still a price.
+    assert (
+        market_node.is_market_excluded(
+            {"title": "Corsair 4x8GB", "fit": {"verdict": "no"}}
+        )
+        is False
+    )
 
     assert market_node.is_market_excluded({"price_eur": 0}) is True
     assert market_node.is_market_excluded({"price_eur": -10}) is True

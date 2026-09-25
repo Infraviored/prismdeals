@@ -35,13 +35,10 @@ async function runTests() {
   assert.strictEqual(isMarketExcluded({ title: 'Laptop gesucht z.B. Dell' }), true);
   assert.strictEqual(isMarketExcluded({ title: 'Suche Yamaha R1 RN19' }), true);
 
-  // Keyword exclusions in short_description
-  assert.strictEqual(isMarketExcluded({ title: 'MacBook Air', short_description: 'Verkaufe hier Teile zum Ausschlachten' }), true);
-  assert.strictEqual(isMarketExcluded({ title: 'Yamaha R1', short_description: 'Nur für Bastler oder Schlachtung' }), true);
-
-  // Rejected by free sieve
-  assert.strictEqual(isMarketExcluded({ title: 'Corsair RAM', fit: { verdict: 'no' } }), true);
-  assert.strictEqual(isMarketExcluded({ title: 'Corsair RAM', fit: { verdict: 'fit' } }), false);
+  // The description does not count: "keine Defekte" is the opposite.
+  assert.strictEqual(isMarketExcluded({ title: 'Corsair 2x16GB', short_description: 'Top Zustand, keine Defekte' }), false);
+  // A verdict is the hunt's, not the product's.
+  assert.strictEqual(isMarketExcluded({ title: 'Corsair 4x8GB', fit: { verdict: 'no' } }), false);
 
   // Non-positive price
   assert.strictEqual(isMarketExcluded({ title: 'Lenovo', price_eur: 0 }), true);
