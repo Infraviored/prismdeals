@@ -48,7 +48,7 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({
       setApprovedClaims(data.existing_claims || []);
       setProposedClaims(data.pending_claims || []);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error loading brief');
+      setError(t('surface.knowledgeLoadFailed'));
     } finally {
       setLoading(false);
     }
@@ -86,7 +86,7 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({
       setProposedClaims((prev) => [...prev, ...newClaims]);
       setAnswerText('');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error classifying answer');
+      setError(t('surface.knowledgeClassifyFailed'));
     } finally {
       setClassifying(false);
     }
@@ -174,12 +174,9 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({
             </div>
 
             {/* Decision explanation if research not needed */}
-            {briefData.decision === 'nicht noetig' || briefData.research_value === 'none' ? (
+            {briefData.decision === 'nicht nötig' || briefData.research_value === 'none' ? (
               <div className="p-3.5 rounded bg-[#012828] border border-[#0E4A40] text-xs text-[#8FA6A1] space-y-1.5">
-                <p className="font-medium text-[#F2F5F4]">
-                  Hintergrundrecherche für diesen Preis und diese Kategorie nicht erforderlich.
-                </p>
-                {briefData.reason && <p>{briefData.reason}</p>}
+                <p className="font-medium text-[#F2F5F4]">{t('surface.researchNotNeeded')}</p>
               </div>
             ) : (
               <>

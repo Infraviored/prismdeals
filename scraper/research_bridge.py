@@ -4,7 +4,7 @@ product-core.md section 8.  Each prompt uses the structure:
 hard frame (code) + soft middle (data/small model) + fixed format at the end.
 
 1. BRIEF_PROMPT: small model decides whether research is worth it, writes
-   "Was zu wissen ist" + the research brief.  May answer "nicht noetig".
+   "Was zu wissen ist" + the research brief.  May answer "nicht nötig".
 2. SEARCH_BRIEF: the brief the buyer copies into their web-search AI.
    Fixed German headings per profile.
 3. CLASSIFY_PROMPT: small model splits a pasted answer into claims, keeps
@@ -31,13 +31,13 @@ def build_brief_prompt(intent, profile, market, existing_claims):
 
     # --- Hard frame (top) ---
     parts.append(
-        "Du bist ein Kaufberater fuer Gebrauchtware.\n"
-        "Entscheide, ob fuer diese Suche Hintergrundwissen lohnt.\n\n"
+        "Du bist ein Kaufberater für Gebrauchtware.\n"
+        "Entscheide, ob für diese Suche Hintergrundwissen lohnt.\n\n"
         "REGELN:\n"
         "- Antworte NUR im vorgegebenen Format.\n"
-        "- Wenn kein Wissen noetig ist, antworte mit ENTSCHEIDUNG: nicht noetig.\n"
+        "- Wenn kein Wissen nötig ist, antworte mit ENTSCHEIDUNG: nicht nötig.\n"
         "- Schreibe auf Deutsch.\n"
-        "- Maximal 6 Zeilen fuer WAS ZU WISSEN IST.\n"
+        "- Maximal 6 Zeilen für WAS ZU WISSEN IST.\n"
     )
 
     # --- Soft middle: context ---
@@ -68,7 +68,7 @@ def build_brief_prompt(intent, profile, market, existing_claims):
         model_dep = getattr(profile, "model_dependent", False)
         parts.append(
             f"Verstecktes Risiko: {hidden}/3, "
-            f"modellabhaengig: {'ja' if model_dep else 'nein'}"
+            f"modellabhängig: {'ja' if model_dep else 'nein'}"
         )
 
     if market:
@@ -86,7 +86,7 @@ def build_brief_prompt(intent, profile, market, existing_claims):
     parts.append(
         "\n## Ausgabeformat\n\n"
         "Antworte exakt in diesem Format:\n\n"
-        "ENTSCHEIDUNG: lohnt sich | nicht noetig\n\n"
+        "ENTSCHEIDUNG: lohnt sich | nicht nötig\n\n"
         "WAS ZU WISSEN IST:\n"
         "- Zeile 1\n"
         "- Zeile 2\n"
@@ -106,8 +106,8 @@ def parse_brief_response(response_text):
     text = response_text.strip()
 
     decision = "lohnt sich"
-    if "nicht noetig" in text.lower() or "nicht nötig" in text.lower():
-        decision = "nicht noetig"
+    if "nicht nötig" in text.lower() or "nicht nötig" in text.lower():
+        decision = "nicht nötig"
 
     what_to_know = []
     search_brief = ""
@@ -153,9 +153,9 @@ def build_search_brief(profile, what_to_know, search_brief_text, model_name=""):
 
     # Hard frame
     parts.append(
-        "Recherchiere gruendlich zu folgendem Gebrauchtprodukt. "
+        "Recherchiere gründlich zu folgendem Gebrauchtprodukt. "
         "Beantworte JEDEN Abschnitt. Nenne zu jeder Aussage mindestens "
-        "eine vollstaendige URL als Quelle. Keine Preise vom Gebrauchtmarkt."
+        "eine vollständige URL als Quelle. Keine Preise vom Gebrauchtmarkt."
     )
 
     if model_name:
@@ -173,13 +173,13 @@ def build_search_brief(profile, what_to_know, search_brief_text, model_name=""):
     # Fixed headings per profile
     headings = _headings_for_profile(profile)
     if headings:
-        parts.append("\nGliedere deine Antwort unter diesen Ueberschriften:")
+        parts.append("\nGliedere deine Antwort unter diesen Überschriften:")
         for h in headings:
             parts.append(f"\n## {h}\n(hier deine Erkenntnisse)")
 
     # Format at the end
     parts.append(
-        "\nWICHTIG: Nenne zu jeder Aussage die vollstaendige URL der Quelle. "
+        "\nWICHTIG: Nenne zu jeder Aussage die vollständige URL der Quelle. "
         "Ohne URL wird die Aussage verworfen."
     )
 
@@ -208,10 +208,10 @@ def build_classify_prompt(pasted_answer, node_key, profile):
 
     # Hard frame
     parts.append(
-        "Du bist ein Analyst fuer Gebrauchtware. Zerlege die folgende "
+        "Du bist ein Analyst für Gebrauchtware. Zerlege die folgende "
         "Recherche-Antwort in einzelne Behauptungen (Claims).\n\n"
         "REGELN:\n"
-        "- Jede Behauptung ist ein eigenstaendiger Fakt.\n"
+        "- Jede Behauptung ist ein eigenständiger Fakt.\n"
         "- Behalte alle URLs als Quellen.\n"
         "- Markiere Behauptungen ohne URL als unsourced: true.\n"
         "- Ordne jede Behauptung einer Art zu.\n"
@@ -245,7 +245,7 @@ def build_classify_prompt(pasted_answer, node_key, profile):
         "```json\n"
         "{\n"
         f'  "kind": {kind_list},\n'
-        '  "statement": "konkreter, pruefbarer Fakt auf Deutsch",\n'
+        '  "statement": "konkreter, prüfbarer Fakt auf Deutsch",\n'
         '  "check_path": "text | photo | ask | on_site",\n'
         '  "weight": "minor | costly | dealbreaker",\n'
         '  "sources": ["https://..."],\n'

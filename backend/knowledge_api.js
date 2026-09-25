@@ -124,7 +124,10 @@ module.exports = (query, get, run) => {
 
     try {
       const dbArgs = process.env.PRISMDEALS_DB ? ['--db', process.env.PRISMDEALS_DB] : [];
-      const briefData = await runPythonJson('knowledge_cli.py', [...dbArgs, 'brief', String(campaignId)]);
+      // ?check=1 only asks whether research pays off (no model call): the
+      // results screen asked on every open and paid for a brief each time.
+      const noLlm = req.query.check ? ['--no-llm'] : [];
+      const briefData = await runPythonJson('knowledge_cli.py', [...dbArgs, 'brief', String(campaignId), ...noLlm]);
 
       // Also attach any pending (unapproved) claims for this node
       let pendingClaims = [];

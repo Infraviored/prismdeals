@@ -2,7 +2,7 @@
 """CLI and backend worker for knowledge nodes and research bridge (P7).
 
 Commands:
-  brief <campaign_id>     Build research brief (or report 'nicht noetig')
+  brief <campaign_id>     Build research brief (or report 'nicht nötig')
   classify <node_key>     Classify pasted answer from stdin into claims
   claims-listing <id>     Get inherited claims for a listing
   claims-node <node_key>  Get inherited claims for a node
@@ -78,13 +78,20 @@ def _resolve_campaign_context(conn, campaign_id):
     if not profile and profile_key:
         profile = getattr(profiles, "by_key", lambda k: None)(profile_key)
     if not profile:
-        # Fallback profile inference
-        if any(
-            w in name.lower() for w in ("r1", "cbr", "motorrad", "bike", "auto", "bmw")
-        ):
-            profile = profiles.PROFILES.get("vehicle")
-        else:
-            profile = profiles.PROFILES.get("general", profiles.PROFILES.get("vehicle"))
+        # The category of the hunt's own searches decides, as for every other
+        # judgement (scraper/profiles.py). A keyword list with "vehicle" as the
+        # default made RAM, laptops and mattresses vehicles.
+        for (url,) in conn.execute(
+            """SELECT url FROM searches WHERE campaign_id = ?
+               UNION ALL SELECT base_url FROM search_families WHERE campaign_id = ?""",
+            (campaign_id, campaign_id),
+        ).fetchall():
+            found, category, _source = profiles.profile_for(search_url=url)
+            if category is not None:
+                profile = found
+                break
+    if not profile:
+        profile = profiles.PROFILES.get("open")
 
     # Find candidate node_key
     node_key = None
@@ -140,7 +147,7 @@ def cmd_brief(args):
 
     if level == "none":
         out = {
-            "decision": "nicht noetig",
+            "decision": "nicht nötig",
             "research_value": "none",
             "reason": reason,
             "what_to_know": [],

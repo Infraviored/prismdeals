@@ -249,8 +249,8 @@ def test_search_brief_headings():
     )
 
     # Hard frame & rules
-    assert "Recherchiere gruendlich zu folgendem Gebrauchtprodukt" in brief
-    assert "WICHTIG: Nenne zu jeder Aussage die vollstaendige URL der Quelle" in brief
+    assert "Recherchiere gründlich zu folgendem Gebrauchtprodukt" in brief
+    assert "WICHTIG: Nenne zu jeder Aussage die vollständige URL der Quelle" in brief
     # Fixed headings per vehicle profile
     for heading in profile.research_headings:
         assert f"## {heading}" in brief
@@ -262,7 +262,7 @@ def test_classify_prompt_shape():
         "motorrad/supersport/yamaha-r1/rn19",
         profiles.PROFILES["vehicle"],
     )
-    assert "Du bist ein Analyst fuer Gebrauchtware" in prompt
+    assert "Du bist ein Analyst für Gebrauchtware" in prompt
     assert "motorrad/supersport/yamaha-r1/rn19" in prompt
     assert "Ausgabeformat" in prompt
     assert '"kind":' in prompt
@@ -292,9 +292,9 @@ def test_parse_brief_response():
 
 
 def test_parse_brief_response_nicht_noetig():
-    resp = "ENTSCHEIDUNG: nicht noetig\n\nWAS ZU WISSEN IST:\nSUCHAUFTRAG:"
+    resp = "ENTSCHEIDUNG: nicht nötig\n\nWAS ZU WISSEN IST:\nSUCHAUFTRAG:"
     parsed = research_bridge.parse_brief_response(resp)
-    assert parsed["decision"] == "nicht noetig"
+    assert parsed["decision"] == "nicht nötig"
 
 
 def test_parse_classify_response():
@@ -422,3 +422,28 @@ def test_claims_for_prompt(test_db):
     assert "- weakness [costly]: Getriebeschaden 2. Gang (check: on_site)" in text
     # Sources are kept out of prompt to save token budget
     assert "https://example.com" not in text
+
+
+def test_the_hunt_profile_comes_from_its_search_category(tmp_path):
+    """RAM is not a vehicle: the keyword fallback made every hunt one."""
+    import sqlite3
+
+    import db_schema
+    import knowledge_cli
+
+    db = str(tmp_path / "k.db")
+    conn = db_schema.connect(db)
+    conn.execute(
+        "INSERT INTO campaigns (id, name) VALUES (7, 'Corsair Vengeance 32GB')"
+    )
+    conn.execute(
+        "INSERT INTO searches (id, campaign_id, url) VALUES (45, 7, "
+        "'https://www.kleinanzeigen.de/s-pc-zubehoer-software/corsair/k0c225')"
+    )
+    conn.commit()
+    conn.row_factory = sqlite3.Row
+    _row, profile, _intent, node_key, _market = knowledge_cli._resolve_campaign_context(
+        conn, 7
+    )
+    assert profile.key == "spec"
+    assert node_key.startswith("spec/")

@@ -114,7 +114,7 @@ async function test() {
     assert.strictEqual(briefRes.status, 200, 'Expected 200 for campaign 1');
     const briefData = await briefRes.json();
     assert.ok(briefData && typeof briefData === 'object');
-    assert.ok(['lohnt sich', 'nicht noetig'].includes(briefData.decision));
+    assert.ok(['lohnt sich', 'nicht nötig'].includes(briefData.decision));
     assert.ok(Array.isArray(briefData.what_to_know));
     assert.ok(briefData.node_key);
 

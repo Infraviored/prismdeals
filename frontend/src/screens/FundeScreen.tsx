@@ -44,7 +44,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   useEffect(() => {
     if (!campaign?.id) return;
     let active = true;
-    fetch(`/api/campaigns/${campaign.id}/brief`)
+    fetch(`/api/campaigns/${campaign.id}/brief?check=1`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!active) return;
@@ -264,12 +264,10 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             {comparing ? t('surface.comparing') : t('surface.compare')}
           </button>
         )}
-        {campaign?.id && (
+        {campaign?.id && researchRecommended && (
           <button
             type="button"
-            className={`edit cursor-pointer hidden sm:inline-flex items-center gap-1 ${
-              researchRecommended ? 'text-[#4E8C6A] border-[#4E8C6A]/50' : ''
-            }`}
+            className="edit cursor-pointer hidden sm:inline-flex items-center gap-1 text-[#4E8C6A] border-[#4E8C6A]/50"
             onClick={() => setKnowledgeOpen(true)}
             data-testid="knowledge-btn"
           >
@@ -336,22 +334,12 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
                 {isScraping ? t('surface.searching') : t('surface.fetchListings')}
               </button>
             )}
-            {campaign?.id && (
+            {/* No compare button on the phone: the comparison runs after every
+                crawl on its own. */}
+            {campaign?.id && researchRecommended && (
               <button
                 type="button"
-                className="edit cursor-pointer whitespace-nowrap"
-                onClick={handleCompare}
-                disabled={comparing}
-              >
-                {comparing ? t('surface.comparing') : t('surface.compare')}
-              </button>
-            )}
-            {campaign?.id && (
-              <button
-                type="button"
-                className={`edit cursor-pointer whitespace-nowrap ${
-                  researchRecommended ? 'text-[#4E8C6A] border-[#4E8C6A]/50' : ''
-                }`}
+                className="edit cursor-pointer whitespace-nowrap text-[#4E8C6A] border-[#4E8C6A]/50"
                 onClick={() => setKnowledgeOpen(true)}
                 data-testid="knowledge-btn-mobile"
               >
