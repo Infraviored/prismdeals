@@ -13,7 +13,7 @@ export const HuntStructure: React.FC<HuntStructureProps> = ({ doc, place, filter
   const { t } = useTranslation();
   const labels = { must: t('surface.editMust'), wish: t('surface.editWish'), absent: t('surface.editAbsent') };
 
-  const list = (items: string[]) =>
+  const list = (items: string[], empty = t('surface.editNothing')) =>
     items.length ? (
       <ul className="mt-1 space-y-0.5">
         {items.map((text) => (
@@ -21,7 +21,7 @@ export const HuntStructure: React.FC<HuntStructureProps> = ({ doc, place, filter
         ))}
       </ul>
     ) : (
-      <p className="mt-1 text-sm text-[#8FA6A1]">{t('surface.editNothing')}</p>
+      <p className="mt-1 text-sm text-[#8FA6A1]">{empty}</p>
     );
 
   const search = [
@@ -41,7 +41,7 @@ export const HuntStructure: React.FC<HuntStructureProps> = ({ doc, place, filter
       ))}
       <div>
         <h3 className="text-sm font-semibold text-[#E4D6BE]">{t('surface.editForAll')}</h3>
-        {list(doc.requirements.map((r) => wantText(r, labels)))}
+        {list(doc.requirements.map((r) => wantText(r, labels)), t('surface.editNone'))}
       </div>
       <div>
         <h3 className="text-sm font-semibold text-[#E4D6BE]">{t('surface.editSearch')}</h3>
