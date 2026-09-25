@@ -67,7 +67,7 @@ flowchart LR
 | P0 | motorcycle screen sane | — | everything |
 | P1 | `hunt_type` stored, benchmarks runnable | — | P0 |
 | P2 | ✓ probe engine (scraper + API), no UI | P1 | P4 |
-| P3 | new setup flow with market picture | P2, P4 | P5 |
+| P3 | ✓ new setup flow with market picture | P2, P4 | P5 |
 | P4 | free text → intent chips | P1 | P2 |
 | P5 | class → model proposals, probed | P2, P4 | P3 |
 | P6 | candidate set + one comparative call | P2 | P3–P5 |
@@ -216,9 +216,10 @@ New module `scraper/probe.py`; CLI mode `--mode probe` (JSON on stdout, like `fa
 
 ---
 
-## 6. P3 — setup flow UI
+## 6. P3 — setup flow UI [done]
 
-Replaces the edit screen for **new** hunts; edit screen stays for existing ones, with a "probe again" button.
+- ✓ Implemented in `frontend/src/screens/HuntSetupScreen.tsx`, `frontend/src/screens/hunt/`, `frontend/src/screens/EditProbeSheet.tsx`, `frontend/src/hooks/useHuntSetup.ts`, `frontend/src/hooks/useProbe.ts`, `frontend/src/utils/probeAggregation.ts`, `frontend/src/utils/huntSave.ts`.
+- Replaces the edit screen for **new** hunts; edit screen stays for existing ones, with a "Markt neu prüfen" sheet action.
 
 ```
 1  What are you looking for?        [free text________________]

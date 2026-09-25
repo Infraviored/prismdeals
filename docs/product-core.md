@@ -332,14 +332,14 @@ Four kinds of needs; the kind decides where a need flows:
 |---|---|---|
 | taxonomy | `data/kleinanzeigen_taxonomy.json`, 161 categories with filters | — |
 | category → profile | `scraper/profiles.py` (listing + search URL) | small-model check per hunt |
-| hunt type | `campaigns.hunt_type` stored, validated, backfilled (P1); 7 types validated in `scraper/intent.py` (P4) | UI setup flow (P3) |
-| probing / market picture | ✓ probe engine, ladder, snowball, node memory (`scraper/probe.py`, P2); B1-B8 runner (P1) | UI setup flow (P3) |
+| hunt type | `campaigns.hunt_type` stored, validated, backfilled (P1); 7 types validated in `scraper/intent.py` (P4); ✓ setup flow UI (P3) | — |
+| probing / market picture | ✓ probe engine, ladder, snowball, node memory (`scraper/probe.py`, P2); B1-B8 runner (P1); ✓ market picture UI & aggregation (P3) | — |
 | playbooks | 5 in `scraper/playbooks.py`, mapped to filters (P0) | tie to profile + hunt type |
 | path keys | `dossiers.identity_key` | inheritance |
 | claims | table `dossiers`, `validate_claim` | axis, check path, weight; today one row = whole dossier |
 | listing → node | `identity.py` (cars, motorcycles, laptops, phones) | recognition marks from research |
 | market | median per search (`reference_price.js`) | per node, cleaned, adjusted |
-| intent | requirements per campaign, filter mapping to URL (P0), `campaigns.intent_json` (P1), `scraper/intent.py` + `POST /api/intent/parse` (P4) | interview UI (P3) |
+| intent | requirements per campaign, filter mapping to URL (P0), `campaigns.intent_json` (P1), `scraper/intent.py` + `POST /api/intent/parse` (P4); ✓ interview UI (P3) | — |
 | model proposals | `scraper/model_proposals.py`, table `class_models`, `POST /api/intent/models` (P5) | probe integration |
 | verdict | per (listing, search) in `listing_fit` | per (listing, requirements version) |
 | score | `backend/db/score.js`, breakdown in sheet | rank as separate statement |
@@ -352,7 +352,7 @@ Detailed plan: [`plan-hunt-engine.md`](plan-hunt-engine.md) (packages P0–P9, b
 
 1. ✓ taxonomy lookup · ✓ score.
 2. ✓ P0 quick fixes (motorcycle screen) · ✓ P1 hunt model + benchmarks.
-3. ✓ P2 probe engine · P4 intent parsing → P3 setup flow with market picture · P5 model proposals.
+3. ✓ P2 probe engine · ✓ P3 setup flow UI · P4 intent parsing → P5 model proposals.
 4. P6 candidate set, one comparative call.
 5. P7 knowledge nodes + research bridge · P8 market per node · P9 verdict per requirements version.
 - ~~Order: probing → hunt-type question → candidate set → research → market~~
