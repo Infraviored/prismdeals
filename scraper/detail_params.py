@@ -40,15 +40,23 @@ def _month_year(month, year):
 
 
 def bidder_params(page_html):
-    """The raw attribute object of a listing page, or {}."""
-    at = page_html.find(_MARKER)
-    if at < 0:
-        return {}
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(page_html[at + len(_MARKER) :].lstrip())
-    except ValueError:
-        return {}
-    return obj if isinstance(obj, dict) else {}
+    """The raw attribute object of a listing page, or {}.
+
+    The marker occurs more than once on the newer page layout, first with a
+    value that is not the object; every occurrence is tried.
+    """
+    start = 0
+    while True:
+        at = page_html.find(_MARKER, start)
+        if at < 0:
+            return {}
+        start = at + len(_MARKER)
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(page_html[start:].lstrip())
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and obj:
+            return obj
 
 
 def display_details(params):

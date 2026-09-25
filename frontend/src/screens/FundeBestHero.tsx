@@ -3,7 +3,7 @@ import type { RowListing } from '../components/surface/Row';
 import { useTranslation } from '../hooks/useTranslation';
 import { formatFreshness } from '../utils/freshness';
 import { formatLocation } from '../utils/formatLocation';
-import { getSpecChips } from '../utils/specChips';
+import { getSpecChips, getDetailChips } from '../utils/specChips';
 
 export interface FundeBestHeroProps {
   listing: RowListing;
@@ -37,7 +37,10 @@ export const FundeBestHero: React.FC<FundeBestHeroProps> = ({
   const isDeal = listing.is_deal;
 
   // Facts specs
-  const chips = getSpecChips(listing.fit?.facts as Record<string, unknown>);
+  const chips = [
+    ...getSpecChips(listing.fit?.facts as Record<string, unknown>),
+    ...getDetailChips((listing.details as Record<string, unknown>) || null),
+  ].slice(0, 4);
 
   // Price history drop check
   const history = listing.price_history || [];

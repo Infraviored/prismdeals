@@ -27,3 +27,16 @@ def test_the_visible_list_wins_and_the_data_fills_gaps():
 
 def test_a_page_without_the_object_gives_nothing():
     assert detail_params.bidder_params("<html></html>") == {}
+
+
+def test_the_object_is_found_after_an_earlier_marker_that_is_not_one():
+    page = (
+        '<script>{"%ENCODED_BIDDER_CUSTOM_PARAMS%":"%x%"}</script>'
+        '<script>{"%ENCODED_BIDDER_CUSTOM_PARAMS%":{"Kilometerstand":"2152","Erstzulassungsjahr":"2005"}}</script>'
+    )
+    assert (
+        detail_params.display_details(detail_params.bidder_params(page))[
+            "Kilometerstand"
+        ]
+        == "2.152 km"
+    )

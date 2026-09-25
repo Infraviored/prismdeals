@@ -318,7 +318,7 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
               </div>
             </div>
 
-            {storedFields.length === 0 && (
+            {storedFields.length === 0 && own.length === 0 && (
               <p className="text-sm text-[#8FA6A1]">{t('surface.requirementsEmpty')}</p>
             )}
             {storedFields.map(renderField)}

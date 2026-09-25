@@ -104,7 +104,10 @@ function scoreListing(listing, fields) {
       gate[states[i]].push(formatRequirementText(field));
     } else {
       soft.total += 1;
+      // A wish the offer does not mention is neither kept nor broken: half.
+      // Counted as missed, one unmentioned "ABS" cut good offers to 19 %.
       if (states[i] === 'met') soft.met += 1;
+      else if (states[i] === 'open') soft.met += 0.5;
       const label = field.label || formatRequirementText(field);
       wishes[states[i] === 'met' ? 'met' : states[i] === 'violated' ? 'missed' : 'open'].push(label);
     }

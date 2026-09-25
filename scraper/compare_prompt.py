@@ -39,6 +39,7 @@ def build_compare_prompt(
         "  are, condition, completeness, how trustworthy the listing reads. Price is\n"
         "  weighed by code elsewhere; do not mention it in the reason.\n"
         "- Be concise: reason is at most 20 words.\n"
+        "- Never ask the seller for something the listing already states.\n"
         "- Write reason, checks and seller_questions in German: the buyer reads them\n"
         "  in a German app and sends the questions to German sellers.\n"
         "- Say 'all requirements met' only if every requirement is 'met'.\n"
@@ -100,8 +101,15 @@ def build_compare_prompt(
 
         price_str = f"{price} €" if price is not None else "VB"
         parts.append(f"### [{lid}] {title}")
+        # The page's own attributes (registration, mileage, power ...): without
+        # them the comparison asked sellers for a mileage the page states.
+        attrs = ""
+        if isinstance(details, dict):
+            shown = [f"{k}: {v}" for k, v in details.items() if k != "Zustand" and v]
+            if shown:
+                attrs = " | " + "; ".join(shown[:10])
         parts.append(
-            f"Price: {price_str} | Location: {location} | Condition: {condition}{facts_str}"
+            f"Price: {price_str} | Location: {location} | Condition: {condition}{facts_str}{attrs}"
         )
         if desc:
             parts.append(f"Description: {desc}")

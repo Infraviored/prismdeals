@@ -289,3 +289,23 @@ def test_the_answer_budget_grows_with_the_candidates():
 
     assert _output_budget(30) > 4000 * 2
     assert _output_budget(200) == 16000
+
+
+def test_the_prompt_carries_the_page_attributes():
+    from compare_prompt import build_compare_prompt
+
+    prompt = build_compare_prompt(
+        [
+            {
+                "id": "1",
+                "title": "Honda CBR",
+                "details": {
+                    "Kilometerstand": "21.000 km",
+                    "Erstzulassung": "Juni 2009",
+                },
+            }
+        ],
+        [],
+    )
+    assert "Kilometerstand: 21.000 km" in prompt
+    assert "Never ask the seller for something the listing already states" in prompt

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Row } from '../components/surface';
+import { Row, type RowListing } from '../components/surface';
 import RouteCorridorMap, { type RouteCircle, type RouteListingGeo } from '../components/RouteCorridorMap';
 import { FundeDetailSheet } from './FundeDetailSheet';
 import { FundeModelsSheet } from './FundeModelsSheet';
@@ -22,6 +22,12 @@ export interface FundeScreenProps {
   onConfigure: () => void;
   onStartScrape?: () => void;
   isScraping?: boolean;
+}
+
+/** The usual price of the listing's own product (P8), when known. */
+function marketFor(listing: RowListing | null | undefined): number | null {
+  const median = listing?.score_parts?.market_basis?.median;
+  return typeof median === 'number' ? median : null;
 }
 
 export const FundeScreen: React.FC<FundeScreenProps> = ({
@@ -192,7 +198,10 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   // Weak market banner (§9.7): best candidate is above median or misses a must
   const isWeakMarket = useMemo(() => {
     if (!bestListing) return false;
-    const median = overview?.market?.median;
+    // The product's own market, as the sheet and the score use it. The hunt's
+    // overall median mixed in rejected offers (cheap R1s beside the CBRs) and
+    // called a fair CBR "above the usual price".
+    const median = marketFor(bestListing) ?? overview?.market?.median;
     if (typeof median === 'number' && typeof bestListing.price_eur === 'number' && bestListing.price_eur > median) {
       return 'median';
     }
@@ -382,7 +391,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
               {heroListing && (
                 <FundeBestHero
                   listing={heroListing}
-                  medianPrice={overview?.market?.median ?? null}
+                  medianPrice={marketFor(heroListing) ?? overview?.market?.median ?? null}
                   tab={tab}
                   isKept={kept.has(heroListing.id)}
                   onToggleKeep={toggle}

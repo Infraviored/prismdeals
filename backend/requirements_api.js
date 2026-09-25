@@ -200,7 +200,12 @@ module.exports = (query, get, run) => {
         req.params.id,
         req.query.category || req.query.url
       );
-      res.json({ playbook, fields, requirements: stored, searches: searches.length });
+      // Only the searches that still run: retired ones ("alle 7 Suchen" for a
+      // hunt with two terms) made the sheet's sentence wrong.
+      const running = await query('SELECT COUNT(*) AS n FROM searches WHERE campaign_id = ? AND enabled = 1', [
+        req.params.id,
+      ]);
+      res.json({ playbook, fields, requirements: stored, searches: running[0]?.n ?? searches.length });
     } catch (error) {
       console.error('Error reading campaign requirements:', error);
       res.status(500).json({ error: 'Failed to read requirements' });

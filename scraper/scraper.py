@@ -526,7 +526,12 @@ def harvest_descriptions(campaign_id=None):
                 f"Found {total} listings missing details to harvest.",
             )
 
-        with requests.Session() as session:
+        # No shared session: after the first page Kleinanzeigen sets a cookie
+        # (__ka_pur-ui-v2) and serves every later page in a newer layout this
+        # parser does not read -- every second listing came back without
+        # images or details. Each page fetched on its own gets the readable one.
+        session = None
+        if True:
             for idx, r in enumerate(rows):
                 listing_id = r["id"]
                 url = r["url"]
@@ -678,7 +683,12 @@ def update_all_descriptions_session(campaign_id=None):
                 f"Found {total} listings to check/update.",
             )
 
-        with requests.Session() as session:
+        # No shared session: after the first page Kleinanzeigen sets a cookie
+        # (__ka_pur-ui-v2) and serves every later page in a newer layout this
+        # parser does not read -- every second listing came back without
+        # images or details. Each page fetched on its own gets the readable one.
+        session = None
+        if True:
             for idx, r in enumerate(rows):
                 listing_id = r["id"]
                 url = r["url"]

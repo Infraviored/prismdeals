@@ -93,6 +93,7 @@ const silent = score({ fit: { facts: FULL }, price_eur: 150, market_median: 150 
 assert.ok(withAbs.score > silent.score, 'a met wish lifts the score');
 assert.ok(withoutAbs.score <= silent.score, '"ohne ABS" does not count as met');
 assert.ok(withAbs.wishes.met.includes('ABS'));
+assert.ok(silent.score > withoutAbs.score, 'an unmentioned wish counts half, a denied one nothing');
 assert.ok(withoutAbs.wishes.missed.includes('ABS'));
 
 console.log('score: all assertions passed');
