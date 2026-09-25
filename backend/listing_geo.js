@@ -6,28 +6,8 @@
 // town ("Bayern - Germering"). Both are answered from the shipped tables, the
 // same ones the corridor planner uses -- no geocoding service, no request.
 
-const fs = require('fs');
-const path = require('path');
 const places = require('./places');
-
-const PLZ_PATH = path.join(__dirname, '..', 'scraper', 'reference', 'plz_centroids.csv');
-
-let plzTable = null;
-
-function plz() {
-  if (plzTable) return plzTable;
-  plzTable = new Map();
-  try {
-    const lines = fs.readFileSync(PLZ_PATH, 'utf-8').split('\n').slice(1);
-    for (const line of lines) {
-      const [code, lat, lon] = line.split(',');
-      if (code && lat && lon) plzTable.set(code.trim(), [Number(lat), Number(lon)]);
-    }
-  } catch (error) {
-    console.error('Could not load the postal code table:', error.message);
-  }
-  return plzTable;
-}
+const { median } = require('./db/market_node');
 
 function distanceKm(a, b) {
   const rad = (d) => (d * Math.PI) / 180;
@@ -59,7 +39,7 @@ function coordinatesOf(location, near = null, withinKm = null) {
   if (!text) return null;
   const code = text.match(/^(\d{5})\b/);
   if (code) {
-    const found = plz().get(code[1]);
+    const found = places.byPostalCode(code[1]);
     if (found) return found;
   }
   const [state, town] = text.includes(' - ') ? text.split(' - ', 2) : [null, text.replace(/^\d{5}\s*/, '')];
@@ -94,37 +74,33 @@ function centreOf(searchUrl, listingPoints = []) {
   return { lat: place.lat, lon: place.lon, radius_km: Number(radius[1]), label: place.label };
 }
 
-function median(values) {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
-}
-
 /**
  * Gives every listing lat/lon (where the corridor has not already) and its
- * distance from the search centre. Returns the centre, or null.
- *
- * `measure: false` for a corridor: there the detour is the distance, and km
- * from the hunt's old town would read as one.
+ * distance from the search centre.
  */
-function placeListings(listings, searchUrl, { measure = true } = {}) {
+function placeListings(listings, searchUrl) {
   // Postal codes are unambiguous, so they alone locate the search's town.
-  const coded = listings
-    .map(l => (typeof l.lat === 'number' ? [l.lat, l.lon] : /^\d{5}\b/.test(l.location || '') ? coordinatesOf(l.location) : null))
-    .filter(Boolean);
-  const centre = centreOf(searchUrl, coded);
+  const known = listings.map(l =>
+    typeof l.lat === 'number' && typeof l.lon === 'number' ? [l.lat, l.lon]
+      : l.postal_code ? places.byPostalCode(l.postal_code)
+        : /^\d{5}\b/.test(l.location || '') ? coordinatesOf(l.location) : null
+  );
+  const centre = centreOf(searchUrl, known.filter(Boolean));
   const hint = centre ? [centre.lat, centre.lon] : null;
-  for (const listing of listings) {
-    if (typeof listing.lat !== 'number' || typeof listing.lon !== 'number') {
-      const found = coordinatesOf(listing.location, hint, centre ? centre.radius_km * 1.5 + 20 : null);
-      listing.lat = found ? found[0] : null;
-      listing.lon = found ? found[1] : null;
+  const within = centre ? centre.radius_km * 1.5 + 20 : null;
+  const byName = new Map(); // a hunt names the same towns again and again
+  listings.forEach((listing, i) => {
+    let found = known[i];
+    if (!found) {
+      if (!byName.has(listing.location)) byName.set(listing.location, coordinatesOf(listing.location, hint, within));
+      found = byName.get(listing.location);
     }
-    listing.distance_km =
-      measure && centre && typeof listing.lat === 'number'
-        ? Math.round(distanceKm([centre.lat, centre.lon], [listing.lat, listing.lon]) * 10) / 10
-        : null;
-  }
-  return centre;
+    listing.lat = found ? found[0] : null;
+    listing.lon = found ? found[1] : null;
+    listing.distance_km = centre && found
+      ? Math.round(distanceKm(hint, found) * 10) / 10
+      : null;
+  });
 }
 
 module.exports = { coordinatesOf, centreOf, placeListings, distanceKm };

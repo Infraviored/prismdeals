@@ -655,8 +655,8 @@ def main():
                             INSERT INTO listings (
                                 id, source, source_id, title, price, price_eur,
                                 location, url, short_description, detailed_description,
-                                search_id, last_seen_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                search_id, last_seen_at, postal_code
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ON CONFLICT(id) DO UPDATE SET
                                 last_seen_at = excluded.last_seen_at,
                                 delisted_at = NULL
@@ -674,6 +674,7 @@ def main():
                                 item.get("detailed_description", ""),
                                 search_id,
                                 last_seen_at,
+                                item.get("postal_code"),
                             ),
                         )
                         if search_id is not None:

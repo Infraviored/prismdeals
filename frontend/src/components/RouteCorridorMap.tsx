@@ -1,29 +1,34 @@
-import { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, Polyline, Circle, Marker, Popup, useMap } from 'react-leaflet';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useTranslation } from '../hooks/useTranslation';
-import type { RouteCircle, RouteListingGeo } from '../types';
-export type { RouteCircle, RouteListingGeo };
+import type { RouteListingGeo } from '../types';
+export type { RouteListingGeo };
 
 export interface RouteCorridorMapProps {
-  polyline: [number, number][];
-  circles: RouteCircle[];
+  /** A corridor's road; none for a hunt around one town. */
+  polyline?: [number, number][];
   listings: RouteListingGeo[];
   selectedListingId: string | null;
   onSelectListing: (id: string) => void;
-  onSelectCluster?: (listingIds: string[]) => void;
   originName?: string;
   destinationName?: string;
   className?: string;
 }
 
-// Automatically fit map view to the bounds of the route, circles, and listings
+const NO_ROAD: [number, number][] = [];
+
+// Fits the view to the route or the pins -- once per new shape. Fitting on
+// every render snapped a zoomed-in map back whenever the page re-rendered.
 function MapBoundsFitter({ bounds }: { bounds: L.LatLngBounds | null }) {
   const map = useMap();
+  const fitted = useRef<string | null>(null);
   useEffect(() => {
     map.invalidateSize();
-    if (bounds && bounds.isValid()) {
+    const key = bounds && bounds.isValid() ? bounds.toBBoxString() : null;
+    if (bounds && key && key !== fitted.current) {
+      fitted.current = key;
       map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
     }
     const timer = setTimeout(() => {
@@ -34,15 +39,26 @@ function MapBoundsFitter({ bounds }: { bounds: L.LatLngBounds | null }) {
   return null;
 }
 
+// One icon per look, reused: a new DivIcon each render replaced the marker's DOM.
+const iconCache = new Map<string, L.DivIcon>();
+function cached(key: string, make: () => L.DivIcon): L.DivIcon {
+  let icon = iconCache.get(key);
+  if (!icon) {
+    icon = make();
+    iconCache.set(key, icon);
+  }
+  return icon;
+}
+
 // 8px dot for unselected listing with 32x32 touch target
 function createDotIcon(detourMin: number | null) {
   const label = detourMin !== null ? (detourMin < 1 ? 'on route' : `+${Math.round(detourMin)}m`) : '';
-  return L.divIcon({
+  return cached(`dot:${label}`, () => L.divIcon({
     html: `<div class="cursor-pointer -translate-x-1/2 -translate-y-1/2 flex items-center justify-center w-8 h-8 group" title="${label}"><div class="w-2.5 h-2.5 rounded-full bg-[#4E8C6A] ring-2 ring-[#011F1F] shadow-md group-hover:scale-150 transition-all duration-150"></div></div>`,
     className: 'prism-listing-marker-dot',
     iconSize: [0, 0],
     iconAnchor: [0, 0],
-  });
+  }));
 }
 
 // Selected listing marker: pill with detour info
@@ -59,12 +75,12 @@ function createSelectedPillIcon(detourMin: number | null) {
 // Cluster marker showing count for overlapping listings
 function createClusterIcon(count: number) {
   const size = count >= 10 ? 'w-7 h-7 text-xs' : 'w-6 h-6 text-2xs';
-  return L.divIcon({
+  return cached(`cluster:${count}`, () => L.divIcon({
     html: `<div class="cursor-pointer -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"><div class="${size} rounded-full bg-[#4E8C6A] text-[#011F1F] font-bold shadow-lg flex items-center justify-center border-2 border-[#011F1F] hover:opacity-90 hover:scale-110 transition-all">${count}</div></div>`,
     className: 'prism-listing-marker-cluster',
     iconSize: [0, 0],
     iconAnchor: [0, 0],
-  });
+  }));
 }
 
 function createEndpointIcon(label: string, isStart: boolean) {
@@ -82,12 +98,10 @@ function ListingClusterMarkers({
   listings,
   selectedListingId,
   onSelectListing,
-  onSelectCluster,
 }: {
   listings: RouteListingGeo[];
   selectedListingId: string | null;
   onSelectListing: (id: string) => void;
-  onSelectCluster?: (listingIds: string[]) => void;
 }) {
   const map = useMap();
   const [currentZoom, setCurrentZoom] = useState(() => map.getZoom());
@@ -115,33 +129,35 @@ function ListingClusterMarkers({
 
   const clusters = useMemo(() => {
     const CLUSTER_DISTANCE_PX = 32;
+    // The centre's screen point is kept on the cluster and moved with it,
+    // instead of projected again for every comparison.
     type Cluster = {
       key: string;
       centerLat: number;
       centerLon: number;
+      x: number;
+      y: number;
       items: RouteListingGeo[];
     };
     const list: Cluster[] = [];
 
     for (const item of otherListings) {
       const pt = map.project([item.lat!, item.lon!], currentZoom);
-      let joined = false;
-      for (const cluster of list) {
-        const clusterPt = map.project([cluster.centerLat, cluster.centerLon], currentZoom);
-        if (Math.hypot(pt.x - clusterPt.x, pt.y - clusterPt.y) < CLUSTER_DISTANCE_PX) {
-          cluster.items.push(item);
-          const n = cluster.items.length;
-          cluster.centerLat = (cluster.centerLat * (n - 1) + item.lat!) / n;
-          cluster.centerLon = (cluster.centerLon * (n - 1) + item.lon!) / n;
-          joined = true;
-          break;
-        }
-      }
-      if (!joined) {
+      const cluster = list.find((c) => Math.hypot(pt.x - c.x, pt.y - c.y) < CLUSTER_DISTANCE_PX);
+      if (cluster) {
+        cluster.items.push(item);
+        const n = cluster.items.length;
+        cluster.centerLat = (cluster.centerLat * (n - 1) + item.lat!) / n;
+        cluster.centerLon = (cluster.centerLon * (n - 1) + item.lon!) / n;
+        cluster.x = (cluster.x * (n - 1) + pt.x) / n;
+        cluster.y = (cluster.y * (n - 1) + pt.y) / n;
+      } else {
         list.push({
           key: `cluster-${item.id}`,
           centerLat: item.lat!,
           centerLon: item.lon!,
+          x: pt.x,
+          y: pt.y,
           items: [item],
         });
       }
@@ -188,9 +204,6 @@ function ListingClusterMarkers({
             position={[cluster.centerLat, cluster.centerLon]}
             icon={createClusterIcon(cluster.items.length)}
             zIndexOffset={500}
-            eventHandlers={{
-              click: () => onSelectCluster?.(cluster.items.map((i) => i.id)),
-            }}
           >
             <Popup className="prism-cluster-popup" maxWidth={280} minWidth={220}>
               <ul className="cluster-list" data-testid="cluster-list">
@@ -223,12 +236,10 @@ function ListingClusterMarkers({
 }
 
 export default function RouteCorridorMap({
-  polyline,
-  circles,
+  polyline = NO_ROAD,
   listings,
   selectedListingId,
   onSelectListing,
-  onSelectCluster,
   originName,
   destinationName,
   className = '',
@@ -239,27 +250,18 @@ export default function RouteCorridorMap({
   const bounds = useMemo(() => {
     const latLngs: L.LatLngExpression[] = [];
 
-    (polyline || []).forEach(([lat, lon]) => {
-      latLngs.push([lat, lon]);
-    });
-
-    (circles || []).forEach((circle) => {
-      if (circle.lat !== null && circle.lon !== null) {
-        latLngs.push([circle.lat, circle.lon]);
-      }
-    });
-
-    // Without a route the pins are the shape: a town search has one circle
-    // and its finds, some of them outside it.
-    if (!polyline || polyline.length === 0) {
-      (listings || []).forEach((l) => {
+    // The road is the shape of a corridor; without one, the pins are.
+    if (polyline.length > 0) {
+      polyline.forEach(([lat, lon]) => latLngs.push([lat, lon]));
+    } else {
+      listings.forEach((l) => {
         if (typeof l.lat === 'number' && typeof l.lon === 'number') latLngs.push([l.lat, l.lon]);
       });
     }
 
     if (latLngs.length === 0) return null;
     return L.latLngBounds(latLngs);
-  }, [polyline, circles, listings]);
+  }, [polyline, listings]);
 
   const defaultCenter: [number, number] = polyline.length > 0
     ? polyline[Math.floor(polyline.length / 2)]
@@ -301,37 +303,6 @@ export default function RouteCorridorMap({
           />
         )}
 
-        {/* Search Circles */}
-        {circles.map((circle, index) => {
-          if (circle.lat === null || circle.lon === null) return null;
-          return (
-            <Circle
-              key={`circle-${circle.postal_code || circle.label || index}`}
-              center={[circle.lat, circle.lon]}
-              radius={circle.radius_km * 1000}
-              pathOptions={{
-                color: '#4E8C6A',
-                fillColor: '#4E8C6A',
-                fillOpacity: 0.08,
-                weight: 1.5,
-                dashArray: '6, 6',
-              }}
-            >
-              <Popup>
-                <div className="text-xs font-sans text-[#8FA6A1] space-y-1">
-                  <div className="font-bold text-[#4E8C6A]">
-                    {t('routeResults.legendSearchArea')} #{index + 1}
-                  </div>
-                  <div className="font-semibold text-[#F2F5F4]">{circle.label || ''}</div>
-                  <div className="text-2xs text-[#8FA6A1]">
-                    {t('routeResults.circlePopup', { label: circle.label || '', radius: circle.radius_km })}
-                  </div>
-                </div>
-              </Popup>
-            </Circle>
-          );
-        })}
-
         {/* Origin and Destination Pin Markers */}
         {startPoint && (
           <Marker position={startPoint} icon={createEndpointIcon('A', true)}>
@@ -362,7 +333,6 @@ export default function RouteCorridorMap({
           listings={listings}
           selectedListingId={selectedListingId}
           onSelectListing={onSelectListing}
-          onSelectCluster={onSelectCluster}
         />
       </MapContainer>
 
@@ -372,12 +342,6 @@ export default function RouteCorridorMap({
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-1 bg-[#4E8C6A] rounded-full" />
             <span>{t('routeResults.legendRoute')}</span>
-          </div>
-        )}
-        {circles.length > 0 && (
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full border border-dashed border-[#4E8C6A]/60 bg-[#4E8C6A]/10" />
-            <span>{t('routeResults.legendSearchArea')}</span>
           </div>
         )}
         <div className="flex items-center gap-1.5">

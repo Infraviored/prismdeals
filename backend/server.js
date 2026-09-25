@@ -29,6 +29,7 @@ const port = Number(process.env.PRISMDEALS_PORT) || 3030;
 const { spawn } = require('child_process');
 const places = require('./places');
 const { placeListings } = require('./listing_geo');
+const { listingOrder } = require('./listing_order');
 const sqlite3 = require('sqlite3').verbose();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
@@ -137,6 +138,12 @@ function backfillListingTimestamps() {
         AND llm_processed = 1
         AND llm_processed_time IS NOT NULL`,
     err => { if (err) console.error('Backfilling last_ai_evaluated_at:', err); }
+  );
+  // Places stored before the postal code had its own column ("81547 Au").
+  db.run(
+    `UPDATE listings SET postal_code = substr(location, 1, 5)
+      WHERE postal_code IS NULL AND location GLOB '[0-9][0-9][0-9][0-9][0-9] *'`,
+    err => { if (err) console.error('Backfilling postal_code:', err); }
   );
 }
 
@@ -2372,7 +2379,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     }
 
     const route = await get(
-      'SELECT id FROM route_searches WHERE family_id = ? ORDER BY id DESC LIMIT 1',
+      'SELECT id, origin, destination, half_width_km, plan_json FROM route_searches WHERE family_id = ? ORDER BY id DESC LIMIT 1',
       [fam.id]
     );
     const routeId = route ? route.id : null;
@@ -2482,49 +2489,13 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
 
     const whereSql = whereConditions.length > 0 ? 'AND ' + whereConditions.join(' AND ') : '';
 
-    // Total count query after filters
-    const totalCountSql = `
-      ${cteSql}
-      SELECT COUNT(*) AS total
-        FROM ranked_family_listings rfl
-        JOIN listings l ON l.id = rfl.listing_id
-        LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
-       WHERE rfl.rn = 1
-       ${whereSql}
-    `;
-    const totalRow = await get(totalCountSql, [fam.id, ...termParams, routeId, ...whereParams]);
-    const total = totalRow ? Number(totalRow.total || 0) : 0;
-
-    // Sorting
-    let orderBy = '';
-    const sort = req.query.sort;
-    if (sort === 'price_asc') {
-      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
-    } else if (sort === 'price_desc') {
-      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
-    } else if (sort === 'newest' || sort === 'freshness') {
-      orderBy = 'first_seen_at DESC, l.id DESC';
-    } else if (sort === 'detour' || sort === 'route' || (sort === 'near' && routeId)) {
-      orderBy = '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
-    } else if (routeId) {
-      orderBy =
-        FIT_FIRST +
-        '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
-    } else {
-      orderBy = FIT_FIRST + 'l.niceness_score DESC, l.id DESC';
-    }
-
-    // The distance from the search's town and the score are worked out here,
-    // not in SQL, so ordering by them means reading the whole hunt and cutting
-    // the page afterwards. A hunt is tens of listings, not thousands.
-    const sortInJs = sort === 'score' || (sort === 'near' && !routeId);
-    const mapView = req.query.view === 'map';
-
     // Pagination (default limit 50, offset 0)
     const limit = Math.max(1, parseInt(req.query.limit, 10) || 50);
     const offset = req.query.offset ? Math.max(0, parseInt(req.query.offset, 10) || 0) : 0;
-    const readAll = sortInJs || mapView;
 
+    // The whole hunt is read and ordered here, not in SQL: distance and score
+    // only exist once the rows are placed and scored. A hunt is tens of
+    // listings, not thousands. SQL gives the base order ties fall back to.
     const listingsSql = `
       ${cteSql}
       SELECT l.id, l.title, l.price, l.price_eur, l.location, l.url,
@@ -2533,7 +2504,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
              l.llm_processed_time, l.full_info_obtained, l.status,
              l.search_id, l.images, l.last_description_changed_at,
              l.last_ai_evaluated_at, l.last_seen_at, l.delisted_at,
-             l.source, l.source_id,
+             l.source, l.source_id, l.postal_code,
              rfl.max_seen_at AS first_seen_at,
              rfl.search_name,
              g.lat, g.lon, g.offroute_km, g.detour_min, g.status AS geo_status,
@@ -2544,14 +2515,11 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
         LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
        WHERE rfl.rn = 1
        ${whereSql}
-       ORDER BY ${orderBy}
-       LIMIT ? OFFSET ?
+       ORDER BY ${FIT_FIRST}l.niceness_score DESC, l.id DESC
     `;
 
-    const rows = await query(listingsSql, [
-      fam.id, ...termParams, routeId, ...whereParams,
-      readAll ? -1 : limit, readAll ? 0 : offset,
-    ]);
+    const rows = await query(listingsSql, [fam.id, ...termParams, routeId, ...whereParams]);
+    const total = rows.length;
 
     let listings = rows.map(r => ({
       ...r,
@@ -2564,73 +2532,63 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
       fit: fitOf(r)
     }));
 
-    if (listings.length > 0) {
-      const listingIds = listings.map(l => l.id);
-      const termsByListing = {};
-      const CHUNK_SIZE = 500;
-
-      for (let i = 0; i < listingIds.length; i += CHUNK_SIZE) {
-        const chunk = listingIds.slice(i, i + CHUNK_SIZE);
-        const placeholders = chunk.map(() => '?').join(',');
-        const termsRows = await query(
-          `SELECT DISTINCT lsh.listing_id, t.id AS term_id, COALESCE(t.label, t.term) AS label
-             FROM search_family_searches sfs
-             JOIN search_family_terms t ON t.id = sfs.term_id
-             JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-            WHERE sfs.family_id = ? AND sfs.active = 1
-              AND lsh.listing_id IN (${placeholders})
-            ORDER BY t.position ASC, t.id ASC`,
-          [fam.id, ...chunk]
-        );
-
-        for (const tr of termsRows) {
-          if (!termsByListing[tr.listing_id]) termsByListing[tr.listing_id] = [];
-          termsByListing[tr.listing_id].push({
-            id: tr.term_id,
-            label: tr.label
-          });
-        }
-      }
-
-      for (const l of listings) {
-        l.matched_terms = termsByListing[l.id] || [];
-      }
-    }
-
-    const centre = placeListings(listings, fam.base_url, { measure: !routeId });
-
-    if (mapView) {
-      // Every pin at once, and only what a pin shows.
-      return res.json({
-        total,
-        centre: routeId ? null : centre,
-        points: listings
-          .filter(l => typeof l.lat === 'number' && typeof l.lon === 'number')
-          .map(l => ({
-            id: l.id, title: l.title, price: l.price, location: l.location, url: l.url,
-            lat: l.lat, lon: l.lon, detour_min: l.detour_min, offroute_km: l.offroute_km,
-            distance_km: l.distance_km, images: l.images.slice(0, 1),
-            verdict: l.fit ? l.fit.verdict : null,
-          })),
-      });
-    }
+    placeListings(listings, fam.base_url);
 
     await annotateDeals(query, listings, familySearchIds);
     await annotateNodeMarket(query, listings, familySearchIds);
     await attachRanks(query, get, listings, fam.campaign_id || null);
     await attachScores(query, listings, familySearchIds);
 
-    if (sortInJs) {
-      const key = sort === 'score'
-        ? l => (typeof l.score === 'number' ? -l.score : Infinity)
-        : l => (typeof l.distance_km === 'number' ? l.distance_km : Infinity);
-      const price = l => (typeof l.price_eur === 'number' ? l.price_eur : Infinity);
-      listings.sort((a, b) => key(a) - key(b) || price(a) - price(b));
-      listings = listings.slice(offset, offset + limit);
+    // Every pin of the tab rides along with the first page, so the map needs
+    // no request of its own.
+    const points = offset > 0 ? undefined : listings
+      .filter(l => typeof l.lat === 'number' && typeof l.lon === 'number')
+      .map(l => ({
+        id: l.id, title: l.title, price: l.price, location: l.location, url: l.url,
+        lat: l.lat, lon: l.lon, detour_min: l.detour_min, offroute_km: l.offroute_km,
+        distance_km: l.distance_km, images: l.images.slice(0, 1),
+      }));
+
+    const order = listingOrder(req.query.sort, Boolean(routeId));
+    if (order) listings.sort(order);
+    listings = listings.slice(offset, offset + limit);
+
+    if (listings.length > 0) {
+      const listingIds = listings.map(l => l.id);
+      const termsByListing = {};
+      const termsRows = await query(
+        `SELECT DISTINCT lsh.listing_id, t.id AS term_id, COALESCE(t.label, t.term) AS label
+           FROM search_family_searches sfs
+           JOIN search_family_terms t ON t.id = sfs.term_id
+           JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+          WHERE sfs.family_id = ? AND sfs.active = 1
+            AND lsh.listing_id IN (${listingIds.map(() => '?').join(',')})
+          ORDER BY t.position ASC, t.id ASC`,
+        [fam.id, ...listingIds]
+      );
+      for (const tr of termsRows) {
+        if (!termsByListing[tr.listing_id]) termsByListing[tr.listing_id] = [];
+        termsByListing[tr.listing_id].push({ id: tr.term_id, label: tr.label });
+      }
+      for (const l of listings) {
+        l.matched_terms = termsByListing[l.id] || [];
+      }
     }
     await attachPriceHistory(query, listings);
 
-    res.json({ total, offset, limit, centre: routeId ? null : centre, listings });
+    // The corridor's shape for the map, so it needs no second request.
+    let routeShape = null;
+    if (route) {
+      const plan = JSON.parse(route.plan_json || '{}');
+      routeShape = {
+        origin: route.origin,
+        destination: route.destination,
+        half_width_km: route.half_width_km,
+        polyline: thin(plan.polyline),
+      };
+    }
+
+    res.json({ total, offset, limit, route: routeShape, points, listings });
   } catch (error) {
     console.error('Error fetching family listings:', error);
     res.status(500).json({ error: 'Failed to fetch family listings' });

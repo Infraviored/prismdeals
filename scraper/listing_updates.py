@@ -13,7 +13,6 @@ which is what makes watching a search affordable.
 import datetime
 import json
 import logging
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +29,13 @@ def apply(conn, listing):
     its own reason to be paid.
     """
     row = conn.execute(
-        "SELECT price_eur, price, images, location FROM listings WHERE id = ?",
+        "SELECT price_eur, price, images, location, postal_code FROM listings WHERE id = ?",
         (listing["id"],),
     ).fetchone()
     if row is None:
         return None
 
-    old_price, old_price_text, old_images, old_location = row
+    old_price, old_price_text, old_images, old_location, old_postal_code = row
     changed = {}
     sets = []
     params = []
@@ -75,19 +74,18 @@ def apply(conn, listing):
         params.append(json.dumps(merged, ensure_ascii=False))
 
     # A town the card now names where none was stored: cards whose alt text
-    # named the district came in without one ("Ohne Ort" on the row). A bare
-    # district ("Sendling") gains its postal code the same way -- without one
-    # the map cannot place it, the name alone is not unique.
-    new_location = listing.get("location") or ""
-    placeable = re.match(r"\d{5}\b", old_location or "") or " - " in (
-        old_location or ""
-    )
-    if new_location and (
-        not old_location or (not placeable and re.match(r"\d{5}\b", new_location))
-    ):
+    # named the district came in without one ("Ohne Ort" on the row).
+    if not old_location and listing.get("location"):
         changed["location"] = (old_location, listing["location"])
         sets.append("location = ?")
         params.append(listing["location"])
+
+    # The postal code is the card's to say; it places the listing on the map.
+    postal_code = listing.get("postal_code")
+    if postal_code and postal_code != old_postal_code:
+        changed["postal_code"] = (old_postal_code, postal_code)
+        sets.append("postal_code = ?")
+        params.append(postal_code)
 
     sets.append("last_seen_at = ?")
     params.append(_now())

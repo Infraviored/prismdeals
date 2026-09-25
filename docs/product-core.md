@@ -339,9 +339,13 @@ Four kinds of needs; the kind decides where a need flows:
   - Nearest = detour on a corridor, km from the hunt's town otherwise.
 - Map closes the list: every find of the tab, the search circle or the corridor.
   - ~~Map as a toggle, corridor hunts only~~ — plain hunts had no map at all.
-- Position from the printed place, no geocoding service:
-  - postal code → centroid; "State - Town" → gazetteer; a bare name only near the search.
-  - Cards whose alt text names a district keep "PLZ Town"; a bare district gains its PLZ on refresh.
+- Position from the card, no geocoding service:
+  - `listings.postal_code` (own column, updated from every card) → centroid.
+  - else "State - Town" → gazetteer; a bare name only near the search.
+  - ~~PLZ packed into the place text, upgraded by a regex rule~~ — the code needs its own field.
+- Map: one number = one popup with exactly those offers; listings sharing a postal code never split by zoom.
+  - No search circles; fit to the shape once, never on re-render.
+- One request per page: listings, all pins of the tab (page 1) and the corridor shape.
 - Corridor after the fact: the hunt keeps terms, requirements, verdicts.
   - Every term runs in every circle; town searches rest (links inactive, finds stay).
   - Removing the corridor brings the town searches back.

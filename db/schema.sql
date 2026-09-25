@@ -204,6 +204,10 @@ ALTER TABLE route_searches ADD COLUMN family_id INTEGER;
 
 ALTER TABLE route_search_circles ADD COLUMN family_id INTEGER;
 
+-- The card's postal code, apart from the printed place: it is what places a
+-- listing on the map, and the place text stays what the seller wrote.
+ALTER TABLE listings ADD COLUMN postal_code TEXT;
+
 -- Phase 0: Canonical source and source ID tracking.
 -- Quelle zuerst: listings.source mit Vorgabe 'kleinanzeigen' und source_id.
 ALTER TABLE listings ADD COLUMN source TEXT DEFAULT 'kleinanzeigen';

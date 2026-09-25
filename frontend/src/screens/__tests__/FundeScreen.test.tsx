@@ -74,17 +74,17 @@ describe('FundeScreen', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
-      // A hunt's listings come from its family, corridor or not.
-      if (url.includes('/api/search-families/5/listings?view=map')) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ total: 3, centre: null, points: mockRouteData.listings.map(l => ({ ...l, lat: 48, lon: 11 })) }),
-        });
-      }
+      // A hunt's listings come from its family, corridor or not; the first
+      // page brings the pins and the corridor along.
       if (url.includes('/api/search-families/5/listings')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ total: 3, listings: mockRouteData.listings }),
+          json: () => Promise.resolve({
+            total: 3,
+            listings: mockRouteData.listings,
+            points: mockRouteData.listings.map(l => ({ ...l, lat: 48, lon: 11 })),
+            route: { origin: 'Landsberg', destination: 'Konstanz', half_width_km: 20, polyline: [] },
+          }),
         });
       }
       if (url.includes('/api/search-families/5')) {
@@ -257,9 +257,10 @@ describe('FundeScreen', () => {
     render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
 
     expect(await screen.findByTestId('mock-route-corridor-map')).toBeInTheDocument();
+    // One request carries list, pins and corridor; the map asks for nothing.
     const asked = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
       .map(c => String(c[0]));
-    expect(asked.some(u => u.includes('/api/search-families/5/listings?view=map'))).toBe(true);
+    expect(asked.some(u => u.includes('view=map') || u.includes('/route?'))).toBe(false);
   });
 
   it('orders by distance or score on the server, over the whole hunt', async () => {

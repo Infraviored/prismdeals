@@ -450,5 +450,7 @@ def test_a_card_whose_alt_names_the_district_still_has_its_town():
         encoding="utf-8",
     ).read()
     cards = {c["id"]: c for c in result_list.parse(page)}
-    assert cards["3475930242"]["location"] == "85238 Petershausen"
+    assert cards["3475930242"]["location"] == "Petershausen"
+    assert cards["3475930242"]["postal_code"] == "85238"
+    assert all(c["postal_code"] for c in cards.values())
     assert all(c["location"] for c in cards.values())

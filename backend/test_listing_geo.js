@@ -32,6 +32,7 @@ const listings = [
   { id: 'a', location: '86899 Landsberg am Lech' },
   { id: 'b', location: '81547 Untergiesing-Harlaching' },
   { id: 'c', location: '' },
+  { id: 'e', location: 'Sendling', postal_code: '81369' },
   { id: 'd', location: 'Bayern - Germering', lat: 1, lon: 2 },
 ];
 placeListings(listings, VENTILATOR);
@@ -39,6 +40,7 @@ assert(listings[0].distance_km > 5 && listings[0].distance_km < 25, `Landsberg $
 assert(listings[1].distance_km > listings[0].distance_km, 'Munich is further than Landsberg');
 assert.strictEqual(listings[2].lat, null);
 assert.strictEqual(listings[2].distance_km, null);
-assert.deepStrictEqual([listings[3].lat, listings[3].lon], [1, 2]);
+assert.deepStrictEqual([listings[4].lat, listings[4].lon], [1, 2]);
+assert(listings[3].lat > 48 && listings[3].lat < 48.2, 'the postal code column places a bare district');
 
 console.log('test_listing_geo: all passed');

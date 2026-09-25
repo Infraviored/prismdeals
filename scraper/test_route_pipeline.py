@@ -23,6 +23,12 @@ def conn():
         CREATE TABLE listings (
             id TEXT PRIMARY KEY, title TEXT, price TEXT, location TEXT, url TEXT,
             search_id INTEGER);
+        CREATE TABLE listing_search_hits (
+            listing_id TEXT, search_id INTEGER, first_seen_at TEXT);
+        -- The importer writes a hit with every listing; so does this fixture.
+        CREATE TRIGGER listing_hit AFTER INSERT ON listings BEGIN
+            INSERT INTO listing_search_hits VALUES (NEW.id, NEW.search_id, '');
+        END;
     """)
     route_store.ensure_schema(connection)
     yield connection
@@ -507,3 +513,19 @@ def test_a_circle_dropped_by_a_redraw_stops_being_scraped(conn):
         conn.execute("SELECT enabled FROM searches WHERE url = ?", (url,)).fetchone()[0]
         for url in kept
     ), "a circle still in the corridor must stay enabled"
+
+
+def test_a_listing_a_circle_found_again_counts_for_the_route(conn):
+    """First found by the hunt's town search, then by a corridor circle."""
+    route_id, _ = make_route(conn)
+    circle_search = conn.execute(
+        "SELECT search_id FROM route_search_circles WHERE route_search_id = ?",
+        (route_id,),
+    ).fetchone()[0]
+    conn.execute("INSERT INTO listings (id, title, search_id) VALUES ('x', 'A', 999)")
+    conn.execute(
+        "INSERT INTO listing_search_hits VALUES ('x', ?, '')", (circle_search,)
+    )
+    assert [row["id"] for row in route_store.listings_for_route(conn, route_id)] == [
+        "x"
+    ]

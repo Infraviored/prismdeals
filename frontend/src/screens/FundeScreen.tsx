@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Row, type RowListing } from '../components/surface';
+import { Row, Pill, type RowListing } from '../components/surface';
 import RouteCorridorMap, { type RouteListingGeo } from '../components/RouteCorridorMap';
 import { FundeDetailSheet } from './FundeDetailSheet';
 import { FundeModelsSheet } from './FundeModelsSheet';
@@ -91,7 +91,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     termId,
     setTermId,
     familyTerms,
-    routeData,
+    route,
     mapPoints,
     sort,
     setSort,
@@ -130,43 +130,36 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   }, []);
 
   // Every listing of the tab when the family sends its pins; otherwise what
-  // is loaded.
-  const mapListings: RouteListingGeo[] = mapPoints.length > 0
-    ? mapPoints
-    : listings
-        .filter((l) => typeof l.lat === 'number' && typeof l.lon === 'number')
-        .map((l) => ({
-          id: l.id,
-          lat: l.lat ?? null,
-          lon: l.lon ?? null,
-          title: l.title || '',
-          price: l.price || '',
-          location: l.location || '',
-          url: l.url || '',
-          detour_min: l.detour_min ?? null,
-          offroute_km: l.offroute_km ?? null,
-          images: l.images || [],
-        }));
+  // is loaded. Memoised: a fresh array each render refitted the map.
+  const mapListings: RouteListingGeo[] = useMemo(
+    () =>
+      mapPoints.length > 0
+        ? mapPoints
+        : listings.filter((l) => typeof l.lat === 'number' && typeof l.lon === 'number'),
+    [mapPoints, listings]
+  );
 
-  const openFromMap = (id: string) => {
-    const loaded = listings.find((l) => l.id === id);
-    if (loaded) return openListing(loaded);
-    const pin = mapPoints.find((p) => p.id === id);
-    if (pin) openListing({ ...pin, title: pin.title || '', images: pin.images || [] } as RowListing);
-  };
+  const openFromMap = useCallback(
+    (id: string) => {
+      const found = listings.find((l) => l.id === id) ?? mapPoints.find((p) => p.id === id);
+      if (found) openListing({ ...found, title: found.title || '', images: found.images || [] } as RowListing);
+    },
+    [listings, mapPoints, openListing]
+  );
+
+  // One corridor button, in the desktop strip and the phone row.
+  const corridorButton = (placement: string) =>
+    campaign?.family_id ? (
+      <button type="button" className={`edit cursor-pointer ${placement}`} onClick={() => setCorridorOpen(true)}>
+        {t('surface.corridorSet')}
+      </button>
+    ) : null;
 
   const sorts: Array<{ key: FundeSort; label: string }> = [
     { key: 'price_asc', label: t('surface.sortCheap') },
     { key: 'near', label: t('surface.sortNear') },
     { key: 'score', label: t('surface.sortBest') },
   ];
-  const corridorNow = routeData?.route
-    ? {
-        origin: routeData.route.origin || '',
-        destination: routeData.route.destination || '',
-        half_width_km: routeData.route.half_width_km || 0,
-      }
-    : null;
 
   // A hunt without requirements has nothing to judge, so nothing is
   // "missing": every offer sat under "Unklar" behind an empty "Passend" tab
@@ -197,15 +190,8 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   // Hero: shown when tab is fit or all, and bestListing exists
   const heroShown = (tab === 'fit' || tab === 'all') && bestListing !== null;
   const heroListing = heroShown ? bestListing : null;
-  const displayListings = useMemo(() => {
-    let list = listings;
-    if (heroShown && heroListing) {
-      list = list.filter((l) => l.id !== heroListing.id);
-    }
-    // The server orders: by price, distance or score over the whole hunt,
-    // not over the fifty rows that happen to be loaded.
-    return list;
-  }, [listings, heroShown, heroListing]);
+  // The server orders, over the whole hunt; only the hero leaves the list.
+  const displayListings = heroListing ? listings.filter((l) => l.id !== heroListing.id) : listings;
 
   // Weak market banner (§9.7): best candidate is above median or misses a must
   const isWeakMarket = useMemo(() => {
@@ -269,11 +255,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         </button>
         <span data-testid="surface-bar-count" className="sr-only">{total}</span>
         <span className="spacer" />
-        {campaign?.family_id && (
-          <button type="button" className="edit cursor-pointer hidden sm:inline-flex" onClick={() => setCorridorOpen(true)} data-testid="corridor-btn">
-            {t('surface.corridorSet')}
-          </button>
-        )}
+        {corridorButton('hidden sm:inline-flex')}
         {familyTerms.length > 0 && (
           <button type="button" className="edit cursor-pointer hidden sm:inline-flex" onClick={() => setModelsOpen(true)}>
             {t('surface.models')}
@@ -313,201 +295,188 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         </button>
       </nav>
 
-      <>
-          {/* 2. Masthead */}
-          <header className="masthead">
-            <h1>{campaign?.name || '—'}</h1>
-            <p className="verdict" id="verdict">
-              {verdictText}
-            </p>
-            <Freshness
-              isScraping={isScraping}
-              lastCrawledAt={overview?.last_crawled_at || listings[0]?.first_seen_at || listings[0]?.last_seen_at}
-              scheduleMinutes={overview?.schedule_interval ?? 0}
-            />
-          </header>
+        {/* 2. Masthead */}
+        <header className="masthead">
+          <h1>{campaign?.name || '—'}</h1>
+          <p className="verdict" id="verdict">
+            {verdictText}
+          </p>
+          <Freshness
+            isScraping={isScraping}
+            lastCrawledAt={overview?.last_crawled_at || listings[0]?.first_seen_at || listings[0]?.last_seen_at}
+            scheduleMinutes={overview?.schedule_interval ?? 0}
+          />
+        </header>
 
-          {/* 3. Sticky Tabs */}
-          <div className="tabs" role="tablist" id="tabs">
-            {tabs.map((tabItem) => (
-              <button key={tabItem.key} className="tab" role="tab" type="button" data-tab={tabItem.key} aria-selected={tab === tabItem.key} onClick={() => setTab(tabItem.key)}>
-                {tabItem.label} <span className="num">{tabItem.count}</span>
-              </button>
-            ))}
-          </div>
-          <div className="sm:hidden flex items-center gap-2 px-4 py-2 overflow-x-auto border-b border-[var(--kante)] bg-[var(--grube)] text-xs text-[var(--kalk)]">
-            {campaign?.family_id && (
-              <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setCorridorOpen(true)}>
-                {t('surface.corridorSet')}
-              </button>
-            )}
-            {familyTerms.length > 0 && (
-              <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setModelsOpen(true)}>
-                {t('surface.models')}
-              </button>
-            )}
-            <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setFilterOpen(true)}>
-              {t('surface.filter')}
+        {/* 3. Sticky Tabs */}
+        <div className="tabs" role="tablist" id="tabs">
+          {tabs.map((tabItem) => (
+            <button key={tabItem.key} className="tab" role="tab" type="button" data-tab={tabItem.key} aria-selected={tab === tabItem.key} onClick={() => setTab(tabItem.key)}>
+              {tabItem.label} <span className="num">{tabItem.count}</span>
             </button>
-            {onStartScrape && (
-              <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={onStartScrape} disabled={isScraping}>
-                {isScraping ? t('surface.searching') : t('surface.fetchListings')}
-              </button>
-            )}
-            {/* No compare button on the phone: the comparison runs after every
-                crawl on its own. */}
-            {campaign?.id && researchRecommended && (
-              <button
-                type="button"
-                className="edit cursor-pointer whitespace-nowrap text-[#4E8C6A] border-[#4E8C6A]/50"
-                onClick={() => setKnowledgeOpen(true)}
-                data-testid="knowledge-btn-mobile"
-              >
-                {t('surface.knowledge')}
-              </button>
-            )}
-          </div>
-
-          {/* Weak market banner (§9.7) */}
-          {isWeakMarket && (
-            <div
-              data-testid="weak-market-banner"
-              className="mx-4 sm:mx-8 mt-3 mb-1 px-4 py-2.5 rounded bg-[var(--messing)]/10 border border-[var(--messing)]/40 text-xs text-[var(--messing)] flex items-center gap-2"
-            >
-              <span>
-                {isWeakMarket === 'median'
-                  ? t('surface.weakMarketAboveMedian')
-                  : t('surface.weakMarketMissesMust')}
-              </span>
-            </div>
+          ))}
+        </div>
+        <div className="sm:hidden flex items-center gap-2 px-4 py-2 overflow-x-auto border-b border-[var(--kante)] bg-[var(--grube)] text-xs text-[var(--kalk)]">
+          {corridorButton('whitespace-nowrap')}
+          {familyTerms.length > 0 && (
+            <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setModelsOpen(true)}>
+              {t('surface.models')}
+            </button>
           )}
+          <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setFilterOpen(true)}>
+            {t('surface.filter')}
+          </button>
+          {onStartScrape && (
+            <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={onStartScrape} disabled={isScraping}>
+              {isScraping ? t('surface.searching') : t('surface.fetchListings')}
+            </button>
+          )}
+          {/* No compare button on the phone: the comparison runs after every
+              crawl on its own. */}
+          {campaign?.id && researchRecommended && (
+            <button
+              type="button"
+              className="edit cursor-pointer whitespace-nowrap text-[#4E8C6A] border-[#4E8C6A]/50"
+              onClick={() => setKnowledgeOpen(true)}
+              data-testid="knowledge-btn-mobile"
+            >
+              {t('surface.knowledge')}
+            </button>
+          )}
+        </div>
 
-          {/* 4. Raster: Main + 400px Aside via Container Query */}
-          <div className="layout">
-            <main className="main">
-              {/* Bester Fund Hero Block */}
-              {heroListing && (
-                <FundeBestHero
-                  listing={heroListing}
-                  medianPrice={marketFor(heroListing) ?? overview?.market?.median ?? null}
-                  tab={tab}
-                  isKept={kept.has(heroListing.id)}
-                  onToggleKeep={toggle}
-                  onOpenListing={(l) => openListing(l)}
-                />
-              )}
+        {/* Weak market banner (§9.7) */}
+        {isWeakMarket && (
+          <div
+            data-testid="weak-market-banner"
+            className="mx-4 sm:mx-8 mt-3 mb-1 px-4 py-2.5 rounded bg-[var(--messing)]/10 border border-[var(--messing)]/40 text-xs text-[var(--messing)] flex items-center gap-2"
+          >
+            <span>
+              {isWeakMarket === 'median'
+                ? t('surface.weakMarketAboveMedian')
+                : t('surface.weakMarketMissesMust')}
+            </span>
+          </div>
+        )}
 
-              {/* List Head */}
-              {displayListings.length > 0 && (
-                <div className="list-head flex flex-wrap items-center justify-between gap-2" id="list-head">
-                  <span>{listHeadText}</span>
-                  <span className="flex gap-1" role="group" aria-label={t('surface.sortBy')} data-testid="sort-pills">
-                    {sorts.map((s) => (
-                      <button
-                        key={s.key}
-                        type="button"
-                        className={`sort-pill ${sort === s.key ? 'is-on' : ''}`}
-                        aria-pressed={sort === s.key}
-                        onClick={() => setSort(s.key)}
-                      >
-                        {s.label}
-                      </button>
-                    ))}
-                  </span>
-                </div>
-              )}
-
-              {/* Rows */}
-              <div id="rows">
-                {displayListings.map((listing) => (
-                  <Row
-                    key={listing.id}
-                    listing={listing}
-                    isKept={kept.has(listing.id)}
-                    onToggleKeep={toggle}
-                    onClick={(l) => openListing(l)}
-                  />
-                ))}
-              </div>
-
-              {/* Empty state */}
-              {displayListings.length === 0 && !loading && (
-                <FundeEmpty
-                  tab={tab}
-                  potAll={potAll}
-                  potUnclear={potUnclear}
-                  termCount={familyTerms.length || 1}
-                  lastCrawledAt={overview?.last_crawled_at}
-                  isScraping={isScraping}
-                  radiusDiagnosis={radiusDiagnosis}
-                  diagnosing={diagnosing}
-                  onShowUnclear={() => setTab('unclear')}
-                  onWiden={async (km) => {
-                    if (await applyRadius(km)) onStartScrape?.();
-                  }}
-                  onConfigure={onConfigure}
-                />
-              )}
-
-          {/* More block at list bottom */}
-          <div className="more" id="more">
-            {tab === 'fit' && potNo > 0 && topReason && (
-              <>
-                <p>
-                  {t('surface.moreRejected', { count: potNo, reason: topReason })}
-                </p>
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={() => setTab('no')}
-                >
-                  {t('surface.viewRejected')}
-                </button>
-              </>
+        {/* 4. Raster: Main + 400px Aside via Container Query */}
+        <div className="layout">
+          <main className="main">
+            {/* Bester Fund Hero Block */}
+            {heroListing && (
+              <FundeBestHero
+                listing={heroListing}
+                medianPrice={marketFor(heroListing) ?? overview?.market?.median ?? null}
+                tab={tab}
+                isKept={kept.has(heroListing.id)}
+                onToggleKeep={toggle}
+                onOpenListing={(l) => openListing(l)}
+              />
             )}
 
-            {hasMore && (
+            {/* List Head */}
+            {displayListings.length > 0 && (
+              <div className="list-head flex flex-wrap items-center justify-between gap-2" id="list-head">
+                <span>{listHeadText}</span>
+                <span className="flex gap-1" role="group" aria-label={t('surface.sortBy')} data-testid="sort-pills">
+                  {sorts.map((s) => (
+                    <Pill key={s.key} active={sort === s.key} aria-pressed={sort === s.key} onClick={() => setSort(s.key)}>
+                      {s.label}
+                    </Pill>
+                  ))}
+                </span>
+              </div>
+            )}
+
+            {/* Rows */}
+            <div id="rows">
+              {displayListings.map((listing) => (
+                <Row
+                  key={listing.id}
+                  listing={listing}
+                  isKept={kept.has(listing.id)}
+                  onToggleKeep={toggle}
+                  onClick={(l) => openListing(l)}
+                />
+              ))}
+            </div>
+
+            {/* Empty state */}
+            {displayListings.length === 0 && !loading && (
+              <FundeEmpty
+                tab={tab}
+                potAll={potAll}
+                potUnclear={potUnclear}
+                termCount={familyTerms.length || 1}
+                lastCrawledAt={overview?.last_crawled_at}
+                isScraping={isScraping}
+                radiusDiagnosis={radiusDiagnosis}
+                diagnosing={diagnosing}
+                onShowUnclear={() => setTab('unclear')}
+                onWiden={async (km) => {
+                  if (await applyRadius(km)) onStartScrape?.();
+                }}
+                onConfigure={onConfigure}
+              />
+            )}
+
+        {/* More block at list bottom */}
+        <div className="more" id="more">
+          {tab === 'fit' && potNo > 0 && topReason && (
+            <>
+              <p>
+                {t('surface.moreRejected', { count: potNo, reason: topReason })}
+              </p>
               <button
                 className="btn"
                 type="button"
-                onClick={loadMore}
-                disabled={loadingMore}
+                onClick={() => setTab('no')}
               >
-                {loadingMore ? t('surface.loading') : t('surface.loadMore')}
+                {t('surface.viewRejected')}
               </button>
-            )}
-          </div>
-
-          {/* The map closes the list: every find of this tab, not only the page. */}
-          {mapListings.length > 0 && (
-            <section className="map-block" aria-label={t('surface.mapAll')} data-testid="funde-map">
-              <p className="list-head">
-                {t('surface.mapAll')}
-                {potAll > mapListings.length && tab === 'all' && (
-                  <span className="quiet ml-3">{t('surface.mapUnplaced', { count: potAll - mapListings.length })}</span>
-                )}
-              </p>
-              <div className="map-frame">
-                {/* No search circles: where the hunt looks is known, and a
-                    50 km ring over a street map only got in the way. */}
-                <RouteCorridorMap
-                  polyline={routeData?.route?.polyline || []}
-                  circles={[]}
-                  listings={mapListings}
-                  selectedListingId={selectedListing?.id || null}
-                  onSelectListing={openFromMap}
-                  originName={routeData?.route?.origin}
-                  destinationName={routeData?.route?.destination}
-                />
-              </div>
-            </section>
+            </>
           )}
-        </main>
 
-        {/* 400px Seitenspalte */}
-        <FundeAside overview={overview} bestListing={bestListing} />
-      </div>
-      </>
+          {hasMore && (
+            <button
+              className="btn"
+              type="button"
+              onClick={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? t('surface.loading') : t('surface.loadMore')}
+            </button>
+          )}
+        </div>
+
+        {/* The map closes the list: every find of this tab, not only the page. */}
+        {mapListings.length > 0 && (
+          <section className="map-block" aria-label={t('surface.mapAll')} data-testid="funde-map">
+            <p className="list-head">
+              {t('surface.mapAll')}
+              {potAll > mapListings.length && tab === 'all' && (
+                <span className="quiet ml-3">{t('surface.mapUnplaced', { count: potAll - mapListings.length })}</span>
+              )}
+            </p>
+            <div className="map-frame">
+              {/* No search circles: where the hunt looks is known, and a
+                  50 km ring over a street map only got in the way. */}
+              <RouteCorridorMap
+                polyline={route?.polyline}
+                listings={mapListings}
+                selectedListingId={selectedListing?.id || null}
+                onSelectListing={openFromMap}
+                originName={route?.origin}
+                destinationName={route?.destination}
+              />
+            </div>
+          </section>
+        )}
+      </main>
+
+      {/* 400px Seitenspalte */}
+      <FundeAside overview={overview} bestListing={bestListing} />
+    </div>
 
       {/* Sheets */}
       <FundeDetailSheet
@@ -546,10 +515,10 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         isOpen={corridorOpen}
         onClose={() => setCorridorOpen(false)}
         familyId={campaign?.family_id ?? null}
-        current={corridorNow}
+        current={route}
         onChanged={() => {
+          // The crawl's end reloads the list; reloading now showed nothing new.
           onCampaignChanged?.();
-          reload();
           onStartScrape?.();
         }}
       />

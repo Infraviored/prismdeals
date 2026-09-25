@@ -71,27 +71,16 @@ def save_plan(
     what makes overlapping corridors cheap rather than an error; reuse of a row
     that means something else is a problem the caller has to see.
     """
-    ensure_schema(conn)
-
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO route_searches (name, campaign_id, knowledge_set_id, base_url, "
-        "origin, destination, radius_km, half_width_km, plan_json, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            name or f"{origin} → {destination}",
-            campaign_id,
-            knowledge_set_id,
-            base_url,
-            origin,
-            destination,
-            plan.radius_km,
-            plan.half_width_km,
-            json.dumps(plan.as_dict(), ensure_ascii=False),
-            _now(),
-        ),
+    route_id = insert_route(
+        conn,
+        plan,
+        base_url,
+        origin,
+        destination,
+        name=name,
+        campaign_id=campaign_id,
+        knowledge_set_id=knowledge_set_id,
     )
-    route_id = cursor.lastrowid
 
     conflicts = attach_circles(
         conn,
@@ -104,6 +93,50 @@ def save_plan(
     )
     conn.commit()
     return route_id, conflicts
+
+
+def insert_route(
+    conn,
+    plan,
+    base_url,
+    origin,
+    destination,
+    name=None,
+    campaign_id=None,
+    knowledge_set_id=None,
+    family_id=None,
+):
+    """Writes the route row alone, without registering any search."""
+    ensure_schema(conn)
+    cursor = conn.execute(
+        "INSERT INTO route_searches (name, campaign_id, knowledge_set_id, base_url, "
+        "origin, destination, radius_km, half_width_km, plan_json, created_at, "
+        "family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            name or f"{origin} → {destination}",
+            campaign_id,
+            knowledge_set_id,
+            base_url,
+            str(origin),
+            str(destination),
+            plan.radius_km,
+            plan.half_width_km,
+            json.dumps(plan.as_dict(), ensure_ascii=False),
+            _now(),
+            family_id,
+        ),
+    )
+    return cursor.lastrowid
+
+
+def delete_route(conn, route_search_id):
+    """Removes a route with its circles and detours; searches stay."""
+    for table, column in (
+        ("listing_route_geo", "route_search_id"),
+        ("route_search_circles", "route_search_id"),
+        ("route_searches", "id"),
+    ):
+        conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (route_search_id,))
 
 
 def _register_search(cursor, label, url, campaign_id, knowledge_set_id, display_label):
@@ -315,19 +348,14 @@ def listings_for_route(conn, route_search_id):
     corridor is one search from the buyer's point of view.
     """
     rows = conn.execute(
+        # Every circle that found it, not only the first finder: a hunt given
+        # a corridor afterwards had found its listings by its town search.
         "SELECT DISTINCT l.id, l.title, l.price, l.location, l.url "
-        "FROM listings l "
-        "JOIN route_search_circles c ON l.search_id = c.search_id "
-        "WHERE c.route_search_id = ? "
-        # Found again by a circle, first by something else: a hunt given a
-        # corridor afterwards had found every listing by its town search.
-        "UNION "
-        "SELECT l.id, l.title, l.price, l.location, l.url "
         "FROM listings l "
         "JOIN listing_search_hits h ON h.listing_id = l.id "
         "JOIN route_search_circles c ON h.search_id = c.search_id "
         "WHERE c.route_search_id = ?",
-        (route_search_id, route_search_id),
+        (route_search_id,),
     ).fetchall()
     return [
         {

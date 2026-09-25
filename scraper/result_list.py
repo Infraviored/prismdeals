@@ -189,6 +189,8 @@ def parse(page_html):
         title, description = _title_and_description(segment)
 
         location, state = None, None
+        # Every card prints "85238 Petershausen"; the code places it on a map.
+        plz = PLZ_TOWN_RE.search(segment)
         match = ALT_LOCATION_RE.search(segment)
         if match:
             state, location = (
@@ -198,11 +200,9 @@ def parse(page_html):
         else:
             # Some cards name the district, not the state, in the alt text
             # ("Kr. Dachau - Petershausen"): the card's own "85238 Petershausen"
-            # still names the town. Without this the row said "Ohne Ort". The
-            # postal code stays: it is what places the listing on the map.
-            plz = PLZ_TOWN_RE.search(segment)
+            # still names the town. Without this the row said "Ohne Ort".
             if plz:
-                location = f"{plz.group(1)} {clean_text(plz.group(2))}"
+                location = clean_text(plz.group(2))
 
         image = None
         image_match = CARD_IMAGE_RE.search(segment)
@@ -232,6 +232,7 @@ def parse(page_html):
                 "image": image,
                 "location": location,
                 "state": state,
+                "postal_code": plz.group(1) if plz else None,
                 "source": "kleinanzeigen",
                 "source_id": adid,
             }
@@ -259,6 +260,7 @@ class CanonicalListing:
     source_id: Optional[str] = None
     place: Optional[str] = None
     state: Optional[str] = None
+    postal_code: Optional[str] = None
     detailed_description: str = ""
     # The card's own photograph. One is enough for a row and for a first look;
     # the rest arrive with the detail page, when there is a reason to fetch it.
@@ -279,6 +281,7 @@ class CanonicalListing:
             "location": self.location,
             "place": self.place,
             "state": self.state,
+            "postal_code": self.postal_code,
             "url": self.url,
             "short_description": self.short_description,
             "detailed_description": self.detailed_description,
@@ -332,6 +335,7 @@ def as_canonical(parsed) -> CanonicalListing:
         place=parsed.get("place") or parsed.get("location"),
         images=[parsed["image"]] if parsed.get("image") else [],
         state=state,
+        postal_code=parsed.get("postal_code"),
         url=parsed.get("url") or "",
         short_description=parsed.get("description")
         or parsed.get("short_description")

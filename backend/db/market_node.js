@@ -48,16 +48,19 @@ function nodeChain(nodeKey) {
   return chain;
 }
 
+/** The middle of a list of numbers, unrounded; null when empty. */
+function median(values) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
 function medianOf(prices) {
   if (!prices || !prices.length) return null;
   const valid = prices.filter(p => typeof p === 'number' && !isNaN(p) && p > 0);
   if (!valid.length) return null;
-  const sorted = [...valid].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  const median = sorted.length % 2 === 0
-    ? (sorted[mid - 1] + sorted[mid]) / 2
-    : sorted[mid];
-  return { median: Math.round(median), count: sorted.length };
+  return { median: Math.round(median(valid)), count: valid.length };
 }
 
 /**
@@ -369,6 +372,7 @@ async function annotateNodeMarket(query, listings, scopeSearchIds = []) {
 module.exports = {
   isMarketExcluded,
   nodeChain,
+  median,
   medianOf,
   nodeMedians,
   resolveNode,

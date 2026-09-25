@@ -209,7 +209,8 @@ export const Row: React.FC<RowProps> = ({
         {typeof listing.offroute_km === 'number' && listing.offroute_km > 0 && !listing.detour_min && (
           <span className="ml-3">{t('surface.kmDistance', { km: Math.round(listing.offroute_km) })}</span>
         )}
-        {typeof listing.distance_km === 'number' && typeof listing.detour_min !== 'number' && typeof listing.offroute_km !== 'number' && (
+        {/* km from the hunt's town; a corridor's listings carry a route status and speak in detours. */}
+        {typeof listing.distance_km === 'number' && !listing.status && (
           <span className="ml-3">{t('surface.kmDistance', { km: Math.round(listing.distance_km) })}</span>
         )}
       </p>

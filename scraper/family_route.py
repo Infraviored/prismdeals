@@ -8,15 +8,9 @@ the town searches rest (links deactivated, not deleted, so what they found
 stays in the list).
 """
 
-import datetime
-import json
-
 import family_store
 import route_pipeline
-
-
-def _now():
-    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+import route_store
 
 
 def _family(conn, family_id):
@@ -60,13 +54,7 @@ def _drop_routes(conn, family_id):
     for (route_id,) in conn.execute(
         "SELECT id FROM route_searches WHERE family_id = ?", (family_id,)
     ).fetchall():
-        conn.execute(
-            "DELETE FROM listing_route_geo WHERE route_search_id = ?", (route_id,)
-        )
-        conn.execute(
-            "DELETE FROM route_search_circles WHERE route_search_id = ?", (route_id,)
-        )
-        conn.execute("DELETE FROM route_searches WHERE id = ?", (route_id,))
+        route_store.delete_route(conn, route_id)
 
 
 def set_route(
@@ -97,25 +85,17 @@ def set_route(
 
     _drop_routes(conn, family_id)
     rested = _rest_current_searches(conn, family_id)
-    cursor = conn.execute(
-        "INSERT INTO route_searches (name, campaign_id, knowledge_set_id, base_url, "
-        "origin, destination, radius_km, half_width_km, plan_json, created_at, "
-        "family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            f"{name}: {origin} → {destination}",
-            campaign_id,
-            knowledge_set_id,
-            base_url,
-            str(origin),
-            str(destination),
-            plan.radius_km,
-            plan.half_width_km,
-            json.dumps(plan.as_dict(), ensure_ascii=False),
-            _now(),
-            family_id,
-        ),
+    route_id = route_store.insert_route(
+        conn,
+        plan,
+        base_url,
+        origin,
+        destination,
+        name=f"{name}: {origin} → {destination}",
+        campaign_id=campaign_id,
+        knowledge_set_id=knowledge_set_id,
+        family_id=family_id,
     )
-    route_id = cursor.lastrowid
     family_store.attach_terms(
         conn,
         family_id,
