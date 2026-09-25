@@ -308,3 +308,12 @@ def test_a_url_without_filters_still_parses_and_round_trips():
     plain = "https://www.kleinanzeigen.de/s-muenchen/notebook/k0c278l6411r30"
     assert search_url.parse_tail(plain)["attributes"] == []
     assert search_url.with_location(plain, 6411, 30) == plain
+
+
+def test_a_search_without_words_carries_no_keyword_marker():
+    """With "k0" the site answers a category-only search with nothing (0 vs 26)."""
+    url = search_url.for_hunt(
+        category_code="278", price={"max": 850}, location_id=7091, radius_km=66
+    )
+    assert url.endswith("/c278l7091r66")
+    assert search_url.with_query(url, "thinkpad").endswith("/thinkpad/k0c278l7091r66")

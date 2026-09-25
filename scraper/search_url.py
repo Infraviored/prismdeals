@@ -37,7 +37,9 @@ import urllib.parse
 # /s-notebooks/notebook/k0c278, a nationwide search wearing the same URL. After
 # the radius the location survives and the filter bites: measured on Munich
 # within 30 km, 25 notebooks unfiltered, 22 Lenovo, 2 Apple.
-TAIL_RE = re.compile(r"(k\d+)(c\d+)?(l\d+)?(r\d+)?((?:\+[\w.]+:[^+/]+)*)$")
+# "k0" marks a word search: a search without words has none, and with it the
+# site answers a category-only search with nothing at all (measured: 0 vs 26).
+TAIL_RE = re.compile(r"(k\d+)?(c\d+)?(l\d+)?(r\d+)?((?:\+[\w.]+:[^+/]+)*)$")
 
 
 def parse_tail(url):
@@ -143,6 +145,8 @@ def with_query(url, term):
         segments.insert(-1, slug)
     else:
         segments[-2] = slug
+    if not parts["keyword"]:
+        segments[-1] = "k0" + segments[-1]
 
     new_path = "/".join(segments)
     return urllib.parse.urlunsplit(split._replace(path=new_path))
@@ -325,7 +329,11 @@ def compose_search_url(
     if query_in_path:
         segments.append(query_in_path)
 
-    kw = "k0"
+    kw = (
+        "k0"
+        if query_in_path or (clean_q and not has_location and not clean_cat)
+        else ""
+    )
     cat = f"c{category}" if category else ""
     loc = f"l{str(location_id).lstrip('l')}" if (has_location and location_id) else ""
     rad = (
