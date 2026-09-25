@@ -452,3 +452,33 @@ CREATE INDEX IF NOT EXISTS idx_listing_nodes_node ON listing_nodes(node_key);
 -- P7 may write a node into listing_ranks from the comparative call.
 -- If present at read time, P8 prefers it over its own assignment.
 ALTER TABLE listing_ranks ADD COLUMN node TEXT;
+
+-- P7: Knowledge claims per node.
+--
+-- A claim is one piece of product knowledge: a weakness, a check, a
+-- maintenance item or any of the other kinds listed below.  Each claim hangs
+-- at the highest node where it is true and inherits downward.  Claims are
+-- proposed by the research bridge and stored only after the buyer approves.
+--
+-- node_key is a path like motorrad/supersport/yamaha-r1/rn19.  Reading
+-- claims for a listing walks the path from leaf to root, nearest first.
+CREATE TABLE IF NOT EXISTS claims (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_key    TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    axis        TEXT,
+    statement   TEXT NOT NULL,
+    check_path  TEXT,
+    weight      TEXT,
+    sources     TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT,
+    approved    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_claims_node ON claims(node_key, approved);
+CREATE INDEX IF NOT EXISTS idx_claims_kind ON claims(kind);
+
+-- Which knowledge node the comparative call assigned to each listing.
+-- Nullable for runs that predate P7.
+ALTER TABLE listing_ranks ADD COLUMN node_key TEXT;

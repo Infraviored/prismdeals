@@ -7,6 +7,7 @@ import { FundeFilterSheet } from './FundeFilterSheet';
 import { RequirementsSheet } from './RequirementsSheet';
 import { FundeAside } from './FundeAside';
 import { FundeBestHero } from './FundeBestHero';
+import { KnowledgeSheet } from './KnowledgeSheet';
 import { useFundeData, type FundeTabKey } from '../hooks/useFundeData';
 import { useKept } from '../hooks/useKept';
 import { useTranslation } from '../hooks/useTranslation';
@@ -36,7 +37,30 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   const [requirementsOpen, setRequirementsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [researchRecommended, setResearchRecommended] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+
+  useEffect(() => {
+    if (!campaign?.id) return;
+    let active = true;
+    fetch(`/api/campaigns/${campaign.id}/brief`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!active) return;
+        if (data?.research_value && data.research_value !== 'none') {
+          setResearchRecommended(true);
+        } else {
+          setResearchRecommended(false);
+        }
+      })
+      .catch(() => {
+        if (active) setResearchRecommended(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [campaign?.id]);
 
   const {
     listings,
@@ -240,6 +264,18 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             {comparing ? t('surface.comparing') : t('surface.compare')}
           </button>
         )}
+        {campaign?.id && (
+          <button
+            type="button"
+            className={`edit cursor-pointer hidden sm:inline-flex items-center gap-1 ${
+              researchRecommended ? 'text-[#4E8C6A] border-[#4E8C6A]/50' : ''
+            }`}
+            onClick={() => setKnowledgeOpen(true)}
+            data-testid="knowledge-btn"
+          >
+            {t('surface.knowledge')}
+          </button>
+        )}
         <button type="button" className="edit cursor-pointer" onClick={onConfigure}>
           {t('surface.editRequirements')}
         </button>
@@ -308,6 +344,18 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
                 disabled={comparing}
               >
                 {comparing ? t('surface.comparing') : t('surface.compare')}
+              </button>
+            )}
+            {campaign?.id && (
+              <button
+                type="button"
+                className={`edit cursor-pointer whitespace-nowrap ${
+                  researchRecommended ? 'text-[#4E8C6A] border-[#4E8C6A]/50' : ''
+                }`}
+                onClick={() => setKnowledgeOpen(true)}
+                data-testid="knowledge-btn-mobile"
+              >
+                {t('surface.knowledge')}
               </button>
             )}
           </div>
@@ -448,6 +496,14 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         maxDetour={maxDetour}
         setMaxDetour={setMaxDetour}
       />
+
+      {campaign?.id && (
+        <KnowledgeSheet
+          isOpen={knowledgeOpen}
+          onClose={() => setKnowledgeOpen(false)}
+          campaignId={campaign.id}
+        />
+      )}
     </div>
   );
 };

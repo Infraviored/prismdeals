@@ -343,7 +343,7 @@ Four kinds of needs; the kind decides where a need flows:
 | model proposals | `scraper/model_proposals.py`, table `class_models`, `POST /api/intent/models` (P5) | probe integration |
 | verdict | per (listing, requirements version) via `requirements_hash` in `listing_fit` + `knowledge_sets` (P9) | — |
 | score | `backend/db/score.js`, breakdown in sheet | rank as separate statement |
-| research bridge | research prompt in `dossiers.py` | three prompts, copy/paste, approval |
+| research bridge | three prompts in `scraper/research_bridge.py`, copy/paste UI (`KnowledgeSheet.tsx`), URL check, buyer approval (P7) | — |
 | comparative judging | fact sheets with quotes (`fact_sheets`) | candidate set, one call, shuffled runs |
 
 ### Order of work
@@ -352,9 +352,9 @@ Detailed plan: [`plan-hunt-engine.md`](plan-hunt-engine.md) (packages P0–P9, b
 
 1. ✓ taxonomy lookup · ✓ score.
 2. ✓ P0 quick fixes (motorcycle screen) · ✓ P1 hunt model + benchmarks.
-3. ✓ P2 probe engine · P4 intent parsing → P3 setup flow with market picture · P5 model proposals.
-4. P6 candidate set, one comparative call.
-5. P7 knowledge nodes + research bridge · ✓ P8 market per node · ✓ P9 verdict per requirements version.
+3. ✓ P2 probe engine · ✓ P4 intent parsing → ✓ P3 setup flow with market picture · ✓ P5 model proposals.
+4. ✓ P6 candidate set, one comparative call.
+5. ✓ P7 knowledge nodes + research bridge · ✓ P8 market per node · ✓ P9 verdict per requirements version.
 - ~~Order: probing → hunt-type question → candidate set → research → market~~
   *dropped: superseded by the package plan; hunt type and probing are built together because the ladder depends on the type.*
 - ~~Interview comes last (old step 7)~~ *dropped: the hunt type decides the search, so it comes first.*
