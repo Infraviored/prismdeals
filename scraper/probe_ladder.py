@@ -174,7 +174,11 @@ def _class_ladder(seed_terms, musts, prefs, models, category_code, filters):
     """Class: net term for the class + one per proposed model."""
     rungs = []
     for term in seed_terms:
-        rungs.append(_make_rung(term, f"class: {term}"))
+        rung = _make_rung(term, f"class: {term}")
+        # The class itself ("ventilator") is the net: models add to it, they
+        # never replace it. Kept whatever the sieve says about its titles.
+        rung["net"] = True
+        rungs.append(rung)
     for model in models:
         rungs.append(_make_rung(model, f"proposed: {model}"))
     return rungs

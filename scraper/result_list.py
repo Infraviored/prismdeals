@@ -53,6 +53,7 @@ RANGE_TOTAL_RE = re.compile(r"\d+\s*-\s*\d+\s+von\s+([\d.]+)")
 # a title that itself contains a hyphen cannot be mistaken for the location. The
 # names come from geo so this pattern and the gazetteer cannot drift apart;
 # longest-first, or "Sachsen" would match the start of "Sachsen-Anhalt".
+PLZ_TOWN_RE = re.compile(r">\s*(\d{5})\s+([^<]{2,60}?)\s*<")
 ALT_LOCATION_RE = re.compile(
     r'alt="[^"]*?\b('
     + "|".join(sorted(map(re.escape, geo.FEDERAL_STATES), key=len, reverse=True))
@@ -194,6 +195,13 @@ def parse(page_html):
                 clean_text(match.group(1)),
                 clean_text(match.group(2)),
             )
+        else:
+            # Some cards name the district, not the state, in the alt text
+            # ("Kr. Dachau - Petershausen"): the card's own "85238 Petershausen"
+            # still names the town. Without this the row said "Ohne Ort".
+            plz = PLZ_TOWN_RE.search(segment)
+            if plz:
+                location = clean_text(plz.group(2))
 
         image = None
         image_match = CARD_IMAGE_RE.search(segment)

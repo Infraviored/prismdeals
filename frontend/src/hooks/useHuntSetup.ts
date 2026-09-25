@@ -165,8 +165,12 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
     let seedTerms: string[] = [];
     if (huntType === 'shortlist' && models.length > 0) {
       seedTerms = [...models];
-    } else if (huntType === 'class' && proposedModels.length > 0) {
-      seedTerms = proposedModels.filter((m) => m.selected !== false).map((m) => m.model);
+    } else if (huntType === 'class') {
+      // The class word is the net ("ventilator"); the ticked models are added
+      // as their own terms below. Before, only the models were searched.
+      seedTerms = parsedIntent?.search_terms?.length
+        ? [...parsedIntent.search_terms]
+        : [parsedIntent?.class || intentText.trim()];
     } else if (parsedIntent?.search_terms && parsedIntent.search_terms.length > 0) {
       seedTerms = [...parsedIntent.search_terms];
     } else if (intentText.trim()) {
@@ -272,7 +276,11 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
       const saved = await executeHuntSave({
         intentText,
         huntType,
-        models,
+        // For a class hunt the ticked proposals: their brands become a wish.
+        models:
+          huntType === 'class'
+            ? proposedModels.filter((m) => m.selected !== false).map((m) => m.model)
+            : models,
         musts,
         prefs,
         sizes,
@@ -316,6 +324,7 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
     attributes,
     parsedIntent,
     onSaved,
+      proposedModels,
   ]);
 
   return {

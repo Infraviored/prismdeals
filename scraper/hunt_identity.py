@@ -113,7 +113,7 @@ def names_a_model(title, models):
 
 
 def hunt_models(conn, search_id):
-    """The models a shortlist or class hunt names, or [] for other hunts."""
+    """The models a shortlist hunt names, or [] for other hunts."""
     try:
         row = conn.execute(
             """SELECT c.hunt_type, c.intent_json FROM searches s
@@ -122,7 +122,9 @@ def hunt_models(conn, search_id):
         ).fetchone()
     except sqlite3.OperationalError:  # a store without hunts (older schema, tests)
         return []
-    if not row or row[0] not in ("shortlist", "class") or not row[1]:
+    # Only a model list makes the model a must. In a class hunt the models
+    # are proposals searched beside the class word: a no-name fan still fits.
+    if not row or row[0] != "shortlist" or not row[1]:
         return []
     try:
         models = json.loads(row[1]).get("models") or []

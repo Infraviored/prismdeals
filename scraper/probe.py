@@ -227,12 +227,18 @@ def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
         drop = False
         if sampled > 0 and gain < 0.10 and overlap > 0.8:
             drop = True
+        # "Too wide" is about offers that are clearly something else, not about
+        # musts a title cannot show ("Für Innenraum geeignet"): measured on the
+        # share not ruled out, it dropped "ventilator" for a fan hunt.
+        open_share = ((rung_likely + rung_unclear) / sampled) if sampled > 0 else 0.0
         if (
             total > 2000
-            and likely_share < 0.02
+            and open_share < 0.02
             and hunt_type not in ("opportunity", "taste")
         ):
             drop = True
+        if rung.get("net") and sampled > 0:
+            drop = False
 
         rung_record = {
             "term": rung.get("term"),

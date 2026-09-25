@@ -440,3 +440,15 @@ def test_total_from_a_category_search_page():
         "„oled laptop“</span>"
     )
     assert result_list.total_results(page) == 1139
+
+
+def test_a_card_whose_alt_names_the_district_still_has_its_town():
+    """ "Kr. Dachau - Petershausen" in the alt text: the card's own
+    "85238 Petershausen" names the town (rows said "Ohne Ort")."""
+    page = open(
+        os.path.join(os.path.dirname(__file__), "testdata", "search_district_alt.html"),
+        encoding="utf-8",
+    ).read()
+    cards = {c["id"]: c for c in result_list.parse(page)}
+    assert cards["3475930242"]["location"] == "Petershausen"
+    assert all(c["location"] for c in cards.values())

@@ -160,3 +160,24 @@ describe('huntSave', () => {
     });
   });
 });
+
+describe('brandsOf', () => {
+  it('takes each proposed model’s brand once', async () => {
+    const { brandsOf } = await import('../huntSave');
+    expect(brandsOf(['Honeywell HT-900', 'Rowenta Turbo Silence', 'Honeywell HYF290E'])).toEqual(['honeywell', 'rowenta']);
+  });
+});
+
+describe('huntDisplayName', () => {
+  it('names a class hunt after the class', async () => {
+    const { huntDisplayName } = await import('../huntSave');
+    expect(
+      huntDisplayName({
+        intentText: 'Ventilator Innenraum, bis 25 Euro',
+        huntType: 'class',
+        models: ['Honeywell HT-900', 'Dyson AM07'],
+        parsedIntent: { class: 'ventilator' } as never,
+      })
+    ).toBe('Ventilator');
+  });
+});

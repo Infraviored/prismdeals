@@ -252,3 +252,32 @@ def test_a_term_that_finds_nothing_is_never_kept(tmp_path):
     )
     assert "Yamaha R1 RN19" not in result["chosen_terms"]
     assert "Yamaha R1" in result["chosen_terms"]
+
+
+def test_the_class_word_is_kept_even_when_titles_cannot_show_the_musts(tmp_path):
+    """ "ventilator" for a fan hunt: 5000 offers, none "likely" by title,
+    because "Für Innenraum geeignet" is never in a title. It is the net."""
+    wide = _make_page_html(
+        5000, [_make_card_html(f"70{i}", f"Ventilator {i}", "", 15) for i in range(25)]
+    )
+    model = _make_page_html(3, [_make_card_html("801", "Honeywell HT-900", "", 20)])
+    payload = {
+        "category_code": "c176",
+        "hunt_type": "class",
+        "musts": [
+            {
+                "id": "own_innen",
+                "label": "Für Innenraum geeignet",
+                "want": {"present": True},
+            }
+        ],
+        "seed_terms": ["ventilator"],
+        "models": ["Honeywell HT-900"],
+    }
+    conn = db_schema.connect(str(tmp_path / "fan.db"))
+    result = probe.run_probe(
+        payload,
+        conn=conn,
+        fetch_fn=lambda url: MockResponse(model if "honeywell" in url else wide),
+    )
+    assert "ventilator" in result["chosen_terms"]

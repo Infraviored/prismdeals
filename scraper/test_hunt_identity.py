@@ -30,3 +30,17 @@ def test_a_request_is_not_an_offer():
 def test_model_keys_drop_brand_and_generation():
     assert h.model_keys("Yamaha R1 RN19") == {"r1"}
     assert h.model_keys("Honda CBR 1000 RR") == {"cbr1000rr"}
+
+
+def test_a_class_hunt_does_not_make_its_proposals_a_must(tmp_path):
+    import json
+
+    import db_schema
+
+    conn = db_schema.connect(str(tmp_path / "c.db"))
+    conn.execute(
+        "INSERT INTO campaigns (id, name, hunt_type, intent_json) VALUES (10, 'Ventilator', 'class', ?)",
+        (json.dumps({"models": ["Honeywell HT-900"]}),),
+    )
+    conn.execute("INSERT INTO searches (id, campaign_id, url) VALUES (55, 10, 'u')")
+    assert h.hunt_models(conn, 55) == []

@@ -81,10 +81,15 @@ export function huntDisplayName(params: {
 }): string {
   const { intentText, huntType, models, parsedIntent } = params;
   const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-  if ((huntType === 'shortlist' || huntType === 'class') && models.length > 0) {
+  // A class hunt is named after the class ("Ventilator"), not after the
+  // models it happened to propose ("Honeywell HT-900 / Dyson AM07 / ...").
+  if (huntType === 'class') {
+    const cls = parsedIntent?.class || parsedIntent?.search_terms?.[0];
+    if (cls) return cap(cls);
+  }
+  if (huntType === 'shortlist' && models.length > 0) {
     return models.slice(0, 3).join(' / ');
   }
-  if (huntType === 'class' && parsedIntent?.class) return cap(parsedIntent.class);
   const term = parsedIntent?.search_terms?.[0];
   if (term) return cap(term);
   const text = intentText.trim();
@@ -121,6 +126,16 @@ export function toRequirement(
   if (!label) return null;
   const slug = label.toLowerCase().replace(/[^a-z0-9äöüß]+/g, '_').replace(/^_|_$/g, '');
   return { id: `own_${slug}`, label, importance, own: true, buyer_wants: wants };
+}
+
+/** The brand of each model ("Honeywell HT-900" -> "honeywell"), once. */
+export function brandsOf(models: string[]): string[] {
+  const out: string[] = [];
+  for (const model of models) {
+    const brand = model.trim().split(/\s+/)[0]?.toLowerCase();
+    if (brand && brand.length >= 2 && !out.includes(brand)) out.push(brand);
+  }
+  return out;
 }
 
 async function postJson(url: string, method: string, body: unknown) {
@@ -196,6 +211,19 @@ export async function executeHuntSave(
     ...params.musts.map((m) => toRequirement(m, 'high')),
     ...params.prefs.map((p) => toRequirement(p, 'low')),
   ].filter((r): r is NonNullable<ReturnType<typeof toRequirement>> => r !== null);
+  // A class hunt searches the class and the models it proposed; an offer from
+  // one of those brands is worth more than a no-name one -- a wish, not a must.
+  const brands = brandsOf(params.huntType === 'class' ? params.models : []);
+  if (brands.length > 0) {
+    requirements.push({
+      id: 'own_bekannte_marke',
+      label: 'Bekannte Marke',
+      importance: 'low',
+      own: true,
+      buyer_wants: { present: true },
+      keywords: brands,
+    } as NonNullable<ReturnType<typeof toRequirement>>);
+  }
   if (requirements.length > 0) {
     await postJson(`/api/campaigns/${campaignId}/requirements`, 'PUT', { requirements });
   }
