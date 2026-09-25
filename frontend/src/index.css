@@ -394,6 +394,6 @@ input[type='range']:focus-visible::-webkit-slider-thumb { outline: 2px solid var
    Broken over two lines it reads as broken on a phone. Where room is short,
    the row wraps or the label gets shorter -- never the button. The CI
    screenshot run fails on any button that wraps (scripts/ci_ui_shots.py). */
-button, .badge { white-space: nowrap; }
+button, .btn, .badge { white-space: nowrap; }
 /* List entries that happen to be buttons carry sentences, not labels. */
 .cluster-list button { white-space: normal; }
