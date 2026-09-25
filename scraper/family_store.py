@@ -24,9 +24,8 @@ Three constraints shape this store:
    PROPOSALS.md.
 
 3. Conflict Transparency:
-   Reusing an existing search row with a conflicting campaign, conflicting
-   knowledge set, or disabled state is recorded and reported as a conflict
-   rather than silently ignored, matching the safety model of `route_store.py`.
+   Reusing an existing search row with a conflicting campaign or a disabled
+   state is recorded and reported as a conflict rather than silently ignored.
 """
 
 import datetime
@@ -102,10 +101,9 @@ def expand(base_url, terms=None, circles=None):
 
     # 3. Cross-product
     for term_id, term_slug, term_label, orig_term in terms_list:
-        if term_slug is not None:
-            query_url = with_query(base_url, term_slug)
-        else:
-            query_url = base_url
+        # A term without words is the whole category in the frame: a hunt for
+        # "Laptop" in "Laptops & Notebooks" searches no word at all.
+        query_url = with_query(base_url, term_slug) if term_slug else base_url
 
         for circle in circles_list:
             circle_obj = None
@@ -235,101 +233,12 @@ def recompute_enabled(conn, search_ids, cursor=None):
     return results
 
 
-def preview_family(
-    conn, base_url, terms, route_search_id=None, campaign_id=None, knowledge_set_id=None
-):
-    """Calculates preview metrics for a search family without database mutations."""
-    circles = None
-    cursor = conn.cursor()
-    if route_search_id:
-        row = cursor.execute(
-            "SELECT plan_json, campaign_id, knowledge_set_id FROM route_searches WHERE id = ?",
-            (route_search_id,),
-        ).fetchone()
-        if row:
-            plan_data = json.loads(row[0])
-            circles = plan_data.get("circles", [])
-            if campaign_id is None:
-                campaign_id = row[1]
-            if knowledge_set_id is None:
-                knowledge_set_id = row[2]
-
-    expanded = list(expand(base_url, terms, circles))
-
-    urls_out = []
-    conflicts = []
-    new_searches = 0
-    reused_searches = 0
-
-    for item in expanded:
-        term_id, url, label = item
-        existing = cursor.execute(
-            "SELECT id, campaign_id, knowledge_set_id, enabled FROM searches WHERE url = ?",
-            (url,),
-        ).fetchone()
-
-        term_val = item.term or label
-
-        if existing is not None:
-            reused_searches += 1
-            exists = True
-            search_id, ex_camp, ex_ks, enabled = existing
-            mismatch = []
-            if knowledge_set_id is not None and ex_ks != knowledge_set_id:
-                mismatch.append(f"knowledge set {ex_ks} instead of {knowledge_set_id}")
-            if campaign_id is not None and ex_camp != campaign_id:
-                mismatch.append(f"campaign {ex_camp} instead of {campaign_id}")
-            if not enabled:
-                mismatch.append("disabled")
-            if mismatch:
-                conflicts.append(
-                    {
-                        "url": url,
-                        "search_id": search_id,
-                        "label": label,
-                        "reasons": mismatch,
-                    }
-                )
-        else:
-            new_searches += 1
-            exists = False
-
-        urls_out.append(
-            {
-                "term": term_val,
-                "label": label,
-                "url": url,
-                "exists": exists,
-            }
-        )
-
-    # Scraper performance estimates: 2 pages per search, 2 seconds delay per page
-    pages_to_scrape = 2
-    delay_between_pages = 2
-    total_searches = len(expanded)
-    total_pages = total_searches * pages_to_scrape
-    estimated_seconds = total_pages * delay_between_pages
-
-    return {
-        "terms": len(terms),
-        "circles": len(circles) if circles else 1,
-        "searches": total_searches,
-        "new_searches": new_searches,
-        "reused_searches": reused_searches,
-        "pages": total_pages,
-        "estimated_seconds": estimated_seconds,
-        "urls": urls_out,
-        "conflicts": conflicts,
-    }
-
-
 def attach_terms(
     conn,
     family_id,
     terms,
     circles=None,
     campaign_id=None,
-    knowledge_set_id=None,
     route_search_id=None,
     cursor=None,
 ):
@@ -337,17 +246,15 @@ def attach_terms(
     if cursor is None:
         cursor = conn.cursor()
     family_row = cursor.execute(
-        "SELECT base_url, campaign_id, knowledge_set_id FROM search_families WHERE id = ?",
+        "SELECT base_url, campaign_id FROM search_families WHERE id = ?",
         (family_id,),
     ).fetchone()
     if not family_row:
         raise ValueError(f"Search family {family_id} not found")
 
-    base_url, fam_camp, fam_ks = family_row
+    base_url, fam_camp = family_row
     if campaign_id is None:
         campaign_id = fam_camp
-    if knowledge_set_id is None:
-        knowledge_set_id = fam_ks
 
     expanded = list(expand(base_url, terms, circles))
     conflicts = []
@@ -356,38 +263,30 @@ def attach_terms(
     for item in expanded:
         term_id, url, label = item
         existing = cursor.execute(
-            "SELECT id, campaign_id, knowledge_set_id, enabled FROM searches WHERE url = ?",
+            "SELECT id, campaign_id, enabled FROM searches WHERE url = ?",
             (url,),
         ).fetchone()
 
         if existing is None:
             try:
                 cursor.execute(
-                    "INSERT INTO searches (campaign_id, name, url, enabled, knowledge_set_id) "
-                    "VALUES (?, ?, ?, 1, ?)",
-                    (campaign_id, label, url, knowledge_set_id),
+                    "INSERT INTO searches (campaign_id, name, url, enabled) "
+                    "VALUES (?, ?, ?, 1)",
+                    (campaign_id, label, url),
                 )
                 search_id = cursor.lastrowid
             except sqlite3.IntegrityError:
                 existing = cursor.execute(
-                    "SELECT id, campaign_id, knowledge_set_id, enabled FROM searches WHERE url = ?",
+                    "SELECT id, campaign_id, enabled FROM searches WHERE url = ?",
                     (url,),
                 ).fetchone()
                 search_id = existing[0] if existing else None
         else:
             search_id = existing[0]
-            existing_camp, existing_ks, existing_enabled = (
-                existing[1],
-                existing[2],
-                existing[3],
-            )
+            existing_camp, existing_enabled = existing[1], existing[2]
             mismatch = []
             if campaign_id is not None and existing_camp != campaign_id:
                 mismatch.append(f"campaign {existing_camp} instead of {campaign_id}")
-            if knowledge_set_id is not None and existing_ks != knowledge_set_id:
-                mismatch.append(
-                    f"knowledge set {existing_ks} instead of {knowledge_set_id}"
-                )
             if not existing_enabled:
                 mismatch.append("disabled")
             if mismatch:
@@ -440,32 +339,16 @@ def save_family(
     base_url,
     terms,
     campaign_id=None,
-    knowledge_set_id=None,
-    route_search_id=None,
 ):
     """Creates a new search family, persists its terms, and attaches the search cross-product."""
     cursor = conn.cursor()
     now_ts = _now()
     cursor.execute(
-        "INSERT INTO search_families (name, campaign_id, knowledge_set_id, base_url, enabled, created_at) "
-        "VALUES (?, ?, ?, ?, 1, ?)",
-        (name, campaign_id, knowledge_set_id, base_url, now_ts),
+        "INSERT INTO search_families (name, campaign_id, base_url, enabled, created_at) "
+        "VALUES (?, ?, ?, 1, ?)",
+        (name, campaign_id, base_url, now_ts),
     )
     family_id = cursor.lastrowid
-
-    circles = None
-    if route_search_id:
-        cursor.execute(
-            "UPDATE route_searches SET family_id = ? WHERE id = ?",
-            (family_id, route_search_id),
-        )
-        row = cursor.execute(
-            "SELECT plan_json FROM route_searches WHERE id = ?",
-            (route_search_id,),
-        ).fetchone()
-        if row:
-            plan_data = json.loads(row[0])
-            circles = plan_data.get("circles", [])
 
     stored_terms = []
     for pos, item in enumerate(terms):
@@ -491,15 +374,7 @@ def save_family(
         term_id = cursor.lastrowid
         stored_terms.append({"id": term_id, "term": slug, "label": lbl})
 
-    conflicts = attach_terms(
-        conn,
-        family_id,
-        stored_terms,
-        circles=circles,
-        campaign_id=campaign_id,
-        knowledge_set_id=knowledge_set_id,
-        route_search_id=route_search_id,
-    )
+    conflicts = attach_terms(conn, family_id, stored_terms, campaign_id=campaign_id)
 
     # When converting a plain campaign into a family: any existing searches of this
     # campaign that were not reused (because the URL changed due to filter/place/price)
@@ -556,14 +431,13 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None, base_url
     """Updates an existing search family, reconciling terms, base_url, and ownership."""
     cursor = conn.cursor()
     fam = cursor.execute(
-        "SELECT id, name, enabled, base_url, campaign_id, knowledge_set_id FROM search_families WHERE id = ?",
+        "SELECT id, name, enabled, base_url, campaign_id FROM search_families WHERE id = ?",
         (family_id,),
     ).fetchone()
     if not fam:
         raise ValueError(f"No search family with id {family_id}")
 
     campaign_id = fam[4]
-    knowledge_set_id = fam[5]
 
     if name is not None:
         cursor.execute(
@@ -711,7 +585,6 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None, base_url
                 new_terms_to_attach,
                 circles=circles,
                 campaign_id=campaign_id,
-                knowledge_set_id=knowledge_set_id,
                 route_search_id=route_search_id,
             )
             conflicts.extend(new_conflicts)
@@ -751,7 +624,6 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None, base_url
                 terms_to_reattach,
                 circles=circles,
                 campaign_id=campaign_id,
-                knowledge_set_id=knowledge_set_id,
                 route_search_id=route_search_id,
             )
             conflicts.extend(new_conflicts)
@@ -778,34 +650,3 @@ def update_family(conn, family_id, name=None, enabled=None, terms=None, base_url
         "removed": removed_count,
         "conflicts": conflicts,
     }
-
-
-def delete_family(conn, family_id):
-    """Deletes a search family and its ownership references.
-
-    Preserves searches, listings, and hits; recomputes enabled state on all affected searches.
-    """
-    cursor = conn.cursor()
-    affected_searches = [
-        row[0]
-        for row in cursor.execute(
-            "SELECT DISTINCT search_id FROM search_family_searches WHERE family_id = ?",
-            (family_id,),
-        ).fetchall()
-    ]
-
-    # Clean up multiplied searches from route_search_circles created by this family
-    cursor.execute("DELETE FROM route_search_circles WHERE family_id = ?", (family_id,))
-
-    cursor.execute(
-        "DELETE FROM search_family_searches WHERE family_id = ?", (family_id,)
-    )
-    cursor.execute("DELETE FROM search_family_terms WHERE family_id = ?", (family_id,))
-    cursor.execute(
-        "UPDATE route_searches SET family_id = NULL WHERE family_id = ?", (family_id,)
-    )
-    cursor.execute("DELETE FROM search_families WHERE id = ?", (family_id,))
-
-    recompute_enabled(conn, affected_searches, cursor=cursor)
-    conn.commit()
-    return True

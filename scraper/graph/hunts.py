@@ -59,46 +59,33 @@ def clean_condition(raw):
     }
 
 
-def _type_for(condition):
-    if condition["op"] in ("min", "max"):
-        return "number"
-    if condition["op"] in ("present", "absent"):
-        return "boolean"
-    return "text"
-
-
-def _readers_for(type_, label):
-    """Generic readers for an attribute a condition asked for: the detail page
-    first, then the text -- a number near the label, or the label named."""
-    if type_ == "number":
-        return [f"details:{label}", "number"]
-    if type_ == "boolean":
-        return [f"details:{label}", f"keywords:{label.lower()}"]
-    return [f"details:{label}"]
-
-
-def _attribute(conn, node_id, condition):
-    """The attr_id the condition reads at `node_id`; adds the attribute there
-    when neither the node nor anything above it has one of that name."""
-    attributes = store.effective_attributes(conn, node_id)
+def _existing(conn, node_id, condition):
+    """The attr_id at `node_id` (or above) the condition names, or None."""
     wanted = {store.fold(condition["label"])}
     if condition["attr_id"]:
         wanted.add(store.fold(condition["attr_id"]))
-    for attr_id, attribute in attributes.items():
+    for attr_id, attribute in store.effective_attributes(conn, node_id).items():
         if store.fold(attr_id) in wanted or store.fold(attribute["label"]) in wanted:
             return attr_id
-    attr_id = store.slug(condition["label"]).replace("-", "_")
-    type_ = _type_for(condition)
-    store.set_attribute(
-        conn,
-        node_id,
-        attr_id,
-        condition["label"],
-        type_,
-        _readers_for(type_, condition["label"]),
-        "hunt",
-    )
-    return attr_id
+    return None
+
+
+def _attributes(conn, pairs, ask):
+    """attr_id per (node_id, condition); what the graph cannot read yet is
+    defined at that node by one model call per node (place.define_attributes)."""
+    missing = {}
+    for node_id, c in pairs:
+        if _existing(conn, node_id, c) is None:
+            missing.setdefault(node_id, {})[store.fold(c["label"])] = c["label"]
+    for node_id, labels in missing.items():
+        place.define_attributes(conn, node_id, list(labels.values()), ask=ask)
+    out = []
+    for node_id, c in pairs:
+        attr_id = _existing(conn, node_id, c)
+        if attr_id is None:
+            raise HuntError(f"„{c['label']}“ lässt sich aus Anzeigen nicht lesen.")
+        out.append(attr_id)
+    return out
 
 
 def _common_ancestor(conn, node_ids):
@@ -227,15 +214,17 @@ def save(conn, doc, campaign_id=None, ask=llm.ask_json):
         targets.append({**t, "node_id": node_id})
     target_ids = list(dict.fromkeys(t["node_id"] for t in targets))
 
-    conditions = []
-    for t in targets:
-        for c in t["conditions"]:
-            attr_id = _attribute(conn, t["node_id"], c)
-            conditions.append({**c, "attr_id": attr_id, "node_id": t["node_id"]})
+    # A condition for one target reads at that target; one for all at what
+    # the targets have in common, so "ABS" becomes a fact of every motorcycle.
     shared = _common_ancestor(conn, target_ids)
-    for c in doc["conditions"]:
-        attr_id = _attribute(conn, shared, c)
-        conditions.append({**c, "attr_id": attr_id, "node_id": None})
+    scoped = [(t["node_id"], c) for t in targets for c in t["conditions"]]
+    pairs = scoped + [(shared, c) for c in doc["conditions"]]
+    conditions = [
+        {**c, "attr_id": attr_id, "node_id": node_id if i < len(scoped) else None}
+        for i, ((node_id, c), attr_id) in enumerate(
+            zip(pairs, _attributes(conn, pairs, ask))
+        )
+    ]
 
     taken = conn.execute(
         "SELECT id FROM campaigns WHERE name = ? AND id IS NOT ?",
@@ -247,8 +236,7 @@ def save(conn, doc, campaign_id=None, ask=llm.ask_json):
     intent_json = json.dumps({"text": doc["text"]}, ensure_ascii=False)
     if campaign_id is None:
         campaign_id = conn.execute(
-            """INSERT INTO campaigns (name, hunt_type, intent_json, frame_json)
-               VALUES (?, 'graph', ?, ?)""",
+            "INSERT INTO campaigns (name, intent_json, frame_json) VALUES (?, ?, ?)",
             (doc["name"], intent_json, frame_json),
         ).lastrowid
     else:
@@ -289,16 +277,48 @@ def save(conn, doc, campaign_id=None, ask=llm.ask_json):
             for c in conditions
         ],
     )
+    _kinds_by_art(conn, target_ids, conditions)
     _crawl(conn, campaign_id, doc, target_ids, conditions)
     conn.commit()
     return campaign_id
+
+
+def _art_of(conn, node_id, conditions):
+    """The "Art" a must condition selects that names this class of goods."""
+    node = store.node(conn, node_id)
+    parent = store.node(conn, node["parent_id"]) if node["parent_id"] else None
+    if node["kind"] != "class" or not parent or parent["kind"] != "category":
+        return None
+    for c in conditions:
+        if (
+            c["attr_id"] == "art"
+            and c["op"] == "eq"
+            and c["importance"] == "must"
+            and c["node_id"] in (None, node_id)
+            and store.same_goods(node["name"], str(c["value"]))
+        ):
+            return str(c["value"])
+    return None
+
+
+def _kinds_by_art(conn, target_ids, conditions):
+    """A class the "Art" filter names is what a listing filed under it is."""
+    for node_id in target_ids:
+        art = _art_of(conn, node_id, conditions)
+        if art:
+            store.add_alias(conn, node_id, art, "art", "hunt")
 
 
 def _crawl(conn, campaign_id, doc, target_ids, conditions):
     """The hunt's family of searches: one term per crawled node."""
     terms = []
     for node_id in target_ids:
-        term = crawl_term(conn, node_id)
+        # A kind of goods the site's own "Art" filter already selects needs
+        # no search word: "matratze" would drop the "Kaltschaummatratze".
+        if _art_of(conn, node_id, conditions):
+            term = None
+        else:
+            term = crawl_term(conn, node_id)
         if term not in terms:
             terms.append(term)
     frame = doc["frame"]
@@ -430,3 +450,51 @@ def refine(conn, campaign_id, ask=llm.ask_json):
                 )
     conn.commit()
     return {"listings": len(ids), "asked": asked}
+
+
+def delete(conn, campaign_id):
+    """Removes a hunt and its crawl plan. What it found stays: listings are raw
+    market data other hunts share, and the graph has read them. Its searches
+    are detached and switched off, not deleted -- deleting one cascaded to
+    every listing it had found first, whichever hunt still wanted it."""
+    families = [
+        r[0]
+        for r in conn.execute(
+            "SELECT id FROM search_families WHERE campaign_id = ?", (campaign_id,)
+        ).fetchall()
+    ]
+    for family_id in families:
+        routes = [
+            r[0]
+            for r in conn.execute(
+                "SELECT id FROM route_searches WHERE family_id = ?", (family_id,)
+            ).fetchall()
+        ]
+        for route_id in routes:
+            conn.execute(
+                "DELETE FROM listing_route_geo WHERE route_search_id = ?", (route_id,)
+            )
+            conn.execute(
+                "DELETE FROM route_search_circles WHERE route_search_id = ?",
+                (route_id,),
+            )
+            conn.execute("DELETE FROM route_searches WHERE id = ?", (route_id,))
+        conn.execute(
+            "DELETE FROM search_family_searches WHERE family_id = ?", (family_id,)
+        )
+        conn.execute(
+            "DELETE FROM search_family_terms WHERE family_id = ?", (family_id,)
+        )
+        conn.execute("DELETE FROM search_families WHERE id = ?", (family_id,))
+    conn.execute(
+        "UPDATE searches SET campaign_id = NULL, enabled = 0 WHERE campaign_id = ?",
+        (campaign_id,),
+    )
+    conn.execute(
+        "DELETE FROM listing_ranks WHERE run_id IN (SELECT id FROM judge_runs WHERE campaign_id = ?)",
+        (campaign_id,),
+    )
+    conn.execute("DELETE FROM judge_runs WHERE campaign_id = ?", (campaign_id,))
+    found = conn.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,)).rowcount
+    conn.commit()
+    return {"id": campaign_id, "deleted": bool(found)}

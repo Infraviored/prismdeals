@@ -5,8 +5,10 @@
  *   POST /api/hunts               the hunt document -> the stored document
  *   GET  /api/hunts/:id           the document, with each target's attributes
  *   PUT  /api/hunts/:id           the same document, changed -> the stored document
+ *   DELETE /api/hunts/:id         the hunt and its crawl plan; what it found stays
  *   GET  /api/hunts/:id/listings  offers with computed verdicts, filtered, sorted, paged
  *   GET  /api/hunts/:id/overview  counts, rejection reasons, markets, conditions
+ *   GET  /api/listings/:id        one listing, with its hunt's verdict when ?campaign_id=
  *   POST /api/hunts/draft         {text} -> a document drafted from the buyer's words, not saved
  *   POST /api/hunts/edit          the document changed in words, not saved
  *
@@ -17,48 +19,14 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
-const { findPython } = require('./python');
+const { graph, runJson } = require('./python');
 const { huntScope, huntListings, routeShape } = require('./hunt_listings');
 const { effectiveAttributes } = require('./db/graph');
 const { conditionText } = require('./db/verdict');
 const { listingOrder } = require('./listing_order');
 const { attachPriceHistory } = require('./listing_extras');
-const { buildPriceHistogram } = require('./overview/market');
-
-const SCRAPER = path.join(__dirname, '..', 'scraper');
-
-/** Runs a graph command; resolves {status, body}. */
-function graph(args, input = null) {
-  return runJson(['-m', 'graph.cli', ...args], input);
-}
-
-function runJson(args, input) {
-  return new Promise(resolve => {
-    const child = spawn(findPython(), args, { cwd: SCRAPER, env: { ...process.env } });
-    let out = '';
-    let err = '';
-    child.stdout.on('data', d => (out += d));
-    child.stderr.on('data', d => (err += d));
-    child.on('error', e => resolve({ status: 500, body: { error: e.message } }));
-    child.on('close', code => {
-      let body;
-      try {
-        body = JSON.parse(out.trim().split('\n').pop() || '{}');
-      } catch {
-        console.error('graph %s: unreadable output: %s %s', args.join(' '), out.slice(-300), err.slice(-500));
-        return resolve({ status: 500, body: { error: 'Unlesbare Antwort' } });
-      }
-      if (code === 2) return resolve({ status: 503, body });
-      if (code !== 0) {
-        if (!body.error) console.error('graph %s failed: %s', args.join(' '), err.slice(-500));
-        return resolve({ status: body.error ? 400 : 500, body });
-      }
-      resolve({ status: 200, body });
-    });
-    if (input !== null) child.stdin.end(input);
-  });
-}
+const { attachRanks, startCompare } = require('./compare_api');
+const { buildPriceHistogram } = require('./db/market');
 
 // One refine per hunt at a time; asked for while one runs, it runs once more.
 const refining = new Map();
@@ -70,6 +38,8 @@ function refine(campaignId) {
   refining.set(campaignId, false);
   graph(['refine', String(campaignId)]).then(result => {
     if (result.status !== 200) console.error('Refining hunt %s: %s', campaignId, result.body.error);
+    // What fits may have changed with what the hunt wants: rank it again.
+    startCompare(campaignId);
     const again = refining.get(campaignId);
     refining.delete(campaignId);
     if (again) refine(campaignId);
@@ -176,6 +146,11 @@ module.exports = (query, get) => {
     res.status(500).json({ error: 'Die Suche konnte nicht gespeichert werden.' });
   }));
 
+  router.delete('/api/hunts/:id', async (req, res) => {
+    const result = await graph(['hunt-delete', String(Number(req.params.id))]);
+    res.status(result.status === 200 && !result.body.deleted ? 404 : result.status).json(result.body);
+  });
+
   router.get('/api/hunts/:id', async (req, res) => {
     try {
       const doc = await documentOf(Number(req.params.id));
@@ -225,10 +200,39 @@ module.exports = (query, get) => {
         target: l.fit.target_id ? { node_id: l.fit.target_id, name: names.get(l.fit.target_id) } : null,
       }));
       await attachPriceHistory(query, listings);
+      await attachRanks(query, get, listings, scope.hunt.id);
       res.json({ total, counts, offset, limit, route: routeShape(scope.route), points, listings });
     } catch (error) {
       console.error('Hunt listings failed:', error);
       res.status(500).json({ error: 'Die Angebote konnten nicht gelesen werden.' });
+    }
+  });
+
+  // One listing, by its Kleinanzeigen id, so a find can be shared as a link.
+  // With campaign_id it carries that hunt's verdict, score and rank.
+  router.get('/api/listings/:id', async (req, res) => {
+    try {
+      const campaignId = num(req.query.campaign_id);
+      const scope = campaignId !== undefined ? await huntScope(query, get, campaignId) : null;
+      let listing = scope ? (await huntListings(query, scope)).find(l => String(l.id) === String(req.params.id)) : null;
+      if (listing) {
+        await attachRanks(query, get, [listing], scope.hunt.id);
+        const target = scope.hunt.targets.find(t => t.node_id === listing.fit.target_id);
+        listing = {
+          ...listing,
+          campaign_name: scope.hunt.name,
+          target: target ? { node_id: target.node_id, name: target.name } : null,
+        };
+      } else {
+        const row = await get('SELECT * FROM listings WHERE id = ?', [req.params.id]);
+        if (!row) return res.status(404).json({ error: 'Listing not found' });
+        listing = { ...row, details: JSON.parse(row.details || '{}'), images: JSON.parse(row.images || '[]'), fit: null };
+      }
+      const [withHistory] = await attachPriceHistory(query, [listing]);
+      res.json(withHistory);
+    } catch (error) {
+      console.error('GET /api/listings/:id failed:', error);
+      res.status(500).json({ error: 'Could not load listing' });
     }
   });
 

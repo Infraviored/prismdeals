@@ -12,7 +12,6 @@ export interface AppScreenProps {
 
 interface Schedule {
   interval: number;
-  autoAiEval: boolean;
   fullFetchOnStartup: boolean;
   delayBetweenPages: number;
   delayBetweenListings: number;
@@ -20,7 +19,6 @@ interface Schedule {
 
 const DEFAULTS: Schedule = {
   interval: 10,
-  autoAiEval: true,
   fullFetchOnStartup: false,
   delayBetweenPages: 0.25,
   delayBetweenListings: 0.25,
@@ -115,17 +113,6 @@ export const AppScreen: React.FC<AppScreenProps> = ({
             {schedule.interval === 0 ? t('settings.frequencyOff') : t('settings.frequencyDesc')}
           </p>
 
-          <button
-            type="button"
-            onClick={() => save({ ...schedule, autoAiEval: !schedule.autoAiEval })}
-            aria-pressed={schedule.autoAiEval}
-            className={row}
-          >
-            <span className="text-[#8FA6A1]">{t('surface.autoEvaluate')}</span>
-            <span className={schedule.autoAiEval ? 'text-[#4E8C6A] font-semibold' : 'text-[#8FA6A1]/50'}>
-              {schedule.autoAiEval ? '✓' : t('surface.off')}
-            </span>
-          </button>
         </section>
 
         <section className="space-y-2">

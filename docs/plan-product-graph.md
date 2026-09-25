@@ -158,6 +158,9 @@ paths, `reference_price.js` per-search medians, `market_node.js`, `requirements_
 
 ## 6. Market per node
 
+*Built as a read-time computation (`backend/db/market.js`), not a stored table: the hunts are
+few and the fit is milliseconds. A stored `node_market` comes when reads get expensive.*
+
 - Every listing ever seen is a price observation for its node with its facts.
 - Per node with enough observations (≥ 20 in the node, else walk up): a robust log-price model
   on the numeric attributes present for most listings (vehicles: age, km; laptops: RAM, age;
@@ -238,50 +241,46 @@ The same structure carries every row; only target depth and inherited attributes
   is played on a copy of the live database before it replaces the running version.
 - **Scope.** G1–G3 are the core and ship together; G4–G6 build on it within the same branch.
 
-## 12. Modules and interfaces (binding for the build)
+## 12. Modules and interfaces (as built)
 
-### Python — `scraper/graph/` (the only writer of graph, resolution and facts)
-- `store.py` — `node(conn, id)`, `children`, `ancestors(id)` (root first), `key_for(id)`,
-  `create_node(conn, parent_id, kind, name, **fields)`, `add_alias(conn, node_id, alias, kind,
-  source)`, `effective_attributes(conn, id)` (ancestors merged, child overrides),
-  `confirm(conn, id, evidence)`, `merge(conn, from_id, into_id)`, `fold(text)` (the one alias
-  normaliser).
-- `taxonomy.py` — `seed(conn, taxonomy_path)`: 161 category nodes; each category's
-  `attribute_range` filters → `number` attributes (`reader details:<label>`, `site_filter`),
-  `attribute_enum` → `enum` attributes; playbook fields → attributes at their category node
-  (`reader pattern:<playbook>/<field>`). Idempotent by `key`.
-- `place.py` — `place(conn, text, category_code, ask=None) -> node_id`: alias match, else one
-  model call returning `{path:[{name, kind, years?, aliases[]}], attributes:[…]}` under the
-  category; creates missing nodes `proposed`.
-- `resolve.py` — `resolve(conn, listing, prior_node_ids) -> (node_id, confidence, method)`;
-  `resolve_batch(conn, listing_ids)` (model call for the unresolved, learns aliases).
-- `readers.py` — `details`, `number`, `keywords`, `pattern`, `request` readers; each
-  `read(attribute, listing) -> (value, source, quote) | None`.
-- `facts.py` — `read_facts(conn, listing_id)`: resolution's node → effective attributes →
-  readers → `listing_facts`; `needs_model(conn, listing_id, attr_ids)` for the demand-driven
-  extraction call.
-- `market.py` — `fit_node(conn, node_id)`, `refresh(conn)`: `node_market` rows.
-- `crawlplan.py` — `units_for_hunt(conn, campaign_id) -> [search urls]` (targets × frame ×
-  corridor circles, best term aliases, site filters), `demand(conn)` ordering.
-- `knowledge.py` — node knowledge by id: `for_node(conn, id)` (inherited), `insert`, `approve`,
-  `attach(conn, claim, subtree_ids)` (deepest node the claim names).
-- `cli.py` — `python -m graph.cli <place|resolve|facts|plan|market|brief|classify> …`, JSON
-  on stdout; the only entry the backend spawns.
+### Python — `scraper/graph/` (the only writer of graph, resolution, facts, knowledge)
+- `store.py` — nodes, aliases, attributes (options as `{value, label}`), `effective_attributes`,
+  `fold` (the one normaliser; `backend/db/verdict.js` folds the same way), merge, confirm.
+- `taxonomy.py` — `seed`: 161 category nodes, their site filters as attributes. Seeded
+  automatically by `cli.py` on an empty graph.
+- `place.py` — `place(conn, text, category_code)`: alias or described name first, else one
+  model call (path, all generations with years, 0–6 attributes with readers); `describe`.
+- `resolve.py` / `readers.py` / `facts.py` — `facts.process(conn, listing_id, prior)`: node,
+  facts, `is_request`; a generation found by year; a model's placement never undone by names.
+- `hunts.py` — `save` (targets placed, conditions mapped onto attributes — a missing one is
+  added to the node —, crawl family derived: one term per crawled node, site filters from musts
+  for all targets), `refine` (hunt listings re-read with targets as prior, those above the
+  searched node asked once in batches), `delete` (listings stay; searches detached).
+- `draft.py` — text → hunt document (two calls: category with its "Art" options, then targets,
+  conditions, price).
+- `knowledge.py` — `for_node`, `brief` (cached per targets × known ids), `classify` (each
+  statement to the deepest node it names, dead sources dropped), approve/reject.
+- `crawlplan.py` — `plan`: searches owned by hunts, ordered by hunts × hours stale.
+- `cli.py` — `seed|place|describe|process|hunt-save|refine|hunt-delete|draft|brief|classify|
+  approve|reject`, JSON on stdout, exit 2 = no model (503), exit 1 = refused input (400).
+- `main.py` — after every crawl: `process` new listings, `refine` every hunt.
 
 ### Backend — Node
-- `backend/db/graph.js` — `node`, `ancestors`, `subtreeIds`, `effectiveAttributes`.
-- `backend/db/verdict.js` — `verdict(hunt, listing) -> {verdict, reasons[], states{condId:
-  met|violated|open}}`; `hunt` = `{targets, conditions, frame}` loaded once per request.
-- `backend/hunts_api.js` —
-  - `POST /api/hunts` `{name, intent_text, targets:[{name}|{node_id}], conditions:[…],
-    frame}` → places targets, stores, builds crawl units → `{id}`.
-  - `GET /api/hunts/:id` → the hunt document (targets with node name/key/years, conditions,
-    frame); `PUT /api/hunts/:id` (same shape; re-places changed targets, rebuilds units).
-  - `GET /api/hunts/:id/listings?tab&sort&limit&offset&term…` → `{total, listings, points,
-    route}` with `fit {verdict, reason, states}` computed; `GET /api/hunts/:id/overview`.
-  - `POST /api/hunts/edit` (AI) — document + instruction → document + computed change list.
-- `score.js` reads verdict states and `node_market`; `compare_api.js` gets its candidate ids
-  from `verdict.js` and passes them to `compare_cli.py`.
+- `db/graph.js` — `loadTree`, `describe`, `effectiveAttributes`, `loadHunt`, `loadReadings`.
+- `db/verdict.js` — `prepare(tree, hunt)`, `verdict(prepared, reading)` →
+  `{verdict, reason, states, target_id}`; `stateOf`, `conditionText`.
+- `db/market.js` — the node market on read: median, plus a Huber-fitted log-price model on at
+  most two facts (coverage ≥ 60 %, |ρ| ≥ 0.3, duplicates dropped), borrowed from the nearest
+  product node above with ≥ 20 offers; a deal is well under *this* offer's expected price.
+- `db/score.js` — gate from computed states, five axes by profile.
+- `hunt_listings.js` — `huntScope`, `huntListings`: the one read path for list, overview,
+  hunt list, kept listings, single listing and comparison candidates.
+- `hunts_api.js` — `GET/POST /api/hunts`, `GET/PUT/DELETE /api/hunts/:id`,
+  `/api/hunts/:id/listings|overview`, `POST /api/hunts/draft|edit`, `GET /api/listings/:id`.
+- `knowledge_api.js` — `/api/hunts/:id/brief|knowledge`, `/api/knowledge/:id/approve|reject`,
+  `/api/listings/:id/knowledge`.
+- `compare_api.js` — candidates = not-ruled-out listings by score (≤ 90) + conditions +
+  knowledge, sent to `compare_cli.py` on stdin.
 
 ### Frontend
 - Setup saves through `POST /api/hunts`; edit screen and "Mit KI ändern" through

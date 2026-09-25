@@ -14,9 +14,8 @@ Four kinds, all generic -- no category has code of its own:
 
 import re
 
-from probe_sieve import _german_number, read_number
-
 from . import store
+from .numbers import german_number, read_number
 
 # "ohne ABS", also across a list ("ohne ABS und ESP"), "ABS nicht vorhanden".
 _DENIED_BEFORE = re.compile(
@@ -58,7 +57,7 @@ def _typed(attribute, raw):
         found = _NUMBER.search(text)
         if not found:
             return None
-        value = _german_number(found.group(0))
+        value = german_number(found.group(0))
         return int(value) if float(value).is_integer() else value
     if kind == "boolean":
         folded = store.fold(text)

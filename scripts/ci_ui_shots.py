@@ -225,7 +225,7 @@ def walk(driver, base, out_dir, width, height):
     shoot(driver, out_dir, "02-landing")
 
     campaigns = driver.execute_script(
-        "return fetch('/api/campaigns').then(r => r.json()).catch(() => [])"
+        "return fetch('/api/hunts').then(r => r.json()).catch(() => [])"
     )
     if not isinstance(campaigns, list) or not campaigns:
         # The fixture database seeds campaigns. None here means the seed or the
@@ -233,7 +233,7 @@ def walk(driver, base, out_dir, width, height):
         raise SystemExit(
             "The fixture database reports no campaigns, so the views that "
             "matter cannot be reached. Check scripts/seed_fixture_db.js and "
-            "GET /api/campaigns."
+            "GET /api/hunts."
         )
         return
 
@@ -259,7 +259,7 @@ def walk(driver, base, out_dir, width, height):
     # three buttons with its main action broken over three lines went live.
     listing_id = driver.execute_async_script(
         "const done = arguments[arguments.length - 1];"
-        "fetch('/api/listings?campaign_id=' + arguments[0] + '&limit=1&sort=price_asc')"
+        "fetch('/api/hunts/' + arguments[0] + '/listings?limit=1&sort=price_asc')"
         ".then(r => r.json()).then(d => done((d.listings || [])[0]?.id || null))"
         ".catch(() => done(null));",
         cid,

@@ -1,8 +1,9 @@
-"""Comparative judging orchestrator (§9.2–§9.6).
+"""Comparative judging (§9.2–§9.6): three shuffled model runs over a hunt's
+candidates, merged into one ranking with reasons and seller questions.
 
-Ties together the funnel, prompt, stability, and storage.  Entry points:
-- compare_campaign(campaign_id): full 3-run comparison with storage
-- insert_new_listing(campaign_id, listing_id): incremental insertion (§9.5)
+The candidates come from the backend (backend/compare_api.js), which picks
+them from the computed verdicts -- the same ones the list shows -- so this
+module never decides what fits. Entry point: compare_campaign(payload).
 """
 
 import datetime
@@ -13,8 +14,6 @@ import time
 from typing import Any
 
 import db_schema
-import claims
-from compare_funnel import build_candidate_set, CANDIDATE_CAP
 from compare_prompt import build_compare_prompt, parse_compare_response
 from compare_stability import (
     shuffle_candidates,
@@ -25,16 +24,18 @@ from compare_stability import (
 logger = logging.getLogger(__name__)
 
 NUM_RUNS = 3
+# More than this many candidates run as a tournament of groups.
+CANDIDATE_CAP = 30
 TOURNAMENT_GROUP_SIZE = 30
 TOURNAMENT_ADVANCE = 10
 
 
 def _llm_call(prompt: str, max_tokens: int = 4000) -> tuple[str, dict]:
-    """One call through the configured model, in the dialect agent_worker uses.
+    """One call through the configured model, in the dialect llm_client builds.
 
     Returns (response_text, usage_info).
     """
-    from agent_worker import build_llm_kwargs, client, get_response_text
+    from llm_client import build_llm_kwargs, client, get_response_text
 
     # A little temperature so the shuffled runs are independent samples.
     kwargs = build_llm_kwargs(
@@ -81,30 +82,10 @@ def _fill_missing(parsed: list[dict], candidates: list[dict]) -> list[dict]:
     return parsed
 
 
-def _market_stats(conn: sqlite3.Connection, campaign_id: int) -> dict:
-    """Count and median price of the campaign's live listings, for the prompt."""
-    rows = conn.execute(
-        """SELECT DISTINCT l.id, l.price_eur
-             FROM listings l
-             JOIN listing_search_hits h ON h.listing_id = l.id
-             JOIN searches s ON s.id = h.search_id
-            WHERE s.campaign_id = ? AND l.price_eur IS NOT NULL
-              AND l.price_eur > 0 AND l.delisted_at IS NULL""",
-        (campaign_id,),
-    ).fetchall()
-    prices = [r[1] for r in rows]
-    if not prices:
-        return {}
-    import statistics
-
-    return {"count": len(prices), "median": round(statistics.median(prices))}
-
-
 def _store_run(
     conn: sqlite3.Connection,
     campaign_id: int,
-    req_hash: str,
-    fields: list[dict],
+    conditions: list[dict],
     merged: list[dict],
     stability: dict,
     total_usage: dict,
@@ -122,15 +103,10 @@ def _store_run(
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'complete')""",
         (
             campaign_id,
-            req_hash,
-            # What each must meant when it was judged: the score applies a
-            # judged state only while the buyer still wants the same thing.
+            _conditions_hash(conditions),
+            # What each condition said when it was judged.
             json.dumps(
-                {
-                    f.get("id"): f.get("buyer_wants") or {}
-                    for f in fields
-                    if f.get("id")
-                },
+                {str(c["id"]): c["text"] for c in conditions},
                 sort_keys=True,
                 ensure_ascii=False,
             ),
@@ -151,8 +127,8 @@ def _store_run(
             """INSERT INTO listing_ranks
                    (run_id, listing_id, rank, rank_of, reason,
                     musts_json, facts_json, questions_json,
-                    same_as, uncertain, spread, node_key)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    same_as, uncertain, spread)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 run_id,
                 str(entry["id"]),
@@ -165,12 +141,21 @@ def _store_run(
                 json.dumps(entry.get("same_as", []), ensure_ascii=False),
                 1 if entry.get("uncertain") else 0,
                 entry.get("spread"),
-                entry.get("node") or entry.get("node_key") or None,
             ),
         )
 
     conn.commit()
     return run_id
+
+
+def _conditions_hash(conditions):
+    import hashlib
+
+    text = json.dumps(
+        sorted((str(c["id"]), c["text"], c["importance"]) for c in conditions),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def _estimate_cost(usage: dict) -> float:
@@ -197,7 +182,7 @@ def partition_tournament_groups(
 
 def _tournament(
     candidates: list[dict],
-    fields: list[dict],
+    conditions: list[dict],
     market: dict,
     node_knowledge: str = "",
 ) -> list[dict]:
@@ -218,7 +203,7 @@ def _tournament(
     for gi, group in enumerate(groups):
         logger.info("Tournament group %d: %d candidates", gi + 1, len(group))
         prompt = build_compare_prompt(
-            group, fields, market, node_knowledge=node_knowledge
+            group, conditions, market, node_knowledge=node_knowledge
         )
         response_text, _ = _llm_call(prompt, _output_budget(len(group)))
         parsed = parse_compare_response(response_text, group)
@@ -239,35 +224,31 @@ def _tournament(
 
 
 def compare_campaign(
-    campaign_id: int,
+    payload: dict,
     db_path: str | None = None,
     num_runs: int = NUM_RUNS,
-    node_knowledge: str | None = None,
 ) -> dict[str, Any]:
-    """Full comparative judging for one campaign.
+    """Full comparative judging for one hunt.
 
+    payload: {campaign_id, candidates:[listing dicts with states], conditions:
+    [{id, text, importance}], market:{median, count}, knowledge: str}.
     Returns {run_id, merged, stability, usage, duration_s}.
     """
-    if db_path is None:
-        db_path = db_schema.default_path()
-
-    conn = db_schema.connect(db_path)
+    conn = db_schema.connect(db_path or db_schema.default_path())
     conn.row_factory = sqlite3.Row
-
     t0 = time.time()
-
-    # Build candidate set
-    funnel = build_candidate_set(conn, campaign_id)
-    candidates = funnel["candidates"]
-    fields = funnel["fields"]
-    req_hash = funnel["req_hash"]
+    campaign_id = payload["campaign_id"]
+    candidates = payload.get("candidates") or []
+    conditions = payload.get("conditions") or []
+    market = payload.get("market") or {}
+    node_knowledge = payload.get("knowledge") or ""
+    candidate_count = len(candidates)
 
     if not candidates:
         logger.info("Campaign %d: no candidates for comparison", campaign_id)
         # An empty run, stored: the screen shows the latest run's ranks, and
-        # without it the ranks from before a requirements change -- "#1 of 9"
-        # for listings now all rejected -- stayed on the listings for good.
-        run_id = _store_run(conn, campaign_id, req_hash, fields, [], {}, {}, 0.0, "")
+        # without it old ranks stayed on listings that no longer fit.
+        run_id = _store_run(conn, campaign_id, conditions, [], {}, {}, 0.0, "")
         return {
             "run_id": run_id,
             "merged": [],
@@ -276,25 +257,10 @@ def compare_campaign(
             "duration_s": 0,
         }
 
-    market = _market_stats(conn, campaign_id)
-
-    # Load inherited node knowledge for candidates (P7)
-    if node_knowledge is None:
-        parts = []
-        seen_nodes = set()
-        for c in candidates:
-            nk = claims.node_for_listing(conn, c["id"])
-            if nk and nk not in seen_nodes:
-                seen_nodes.add(nk)
-                text = claims.claims_for_prompt(conn, nk)
-                if text:
-                    parts.append(f"### {nk}\n{text}")
-        node_knowledge = "\n\n".join(parts)
-
     # Tournament if > CANDIDATE_CAP
     if len(candidates) > CANDIDATE_CAP:
         candidates = _tournament(
-            candidates, fields, market, node_knowledge=node_knowledge
+            candidates, conditions, market, node_knowledge=node_knowledge
         )
 
     # Run NUM_RUNS shuffled comparisons
@@ -312,7 +278,7 @@ def compare_campaign(
     for run_idx in range(num_runs):
         shuffled = shuffle_candidates(candidates, seed=run_idx * 7919)
         prompt = build_compare_prompt(
-            shuffled, fields, market, node_knowledge=node_knowledge
+            shuffled, conditions, market, node_knowledge=node_knowledge
         )
         response_text, usage = _llm_call(prompt, _output_budget(len(candidates)))
 
@@ -331,7 +297,6 @@ def compare_campaign(
         )
 
     # Merge and compute stability
-    candidate_count = funnel.get("total_before_cap", len(candidates))
     merged = merge_ranks(all_runs, candidate_count)
     stability = compute_stability(all_runs)
 
@@ -341,8 +306,7 @@ def compare_campaign(
     run_id = _store_run(
         conn,
         campaign_id,
-        req_hash,
-        fields,
+        conditions,
         merged,
         stability,
         total_usage,
@@ -360,71 +324,3 @@ def compare_campaign(
         "duration_s": round(duration_s, 1),
         "model": model_name,
     }
-
-
-def get_latest_ranks(
-    conn: sqlite3.Connection,
-    campaign_id: int,
-) -> list[dict]:
-    """Returns the latest judge run's listing ranks for a campaign."""
-    run = conn.execute(
-        """SELECT id, created_at, kendall_tau FROM judge_runs
-            WHERE campaign_id = ? AND status = 'complete'
-            ORDER BY created_at DESC LIMIT 1""",
-        (campaign_id,),
-    ).fetchone()
-    if not run:
-        return []
-
-    run_id = run[0] if isinstance(run, tuple) else run["id"]
-    rows = conn.execute(
-        """SELECT listing_id, rank, rank_of, reason, musts_json,
-                  facts_json, questions_json, same_as, uncertain, spread, node_key
-             FROM listing_ranks WHERE run_id = ?""",
-        (run_id,),
-    ).fetchall()
-
-    results = []
-    for r in rows:
-        if isinstance(r, tuple):
-            results.append(
-                {
-                    "listing_id": r[0],
-                    "rank": r[1],
-                    "rank_of": r[2],
-                    "reason": r[3],
-                    "musts": _safe_json(r[4]),
-                    "facts": _safe_json(r[5]),
-                    "seller_questions": _safe_json(r[6]),
-                    "same_as": _safe_json(r[7]),
-                    "uncertain": bool(r[8]),
-                    "spread": r[9],
-                    "node_key": r[10],
-                }
-            )
-        else:
-            results.append(
-                {
-                    "listing_id": r["listing_id"],
-                    "rank": r["rank"],
-                    "rank_of": r["rank_of"],
-                    "reason": r["reason"],
-                    "musts": _safe_json(r["musts_json"]),
-                    "facts": _safe_json(r["facts_json"]),
-                    "seller_questions": _safe_json(r["questions_json"]),
-                    "same_as": _safe_json(r["same_as"]),
-                    "uncertain": bool(r["uncertain"]),
-                    "spread": r["spread"],
-                    "node_key": r["node_key"],
-                }
-            )
-    return results
-
-
-def _safe_json(text: str | None) -> Any:
-    if not text:
-        return {}
-    try:
-        return json.loads(text)
-    except (ValueError, TypeError):
-        return {}

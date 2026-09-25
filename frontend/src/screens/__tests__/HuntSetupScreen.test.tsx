@@ -1,180 +1,70 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import HuntSetupScreen from '../HuntSetupScreen';
+import { mockApi } from '../../test/mockApi';
+
+afterEach(() => vi.unstubAllGlobals());
+
+const draft = {
+  name: 'Leiser Büroventilator',
+  text: 'Ventilator fürs Büro, leise, bis 25 Euro',
+  category_code: '176',
+  category_name: 'Elektronik > Haushaltsgeräte',
+  frame: { max_price: 25 },
+  targets: [{ typed: 'Ventilator', conditions: [{ label: 'Lautstärke', op: 'eq', value: 'leise', importance: 'must' }] }],
+  conditions: [],
+};
+
+async function toDraft() {
+  fireEvent.change(screen.getByTestId('hunt-intent-input'), { target: { value: draft.text } });
+  fireEvent.click(screen.getByTestId('hunt-step1-next-btn'));
+  await screen.findByTestId('hunt-editor');
+}
 
 describe('HuntSetupScreen', () => {
-  const originalFetch = globalThis.fetch;
+  it('drafts from words, lets the buyer change the draft, stores it and hands over the stored hunt', async () => {
+    const onSaved = vi.fn();
+    const { calls } = mockApi({
+      'POST /api/hunts/draft': draft,
+      'POST /api/hunts': (body: unknown) => ({ ...(body as object), id: 42 }),
+    });
+    render(<HuntSetupScreen onBack={vi.fn()} onSaved={onSaved} />);
+    await toDraft();
+    expect(calls[0].body).toEqual({ text: draft.text });
+    expect(screen.getByDisplayValue('Leiser Büroventilator')).toBeInTheDocument();
+    expect(screen.getByText('Lautstärke: leise')).toBeInTheDocument();
+    expect(screen.getByText('Category: Elektronik > Haushaltsgeräte')).toBeInTheDocument();
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+    // A second target, and the condition becomes a wish.
+    fireEvent.change(screen.getByLabelText('Add target'), { target: { value: 'Tischventilator' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Must' }));
+
+    fireEvent.click(screen.getByTestId('hunt-save-btn'));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    const saved = calls.find((c) => c.method === 'POST' && c.url === '/api/hunts')!.body as typeof draft;
+    expect(saved.text).toBe(draft.text);
+    expect(saved.targets.map((t) => t.typed)).toEqual(['Ventilator', 'Tischventilator']);
+    expect(saved.targets[0].conditions[0].importance).toBe('wish');
+    expect(onSaved.mock.calls[0][0].id).toBe(42);
   });
 
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-  });
-
-  it('runs through the setup wizard flow: Step 1 -> Step 2 -> Step 3 -> Step 4 -> Step 5 -> Save', async () => {
-    const handleSaved = vi.fn();
-    const handleBack = vi.fn();
-
-    // Mock backend responses
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url === '/api/intent/parse') {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () =>
-            Promise.resolve({
-              hunt_type: 'features',
-              musts: [{ id: 'ram', label: '32 GB' }],
-              prefs: [{ id: 'screen', label: 'OLED' }],
-              budget: { min: null, max: 800 },
-              models: ['ThinkPad T14'],
-            }),
-        });
-      }
-      if (url === '/api/probe') {
-        const stream = new ReadableStream({
-          start(controller) {
-            controller.enqueue(
-              new TextEncoder().encode(
-                `event: rung\ndata: {"term":"oled-laptop","label":"oled laptop","source":"seed","total":45,"sampled":20,"likely":15,"unclear":2,"no":3,"new_likely":15,"gain":0.75,"overlap":0.0,"likely_share":0.33,"kept":true,"prices":[700]}\n\n` +
-                `event: result\ndata: {"rungs":[{"term":"oled-laptop","label":"oled laptop","source":"seed","total":45,"sampled":20,"likely":15,"unclear":2,"no":3,"new_likely":15,"gain":0.75,"overlap":0.0,"likely_share":0.33,"kept":true,"prices":[700]}],"chosen_terms":["oled laptop"],"estimate":{"union_likely":15,"union_unclear":2,"median_price":700},"per_budget":[{"max":800,"likely":15}],"relax":[],"models_seen":[],"requests":2,"seconds":1.2,"partial":false}\n\n` +
-                `event: done\ndata: {"code":0}\n\n`
-              )
-            );
-            controller.close();
-          },
-        });
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          body: stream,
-        });
-      }
-      if (url === '/api/campaigns') {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ success: true, id: 202 }),
-        });
-      }
-      if (url === '/api/search-families') {
-        // As the real endpoint answers: the family, no campaign.
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ id: 55 }),
-        });
-      }
-      if (url.startsWith('/api/campaigns/')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ success: true }),
-        });
-      }
-      if (url === '/api/scraper/start') {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ started: true }),
-        });
-      }
-      return Promise.reject(new Error(`Unexpected url: ${url}`));
-    });
-
-    render(<HuntSetupScreen onBack={handleBack} onSaved={handleSaved} />);
-
-    // --- Step 1: Input text ---
-    const input = screen.getByTestId('hunt-intent-input');
-    fireEvent.change(input, { target: { value: 'ThinkPad mit 32 GB OLED unter 800 Euro' } });
-    fireEvent.click(screen.getByTestId('hunt-step1-next-btn'));
-
-    // Wait for intent parsing to complete and arrive at Step 2
-    await waitFor(() => {
-      expect(screen.getByTestId('hunt-type-features')).toBeInTheDocument();
-    });
-
-    // --- Step 2: Confirm hunt type ---
-    fireEvent.click(screen.getByTestId('hunt-step2-next-btn'));
-
-    // --- Step 3: Type details ---
-    await waitFor(() => {
-      expect(screen.getByText('32 GB')).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByTestId('hunt-step3-next-btn'));
-
-    // --- Step 4: Location / Price ---
-    await waitFor(() => {
-      expect(screen.getByTestId('hunt-step4-next-btn')).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByTestId('hunt-step4-next-btn'));
-
-    // --- Step 5: Market Picture ---
-    await waitFor(() => {
-      expect(screen.getByTestId('market-hero-likely-count')).toBeInTheDocument();
-    });
-
-    // Save hunt
-    const saveBtn = screen.getByTestId('hunt-save-btn');
-    fireEvent.click(saveBtn);
-
-    await waitFor(() => {
-      expect(handleSaved).toHaveBeenCalledWith({
-        campaignId: 202,
-        familyId: 55,
-      });
-    });
-  });
-
-  it('skips Step 3 when exact hunt type is chosen', async () => {
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url === '/api/intent/parse') {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () =>
-            Promise.resolve({
-              hunt_type: 'exact',
-              musts: [],
-              prefs: [],
-              budget: null,
-              models: ['ThinkPad T14'],
-            }),
-        });
-      }
-      if (url === '/api/probe') {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          body: new ReadableStream({
-            start(controller) {
-              controller.close();
-            },
-          }),
-        });
-      }
-      return Promise.reject(new Error(`Unexpected url: ${url}`));
-    });
-
+  it('says the AI is unreachable instead of guessing', async () => {
+    mockApi({ 'POST /api/hunts/draft': { status: 503, body: { error: 'KI nicht erreichbar' } } });
     render(<HuntSetupScreen onBack={vi.fn()} onSaved={vi.fn()} />);
-
-    // Step 1
-    const input = screen.getByTestId('hunt-intent-input');
-    fireEvent.change(input, { target: { value: 'ThinkPad T14 Gen 3' } });
+    fireEvent.change(screen.getByTestId('hunt-intent-input'), { target: { value: 'Ventilator' } });
     fireEvent.click(screen.getByTestId('hunt-step1-next-btn'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('KI nicht erreichbar');
+    expect(screen.queryByTestId('hunt-editor')).not.toBeInTheDocument();
+  });
 
-    // Step 2
-    await waitFor(() => {
-      expect(screen.getByTestId('hunt-type-exact')).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByTestId('hunt-type-exact'));
-    fireEvent.click(screen.getByTestId('hunt-step2-next-btn'));
-
-    // Skips Step 3 and lands directly on Step 4 (location/price)
-    await waitFor(() => {
-      expect(screen.getByTestId('hunt-step4-next-btn')).toBeInTheDocument();
-    });
+  it('shows why the server refused to store it', async () => {
+    mockApi({ 'POST /api/hunts/draft': draft, 'POST /api/hunts': { status: 400, body: { error: 'Eine Suche „X“ gibt es schon.' } } });
+    const onSaved = vi.fn();
+    render(<HuntSetupScreen onBack={vi.fn()} onSaved={onSaved} />);
+    await toDraft();
+    fireEvent.click(screen.getByTestId('hunt-save-btn'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('gibt es schon');
+    expect(onSaved).not.toHaveBeenCalled();
   });
 });

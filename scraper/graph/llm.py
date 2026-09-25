@@ -14,7 +14,7 @@ class NoModel(RuntimeError):
 def ask_json(prompt, max_tokens=2000):
     """The model's answer parsed as JSON; raises NoModel otherwise."""
     try:
-        from agent_worker import build_llm_kwargs, client, get_response_text
+        from llm_client import build_llm_kwargs, client, get_response_text
     except Exception as exc:  # noqa: BLE001 -- no model configured
         raise NoModel(f"KI nicht erreichbar ({exc})") from exc
     try:

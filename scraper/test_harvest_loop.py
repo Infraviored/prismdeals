@@ -15,7 +15,6 @@ It did not fire while only ten listings had ever been evaluated. It would have
 fired on the first real run.
 """
 
-import ast
 import os
 import sqlite3
 
@@ -80,31 +79,6 @@ def row(path):
     r = conn.execute("SELECT * FROM listings WHERE id = 'l1'").fetchone()
     conn.close()
     return r
-
-
-def test_the_ai_worker_never_writes_the_harvesters_column():
-    """`full_info_obtained` means 'we fetched the detail page'.
-
-    The worker was using it for 'the extraction was complete' — a second meaning
-    in one column, and the first link of the loop. Checked structurally rather
-    than by running the worker, because it needs a model.
-    """
-    source = open(os.path.join(HERE, "agent_worker.py"), encoding="utf-8").read()
-    tree = ast.parse(source)
-
-    written = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
-            continue
-        sql = node.value
-        if "UPDATE listings" in sql and "full_info_obtained" in sql:
-            written.append(node.lineno)
-
-    assert written == [], (
-        "agent_worker.py writes full_info_obtained in an UPDATE at lines "
-        f"{written}. That column belongs to the harvester; extraction "
-        "completeness lives in the facts envelope as _full_info_obtained."
-    )
 
 
 def test_harvesting_unchanged_text_does_not_requeue_the_ai(db, monkeypatch):

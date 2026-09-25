@@ -1,30 +1,18 @@
 import React from 'react';
 import { Sheet } from '../components/surface';
 import { useTranslation } from '../hooks/useTranslation';
-import type { SearchFamilyTerm } from '../types';
+import type { Target } from '../types/hunt';
 
 export interface FundeModelsSheetProps {
   isOpen: boolean;
   onClose: () => void;
-  terms: SearchFamilyTerm[];
-  termId: number | null;
-  onSelect: (termId: number | null) => void;
+  targets: Target[];
+  targetId: number | null;
+  onSelect: (nodeId: number | null) => void;
 }
 
-/** The model filter, one sheet instead of one pill per model.
- *
- * A printer family carries eleven models. Three of them as pills in the bar was
- * the "Checked Models" list under a new name, and it alone put the results
- * screen two buttons over budget. The names belong to the setup screen; here
- * they are a filter you open when you want it.
- */
-export const FundeModelsSheet: React.FC<FundeModelsSheetProps> = ({
-  isOpen,
-  onClose,
-  terms,
-  termId,
-  onSelect,
-}) => {
+/** The target filter, one sheet instead of one pill per target. */
+export const FundeModelsSheet: React.FC<FundeModelsSheetProps> = ({ isOpen, onClose, targets, targetId, onSelect }) => {
   const { t } = useTranslation();
 
   const choose = (id: number | null) => {
@@ -40,18 +28,16 @@ export const FundeModelsSheet: React.FC<FundeModelsSheetProps> = ({
   return (
     <Sheet isOpen={isOpen} onClose={onClose} title={t('surface.models')}>
       <div className="flex flex-col">
-        <button onClick={() => choose(null)} className={rowClass(termId === null)}>
+        <button onClick={() => choose(null)} className={rowClass(targetId === null)}>
           {t('surface.allModels')}
         </button>
-        {terms.map(term => (
-          <button
-            key={term.id}
-            onClick={() => choose(term.id ?? null)}
-            className={rowClass(termId === term.id)}
-          >
-            {term.label || term.term}
-          </button>
-        ))}
+        {targets
+          .filter((tg) => tg.node_id !== undefined)
+          .map((tg) => (
+            <button key={tg.node_id} onClick={() => choose(tg.node_id!)} className={rowClass(targetId === tg.node_id)}>
+              {tg.name || tg.typed}
+            </button>
+          ))}
       </div>
     </Sheet>
   );

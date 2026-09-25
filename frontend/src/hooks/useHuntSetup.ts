@@ -1,376 +1,51 @@
-import { useState, useCallback, useRef } from 'react';
-import type {
-  HuntType,
-  HuntRequirement,
-  ProposedModel,
-  HuntParsedIntent,
-} from '../types';
-import type { Place } from '../components/PlaceInput';
-import { useProbe } from './useProbe';
-import { slugify } from '../utils/searchUrl';
-import { broadenQuery } from '../utils/searchTerms';
-import { attributesToFilters } from '../utils/probeAggregation';
-import { executeHuntSave } from '../utils/huntSave';
+import { useCallback, useState } from 'react';
+import type { HuntDocument } from '../types/hunt';
+import { api } from '../utils/api';
 
 export interface UseHuntSetupOptions {
-  onSaved?: (saved: { campaignId: number; familyId: number }) => void;
-  onCancel?: () => void;
+  onSaved?: (saved: HuntDocument) => void;
 }
 
+/** A new hunt: the buyer's words, the AI's draft of them, the stored hunt. */
 export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
-  const [step, setStep] = useState<number>(1);
-  const [intentText, setIntentText] = useState('');
-  const [isAnalyzingIntent, setIsAnalyzingIntent] = useState(false);
-  const [parsedIntent, setParsedIntent] = useState<HuntParsedIntent | null>(null);
+  const [text, setText] = useState('');
+  const [draft, setDraft] = useState<HuntDocument | null>(null);
+  const [drafting, setDrafting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Hunt strategy
-  const [huntType, setHuntType] = useState<HuntType>('features');
-
-  // Step 3 details
-  const [models, setModels] = useState<string[]>([]);
-  const [proposedModels, setProposedModels] = useState<ProposedModel[]>([]);
-  const [isLoadingProposals, setIsLoadingProposals] = useState(false);
-  const [musts, setMusts] = useState<HuntRequirement[]>([]);
-  const [prefs, setPrefs] = useState<HuntRequirement[]>([]);
-  const [sizes, setSizes] = useState<string[]>([]);
-  const [styles, setStyles] = useState<string[]>([]);
-
-  // Step 4 location & frame
-  const [place, setPlace] = useState<Place | null>(null);
-  const [locationId, setLocationId] = useState<string | null>(null);
-  const [locationSlug, setLocationSlug] = useState<string | null>(null);
-  const [radius, setRadius] = useState<number | null>(null);
-  const [maxPrice, setMaxPrice] = useState<number | null>(null);
-  const [categoryId, setCategoryId] = useState<string | null>(null);
-  const [attributes, setAttributes] = useState<string[]>([]);
-
-  // Saving state
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  // Probe hook
-  const probe = useProbe();
-  const lookupSeq = useRef(0);
-
-  // Place resolver
-  const handlePlaceChange = useCallback(async (newPlace: Place | null) => {
-    setPlace(newPlace);
-    if (!newPlace) {
-      setLocationId(null);
-      setLocationSlug(null);
-      return;
-    }
-
-    const seq = ++lookupSeq.current;
-    const slug = slugify(newPlace.name);
-    setLocationSlug(slug);
-    setLocationId(null);
-
+  const submitText = useCallback(async (words: string) => {
+    setText(words);
+    setDrafting(true);
+    setError(null);
     try {
-      const queryParam = newPlace.postal_code || newPlace.name;
-      const res = await fetch(`/api/locations/resolve?postal_code=${encodeURIComponent(queryParam)}`);
-      if (seq !== lookupSeq.current) return;
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.location_id) {
-          setLocationId(String(data.location_id));
-        }
-      }
-    } catch {
-      // Keep place name even if lookup failed
-    }
-  }, []);
-
-  // Fetch proposed candidate models for class hunt
-  const fetchClassProposals = useCallback(
-    async (classText: string, budgetMax: number | null, cat: string | null) => {
-      setIsLoadingProposals(true);
-      try {
-        const frame = {
-          category_code: cat ? `c${cat}` : undefined,
-          price: budgetMax ? { max: budgetMax } : undefined,
-          location_id: locationId,
-          radius_km: radius,
-        };
-        const res = await fetch('/api/intent/models', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            class_text: classText,
-            budget: budgetMax,
-            category: cat,
-            frame,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.models)) {
-            setProposedModels(
-              data.models.map((m: ProposedModel) => ({
-                ...m,
-                selected: true,
-              }))
-            );
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load class model proposals:', err);
-      } finally {
-        setIsLoadingProposals(false);
-      }
-    },
-    [locationId, radius]
-  );
-
-  // Step 1: Submit intent text to POST /api/intent/parse
-  const submitIntent = useCallback(async (text: string) => {
-    setIntentText(text);
-    setIsAnalyzingIntent(true);
-    setSaveError(null);
-
-    try {
-      const res = await fetch('/api/intent/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      });
-
-      if (res.ok) {
-        const intent: HuntParsedIntent = await res.json();
-        setParsedIntent(intent);
-
-        // A new text is a new hunt: everything the old one parsed goes. Only
-        // what the new parse said was set, so going back from "Yamaha R1,
-        // min. 170 PS" to "Rennrad 56 cm" kept the 170 PS must, unseen, and
-        // the judge rejected every bike.
-        if (intent.hunt_type) setHuntType(intent.hunt_type);
-        setMusts(Array.isArray(intent.musts) ? intent.musts : []);
-        setPrefs(Array.isArray(intent.prefs) ? intent.prefs : []);
-        setModels(Array.isArray(intent.models) ? intent.models : []);
-        setProposedModels([]);
-        setSizes(Array.isArray(intent.sizes) ? intent.sizes : []);
-        setMaxPrice(intent.budget?.max ?? null);
-        setAttributes([]);
-        // Without a category the probe searched all of Kleinanzeigen: "32"
-        // alone found 384 058 offers.
-        setCategoryId(intent.category_id ?? null);
-      }
-    } catch (err) {
-      console.error('Intent parsing request error:', err);
+      setDraft(await api<HuntDocument>('/api/hunts/draft', { method: 'POST', body: { text: words } }));
+    } catch (e) {
+      setError((e as Error).message);
     } finally {
-      setIsAnalyzingIntent(false);
-      setStep(2);
+      setDrafting(false);
     }
   }, []);
 
-  // Trigger probe for Step 5
-  const launchProbe = useCallback(() => {
-    const effectivePrice = maxPrice ? { min: null, max: maxPrice } : undefined;
-    const effectiveCategory = categoryId ? `c${categoryId}` : null;
-
-    let seedTerms: string[] = [];
-    if (huntType === 'shortlist' && models.length > 0) {
-      seedTerms = [...models];
-    } else if (huntType === 'class') {
-      // The class word is the net ("ventilator"); the ticked models are added
-      // as their own terms below. Before, only the models were searched.
-      seedTerms = parsedIntent?.search_terms?.length
-        ? [...parsedIntent.search_terms]
-        : [parsedIntent?.class || intentText.trim()];
-    } else if (parsedIntent?.search_terms && parsedIntent.search_terms.length > 0) {
-      seedTerms = [...parsedIntent.search_terms];
-    } else if (intentText.trim()) {
-      // The whole sentence as a search term finds nothing; this is the fallback.
-      seedTerms = [broadenQuery(intentText.trim()) || intentText.trim()];
-    }
-
-    // The same filters the saved search will carry (km, first registration
-    // ...). Without them the market picture showed offers the search then
-    // never found.
-    const filters = attributesToFilters(attributes);
-    const payload = {
-      category_code: effectiveCategory,
-      filters,
-      location_id: locationId,
-      radius_km: radius,
-      price: effectivePrice,
-      hunt_type: huntType,
-      // The type tells the sieve that a width or a capacity cannot be read
-      // from a title and leaves the offer open instead of counting it.
-      musts: musts.map((m) => ({ id: m.id, label: m.label || m.id, type: m.type, want: m.want || { text: m.id } })),
-      prefs: prefs.map((p) => ({ id: p.id, label: p.label || p.id, type: p.type, want: p.want || { text: p.id } })),
-      seed_terms: seedTerms,
-      models:
-        huntType === 'shortlist'
-          ? models
-          : huntType === 'class'
-          ? proposedModels.filter((m) => m.selected !== false).map((m) => m.model)
-          : [],
-      budget_steps: maxPrice
-        ? [Math.round(maxPrice * 0.5), Math.round(maxPrice * 0.8), maxPrice]
-        : undefined,
-    };
-
-    probe.startProbe(payload);
-  }, [
-    huntType,
-    models,
-    proposedModels,
-    intentText,
-    categoryId,
-    locationId,
-    radius,
-    maxPrice,
-    musts,
-    prefs,
-    probe,
-    parsedIntent,
-    attributes,
-  ]);
-
-  // Step transitions
-  const nextStep = useCallback(() => {
-    if (step === 2) {
-      if (huntType === 'exact') {
-        setStep(4);
-      } else {
-        setStep(3);
-        if (huntType === 'class' && proposedModels.length === 0) {
-          // The class, not the whole sentence: it keys the 30-day cache of proposals.
-          fetchClassProposals(parsedIntent?.class || intentText, maxPrice, categoryId);
-        }
-      }
-    } else if (step === 3) {
-      setStep(4);
-    } else if (step === 4) {
-      setStep(5);
-      launchProbe();
-    }
-  }, [
-    step,
-    huntType,
-    proposedModels.length,
-    intentText,
-    maxPrice,
-    categoryId,
-    fetchClassProposals,
-    launchProbe,
-    parsedIntent,
-  ]);
-
-  const prevStep = useCallback(() => {
-    if (step === 4 && huntType === 'exact') {
-      setStep(2);
-    } else if (step > 1) {
-      setStep((s) => s - 1);
-    }
-  }, [step, huntType]);
-
-  const toggleProposedModel = useCallback((idx: number) => {
-    setProposedModels((prev) =>
-      prev.map((item, i) => (i === idx ? { ...item, selected: !item.selected } : item))
-    );
-  }, []);
-
-  // Save hunt and start searching
-  const saveHunt = useCallback(async () => {
-    if (isSaving) return;
-    setIsSaving(true);
-    setSaveError(null);
-
+  const save = useCallback(async () => {
+    if (!draft || saving) return;
+    setSaving(true);
+    setError(null);
     try {
-      const saved = await executeHuntSave({
-        intentText,
-        huntType,
-        // For a class hunt the ticked proposals: their brands become a wish.
-        models:
-          huntType === 'class'
-            ? proposedModels.filter((m) => m.selected !== false).map((m) => m.model)
-            : models,
-        musts,
-        prefs,
-        sizes,
-        place,
-        locationId,
-        locationSlug,
-        radius,
-        maxPrice: probe.selectedBudgetMax ?? maxPrice,
-        categoryId,
-        attributes,
-        parsedIntent,
-        probeMarketPicture: probe.marketPicture,
-        probeRungs: probe.rungs,
-      });
-
-      if (onSaved) {
-        onSaved(saved);
-      }
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen');
+      const stored = await api<HuntDocument>('/api/hunts', { method: 'POST', body: { ...draft, text } });
+      onSaved?.(stored);
+    } catch (e) {
+      setError((e as Error).message);
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
-  }, [
-    isSaving,
-    intentText,
-    huntType,
-    models,
-    musts,
-    prefs,
-    sizes,
-    place,
-    locationId,
-    locationSlug,
-    radius,
-    probe.selectedBudgetMax,
-    probe.marketPicture,
-    probe.rungs,
-    maxPrice,
-    categoryId,
-    attributes,
-    parsedIntent,
-    onSaved,
-      proposedModels,
-  ]);
+  }, [draft, saving, text, onSaved]);
 
-  return {
-    step,
-    setStep,
-    intentText,
-    isAnalyzingIntent,
-    submitIntent,
-    huntType,
-    setHuntType,
-    models,
-    setModels,
-    proposedModels,
-    isLoadingProposals,
-    toggleProposedModel,
-    musts,
-    setMusts,
-    prefs,
-    setPrefs,
-    sizes,
-    setSizes,
-    styles,
-    setStyles,
-    place,
-    handlePlaceChange,
-    locationId,
-    radius,
-    setRadius,
-    maxPrice,
-    setMaxPrice,
-    categoryId,
-    setCategoryId,
-    attributes,
-    setAttributes,
-    probe,
-    launchProbe,
-    nextStep,
-    prevStep,
-    isSaving,
-    saveError,
-    saveHunt,
-  };
+  /** Back to the words; the draft goes with them. */
+  const restart = useCallback(() => {
+    setDraft(null);
+    setError(null);
+  }, []);
+
+  return { text, draft, setDraft, drafting, saving, error, submitText, save, restart };
 }

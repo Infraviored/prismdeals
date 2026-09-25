@@ -31,7 +31,7 @@ df -h | grep -E "Filesystem|/$"
 
 # Check if required files exist
 echo -e "\n${YELLOW}Checking Required Files:${NC}"
-required_files=("backend/server.js" "scraper/main.py" "scraper/scraper.py" "scraper/agent_worker.py" "scraper/config.py" "scraper/requirements.txt" "backend/package.json")
+required_files=("backend/server.js" "scraper/main.py" "scraper/scraper.py" "scraper/config.py" "scraper/requirements.txt" "backend/package.json")
 for file in "${required_files[@]}"; do
     if [ -f "$file" ]; then
         echo -e "${GREEN}✓ $file exists${NC}"

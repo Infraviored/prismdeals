@@ -1,15 +1,20 @@
 import React from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import type { RowListing } from '../components/surface/Row';
+import type { Condition } from '../types/hunt';
+
+const ORDER = { violated: 0, open: 1, met: 2 } as const;
 
 /** Why a listing scores what it scores (docs/product-core.md, section 10).
  *
- * The must-haves first -- met, broken, or not stated -- because they decide
- * whether the rest matters; then one line per graded axis. This replaces a
- * model's free-text impression ("vague, claim-heavy", in English), which said
- * nothing a buyer could check.
+ * The hunt's conditions first -- met, broken, or not stated, as the verdict
+ * computed them -- because they decide whether the rest matters; then one line
+ * per graded axis.
  */
-export const ScoreBreakdown: React.FC<{ listing: RowListing }> = ({ listing }) => {
+export const ScoreBreakdown: React.FC<{ listing: RowListing; conditions?: Map<string, Condition> }> = ({
+  listing,
+  conditions = new Map(),
+}) => {
   const { t } = useTranslation();
   const parts = listing.score_parts;
   if (!parts || typeof listing.score !== 'number') return null;
@@ -21,12 +26,16 @@ export const ScoreBreakdown: React.FC<{ listing: RowListing }> = ({ listing }) =
       : null;
   const condition = (listing.details?.Zustand || listing.details?.zustand) as string | undefined;
   const market = listing.market_basis || parts.market_basis || null;
+  const node = market?.label || listing.target?.name;
+  const states = Object.entries(listing.fit?.states || {})
+    .filter(([id]) => conditions.has(id))
+    .sort((a, b) => ORDER[a[1]] - ORDER[b[1]]);
   const renderValueAxis = () => {
     if (delta === null) return null;
-    if (market?.label && market.count) {
-      if (delta > 0) return t('surface.axisValueBelowNode', { pct: delta, node: market.label, count: market.count });
-      if (delta < 0) return t('surface.axisValueAboveNode', { pct: -delta, node: market.label, count: market.count });
-      return t('surface.axisValueAtNode', { node: market.label, count: market.count });
+    if (node && market?.count) {
+      if (delta > 0) return t('surface.axisValueBelowNode', { pct: delta, node, count: market.count });
+      if (delta < 0) return t('surface.axisValueAboveNode', { pct: -delta, node, count: market.count });
+      return t('surface.axisValueAtNode', { node, count: market.count });
     }
     if (market?.count) {
       if (delta > 0) return t('surface.axisValueBelowCount', { pct: delta, count: market.count });
@@ -45,25 +54,27 @@ export const ScoreBreakdown: React.FC<{ listing: RowListing }> = ({ listing }) =
         <span className="text-xs text-[#8FA6A1]">{t('surface.scoreWhat')}</span>
       </div>
 
+      {listing.fit?.reason && listing.fit.verdict !== 'fit' && (
+        <p className="text-sm text-[#8FA6A1]" data-testid="fit-reason">{listing.fit.reason}</p>
+      )}
+
       <ul className="breakdown-list">
-        {parts.gate.violated.map((r) => (
-          <li key={`v-${r}`} className="violated">✗ {r}</li>
-        ))}
-        {parts.gate.open.map((r) => (
-          <li key={`o-${r}`} className="open">? {t('surface.reqOpen', { req: r })}</li>
-        ))}
-        {parts.gate.met.map((r) => (
-          <li key={`m-${r}`} className="met">✓ {r}</li>
-        ))}
-        {(parts.wishes?.met || []).map((w) => (
-          <li key={`wm-${w}`} className="met">✓ {t('surface.wishMet', { wish: w })}</li>
-        ))}
-        {(parts.wishes?.missed || []).map((w) => (
-          <li key={`wx-${w}`} className="open">✗ {t('surface.wishMissed', { wish: w })}</li>
-        ))}
-        {(parts.wishes?.open || []).map((w) => (
-          <li key={`wo-${w}`} className="open">? {t('surface.wishOpen', { wish: w })}</li>
-        ))}
+        {states.map(([id, state]) => {
+          const c = conditions.get(id)!;
+          const text = c.text || c.label;
+          const mark = state === 'met' ? '✓' : state === 'violated' ? '✗' : '?';
+          const line =
+            c.importance === 'must'
+              ? state === 'open' ? t('surface.reqOpen', { req: text }) : text
+              : state === 'met' ? t('surface.wishMet', { wish: text })
+              : state === 'violated' ? t('surface.wishMissed', { wish: text })
+              : t('surface.wishOpen', { wish: text });
+          return (
+            <li key={id} className={state === 'met' ? 'met' : c.importance === 'must' && state === 'violated' ? 'violated' : 'open'}>
+              {mark} {line}
+            </li>
+          );
+        })}
       </ul>
 
       <ul className="breakdown-list quiet">

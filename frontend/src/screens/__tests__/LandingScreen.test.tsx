@@ -1,176 +1,49 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import LandingScreen from '../LandingScreen';
-import type { Campaign, SearchTarget, Listing } from '../../types';
+import type { HuntSummary } from '../../types/hunt';
 
-describe('LandingScreen P3 Surface', () => {
-  const mockCampaigns: Campaign[] = [
-    { id: 1, name: 'Laptops', route_id: null },
-    { id: 3, name: 'Kleiderschrank', route_id: 2 },
-    { id: 5, name: 'Matratze', route_id: 3 },
-  ];
+const hunts: HuntSummary[] = [
+  {
+    id: 11,
+    name: 'Supersportler',
+    targets: ['Honda CBR 1000 RR SC59', 'Yamaha R1 RN19'],
+    frame: { max_price: 9000, location_id: 7074, place: 'Vilgertshofen', radius_km: 200 },
+    route: null,
+    counts: { all: 58, fit: 5, unclear: 3, no: 50 },
+    newest: { id: 'x', title: 'R1', price: '7500 €', image: 'https://example.com/r1.jpg', first_seen_at: new Date().toISOString() },
+  },
+  {
+    id: 12,
+    name: 'Matratze',
+    targets: ['Matratze'],
+    frame: { max_price: 100 },
+    route: { origin: 'Landsberg', destination: 'Konstanz' },
+    counts: { all: 0, fit: 0, unclear: 0, no: 0 },
+    newest: null,
+  },
+];
 
-  const mockSearches: SearchTarget[] = [
-    {
-      id: 1,
-      campaign_id: 1,
-      name: 'muenchen',
-      url: 'https://www.kleinanzeigen.de/s-notebooks/muenchen/preis::450/laptop/k0c278l6411',
-      enabled: true,
-      knowledge_set_id: null,
-    },
-    {
-      id: 4,
-      campaign_id: 3,
-      name: 'kleiderschrank: Landsberg → Konstanz · 1/5 86899 Landsberg (Lech)',
-      url: 'https://www.kleinanzeigen.de/s-inning-am-ammersee/preis:10:100/kleiderschrank/k0l7091r31',
-      enabled: true,
-      knowledge_set_id: null,
-    },
-    {
-      id: 6,
-      campaign_id: 5,
-      name: 'matratze: Landsberg → Konstanz · 1/5 86899 Landsberg (Lech)',
-      url: 'https://www.kleinanzeigen.de/s-landsberg-lech/matratze/k0l6411r25',
-      enabled: true,
-      knowledge_set_id: null,
-    },
-  ];
-
-  const mockListings: Listing[] = [
-    {
-      id: 'L1',
-      title: 'ThinkPad T480s',
-      price: '250 €',
-      location: 'München',
-      url: 'https://example.com/1',
-      short_description: '',
-      detailed_description: '',
-      extracted_facts: {},
-      status: 'New',
-      search_id: 1,
-      llm_processed: false,
-      images: ['https://example.com/laptop.jpg'],
-      first_seen_at: new Date(Date.now() - 3600 * 1000).toISOString(),
-    },
-    {
-      id: 'L2',
-      title: 'Ikea Brimnes',
-      price: '60 €',
-      location: 'Landsberg (Lech)',
-      url: 'https://example.com/2',
-      short_description: '',
-      detailed_description: '',
-      extracted_facts: {},
-      status: 'New',
-      search_id: 4,
-      llm_processed: false,
-      images: ['https://example.com/wardrobe.jpg'],
-      first_seen_at: new Date(Date.now() - 86400 * 1000).toISOString(),
-    },
-    {
-      id: 'L3',
-      title: 'Federkernmatratze',
-      price: '90 €',
-      location: 'Landsberg',
-      url: 'https://example.com/3',
-      short_description: '',
-      detailed_description: '',
-      extracted_facts: {},
-      status: 'New',
-      search_id: 6,
-      llm_processed: false,
-      images: ['https://example.com/matratze.jpg'],
-      first_seen_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-    },
-  ];
-
-  it('renders sticky bar with title and create button', () => {
-    const handleCreate = vi.fn();
-    render(
-      <LandingScreen
-        campaigns={mockCampaigns}
-        searches={mockSearches}
-        listings={mockListings}
-        onOpenCampaign={vi.fn()}
-        onCreateCampaign={handleCreate}
-        onOpenKept={vi.fn()}
-        onOpenApp={vi.fn()}
-      />
-    );
-
-    expect(screen.getByTestId('surface-bar')).toBeInTheDocument();
-    expect(screen.getByText(/Suchen|Searches/)).toBeInTheDocument();
-
-    const createBtn = screen.getByTestId('create-campaign-btn');
-    fireEvent.click(createBtn);
-    expect(handleCreate).toHaveBeenCalledTimes(1);
+describe('LandingScreen', () => {
+  it('lists every hunt with its fitting count, targets and where it searches', () => {
+    const onOpenHunt = vi.fn();
+    render(<LandingScreen hunts={hunts} onOpenHunt={onOpenHunt} onCreateHunt={vi.fn()} onOpenKept={vi.fn()} onOpenApp={vi.fn()} />);
+    const first = screen.getByTestId('campaign-card-11');
+    expect(first).toHaveTextContent('Supersportler');
+    expect(first).toHaveTextContent('5');
+    expect(first).toHaveTextContent('Honda CBR 1000 RR SC59 · Yamaha R1 RN19');
+    expect(first).toHaveTextContent('Vilgertshofen');
+    expect(screen.getByTestId('campaign-card-12')).toHaveTextContent('Landsberg → Konstanz');
+    fireEvent.click(first);
+    expect(onOpenHunt).toHaveBeenCalledWith(hunts[0]);
   });
 
-  it('renders search rows for each campaign and triggers onOpenCampaign on click', () => {
-    const handleOpen = vi.fn();
-    render(
-      <LandingScreen
-        campaigns={mockCampaigns}
-        searches={mockSearches}
-        listings={mockListings}
-        onOpenCampaign={handleOpen}
-        onCreateCampaign={vi.fn()}
-        onOpenKept={vi.fn()}
-        onOpenApp={vi.fn()}
-      />
-    );
-
-    expect(screen.getByText('Laptops')).toBeInTheDocument();
-    expect(screen.getByText('Kleiderschrank')).toBeInTheDocument();
-    expect(screen.getByText('Matratze')).toBeInTheDocument();
-
-    const laptopRow = screen.getByTestId('campaign-card-1');
-    fireEvent.click(laptopRow);
-    expect(handleOpen).toHaveBeenCalledWith(mockCampaigns[0]);
-  });
-
-  it('renders single-line EmptyLine when there are no campaigns', () => {
-    const handleCreate = vi.fn();
-    render(
-      <LandingScreen
-        campaigns={[]}
-        searches={[]}
-        listings={[]}
-        onOpenCampaign={vi.fn()}
-        onCreateCampaign={handleCreate}
-        onOpenKept={vi.fn()}
-        onOpenApp={vi.fn()}
-      />
-    );
-
-    expect(screen.getByTestId('surface-empty-line')).toBeInTheDocument();
-    expect(screen.getByText(/Noch keine Suche|No searches yet/)).toBeInTheDocument();
-
-    const emptyCreateBtn = screen.getByTestId('create-campaign-empty-btn');
-    fireEvent.click(emptyCreateBtn);
-    expect(handleCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it('does NOT contain the words "Search Profile" or coral color anywhere', () => {
-    const { container } = render(
-      <LandingScreen
-        campaigns={mockCampaigns}
-        searches={mockSearches}
-        listings={mockListings}
-        onOpenCampaign={vi.fn()}
-        onCreateCampaign={vi.fn()}
-        onOpenKept={vi.fn()}
-        onOpenApp={vi.fn()}
-      />
-    );
-
-    expect(screen.queryByText(/Search Profile/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Suchprofil/i)).not.toBeInTheDocument();
-
-    const html = container.innerHTML;
-    expect(html).not.toContain('#E87967');
-    expect(html).not.toContain('text-brand-accent');
-    expect(html).not.toContain('bg-brand-accent');
+  it('offers a new search when there is none, and says why the list could not be read', () => {
+    const onCreateHunt = vi.fn();
+    const { rerender } = render(<LandingScreen hunts={[]} onOpenHunt={vi.fn()} onCreateHunt={onCreateHunt} onOpenKept={vi.fn()} onOpenApp={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('create-campaign-empty-btn'));
+    expect(onCreateHunt).toHaveBeenCalled();
+    rerender(<LandingScreen hunts={[]} error="Die Suchen konnten nicht gelesen werden." onOpenHunt={vi.fn()} onCreateHunt={onCreateHunt} onOpenKept={vi.fn()} onOpenApp={vi.fn()} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('nicht gelesen');
   });
 });

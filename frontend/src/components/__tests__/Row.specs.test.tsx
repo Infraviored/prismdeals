@@ -10,15 +10,13 @@ const nonRamListing: RowListing = {
   price: '12.000 €',
   price_eur: 12000,
   location: 'München',
-  fit: {
-    verdict: 'fit',
-    facts: {
+  fit: { verdict: 'fit' },
+  facts: {
       color: 'schwarz',
       mileage: 85000,
       generation: 'undefined',
       stickCount: undefined,
       gbPerStick: undefined,
-    },
   },
 };
 

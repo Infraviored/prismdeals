@@ -66,24 +66,31 @@ describe('FundeDetailSheet', () => {
     expect(screen.queryByText('Open on Kleinanzeigen')).not.toBeInTheDocument();
   });
 
-  it('explains the score with the must-haves instead of a model impression', () => {
+  it('explains the score with the hunt conditions the verdict computed', () => {
     const scored: RowListing = {
       ...mockListing,
       score: 42,
       score_parts: {
         score: 42,
-        gate: { met: ['DDR4'], violated: [], open: ['ab 3200 MHz'], factor: 0.75 },
+        gate: { met: [], violated: [], open: [], factor: 0.75 },
         axes: { identity: 1, value: 0.6, risk: 0.7, procurement: null, fit: null },
       },
+      fit: { verdict: 'unclear', reason: 'Takt nicht genannt', states: { '1': 'met', '2': 'open', '3': 'violated' }, target_id: 4 },
       market_median: 150,
       price_eur: 140,
     };
-    render(<FundeDetailSheet listing={scored} onClose={vi.fn()} />);
+    const conditions = new Map([
+      ['1', { id: 1, label: 'Typ', op: 'eq' as const, value: 'DDR4', importance: 'must' as const, text: 'Typ: DDR4' }],
+      ['2', { id: 2, label: 'Takt', op: 'min' as const, value: 3200, importance: 'must' as const, text: 'Takt ab 3200' }],
+      ['3', { id: 3, label: 'RGB', op: 'present' as const, value: null, importance: 'wish' as const, text: 'RGB' }],
+    ]);
+    render(<FundeDetailSheet listing={scored} onClose={vi.fn()} conditions={conditions} />);
     const box = screen.getByTestId('score-breakdown');
     expect(box).toHaveTextContent('42 %');
-    expect(box).toHaveTextContent('? ab 3200 MHz: not stated');
-    expect(box).toHaveTextContent('✓ DDR4');
-    expect(screen.queryByText('92/100')).not.toBeInTheDocument();
+    expect(box).toHaveTextContent('Takt nicht genannt');
+    expect(box).toHaveTextContent('? Takt ab 3200: not stated');
+    expect(box).toHaveTextContent('✓ Typ: DDR4');
+    expect(box).toHaveTextContent('✗');
   });
 
   it('renders belowReference in neutral asche (#8FA6A1) without coral or data-price-signal when not a deal (#5)', () => {

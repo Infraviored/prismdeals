@@ -16,8 +16,10 @@ const { describe, SLACK_AFTER } = require('./graph');
 
 const YEAR_WORDS = ['jahr', 'baujahr', 'erstzulassung', 'ez'];
 
+// The same folding as scraper/graph/store.fold: "Weiß" and "weiss" are one word.
+const UMLAUTS = { ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss' };
 function fold(value) {
-  return String(value ?? '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, '');
+  return String(value ?? '').toLowerCase().replace(/[äöüß]/g, c => UMLAUTS[c]).replace(/[^a-z0-9]+/g, '');
 }
 
 function asNumber(value) {
@@ -53,8 +55,14 @@ function stateOf(condition, facts) {
       if (n === null) return 'open';
       return (condition.op === 'min' ? n >= want : n <= want) ? 'met' : 'violated';
     }
-    case 'eq':
+    case 'eq': {
+      // "90" against "90 cm": a number is compared as one.
+      if (typeof want === 'number') {
+        const n = asNumber(value);
+        return n === null ? 'open' : n === want ? 'met' : 'violated';
+      }
       return fold(value) === fold(want) ? 'met' : 'violated';
+    }
     case 'in':
       return want.some(w => fold(w) === fold(value)) ? 'met' : 'violated';
     case 'not_in':

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def build_compare_prompt(
     candidates: list[dict],
-    fields: list[dict],
+    conditions: list[dict],
     market: dict | None = None,
     node_knowledge: str = "",
 ) -> str:
@@ -49,15 +49,11 @@ def build_compare_prompt(
 
     # --- Soft middle: buyer intent ---
     parts.append("## Buyer's requirements\n")
-    if fields:
-        for f in fields:
-            label = f.get("label") or f.get("id")
-            wants = f.get("buyer_wants") or {}
-            importance = f.get("importance", "medium")
-            want_desc = _describe_want(wants)
-            # The id is what the output keys musts and facts by; without it
-            # the model invented keys and no judged state ever matched a field.
-            parts.append(f"- [{f.get('id')}] {label} ({importance}): {want_desc}")
+    if conditions:
+        for c in conditions:
+            importance = "must" if c.get("importance") == "must" else "wish"
+            # The id is what the output keys musts and facts by.
+            parts.append(f"- [{c['id']}] {c['text']} ({importance})")
     else:
         parts.append("- No specific requirements stated.")
     parts.append("")
@@ -88,11 +84,13 @@ def build_compare_prompt(
         if isinstance(details, dict):
             condition = details.get("Zustand", "")
 
-        # Existing facts from the free sieve
-        facts = c.get("fit_facts") or {}
-        facts_str = ""
-        if facts:
-            facts_str = " | Facts: " + ", ".join(f"{k}={v}" for k, v in facts.items())
+        # What the listing's own words already settled, by requirement.
+        states = c.get("states") or {}
+        facts_str = (
+            " | Read: " + ", ".join(f"[{k}] {v}" for k, v in states.items())
+            if states
+            else ""
+        )
 
         desc = c.get("detailed_description") or c.get("short_description") or ""
         # Cap description to first 600 chars as specified in §9.2
@@ -121,7 +119,7 @@ def build_compare_prompt(
         "Output one JSON object per line (JSON Lines), one per listing ID.\n"
         "Each object must have exactly these fields:\n"
         "```\n"
-        '{"id": "<listing_id>", "node": "<product/path/key>", "rank": <int>, '
+        '{"id": "<listing_id>", "rank": <int>, '
         '"reason": "<max 20 words>", '
         '"musts": {"<requirement_id>": "met|violated|unstated|retrofittable"}, '
         '"facts": {"<field>": {"value": "<value>", "quote": "<exact quote from text>"}}, '
@@ -134,24 +132,6 @@ def build_compare_prompt(
     )
 
     return "\n".join(parts)
-
-
-def _describe_want(wants: dict) -> str:
-    """Human-readable description of a buyer_wants constraint."""
-    parts = []
-    if "min" in wants:
-        parts.append(f"≥ {wants['min']}")
-    if "max" in wants:
-        parts.append(f"≤ {wants['max']}")
-    if "match" in wants:
-        parts.append(f"must be {'yes' if wants['match'] else 'no'}")
-    if "present" in wants:
-        parts.append("must be stated")
-    if "preferred" in wants:
-        parts.append(f"one of: {', '.join(str(v) for v in wants['preferred'])}")
-    if "excluded" in wants:
-        parts.append(f"not: {', '.join(str(v) for v in wants['excluded'])}")
-    return ", ".join(parts) if parts else "any"
 
 
 def _strings(value) -> list[str]:
@@ -281,7 +261,6 @@ def parse_compare_response(
         results.append(
             {
                 "id": lid,
-                "node": obj.get("node", ""),
                 "rank": _rank(obj.get("rank"), len(results) + 1),
                 "reason": str(obj.get("reason", ""))[:100],
                 "musts": musts,

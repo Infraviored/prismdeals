@@ -15,6 +15,7 @@ import json
 import sys
 
 from graph import hunts, llm
+from graph.numbers import german_number
 
 PROMPT = """Du bearbeitest eine gespeicherte Gebrauchtwaren-Suche.
 
@@ -69,10 +70,8 @@ def _number(value):
         return None
     if isinstance(value, (int, float)):
         return int(value) if float(value).is_integer() else value
-    from probe_sieve import _german_number
-
     try:
-        return _number(_german_number(str(value).strip()))  # "5.000", "2,5"
+        return _number(german_number(str(value).strip()))  # "5.000", "2,5"
     except ValueError:
         return None
 

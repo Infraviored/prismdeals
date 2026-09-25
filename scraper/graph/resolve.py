@@ -77,6 +77,17 @@ def _matches(conn, title, within):
         keys,
     ).fetchall()
     found = {r[0] for r in rows}
+    # A kind of goods is named inside German compounds: "Standventilator",
+    # "Kaltschaummatratze". Only for classes, and only aliases long enough
+    # not to be an accident inside another word.
+    words = set(store.words(title))
+    for node_id, alias in conn.execute(
+        """SELECT a.node_id, a.alias FROM node_aliases a JOIN nodes n ON n.id = a.node_id
+            WHERE n.kind = 'class' AND n.merged_into IS NULL AND n.status != 'retired'
+              AND length(a.alias) >= 5"""
+    ).fetchall():
+        if any(w.endswith(alias) for w in words):
+            found.add(node_id)
     return found & within if within is not None else found
 
 

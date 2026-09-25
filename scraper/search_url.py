@@ -21,6 +21,9 @@ Extracting this grammar into one module lets corridor route planning and search
 family expansion share a single source of truth.
 """
 
+import functools
+import json
+import os
 import re
 import urllib.parse
 
@@ -355,6 +358,21 @@ def with_page(url, page):
     return f"{'/'.join(parts[:3])}/{parts[3]}/seite:{page}/{rest}"
 
 
+@functools.lru_cache(maxsize=None)
+def _category_slug(category_id):
+    """The site's path slug for a category ("motorraeder-roller")."""
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data",
+        "kleinanzeigen_taxonomy.json",
+    )
+    with open(path, encoding="utf-8") as f:
+        for category in json.load(f)["categories"]:
+            if str(category["id"]) == str(category_id):
+                return category["slug"].split("/")[-1]
+    return None
+
+
 def for_hunt(
     category_code=None,
     query=None,
@@ -370,11 +388,9 @@ def for_hunt(
     radius: a place without one is that town only (Vilgertshofen: 11 offers
     instead of 56 257), which made every probe count nothing.
     """
-    from intent_taxonomy import find_category
-
     price = price or {}
     category = str(category_code or "").lstrip("c") or None
-    known = find_category(category) if category else None
+    slug = _category_slug(category) if category else None
     # No radius means no limit: a location without a radius is that one town
     # only, which answered "0 laptops" for all of Germany.
     if radius_km in (None, "", 0):
@@ -386,6 +402,6 @@ def for_hunt(
         max_price=price.get("max"),
         query=query,
         category=category,
-        category_slug=(known or {}).get("slug") or "suchanfrage",
+        category_slug=slug or "suchanfrage",
         attributes=attributes or [],
     )

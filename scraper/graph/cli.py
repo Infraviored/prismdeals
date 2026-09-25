@@ -6,7 +6,11 @@
     python -m graph.cli process [<listing_id> ...]     (none: every unresolved listing)
     python -m graph.cli hunt-save [<campaign_id>]      (the hunt document on stdin)
     python -m graph.cli refine <campaign_id>
+    python -m graph.cli hunt-delete <campaign_id>      (its listings stay)
     python -m graph.cli draft <text>                   (a hunt document, not saved)
+    python -m graph.cli brief <campaign_id>            (the research brief for its targets)
+    python -m graph.cli classify <campaign_id>         (a research answer on stdin -> knowledge)
+    python -m graph.cli approve|reject <knowledge_id>
 
 JSON on stdout. A model that cannot be asked is {"error": "..."} with exit 2 --
 never a guessed answer.
@@ -18,7 +22,7 @@ import sys
 
 import db_schema
 
-from . import draft, facts, hunts, llm, place, taxonomy
+from . import draft, facts, hunts, knowledge, llm, place, taxonomy
 
 
 def process_listings(conn, listing_ids=None):
@@ -55,8 +59,13 @@ def main(argv=None):
     h.add_argument("campaign_id", type=int, nargs="?")
     f = sub.add_parser("refine")
     f.add_argument("campaign_id", type=int)
+    sub.add_parser("hunt-delete").add_argument("campaign_id", type=int)
     t = sub.add_parser("draft")
     t.add_argument("text")
+    for name in ("brief", "classify"):
+        sub.add_parser(name).add_argument("campaign_id", type=int)
+    for name in ("approve", "reject"):
+        sub.add_parser(name).add_argument("knowledge_id", type=int)
     args = parser.parse_args(argv)
 
     conn = db_schema.connect(db_schema.default_path())
@@ -77,8 +86,17 @@ def main(argv=None):
             out = process_listings(conn, args.listing_ids or None)
         elif args.command == "hunt-save":
             out = {"id": hunts.save(conn, json.load(sys.stdin), args.campaign_id)}
+        elif args.command == "hunt-delete":
+            out = hunts.delete(conn, args.campaign_id)
         elif args.command == "draft":
             out = draft.draft(conn, args.text)
+        elif args.command == "brief":
+            out = knowledge.brief(conn, args.campaign_id)
+        elif args.command == "classify":
+            out = knowledge.classify(conn, args.campaign_id, sys.stdin.read())
+        elif args.command in ("approve", "reject"):
+            getattr(knowledge, args.command)(conn, args.knowledge_id)
+            out = {"id": args.knowledge_id, args.command + "d": True}
         else:
             out = hunts.refine(conn, args.campaign_id)
     except llm.NoModel as exc:

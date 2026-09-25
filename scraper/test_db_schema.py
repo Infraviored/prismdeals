@@ -61,13 +61,18 @@ def test_schema_creates_every_table_the_application_uses(fresh_db):
         "searches",
         "listings",
         "messages",
-        "knowledge_sets",
         "users",
         "route_searches",
         "route_search_circles",
         "listing_route_geo",
-        "fact_sheets",
-        "dossiers",
+        "nodes",
+        "node_aliases",
+        "node_attributes",
+        "listing_resolution",
+        "listing_facts",
+        "hunt_targets",
+        "hunt_conditions",
+        "node_knowledge",
     }
     assert expected <= tables(connection)
 

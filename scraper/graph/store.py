@@ -167,6 +167,13 @@ def aliases(conn, node_id):
 READER_KINDS = ("details", "number", "keywords", "regex")
 
 
+def same_goods(a, b):
+    """Whether two names mean the same kind of goods: "Laptop" and "Laptops &
+    Notebooks", "Matratze" and "Matratzen" -- one starts the other."""
+    x, y = fold(a), fold(b)
+    return len(x) >= 4 and len(y) >= 4 and (x.startswith(y) or y.startswith(x))
+
+
 def options(raw):
     """Enum options as [{"value", "label"}]: the site filters by value
     ("drucker_scanner"), its pages and buyers say the label ("Drucker & Scanner")."""

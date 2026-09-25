@@ -96,6 +96,15 @@ def facts_of(conn, listing_id):
     }
 
 
+def _class_named(conn, category_id, art):
+    for child in store.children(conn, category_id):
+        if child["kind"] == "class" and store.fold(art) in store.aliases(
+            conn, child["id"]
+        ):
+            return child["id"]
+    return None
+
+
 def process(conn, listing_id, prior=()):
     """Resolve the listing and read its facts. Returns the node id (or None)."""
     listing = _listing(conn, listing_id)
@@ -115,6 +124,14 @@ def process(conn, listing_id, prior=()):
         node_id, confidence, method = asked[0], 0.8, "model"
     attributes = store.effective_attributes(conn, node_id)
     facts = _read(listing, attributes)
+    # The page's own "Art" names a kind of goods the category holds: a
+    # listing filed under "Matratzen" is a Matratze, whatever its title says.
+    if store.node(conn, node_id)["kind"] == "category" and facts.get("art"):
+        kind = _class_named(conn, node_id, facts["art"][0])
+        if kind:
+            node_id, confidence, method = kind, 0.8, "art"
+            attributes = store.effective_attributes(conn, node_id)
+            facts = _read(listing, attributes)
     # A model whose generations have years: the listing's year names one.
     deeper = resolve.by_years(
         conn, node_id, resolve.year_of({k: v[0] for k, v in facts.items()})

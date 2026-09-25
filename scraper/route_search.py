@@ -156,9 +156,6 @@ class RoutePlan:
         self.radius_km = radius_km
         self.half_width_km = half_width_km
         self.unresolved = list(unresolved)
-        # Filled in by route_store.save_plan: circles that had to reuse an
-        # existing search row bound to something else.
-        self.conflicts = []
 
     @property
     def urls(self):
@@ -276,8 +273,3 @@ def plan(
         circle.url = with_location(base_url, circle.location_id, circle.radius_km)
 
     return RoutePlan(route, circles, radius_km, half_width_km, unresolved)
-
-
-def plan_between(base_url, origin, destination, client, **kwargs):
-    """Convenience wrapper: route the two points, then plan the corridor."""
-    return plan(base_url, client.route([origin, destination]), **kwargs)

@@ -15,8 +15,7 @@ import route_store
 
 def _family(conn, family_id):
     row = conn.execute(
-        "SELECT base_url, campaign_id, knowledge_set_id, name FROM search_families "
-        "WHERE id = ?",
+        "SELECT base_url, campaign_id, name FROM search_families WHERE id = ?",
         (family_id,),
     ).fetchone()
     if row is None:
@@ -72,7 +71,7 @@ def set_route(
     Plans first: a place that cannot be resolved raises before anything is
     changed, so a typo never leaves a hunt searching nowhere.
     """
-    base_url, campaign_id, knowledge_set_id, name = _family(conn, family_id)
+    base_url, campaign_id, name = _family(conn, family_id)
     plan = route_pipeline.plan_corridor(
         base_url,
         origin,
@@ -93,7 +92,6 @@ def set_route(
         destination,
         name=f"{name}: {origin} → {destination}",
         campaign_id=campaign_id,
-        knowledge_set_id=knowledge_set_id,
         family_id=family_id,
     )
     family_store.attach_terms(

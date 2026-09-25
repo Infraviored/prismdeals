@@ -75,10 +75,20 @@ def find(conn, text, category_id):
              WHERE a.alias = ? AND n.id IN ({marks}) AND n.status != 'retired'""",
         (folded, *subtree),
     ).fetchall()
-    if not rows:
+    found = [r[0] for r in rows]
+    if not found:
+        # "Honda CBR 1000 RR" is the model's name with its brand: no single
+        # alias, but the name the graph gives the node.
+        found = [
+            i
+            for i in subtree
+            if store.node(conn, i)["kind"] != "category"
+            and store.fold(describe(conn, i)["name"]) == folded
+        ]
+    if not found:
         return None
     # The deepest of the matches: "sc59" under the CBR, not a brand of that name.
-    return max((r[0] for r in rows), key=lambda i: len(store.ancestors(conn, i)))
+    return max(found, key=lambda i: len(store.ancestors(conn, i)))
 
 
 def _clean_path(raw):
@@ -136,7 +146,7 @@ def _clean_attributes(raw, depth):
         readers = []
         for reader in attr.get("readers") or []:
             kind = str(reader).split(":", 1)[0]
-            if kind not in ("number", "keywords", "regex"):
+            if kind not in ("details", "number", "keywords", "regex"):
                 continue
             if kind == "regex":
                 try:
@@ -179,6 +189,12 @@ def place(conn, text, category_code, ask=llm.ask_json):
     known = find(conn, text, category["id"])
     if known:
         return known
+    # "Laptop" in "Laptops & Notebooks" is the category itself: everything
+    # listed there is one, and a class below it would leave most unrecognised.
+    if store.same_goods(text, category["name"]):
+        store.add_alias(conn, category["id"], text, "name", "user")
+        conn.commit()
+        return category["id"]
     existing = store.effective_attributes(conn, category["id"])
     raw = ask(
         PROMPT.format(
@@ -192,6 +208,21 @@ def place(conn, text, category_code, ask=llm.ask_json):
         )
     )
     path = _clean_path(raw)
+    depth = len(path)
+    # A class step that is the category itself ("Motorräder & Motorroller"
+    # before "Yamaha") is not a node of its own: its names are the category's.
+    while (
+        path
+        and path[0]["kind"] == "class"
+        and store.same_goods(path[0]["name"], category["name"])
+    ):
+        for alias in path.pop(0)["aliases"]:
+            store.add_alias(conn, category["id"], alias, "name", "model")
+    dropped = depth - len(path)
+    if not path:
+        store.add_alias(conn, category["id"], text, "name", "user")
+        conn.commit()
+        return category["id"]
     # A fact the category already has under another id is not a new one
     # ("kilometerstand" beside the site's "km" labelled "Kilometerstand").
     taken = {store.fold(a["label"]) for a in existing.values()} | {
@@ -199,7 +230,7 @@ def place(conn, text, category_code, ask=llm.ask_json):
     }
     attributes = [
         a
-        for a in _clean_attributes(raw, len(path))
+        for a in _clean_attributes(raw, depth)
         if store.fold(a["label"]) not in taken and store.fold(a["id"]) not in taken
     ]
     parent_id, names, ids = category["id"], [], []
@@ -235,7 +266,7 @@ def place(conn, text, category_code, ask=llm.ask_json):
     for attr in attributes:
         store.set_attribute(
             conn,
-            ids[attr["at"]],
+            ids[max(attr["at"] - dropped, 0)],
             attr["id"],
             attr["label"],
             attr["type"],
@@ -278,3 +309,57 @@ def describe(conn, node_id):
         "category_code": target["category_code"],
         "path": [n["name"] for n in chain],
     }
+
+
+DEFINE_PROMPT = """Ein Käufer sucht gebraucht: {product} (Kategorie {category}).
+Er verlangt diese Merkmale, die wir aus Kleinanzeigen-Anzeigen (Titel, Beschreibung,
+Detailangaben) lesen müssen:
+{wanted}
+
+Gib für JEDES Merkmal an, wie es gelesen wird -- mit genau dem label von oben:
+- type: "number" | "boolean" | "enum" | "text", unit bei Zahlen, options bei enum,
+- readers: in Reihenfolge, wie es gelesen wird: "details:<Name der Detailangabe>" (wenn die
+  Seite es als Detail führt), "number" (Zahl mit Einheit beim Label), "keywords:wort1|wort2"
+  (genannt oder verneint, für ja/nein), "regex:<Python-Regex mit genau einer Gruppe>" (z. B.
+  "regex:\\\\b(\\\\d{{1,2}})\\\\s?x\\\\s?\\\\d{{1,3}}\\\\s?GB" für die Anzahl Riegel).
+
+Antworte NUR mit JSON:
+{{"attributes": [{{"label": "...", "id": "snake_case", "type": "...", "unit": null,
+                  "options": null, "readers": ["..."]}}]}}
+"""
+
+
+def define_attributes(conn, node_id, labels, ask=llm.ask_json):
+    """Attributes for facts a hunt asks about and the graph cannot read yet,
+    set at `node_id` so every later hunt below it reads them too. One model
+    call; an attribute it cannot say how to read is not invented."""
+    node = store.node(conn, node_id)
+    category = next(
+        n for n in reversed(store.ancestors(conn, node_id)) if n["kind"] == "category"
+    )
+    raw = ask(
+        DEFINE_PROMPT.format(
+            product=describe(conn, node_id)["name"],
+            category=category["name"],
+            wanted="\n".join(f"- {label}" for label in labels),
+        )
+    )
+    wanted = {store.fold(label): label for label in labels}
+    defined = {}
+    for attr in _clean_attributes(raw if isinstance(raw, dict) else {}, 1):
+        label = wanted.get(store.fold(attr["label"]))
+        if not label:
+            continue
+        store.set_attribute(
+            conn,
+            node["id"],
+            attr["id"],
+            label,
+            attr["type"],
+            attr["readers"],
+            "model",
+            unit=attr["unit"],
+            options=attr["options"],
+        )
+        defined[label] = attr["id"]
+    return defined

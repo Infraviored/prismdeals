@@ -1,16 +1,15 @@
-"""Route searches as first-class rows, and where listings sit relative to them.
+"""A hunt's corridor as a row, and where listings sit relative to it.
 
-A route search is not a new kind of search. It is one buyer intent expressed as
-several ordinary searches — one per circle covering the corridor — and the rest
-of the system already knows how to run those. So this module writes into the
-existing `searches` table rather than beside it, and everything downstream
+A corridor is not a new kind of search. It is a hunt's terms run in every circle
+covering the route — ordinary searches that family_store registers — and the
+rest of the system already knows how to run those. Everything downstream
 (scraping, extraction, scoring) keeps working without knowing a route exists.
 
 Two things do need somewhere to live:
 
-- the route itself, so a corridor can be re-planned or re-drawn without asking
-  the routing service again, and so the circles can be traced back to the intent
-  that produced them;
+- the route itself, so its geometry can be read back without asking the routing
+  service again, and so the circles can be traced back to the hunt that
+  produced them;
 - where each listing sits relative to that route. The detour is a property of
   (listing, route), not of the listing, so it belongs in its own table for the
   same reason fact sheets do: one listing on two routes has two detours, and
@@ -21,7 +20,6 @@ import datetime
 import db_schema
 import json
 import logging
-import sqlite3
 
 logger = logging.getLogger(__name__)
 
@@ -53,48 +51,6 @@ def _now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
-def save_plan(
-    conn,
-    plan,
-    base_url,
-    origin,
-    destination,
-    name=None,
-    campaign_id=None,
-    knowledge_set_id=None,
-):
-    """Stores a corridor plan and registers each circle as an ordinary search.
-
-    Returns (route_search_id, conflicts). A conflict is a circle that had to
-    reuse an existing search row whose binding differs from this route's — a
-    different knowledge set or campaign, or one that is disabled. Reuse itself is
-    what makes overlapping corridors cheap rather than an error; reuse of a row
-    that means something else is a problem the caller has to see.
-    """
-    route_id = insert_route(
-        conn,
-        plan,
-        base_url,
-        origin,
-        destination,
-        name=name,
-        campaign_id=campaign_id,
-        knowledge_set_id=knowledge_set_id,
-    )
-
-    conflicts = attach_circles(
-        conn,
-        route_id,
-        plan,
-        name=name,
-        destination=destination,
-        campaign_id=campaign_id,
-        knowledge_set_id=knowledge_set_id,
-    )
-    conn.commit()
-    return route_id, conflicts
-
-
 def insert_route(
     conn,
     plan,
@@ -103,19 +59,17 @@ def insert_route(
     destination,
     name=None,
     campaign_id=None,
-    knowledge_set_id=None,
     family_id=None,
 ):
     """Writes the route row alone, without registering any search."""
     ensure_schema(conn)
     cursor = conn.execute(
-        "INSERT INTO route_searches (name, campaign_id, knowledge_set_id, base_url, "
-        "origin, destination, radius_km, half_width_km, plan_json, created_at, "
-        "family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO route_searches (name, campaign_id, base_url, origin, "
+        "destination, radius_km, half_width_km, plan_json, created_at, family_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             name or f"{origin} → {destination}",
             campaign_id,
-            knowledge_set_id,
             base_url,
             str(origin),
             str(destination),
@@ -162,163 +116,6 @@ def delete_route(conn, route_search_id):
     family_store.recompute_enabled(conn, circle_sids)
 
 
-def _register_search(cursor, label, url, campaign_id, knowledge_set_id, display_label):
-    conflicts = []
-    existing = cursor.execute(
-        "SELECT id, campaign_id, knowledge_set_id, enabled FROM searches WHERE url = ?",
-        (url,),
-    ).fetchone()
-
-    search_id = None
-    if existing is None:
-        try:
-            cursor.execute(
-                "INSERT INTO searches (campaign_id, name, url, enabled, "
-                "knowledge_set_id) VALUES (?, ?, ?, 1, ?)",
-                (campaign_id, label, url, knowledge_set_id),
-            )
-            search_id = cursor.lastrowid
-        except sqlite3.IntegrityError:
-            # Someone inserted this url between the SELECT above and here.
-            # `searches.url` is unique, so the row that won is the row this
-            # circle has to use — the same outcome as finding it in the
-            # first place, reached a moment later.
-            logger.info(
-                "Search for %s was created concurrently; using that row.",
-                url,
-            )
-            existing = cursor.execute(
-                "SELECT id, campaign_id, knowledge_set_id, enabled FROM "
-                "searches WHERE url = ?",
-                (url,),
-            ).fetchone()
-            if existing is None:
-                logger.warning(
-                    "Could not register or find a search for %s; this circle "
-                    "is not part of the route.",
-                    url,
-                )
-                return None, conflicts
-            search_id = existing[0]
-
-    if existing is not None:
-        search_id, existing_campaign, existing_set, enabled = existing
-        mismatch = []
-        if knowledge_set_id is not None and existing_set != knowledge_set_id:
-            mismatch.append(
-                f"knowledge set {existing_set} instead of {knowledge_set_id}"
-            )
-        if campaign_id is not None and existing_campaign != campaign_id:
-            mismatch.append(f"campaign {existing_campaign} instead of {campaign_id}")
-        if not enabled:
-            mismatch.append("disabled")
-
-        if mismatch:
-            conflicts.append(
-                {
-                    "url": url,
-                    "search_id": search_id,
-                    "label": display_label,
-                    "reasons": mismatch,
-                }
-            )
-            logger.warning(
-                "Circle %s reuses existing search %s, which is %s. Its "
-                "listings will not be scored the way this route expects.",
-                display_label,
-                search_id,
-                " and ".join(mismatch),
-            )
-
-    return search_id, conflicts
-
-
-def attach_circles(
-    conn,
-    route_search_id,
-    plan,
-    name=None,
-    destination=None,
-    campaign_id=None,
-    knowledge_set_id=None,
-):
-    """Registers each circle of `plan` as an ordinary search on this route.
-
-    Split out of save_plan so that redrawing a corridor and building one use the
-    same code. A circle whose url already has a search row reuses it, which is
-    what lets a corridor be widened without re-scraping what it already found —
-    and what lets two overlapping corridors share the work.
-
-    Returns the conflicts: circles that had to reuse a row meaning something
-    else.
-    """
-    import family_store
-
-    cursor = conn.cursor()
-    conflicts = []
-    affected_search_ids = set()
-
-    row = cursor.execute(
-        "SELECT base_url, family_id FROM route_searches WHERE id = ?",
-        (route_search_id,),
-    ).fetchone()
-    if row:
-        base_url, family_id = row[0], row[1]
-    else:
-        base_url = plan.circles[0].url if plan.circles else ""
-        family_id = None
-
-    if family_id:
-        terms = cursor.execute(
-            "SELECT id, term, label FROM search_family_terms WHERE family_id = ? AND enabled = 1 ORDER BY position, id",
-            (family_id,),
-        ).fetchall()
-    else:
-        terms = None
-
-    base_expanded = list(family_store.expand(base_url, None, circles=plan.circles))
-
-    for index, (circle, (term_id, url, _)) in enumerate(
-        zip(plan.circles, base_expanded), 1
-    ):
-        circle.url = url
-        label = f"{name or destination} · {index}/{len(plan.circles)} {circle.label}"
-        search_id, c_conflicts = _register_search(
-            cursor, label, url, campaign_id, knowledge_set_id, circle.label
-        )
-        conflicts.extend(c_conflicts)
-        if search_id is not None:
-            cursor.execute(
-                "INSERT OR REPLACE INTO route_search_circles "
-                "(route_search_id, search_id, location_id, label, radius_km, family_id) "
-                "VALUES (?, ?, ?, ?, ?, NULL)",
-                (
-                    route_search_id,
-                    search_id,
-                    circle.location_id,
-                    circle.label,
-                    circle.radius_km,
-                ),
-            )
-            affected_search_ids.add(search_id)
-
-    if family_id and terms:
-        t_conflicts = family_store.attach_terms(
-            conn,
-            family_id,
-            terms,
-            circles=plan.circles,
-            campaign_id=campaign_id,
-            knowledge_set_id=knowledge_set_id,
-            route_search_id=route_search_id,
-            cursor=cursor,
-        )
-        conflicts.extend(t_conflicts)
-
-    family_store.recompute_enabled(conn, affected_search_ids, cursor=cursor)
-    return conflicts
-
-
 def get_plan(conn, route_search_id):
     """The stored plan payload, or None."""
     row = conn.execute(
@@ -331,13 +128,6 @@ def get_plan(conn, route_search_id):
     except (ValueError, TypeError):
         logger.warning("Corrupt route plan for %s", route_search_id)
         return None
-
-
-def polyline(conn, route_search_id):
-    plan = get_plan(conn, route_search_id)
-    if not plan:
-        return []
-    return [(lat, lon) for lat, lon in plan.get("polyline", [])]
 
 
 def route(conn, route_search_id):
@@ -466,136 +256,3 @@ def pending_geo(conn, route_search_id):
         for listing in listings_for_route(conn, route_search_id)
         if pending(listing)
     ]
-
-
-def definition(conn, route_search_id):
-    """What the route was asked for: url, both ends, and its bindings.
-
-    Companion to `get_plan`, which returns the drawn shape. This returns the
-    question that produced it, so a corridor can be redrawn without the caller
-    knowing the column layout.
-    """
-    row = conn.execute(
-        "SELECT base_url, origin, destination, name, campaign_id, knowledge_set_id "
-        "FROM route_searches WHERE id = ?",
-        (route_search_id,),
-    ).fetchone()
-    if row is None:
-        return None
-    keys = ("base_url", "origin", "destination", "name", "campaign_id", "set_id")
-    return dict(zip(keys, row))
-
-
-def replace_circles(
-    conn,
-    route_search_id,
-    plan,
-    name=None,
-    destination=None,
-    campaign_id=None,
-    knowledge_set_id=None,
-):
-    """Swaps a route's circles for a freshly drawn plan's, in one step.
-
-    The search rows behind the circles are deliberately not touched: attach_circles
-    reuses any search whose url already exists, so a circle that survives the new
-    plan keeps everything already scraped through it. That is what makes widening
-    a corridor cheap instead of a fresh start.
-
-    It holds only while the radius stays put. The radius is part of the search
-    url, so changing it rewrites every circle's url and nothing is recognised as
-    the same search — measured: changing a corridor's radius reported "0 kept,
-    5 added, 7 removed" and left the previous searches, with their listings,
-    detached from the route. Widening the corridor at the same radius is the
-    cheap operation; changing the radius is closer to a fresh start, and the
-    caller should expect to re-scrape.
-    """
-    conn.execute(
-        "DELETE FROM route_search_circles WHERE route_search_id = ?",
-        (route_search_id,),
-    )
-    conn.execute(
-        "UPDATE route_searches SET radius_km = ?, half_width_km = ?, plan_json = ? "
-        "WHERE id = ?",
-        (
-            plan.radius_km,
-            plan.half_width_km,
-            json.dumps(plan.as_dict(), ensure_ascii=False),
-            route_search_id,
-        ),
-    )
-    conflicts = attach_circles(
-        conn,
-        route_search_id,
-        plan,
-        name=name,
-        destination=destination,
-        campaign_id=campaign_id,
-        knowledge_set_id=knowledge_set_id,
-    )
-    conn.commit()
-    return conflicts
-
-
-def retire_searches(conn, urls, keep_route_id=None):
-    """Switches off searches that no route covers any more.
-
-    A dropped corridor circle is switched off unless another route circle
-    or active search family still owns it.
-    """
-    retired = 0
-    for url in urls:
-        row = conn.execute("SELECT id FROM searches WHERE url = ?", (url,)).fetchone()
-        if row is None:
-            continue
-        search_id = row[0]
-        still_used = conn.execute(
-            "SELECT 1 FROM route_search_circles WHERE search_id = ? LIMIT 1",
-            (search_id,),
-        ).fetchone()
-        if still_used:
-            continue
-        still_family = conn.execute(
-            """
-            SELECT 1 FROM search_family_searches sfs
-            JOIN search_families f ON f.id = sfs.family_id
-            JOIN search_family_terms t ON t.id = sfs.term_id
-            WHERE sfs.search_id = ? AND f.enabled = 1 AND t.enabled = 1
-            LIMIT 1
-            """,
-            (search_id,),
-        ).fetchone()
-        if still_family:
-            continue
-        conn.execute("UPDATE searches SET enabled = 0 WHERE id = ?", (search_id,))
-        retired += 1
-    conn.commit()
-    return retired
-
-
-def circle_urls(conn, route_search_id):
-    """The search urls this route currently covers."""
-    return {
-        url
-        for (url,) in conn.execute(
-            "SELECT s.url FROM route_search_circles c JOIN searches s "
-            "ON s.id = c.search_id WHERE c.route_search_id = ?",
-            (route_search_id,),
-        )
-    }
-
-
-def requeue(conn, route_search_id, from_status=TOO_FAR):
-    """Puts settled rows back in the queue, for when the question changed.
-
-    A listing marked too_far was judged against the corridor as it was; redraw
-    it and that judgement is stale. Rows already routed keep their detour — the
-    route has not moved, only which listings count as being on it.
-    """
-    cursor = conn.execute(
-        "UPDATE listing_route_geo SET status = ?, detour_min = NULL "
-        "WHERE route_search_id = ? AND status = ?",
-        (FAILED, route_search_id, from_status),
-    )
-    conn.commit()
-    return cursor.rowcount

@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
-import type { HuntDocument } from '../../utils/huntDocument';
+import type { HuntDocument } from '../../types/hunt';
+import { api } from '../../utils/api';
 
 export interface HuntAiEditProps {
   doc: HuntDocument;
-  /** The changed document, once the buyer took the proposal. */
-  onApply: (doc: HuntDocument) => void;
+  /** Stores the changed document; resolves false when saving failed. */
+  onApply: (doc: HuntDocument) => Promise<boolean>;
 }
 
 /**
  * The hunt changed in the buyer's words: "Bei der CBR nur SC59, unter 5000 km".
- * The answer is shown as a list of changes first; taking it fills the form,
- * and only "Speichern" stores it.
+ * The answer is shown as a list of changes first; taking it saves it.
  */
 export const HuntAiEdit: React.FC<HuntAiEditProps> = ({ doc, onApply }) => {
   const { t } = useTranslation();
@@ -28,21 +28,28 @@ export const HuntAiEdit: React.FC<HuntAiEditProps> = ({ doc, onApply }) => {
     setProposal(null);
     setApplied(false);
     try {
-      const res = await fetch('/api/hunt/edit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ document: doc, instruction }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error || t('surface.editAiFailed'));
-        return;
-      }
-      setProposal({ document: data.document, changes: data.changes || [] });
-    } catch {
-      setError(t('surface.editAiFailed'));
+      setProposal(
+        await api<{ document: HuntDocument; changes: string[] }>('/api/hunts/edit', {
+          method: 'POST',
+          body: { document: doc, instruction },
+        })
+      );
+    } catch (e) {
+      setError((e as Error).message || t('surface.editAiFailed'));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const apply = async () => {
+    if (!proposal || busy) return;
+    setBusy(true);
+    const ok = await onApply(proposal.document);
+    setBusy(false);
+    if (ok) {
+      setApplied(true);
+      setProposal(null);
+      setInstruction('');
     }
   };
 
@@ -66,13 +73,13 @@ export const HuntAiEdit: React.FC<HuntAiEditProps> = ({ doc, onApply }) => {
         className="px-3.5 py-2 rounded border border-[#0E4A40] text-sm text-[#F2F5F4] bg-[#012828] hover:border-[#8FA6A1] disabled:opacity-40 cursor-pointer"
         data-testid="hunt-ai-run"
       >
-        {busy ? t('surface.editAiRunning') : t('surface.editAiRun')}
+        {busy && !proposal ? t('surface.editAiRunning') : t('surface.editAiRun')}
       </button>
       {error && <p className="text-sm text-[#C9A227]" role="alert">{error}</p>}
-      {proposal && !applied && (
+      {proposal && (
         <div className="rounded border border-[#0E4A40] p-3 space-y-2" data-testid="hunt-ai-proposal">
           {proposal.changes.length ? (
-            <ul className="space-y-0.5">
+            <ul className="space-y-0.5 list-disc pl-4">
               {proposal.changes.map((c) => (
                 <li key={c} className="text-sm text-[#F2F5F4]">{c}</li>
               ))}
@@ -84,15 +91,12 @@ export const HuntAiEdit: React.FC<HuntAiEditProps> = ({ doc, onApply }) => {
             {proposal.changes.length > 0 && (
               <button
                 type="button"
-                onClick={() => {
-                  onApply(proposal.document);
-                  setApplied(true);
-                  setInstruction('');
-                }}
-                className="px-3 py-1.5 rounded text-sm font-semibold bg-[#E4D6BE] text-[#011F1F] cursor-pointer"
+                onClick={apply}
+                disabled={busy}
+                className="px-3 py-1.5 rounded text-sm font-semibold bg-[#E4D6BE] text-[#011F1F] disabled:opacity-40 cursor-pointer"
                 data-testid="hunt-ai-apply"
               >
-                {t('surface.editAiApply')}
+                {busy ? t('surface.saving') : t('surface.editAiApply')}
               </button>
             )}
             <button

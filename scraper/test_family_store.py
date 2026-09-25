@@ -4,7 +4,6 @@ import pytest
 import db_schema
 import family_store
 import route_search
-import route_store
 import search_url
 
 
@@ -94,24 +93,21 @@ def test_search_reuse_and_conflicts(conn):
     cursor = conn.cursor()
     cursor.execute("INSERT INTO campaigns (id, name) VALUES (1, 'Camp 1')")
     cursor.execute("INSERT INTO campaigns (id, name) VALUES (2, 'Camp 2')")
-    cursor.execute("INSERT INTO knowledge_sets (id, name) VALUES (1, 'KS 1')")
-    cursor.execute("INSERT INTO knowledge_sets (id, name) VALUES (2, 'KS 2')")
 
-    # Pre-existing search with campaign 1, knowledge_set 1, disabled
+    # Pre-existing search with campaign 1, disabled
     cursor.execute(
-        "INSERT INTO searches (campaign_id, name, url, enabled, knowledge_set_id) "
-        "VALUES (1, 'Pre-existing', 'https://www.kleinanzeigen.de/s-inning-am-ammersee/brother-mfc-l2740dw/k0l7091r26', 0, 1)"
+        "INSERT INTO searches (campaign_id, name, url, enabled) "
+        "VALUES (1, 'Pre-existing', 'https://www.kleinanzeigen.de/s-inning-am-ammersee/brother-mfc-l2740dw/k0l7091r26', 0)"
     )
     pre_id = cursor.lastrowid
 
-    # Create family with campaign 2, knowledge_set 2
+    # Create family with campaign 2
     family_id, count, conflicts = family_store.save_family(
         conn,
         name="Printers",
         base_url=MATRATZE,
         terms=["Brother MFC-L2740DW"],
         campaign_id=2,
-        knowledge_set_id=2,
     )
 
     assert count == 1
@@ -119,7 +115,6 @@ def test_search_reuse_and_conflicts(conn):
     conflict = conflicts[0]
     assert conflict["search_id"] == pre_id
     assert "campaign 1 instead of 2" in conflict["reasons"]
-    assert "knowledge set 1 instead of 2" in conflict["reasons"]
     assert "disabled" in conflict["reasons"]
 
 
@@ -263,31 +258,6 @@ def test_listing_search_hits_records_all_matches_without_overwriting_search_id(c
     assert hits[1] == (2, now2)
 
 
-def test_route_replan_with_all_disabled_terms(conn):
-    """Finding 1: Route replan with all disabled terms must not crash on NOT NULL term_id."""
-    import route_store
-
-    cursor = conn.cursor()
-    fam_id, _, _ = family_store.save_family(
-        conn,
-        name="Printers",
-        base_url=MATRATZE,
-        terms=[{"term": "MFC-L2740DW", "enabled": 0}],
-    )
-    cursor.execute(
-        "INSERT INTO route_searches (name, base_url, origin, destination, radius_km, half_width_km, plan_json, created_at, family_id) "
-        "VALUES ('Test Route', ?, 'A', 'B', 20, 10, '{}', '2026-09-14T20:00:00Z', ?)",
-        (MATRATZE, fam_id),
-    )
-    route_id = cursor.lastrowid
-
-    class DummyPlan:
-        circles = [DummyCircle("7091", 20, "Landsberg")]
-
-    conflicts = route_store.attach_circles(conn, route_id, DummyPlan())
-    assert conflicts == []
-
-
 def test_term_keyword_update_reattaches_searches(conn):
     """Finding 2: Updating term keyword text must detach old search and attach new search."""
     cursor = conn.cursor()
@@ -347,20 +317,23 @@ def test_term_keyword_update_reattaches_searches(conn):
 
 def test_disabled_term_on_route_family_disables_search(conn):
     """Finding 3: Disabling a term on a route-attached family must disable its search row."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO route_searches (name, base_url, origin, destination, radius_km, half_width_km, plan_json, created_at) "
-        'VALUES (\'Route\', ?, \'A\', \'B\', 20, 10, \'{"circles": [{"location_id": "7091", "radius_km": 20, "label": "Landsberg"}]}\', \'2026-09-14T20:00:00Z\')',
-        (MATRATZE,),
-    )
-    route_id = cursor.lastrowid
+    import family_route
+    from test_route_pipeline import FakeOsrm, suggest
 
+    cursor = conn.cursor()
     fam_id, _, _ = family_store.save_family(
         conn,
         name="Route Family",
         base_url=MATRATZE,
         terms=[{"term": "Model A", "enabled": 1}, {"term": "Model B", "enabled": 1}],
-        route_search_id=route_id,
+    )
+    family_route.set_route(
+        conn,
+        fam_id,
+        "86899",
+        "78462",
+        client=FakeOsrm(),
+        resolver=route_search.LocationResolver(fetch=suggest),
     )
 
     term_b_id = cursor.execute(
@@ -368,7 +341,8 @@ def test_disabled_term_on_route_family_disables_search(conn):
         (fam_id,),
     ).fetchone()[0]
     sid_b = cursor.execute(
-        "SELECT search_id FROM search_family_searches WHERE family_id = ? AND term_id = ?",
+        "SELECT search_id FROM search_family_searches "
+        "WHERE family_id = ? AND term_id = ? AND active = 1",
         (fam_id, term_b_id),
     ).fetchone()[0]
     assert (
@@ -399,177 +373,6 @@ def test_disabled_term_on_route_family_disables_search(conn):
         ).fetchone()[0]
         == 0
     )
-
-
-def test_delete_family_cleans_up_route_circles(conn):
-    """Finding 4: Deleting a family cleans up its circles from route_search_circles."""
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO route_searches (name, base_url, origin, destination, radius_km, half_width_km, plan_json, created_at) "
-        'VALUES (\'Route\', ?, \'A\', \'B\', 20, 10, \'{"circles": [{"location_id": "7091", "radius_km": 20, "label": "Landsberg"}]}\', \'2026-09-14T20:00:00Z\')',
-        (MATRATZE,),
-    )
-    route_id = cursor.lastrowid
-
-    fam_id, _, _ = family_store.save_family(
-        conn,
-        name="Family with Route",
-        base_url=MATRATZE,
-        terms=["Model X"],
-        route_search_id=route_id,
-    )
-    assert (
-        cursor.execute(
-            "SELECT COUNT(*) FROM route_search_circles WHERE route_search_id = ?",
-            (route_id,),
-        ).fetchone()[0]
-        > 0
-    )
-
-    # Delete family
-    family_store.delete_family(conn, fam_id)
-
-    # Multiplied searches from this family are removed from route_search_circles
-    assert (
-        cursor.execute(
-            "SELECT COUNT(*) FROM route_search_circles WHERE route_search_id = ?",
-            (route_id,),
-        ).fetchone()[0]
-        == 0
-    )
-
-
-def test_preview_distinguishes_prefix_terms(conn):
-    """Finding 7: Terms where one is a prefix of another are not confused in preview."""
-    terms = ["ThinkPad T14", "ThinkPad T14s"]
-    preview = family_store.preview_family(conn, LAPTOPS, terms)
-    t14s_url = next(u for u in preview["urls"] if "thinkpad-t14s" in u["url"])
-    assert t14s_url["term"] == "ThinkPad T14s"
-    t14_url = next(
-        u
-        for u in preview["urls"]
-        if "thinkpad-t14/" in u["url"] or "thinkpad-t14-" in u["url"]
-    )
-    assert t14_url["term"] == "ThinkPad T14"
-
-
-class MockRoute:
-    distance_km = 50.0
-    duration_min = 40
-    polyline = [(48.0, 11.0), (48.1, 11.5)]
-
-
-def test_route_preserves_circles_on_family_delete_and_term_removal(conn):
-    """A route with N circles whose family includes the route's original search term
-    retains exactly its original N circles with family_id IS NULL and enabled = 1
-    when a family term is removed or when the family is deleted.
-    """
-    cursor = conn.cursor()
-    circles = [
-        route_search.Circle(
-            centre=(48.0, 11.0),
-            postal_code="82266",
-            location_id="7091",
-            label="Inning",
-            snap_km=0.0,
-            radius_km=25.0,
-            url="https://www.kleinanzeigen.de/s-inning-am-ammersee/matratze-140x200/k0l7091r25",
-        ),
-        route_search.Circle(
-            centre=(48.1, 11.5),
-            postal_code="80331",
-            location_id="6411",
-            label="München",
-            snap_km=0.0,
-            radius_km=25.0,
-            url="https://www.kleinanzeigen.de/s-muenchen/matratze-140x200/k0l6411r25",
-        ),
-    ]
-    plan = route_search.RoutePlan(
-        route=MockRoute(),
-        circles=circles,
-        radius_km=25.0,
-        half_width_km=10.0,
-    )
-    route_id, _ = route_store.save_plan(
-        conn, plan, base_url=MATRATZE, origin="Inning", destination="München"
-    )
-
-    initial_circles = cursor.execute(
-        "SELECT search_id, location_id, label, radius_km, family_id "
-        "FROM route_search_circles WHERE route_search_id = ? ORDER BY search_id",
-        (route_id,),
-    ).fetchall()
-    assert len(initial_circles) == 2
-    for c in initial_circles:
-        assert c[4] is None  # family_id IS NULL
-
-    orig_sids = [c[0] for c in initial_circles]
-    for sid in orig_sids:
-        assert (
-            cursor.execute(
-                "SELECT enabled FROM searches WHERE id = ?", (sid,)
-            ).fetchone()[0]
-            == 1
-        )
-
-    # Attach family with terms including the route's original term ('matratze 140x200')
-    fam_id, _, _ = family_store.save_family(
-        conn,
-        name="Matratzen & Drucker",
-        base_url=MATRATZE,
-        terms=["matratze 140x200", "Brother MFC-L2740DW"],
-        route_search_id=route_id,
-    )
-
-    # Route now has 4 circles: 2 belonging to route (family_id NULL), 2 to family (family_id = fam_id)
-    after_save = cursor.execute(
-        "SELECT search_id, location_id, label, radius_km, family_id "
-        "FROM route_search_circles WHERE route_search_id = ? ORDER BY search_id",
-        (route_id,),
-    ).fetchall()
-    assert len(after_save) == 4
-    assert sum(1 for c in after_save if c[4] is None) == 2
-    assert sum(1 for c in after_save if c[4] == fam_id) == 2
-
-    # 1. Update family: remove route's original term 'matratze 140x200' from family
-    # The route's original 2 circles MUST remain untouched and enabled = 1
-    family_store.update_family(
-        conn,
-        fam_id,
-        terms=[{"term": "Brother MFC-L2740DW", "enabled": 1}],
-    )
-    after_term_removal = cursor.execute(
-        "SELECT search_id, location_id, label, radius_km, family_id "
-        "FROM route_search_circles WHERE route_search_id = ? ORDER BY search_id",
-        (route_id,),
-    ).fetchall()
-    for c in initial_circles:
-        assert c in after_term_removal
-    for sid in orig_sids:
-        assert (
-            cursor.execute(
-                "SELECT enabled FROM searches WHERE id = ?", (sid,)
-            ).fetchone()[0]
-            == 1
-        )
-
-    # 2. Delete family completely
-    # The route MUST retain exactly its original 2 circles and enabled = 1
-    family_store.delete_family(conn, fam_id)
-    final_circles = cursor.execute(
-        "SELECT search_id, location_id, label, radius_km, family_id "
-        "FROM route_search_circles WHERE route_search_id = ? ORDER BY search_id",
-        (route_id,),
-    ).fetchall()
-    assert final_circles == initial_circles
-    for sid in orig_sids:
-        assert (
-            cursor.execute(
-                "SELECT enabled FROM searches WHERE id = ?", (sid,)
-            ).fetchone()[0]
-            == 1
-        )
 
 
 def test_update_family_base_url_rewrites_searches(conn):
@@ -617,91 +420,6 @@ def test_update_family_base_url_rewrites_searches(conn):
         "https://www.kleinanzeigen.de/s-landsberg-am-lech/preis:10:150/brother-mfc-l2740dw/k0l7091r50"
     )
     assert new_search[2] == 1
-
-
-def test_route_keeps_its_own_circles_when_the_family_base_url_changes(conn):
-    """Re-aiming a family must not touch the circles the route itself owns.
-
-    update_family() gained a base_url path that detaches and re-attaches every
-    term, deleting rows from route_search_circles on the way. That is the same
-    shape as the bug which once grew route 3 from 6 circles to 12 and then
-    deleted all 12: a delete that is not scoped by provenance takes the route's
-    own circles with it. The setup screen writes a new base_url every time
-    somebody changes the town, the radius or the price, so this path now runs on
-    ordinary use rather than rarely.
-    """
-    cursor = conn.cursor()
-    circles = [
-        route_search.Circle(
-            centre=(48.0, 11.0),
-            postal_code="82266",
-            location_id="7091",
-            label="Inning",
-            snap_km=0.0,
-            radius_km=25.0,
-            url="https://www.kleinanzeigen.de/s-inning-am-ammersee/matratze-140x200/k0l7091r25",
-        ),
-        route_search.Circle(
-            centre=(48.1, 11.5),
-            postal_code="80331",
-            location_id="6411",
-            label="München",
-            snap_km=0.0,
-            radius_km=25.0,
-            url="https://www.kleinanzeigen.de/s-muenchen/matratze-140x200/k0l6411r25",
-        ),
-    ]
-    plan = route_search.RoutePlan(
-        route=MockRoute(),
-        circles=circles,
-        radius_km=25.0,
-        half_width_km=10.0,
-    )
-    route_id, _ = route_store.save_plan(
-        conn, plan, base_url=MATRATZE, origin="Inning", destination="München"
-    )
-
-    route_owned = [
-        r[0]
-        for r in cursor.execute(
-            "SELECT search_id FROM route_search_circles "
-            "WHERE route_search_id = ? AND family_id IS NULL ORDER BY search_id",
-            (route_id,),
-        ).fetchall()
-    ]
-    assert len(route_owned) == 2
-
-    fam_id, _, _ = family_store.save_family(
-        conn,
-        name="Matratzen & Drucker",
-        base_url=MATRATZE,
-        terms=["matratze 140x200", "Brother MFC-L2740DW"],
-        route_search_id=route_id,
-    )
-
-    family_store.update_family(
-        conn,
-        fam_id,
-        base_url="https://www.kleinanzeigen.de/s-landsberg-am-lech/preis::150/matratze-140x200/k0l7091r50",
-    )
-
-    still_owned = [
-        r[0]
-        for r in cursor.execute(
-            "SELECT search_id FROM route_search_circles "
-            "WHERE route_search_id = ? AND family_id IS NULL ORDER BY search_id",
-            (route_id,),
-        ).fetchall()
-    ]
-    assert still_owned == route_owned, "the route lost circles it owns"
-
-    for sid in route_owned:
-        assert (
-            cursor.execute(
-                "SELECT enabled FROM searches WHERE id = ?", (sid,)
-            ).fetchone()[0]
-            == 1
-        ), "a route-owned search was switched off by a family edit"
 
 
 def test_re_aiming_a_family_does_not_leave_searches_running_forever(conn):

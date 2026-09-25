@@ -3,89 +3,52 @@ import { Plus, Settings } from 'lucide-react';
 import { Bar, SearchRow, Pill, EmptyLine } from '../components/surface';
 import { useTranslation } from '../hooks/useTranslation';
 import { useKept } from '../hooks/useKept';
-import type { Campaign, SearchTarget, Listing } from '../types';
-import { getSearchLocationSubtitle, getSearchFreshnessSubtitle } from '../utils/searchHelpers';
+import type { HuntSummary } from '../types/hunt';
+import { formatFreshness } from '../utils/freshness';
+import { whereLabel } from '../utils/whereLabel';
 
 export interface LandingScreenProps {
-  campaigns: Campaign[];
-  searches: SearchTarget[];
-  listings: Listing[];
-  onOpenCampaign: (campaign: Campaign) => void;
-  onCreateCampaign: () => void;
+  hunts: HuntSummary[];
+  error?: string | null;
+  onOpenHunt: (hunt: HuntSummary) => void;
+  onCreateHunt: () => void;
   onOpenKept: () => void;
   onOpenApp: () => void;
 }
 
-export const LandingScreen: React.FC<LandingScreenProps> = ({
-  campaigns,
-  searches,
-  listings,
-  onOpenCampaign,
-  onCreateCampaign,
-  onOpenKept,
-  onOpenApp,
-}) => {
+export const LandingScreen: React.FC<LandingScreenProps> = ({ hunts, error, onOpenHunt, onCreateHunt, onOpenApp, onOpenKept }) => {
   const { t } = useTranslation();
   const { kept } = useKept();
 
   return (
     <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col w-full">
-      {/* 1. Sticky Bar (44px) */}
       <Bar
         title={t('surface.searches')}
         actions={
           <>
-            <Pill
-              data-testid="create-campaign-btn"
-              icon={<Plus className="w-3.5 h-3.5" />}
-              label={t('surface.newSearch')}
-              onClick={onCreateCampaign}
-            />
-            <Pill
-              data-testid="open-app-btn"
-              icon={<Settings className="w-3.5 h-3.5" />}
-              label={t('surface.app')}
-              onClick={onOpenApp}
-            />
+            <Pill data-testid="create-campaign-btn" icon={<Plus className="w-3.5 h-3.5" />} label={t('surface.newSearch')} onClick={onCreateHunt} />
+            <Pill data-testid="open-app-btn" icon={<Settings className="w-3.5 h-3.5" />} label={t('surface.app')} onClick={onOpenApp} />
           </>
         }
       />
 
-      {/* 2. Main Search List */}
       <main className="w-full max-w-3xl mx-auto flex-1 flex flex-col">
-        {campaigns.map((c) => {
-          const campaignSearches = searches.filter((s) => s.campaign_id === c.id);
-          const campaignListings = listings.filter((l) => {
-            return campaignSearches.some((s) => s.id === l.search_id) || l.campaign_name === c.name;
-          });
+        {error && <p className="px-4 py-3 text-sm text-[#E87967]" role="alert">{error}</p>}
+        {hunts.map((h) => (
+          <SearchRow
+            key={h.id}
+            id={h.id}
+            name={h.name}
+            // What fits: the number the results screen opens on.
+            count={h.counts.fit}
+            locationLabel={[h.targets.join(' · '), whereLabel(h, t)].filter(Boolean).join(' — ')}
+            freshnessLabel={h.newest ? formatFreshness(h.newest.first_seen_at, t)?.label ?? null : null}
+            imageUrl={h.newest?.image ?? null}
+            onClick={() => onOpenHunt(h)}
+          />
+        ))}
 
-          // Youngest listing with image for the thumbnail
-          const listingWithImg = campaignListings.find((l) => l.images && l.images.length > 0);
-          const firstImg = listingWithImg?.images?.[0] || null;
-
-          const locationLabel = getSearchLocationSubtitle(c, campaignSearches, campaignListings, t);
-          const freshnessLabel = getSearchFreshnessSubtitle(campaignListings, t);
-
-          return (
-            <SearchRow
-              key={c.id}
-              id={c.id}
-              name={c.name}
-              // The server's number, which is the one the results screen will
-              // show. Counting the loaded listings here gave 1,140 for a
-              // campaign that opens on 50.
-              count={typeof c.listing_count === 'number' ? c.listing_count : campaignListings.length}
-              locationLabel={locationLabel}
-              freshnessLabel={freshnessLabel}
-              imageUrl={firstImg}
-              onClick={() => onOpenCampaign(c)}
-            />
-          );
-        })}
-
-        {/* Kept finds, wherever they were found. A mark inside one search
-            filters that search; a find kept three searches ago is only
-            reachable if you remember which one it was in. */}
+        {/* Kept finds, wherever they were found. */}
         {kept.size > 0 && (
           <SearchRow
             id={-1}
@@ -98,17 +61,10 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
           />
         )}
 
-        {/* Empty State */}
-        {campaigns.length === 0 && (
+        {hunts.length === 0 && !error && (
           <EmptyLine
             message={t('surface.noSearches')}
-            actions={
-              <Pill
-                data-testid="create-campaign-empty-btn"
-                label={t('surface.newSearch')}
-                onClick={onCreateCampaign}
-              />
-            }
+            actions={<Pill data-testid="create-campaign-empty-btn" label={t('surface.newSearch')} onClick={onCreateHunt} />}
           />
         )}
       </main>

@@ -1,5 +1,6 @@
 """Hunts as queries: targets placed, conditions on attributes, the crawl derived."""
 
+import json
 import sqlite3
 
 import pytest
@@ -15,6 +16,28 @@ def conn():
     db_schema.apply_schema(c)
     taxonomy.seed(c)
     return c
+
+
+def _answers(prompt):
+    """The placing answer, or readers for whatever facts the prompt asks about."""
+    if "Er verlangt diese Merkmale" in prompt:
+        labels = [
+            line[2:]
+            for line in prompt.splitlines()
+            if line.startswith("- ") and ":" not in line
+        ]
+        return {
+            "attributes": [
+                {
+                    "label": label,
+                    "id": label.lower(),
+                    "type": "boolean",
+                    "readers": [f"keywords:{label.lower()}"],
+                }
+                for label in labels
+            ]
+        }
+    return _cbr_answer(prompt)
 
 
 def _doc(**over):
@@ -43,7 +66,7 @@ def _doc(**over):
 
 
 def test_a_hunt_is_its_targets_conditions_and_crawl(conn):
-    cid = hunts.save(conn, _doc(), ask=_cbr_answer)
+    cid = hunts.save(conn, _doc(), ask=_answers)
     ((node_id, name),) = conn.execute(
         "SELECT node_id, name FROM hunt_targets"
     ).fetchall()
@@ -78,7 +101,7 @@ def test_a_must_for_all_targets_narrows_the_crawl_url(conn):
             }
         ],
     )
-    cid = hunts.save(conn, doc, ask=_cbr_answer)
+    cid = hunts.save(conn, doc, ask=_answers)
     ((url,),) = conn.execute(
         "SELECT url FROM searches WHERE campaign_id = ?", (cid,)
     ).fetchall()
@@ -86,18 +109,18 @@ def test_a_must_for_all_targets_narrows_the_crawl_url(conn):
 
 
 def test_saving_again_keeps_the_family_and_the_name_is_unique(conn):
-    cid = hunts.save(conn, _doc(), ask=_cbr_answer)
+    cid = hunts.save(conn, _doc(), ask=_answers)
     node_id = conn.execute("SELECT node_id FROM hunt_targets").fetchone()[0]
     hunts.save(
         conn,
         _doc(targets=[{"node_id": node_id, "typed": "SC59"}], conditions=[]),
         campaign_id=cid,
-        ask=_cbr_answer,
+        ask=_answers,
     )
     assert conn.execute("SELECT COUNT(*) FROM search_families").fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM hunt_conditions").fetchone()[0] == 0
     with pytest.raises(hunts.HuntError):
-        hunts.save(conn, _doc(), ask=_cbr_answer)
+        hunts.save(conn, _doc(), ask=_answers)
 
 
 def test_a_condition_needs_its_value(conn):
@@ -105,11 +128,11 @@ def test_a_condition_needs_its_value(conn):
         conditions=[{"label": "Kilometerstand", "op": "max", "importance": "must"}]
     )
     with pytest.raises(hunts.HuntError):
-        hunts.save(conn, bad, ask=_cbr_answer)
+        hunts.save(conn, bad, ask=_answers)
 
 
 def test_refine_asks_once_about_listings_above_the_target(conn):
-    cid = hunts.save(conn, _doc(), ask=_cbr_answer)
+    cid = hunts.save(conn, _doc(), ask=_answers)
     (sid,) = conn.execute("SELECT id FROM searches").fetchone()
     for n, title in enumerate(["Honda Fireblade Rot", "Honda Superblade Tank"]):
         conn.execute(
@@ -135,3 +158,156 @@ def test_refine_asks_once_about_listings_above_the_target(conn):
         conn.execute("SELECT listing_id, method FROM listing_resolution").fetchall()
     )
     assert methods == {"x0": "alias", "x1": "model"}
+
+
+def test_deleting_a_hunt_keeps_what_it_found(conn):
+    cid = hunts.save(conn, _doc(), ask=_answers)
+    (sid,) = conn.execute("SELECT id FROM searches").fetchone()
+    conn.execute(
+        "INSERT INTO listings (id, title, search_id) VALUES ('x', 'Honda CBR', ?)",
+        (sid,),
+    )
+    conn.execute(
+        "INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('x', ?, 0)",
+        (sid,),
+    )
+    assert hunts.delete(conn, cid)["deleted"]
+    assert conn.execute("SELECT COUNT(*) FROM listings").fetchone()[0] == 1
+    assert conn.execute("SELECT enabled, campaign_id FROM searches").fetchone() == (
+        0,
+        None,
+    )
+    assert conn.execute("SELECT COUNT(*) FROM search_families").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM hunt_targets").fetchone()[0] == 0
+
+
+def test_the_crawl_plan_fetches_the_never_fetched_first(conn):
+    import datetime
+
+    from graph import crawlplan
+
+    cid = hunts.save(
+        conn,
+        _doc(
+            targets=[
+                {"typed": "Honda CBR 1000 RR SC59"},
+                {"typed": "Honda CBR 1000 RR"},
+            ]
+        ),
+        ask=_answers,
+    )
+    units = crawlplan.plan(conn)
+    assert len(units) == 1  # both targets are searched as the CBR: one unit
+    conn.execute("UPDATE searches SET last_scraped_at = '2026-09-25T10:00:00+00:00'")
+    hunts.save(
+        conn,
+        _doc(name="Zweite", targets=[{"typed": "Yamaha R1"}]),
+        ask=lambda p: _answers(p)
+        if "Er verlangt" in p
+        else {
+            "path": [
+                {"name": "Yamaha", "kind": "brand"},
+                {"name": "R1", "kind": "model"},
+            ]
+        },
+    )
+    now = datetime.datetime(2026, 9, 25, 12, tzinfo=datetime.timezone.utc)
+    order = [u["url"] for u in crawlplan.plan(conn, now=now)]
+    assert "yamaha-r1" in order[0] and "honda" in order[1]
+    assert [u["url"] for u in crawlplan.plan(conn, campaign_id=cid)] == [order[1]]
+
+
+def test_a_class_that_is_its_category_is_the_category(conn):
+    from graph import place
+
+    def never(prompt):
+        raise AssertionError("no model call")
+
+    laptops = taxonomy.category_node_id(conn, "278")
+    assert place.place(conn, "Laptop", "278", ask=never) == laptops
+    # A model that names the category as a class is taken the same way.
+    moto = place.place(
+        conn,
+        "Motorrad",
+        "305",
+        ask=lambda p: {"path": [{"name": "Motorräder & Motorroller", "kind": "class"}]},
+    )
+    assert moto == taxonomy.category_node_id(conn, "305")
+
+
+def test_a_kind_of_goods_is_found_in_compounds_and_by_the_art_field(conn):
+    from graph import facts
+
+    cid = hunts.save(
+        conn,
+        {
+            "name": "Matratze",
+            "category_code": "81",
+            "frame": {"max_price": 50, "location_id": 6358, "radius_km": 26},
+            "targets": [{"typed": "Matratze"}],
+            "conditions": [
+                {"label": "Art", "op": "eq", "value": "Matratzen", "importance": "must"}
+            ],
+        },
+        ask=lambda p: {
+            "path": [{"name": "Matratze", "kind": "class", "aliases": ["Matratze"]}]
+        },
+    )
+    ((url,),) = conn.execute(
+        "SELECT url FROM searches WHERE campaign_id = ?", (cid,)
+    ).fetchall()
+    assert "art_s:matratzen" in url and "/matratze/" not in url
+    target = hunts.target_ids(conn, cid)[0]
+    rows = [
+        ("m1", "Kaltschaummatratze 90x200", {}),
+        ("m2", "Boxspring Topper neuwertig", {"Art": "Matratzen"}),
+        ("m3", "Lattenrost 90x200", {"Art": "Lattenroste"}),
+    ]
+    for n, (lid, title, details) in enumerate(rows):
+        conn.execute(
+            "INSERT INTO listings (id, title, url, details) VALUES (?, ?, ?, ?)",
+            (
+                lid,
+                title,
+                f"https://www.kleinanzeigen.de/s-anzeige/x/{n}-81-1",
+                json.dumps(details),
+            ),
+        )
+    assert facts.process(conn, "m1") == target
+    assert facts.process(conn, "m2") == target
+    assert facts.process(conn, "m3") == taxonomy.category_node_id(conn, "81")
+
+
+def test_a_class_step_that_is_the_category_is_dropped(conn):
+    from graph import place, store
+
+    node = place.place(
+        conn,
+        "Yamaha R1",
+        "305",
+        ask=lambda p: {
+            "path": [
+                {
+                    "name": "Motorräder & Motorroller",
+                    "kind": "class",
+                    "aliases": ["Motorrad"],
+                },
+                {"name": "Yamaha", "kind": "brand"},
+                {"name": "R1", "kind": "model"},
+            ],
+            "attributes": [
+                {
+                    "id": "abs",
+                    "label": "ABS",
+                    "type": "boolean",
+                    "readers": ["keywords:abs"],
+                    "at": 2,
+                }
+            ],
+        },
+    )
+    moto = taxonomy.category_node_id(conn, "305")
+    assert [n["kind"] for n in store.ancestors(conn, node)][-2:] == ["brand", "model"]
+    assert store.node(conn, node)["parent_id"] != moto
+    assert "abs" in store.effective_attributes(conn, node)
+    assert place.find(conn, "Motorrad", moto) == moto
