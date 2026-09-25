@@ -108,3 +108,14 @@ def test_python_and_node_agree_on_german_requirements():
         check=True,
     )
     assert node.stdout == requirements_hash(fields)
+
+
+def test_scoping_to_models_is_part_of_the_hash_as_in_node():
+    from requirements_hash import requirements_hash
+
+    scoped = [{"id": "own_km", "buyer_wants": {"max": 5000}, "applies_to": [12, 3]}]
+    assert requirements_hash(scoped) == "b29ca27a7e004cba"
+    assert (
+        requirements_hash([{"id": "own_km", "buyer_wants": {"max": 5000}}])
+        == "4632ad3d2c5a2fe2"
+    )

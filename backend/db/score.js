@@ -171,27 +171,42 @@ async function attachScores(query, listings, scopeSearchIds = null) {
   const ids = listings.map(l => String(l.id));
   const scope = Array.isArray(scopeSearchIds) && scopeSearchIds.length ? scopeSearchIds : null;
   const rows = await query(
-    `SELECT lsh.listing_id, ks.item_json
+    `SELECT lsh.listing_id, ks.item_json, sfs.term_id
        FROM listing_search_hits lsh
        JOIN searches s ON s.id = lsh.search_id
        JOIN knowledge_sets ks ON ks.id = s.knowledge_set_id
+       LEFT JOIN search_family_searches sfs ON sfs.search_id = lsh.search_id
       WHERE lsh.listing_id IN (${ids.map(() => '?').join(',')})
         ${scope ? `AND lsh.search_id IN (${scope.map(() => '?').join(',')})` : ''}
         AND ks.item_json IS NOT NULL`,
     scope ? [...ids, ...scope] : ids
   );
   const fieldsByListing = new Map();
+  // The models (family terms) whose searches found the listing: a
+  // requirement for one model ("under 5000 km" for the CBR) scores only it.
+  const termsByListing = new Map();
   for (const row of rows) {
-    if (fieldsByListing.has(String(row.listing_id))) continue;
+    const id = String(row.listing_id);
+    if (row.term_id != null) {
+      if (!termsByListing.has(id)) termsByListing.set(id, new Set());
+      termsByListing.get(id).add(String(row.term_id));
+    }
+    if (fieldsByListing.has(id)) continue;
     try {
       const fields = JSON.parse(row.item_json)?.fields;
-      if (Array.isArray(fields) && fields.length) fieldsByListing.set(String(row.listing_id), fields);
+      if (Array.isArray(fields) && fields.length) fieldsByListing.set(id, fields);
     } catch {
       // A malformed knowledge set judges nothing rather than everything.
     }
   }
+  const forListing = (id) => {
+    const terms = termsByListing.get(id) || new Set();
+    return (fieldsByListing.get(id) || []).filter(
+      f => !Array.isArray(f.applies_to) || !f.applies_to.length || f.applies_to.some(t => terms.has(String(t)))
+    );
+  };
   for (const listing of listings) {
-    const parts = scoreListing(listing, fieldsByListing.get(String(listing.id)) || []);
+    const parts = scoreListing(listing, forListing(String(listing.id)));
     listing.score = parts.score;
     listing.score_parts = parts;
   }

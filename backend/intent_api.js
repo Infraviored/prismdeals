@@ -121,4 +121,26 @@ router.post('/api/intent/models', async (req, res) => {
   }
 });
 
+// POST /api/hunt/edit
+// A hunt changed in the buyer's words ("nur SC59 bei der CBR, unter 5000 km").
+// Body: { document, instruction }. Answers the changed document and what
+// changed; nothing is saved here -- the edit screen shows it, then saves.
+router.post('/api/hunt/edit', async (req, res) => {
+  const { document, instruction } = req.body || {};
+  if (!document || typeof document !== 'object' || !Array.isArray(document.models)) {
+    return res.status(400).json({ error: 'document with models is required' });
+  }
+  if (!instruction || typeof instruction !== 'string' || !instruction.trim()) {
+    return res.status(400).json({ error: 'instruction is required' });
+  }
+  try {
+    const result = await runPythonJson('hunt_edit.py', [], JSON.stringify({ document, instruction }));
+    if (result.error) return res.status(422).json(result);
+    return res.json(result);
+  } catch (err) {
+    console.error('Hunt edit failed:', err.message);
+    return res.status(500).json({ error: 'Die Änderung konnte nicht berechnet werden.' });
+  }
+});
+
 module.exports = router;

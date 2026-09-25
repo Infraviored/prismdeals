@@ -20,6 +20,8 @@ caught exactly that here.
 import datetime
 import json
 import logging
+import re
+import sqlite3
 
 import playbooks
 import text_facts
@@ -31,6 +33,45 @@ import wishes
 logger = logging.getLogger(__name__)
 
 VERDICTS = ("fit", "unclear", "no")
+
+
+def _term_ids(conn, search_id):
+    """The family terms (models) this search runs for."""
+    try:
+        rows = conn.execute(
+            "SELECT term_id FROM search_family_searches WHERE search_id = ?",
+            (int(search_id),),
+        ).fetchall()
+    except sqlite3.OperationalError:  # a store without families
+        return set()
+    return {str(r[0]) for r in rows if r[0] is not None}
+
+
+def scoped(conn, search_id, fields):
+    """The requirements that apply to this search's model.
+
+    A requirement with `applies_to` (term ids) is for those models only: "under
+    5000 km" for the CBR must not reject an R1 with 13.000 km.
+    """
+    ids = _term_ids(conn, search_id)
+    return [
+        f
+        for f in fields
+        if not f.get("applies_to") or ids & {str(x) for x in f["applies_to"]}
+    ]
+
+
+def _details_text(details):
+    """The detail page's attributes as lines ("Kilometerstand: 13.000 km")."""
+    if not details:
+        return ""
+    try:
+        data = json.loads(details) if isinstance(details, str) else details
+    except ValueError:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return "\n".join(f"{k}: {v}" for k, v in data.items() if v not in (None, ""))
 
 
 def intent_for(conn, search_id):
@@ -91,12 +132,12 @@ def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted, tex
             facts[field["id"]] = field["absent_means"]
 
     req_hash = _compute_hash(wanted)
-    playbook_wanted, own = _split_wanted(playbook, wanted)
+    playbook_wanted, own = _split_wanted(playbook, scoped(conn, search_id, wanted))
     title, details = _title_and_details(conn, listing_id)
     checks = _listing_checks(
         conn,
         title,
-        f"{title}\n{text or ''}",
+        f"{title}\n{text or ''}\n{_details_text(details)}",
         details,
         hunt_identity.hunt_models(conn, search_id),
         own,
@@ -191,11 +232,40 @@ def _own_words(fields, text):
             continue
         label = field.get("label") or field["id"]
         if value is False:
-            return facts, "reject", [f"{label}: nein"]
+            return facts, "reject", [_denial(field, text, label)]
         if value is None:
             verdict = "unclear"
             reasons.append(f"{label} nicht angegeben")
     return facts, verdict, reasons
+
+
+def _denial(field, text, label):
+    """Why a must failed: "Kilometerstand 21.000 km, erlaubt bis 5.000"."""
+    wants = field.get("buyer_wants") or {}
+    if "min" in wants or "max" in wants:
+        from probe_sieve import read_number, unit_of
+
+        value = read_number(str(text).lower(), label)
+        if value is not None:
+            unit = unit_of(label) or ""
+            name = (
+                re.sub(rf"\s*\b{re.escape(unit)}\b\s*$", "", label, flags=re.I)
+                if unit
+                else label
+            )
+
+            def fmt(n):
+                return (
+                    f"{n:,.0f}".replace(",", ".") if float(n).is_integer() else str(n)
+                )
+
+            bound = (
+                f"erlaubt bis {fmt(wants['max'])}"
+                if "max" in wants
+                else f"verlangt ab {fmt(wants['min'])}"
+            )
+            return f"{name} {fmt(value)} {unit}, {bound}".replace("  ", " ")
+    return f"{label}: nein"
 
 
 def _generation_check(conn, title, details, models, cache):
@@ -302,13 +372,20 @@ def judge_search(conn, search_id, use_descriptions=True):
                   AND requirements_hash IS NOT ?""",
             (req_hash, int(search_id), req_hash),
         )
+    # The hash is the whole set's -- verdicts are found through it -- but this
+    # search is judged only by what applies to its model.
+    all_wanted = wanted
+    wanted = scoped(conn, search_id, wanted)
     models = hunt_identity.hunt_models(conn, search_id)
-    if not wanted and not models:
+    # Nothing set at all is an error; requirements only for other models mean
+    # this model's offers have nothing to fail, and are judged as fitting.
+    if not all_wanted and not models:
         return {"error": "this search has no requirements to judge against"}
     # Fields the category's playbook knows are read with its patterns; the
     # buyer's own words ("ABS") are read as words (wishes.py).
+    this_model = wanted
     wanted, own = _split_wanted(playbook, wanted)
-    if playbook is None and not (own or models):
+    if playbook is None and not (own or models) and this_model:
         return {"error": "no playbook for this search's category"}
 
     # Every listing this search found, not only the ones it found first.
@@ -334,7 +411,7 @@ def judge_search(conn, search_id, use_descriptions=True):
         checks = _listing_checks(
             conn,
             title,
-            f"{title}\n{detailed or short or ''}",
+            f"{title}\n{detailed or short or ''}\n{_details_text(details)}",
             details,
             models,
             own,

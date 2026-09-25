@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import EditScreen from '../EditScreen';
 import type { Campaign } from '../../types';
 
@@ -65,15 +65,15 @@ describe('EditScreen', () => {
     render(<EditScreen campaign={mockCampaign} onBack={vi.fn()} />);
 
     // Sticky header Bar (48px)
-    expect(await screen.findByText(/Drucker/i)).toBeInTheDocument();
+    expect((await screen.findAllByText(/Drucker/i)).length).toBeGreaterThan(0);
     expect(screen.getByText(/Save|Speichern/i)).toBeInTheDocument();
 
     // 1. Was / What -- the label of the field, not any text that contains the
     //    word: a loose matcher here caught the requirements button too.
     expect(screen.getByText(/^(Was|What)$/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue('Drucker')).toBeInTheDocument();
-    expect(await screen.findByText('Brother HL-L2350DW')).toBeInTheDocument();
-    expect(screen.getByText('HP M428')).toBeInTheDocument();
+    expect(await within(await screen.findByTestId('search-terms')).findByText('Brother HL-L2350DW')).toBeInTheDocument();
+    expect(within(screen.getByTestId('search-terms')).getByText('HP M428')).toBeInTheDocument();
 
     // 2. Wo / Where
     expect(screen.getByText(/^(Wo|Where)$/i)).toBeInTheDocument();
@@ -135,19 +135,19 @@ describe('EditScreen', () => {
   it('allows adding and removing model pills', async () => {
     render(<EditScreen campaign={mockCampaign} onBack={vi.fn()} />);
 
-    expect(await screen.findByText('Brother HL-L2350DW')).toBeInTheDocument();
+    expect(await within(await screen.findByTestId('search-terms')).findByText('Brother HL-L2350DW')).toBeInTheDocument();
 
     // Remove first model
     const removeBtn = screen.getByLabelText(/Remove Brother HL-L2350DW/i);
     fireEvent.click(removeBtn);
-    expect(screen.queryByText('Brother HL-L2350DW')).not.toBeInTheDocument();
+    expect(screen.queryAllByText('Brother HL-L2350DW')).toHaveLength(0);
 
     // Add a new term
     const termInput = screen.getByLabelText(/Search terms on Kleinanzeigen|Suchbegriffe bei Kleinanzeigen/i);
     fireEvent.change(termInput, { target: { value: 'Canon MF445dw' } });
     fireEvent.keyDown(termInput, { key: 'Enter', code: 'Enter' });
 
-    expect(screen.getByText('Canon MF445dw')).toBeInTheDocument();
+    expect(within(screen.getByTestId('search-terms')).getByText('Canon MF445dw')).toBeInTheDocument();
   });
 
   it('never saves the narrow name as the search term', async () => {
@@ -170,7 +170,7 @@ describe('EditScreen', () => {
 
   it('shows what each term found', async () => {
     render(<EditScreen campaign={mockCampaign} onBack={vi.fn()} />);
-    expect(await screen.findByText('Brother HL-L2350DW')).toBeInTheDocument();
+    expect(await within(await screen.findByTestId('search-terms')).findByText('Brother HL-L2350DW')).toBeInTheDocument();
     expect(screen.getByText('12 found, 3 matching')).toBeInTheDocument();
   });
 
@@ -222,5 +222,59 @@ describe('EditScreen', () => {
 
     expect(window.confirm).toHaveBeenCalled();
     expect(onDeleteMock).toHaveBeenCalledWith(mockCampaign);
+  });
+
+  it('changes a hunt with AI: one model gets its own requirement, saved with its term id', async () => {
+    const calls: Array<{ url: string; method: string; body: string }> = [];
+    let savedTerms: unknown[] | null = null;
+    const base = fetchMock.getMockImplementation() as (url: string, options?: RequestInit) => Promise<unknown>;
+    fetchMock.mockImplementation((url: string, options?: RequestInit) => {
+      calls.push({ url, method: options?.method || 'GET', body: String(options?.body || '') });
+      if (url.includes('/api/search-families/10') && options?.method === 'PUT') {
+        // The server gives a new term its id.
+        savedTerms = JSON.parse(String(options.body)).terms.map((t: { id?: number }, i: number) => ({ id: t.id ?? 100 + i, ...t }));
+      }
+      if (url.includes('/api/search-families/10') && (!options || options.method === 'GET') && savedTerms) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 10, terms: savedTerms }) });
+      }
+      if (url === '/api/hunt/edit') {
+        const doc = JSON.parse(String(options!.body)).document;
+        doc.models[1] = {
+          name: 'HP M428 fdw',
+          requirements: [
+            { id: 'own_seiten', label: 'Seitenzähler Seiten', importance: 'high', buyer_wants: { max: 20000 } },
+          ],
+        };
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ document: doc, changes: ['HP M428 fdw: Seitenzähler Seiten bis 20000 (Muss)'] }),
+        });
+      }
+      return base(url, options);
+    });
+    render(<EditScreen campaign={mockCampaign} onBack={vi.fn()} onSaved={vi.fn()} />);
+    await screen.findByDisplayValue('Drucker');
+    fireEvent.change(screen.getByLabelText(/Change with AI|Mit KI ändern/), {
+      target: { value: 'beim HP nur fdw, unter 20000 Seiten' },
+    });
+    fireEvent.click(screen.getByTestId('hunt-ai-run'));
+    expect(await screen.findByText('HP M428 fdw: Seitenzähler Seiten bis 20000 (Muss)')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('hunt-ai-apply'));
+    const structure = screen.getByTestId('hunt-structure');
+    expect(structure).toHaveTextContent('HP M428 fdw');
+    expect(structure).toHaveTextContent(/Seitenzähler Seiten bis 20.000 · (must|Muss)/);
+
+    fireEvent.click(screen.getByText(/^(Save|Speichern)$/));
+    await waitFor(() => expect(calls.some((c) => c.url === '/api/campaigns/1/requirements' && c.method === 'PUT')).toBe(true));
+    const sent = JSON.parse(calls.find((c) => c.url === '/api/campaigns/1/requirements' && c.method === 'PUT')!.body).requirements;
+    expect(sent).toHaveLength(1);
+    expect(sent[0].label).toBe('Seitenzähler Seiten');
+    expect(sent[0].buyer_wants).toEqual({ max: 20000 });
+    // "fdw" is another model than "M428" (not a generation): a new search,
+    // and the requirement is scoped to its new id.
+    expect(sent[0].applies_to).toEqual([101]);
+    expect(sent[0]).not.toHaveProperty('applies_to_names');
+    const family = JSON.parse(calls.find((c) => c.url.includes('/api/search-families/10') && c.method === 'PUT')!.body);
+    expect(family.terms[1]).toEqual({ term: 'hp-m428-fdw', label: 'HP M428 fdw', enabled: true });
   });
 });

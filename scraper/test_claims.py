@@ -250,7 +250,9 @@ def test_search_brief_headings():
 
     # Hard frame & rules
     assert "Recherchiere gründlich zu folgendem Gebrauchtprodukt" in brief
-    assert "WICHTIG: Nenne zu jeder Aussage die vollständige URL der Quelle" in brief
+    # Sources are asked for; their form is not (footnotes are read either way).
+    assert "Belege deine Aussagen mit Quellen" in brief
+    assert "vollständige URL" not in brief
     # Fixed headings per vehicle profile
     for heading in profile.research_headings:
         assert f"## {heading}" in brief

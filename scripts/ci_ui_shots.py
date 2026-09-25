@@ -120,6 +120,35 @@ if (!existing) {
 """
 
 
+# Every visible button whose label runs over more than one line. A button
+# broken over two lines reads as broken on a phone ("Auftrag kopieren",
+# "Frage an den Verkäufer"); the container wraps, or the label is shorter.
+WRAPPED_BUTTONS = """
+const out = [];
+for (const el of document.querySelectorAll('button, [role=button], a.btn')) {
+  const box = el.getBoundingClientRect();
+  if (!box.width || !box.height || getComputedStyle(el).visibility === 'hidden') continue;
+  // A card that happens to be clickable (a row with photo and title) is not
+  // a button label.
+  if (el.querySelector('img, p, h1, h2, h3, h4, ul, div')) continue;
+  const text = (el.innerText || '').trim();
+  if (!text) continue;
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const rects = [...range.getClientRects()].filter(r => r.width > 1).sort((a, b) => a.top - b.top);
+  // A new line starts where a piece of text begins below the previous line's
+  // bottom; a count beside a label, set a little higher, is the same line.
+  let lines = 0, bottom = -Infinity;
+  for (const r of rects) {
+    if (r.top >= bottom - 2) { lines++; bottom = r.bottom; } else { bottom = Math.max(bottom, r.bottom); }
+  }
+  if (lines > 1) out.push(text.replace(/\\s+/g, ' ').slice(0, 60));
+}
+return out;
+"""
+WRAPPED = []
+
+
 def shoot(driver, out_dir, name, settle=1.0):
     driver.execute_script(FREEZE_MOTION)
     # The fonts come from a CDN. Captured before they land, the page is laid out
@@ -145,6 +174,15 @@ def shoot(driver, out_dir, name, settle=1.0):
     path = os.path.join(out_dir, f"{name}.png")
     driver.save_screenshot(path)
     print(f"  {name}.png")
+    for label in driver.execute_script(WRAPPED_BUTTONS) or []:
+        WRAPPED.append(f"{name}: {label}")
+    # Nothing may push the page wider than the window: a label kept on one
+    # line must not run off the screen instead.
+    overflow = driver.execute_script(
+        "return document.documentElement.scrollWidth - window.innerWidth"
+    )
+    if overflow > 1:
+        WRAPPED.append(f"{name}: page is {overflow}px wider than the window")
 
 
 def walk(driver, base, out_dir, width, height):
@@ -230,6 +268,22 @@ def walk(driver, base, out_dir, width, height):
         driver.get(f"{base}/#dashboard?campaignId={cid}&listingId={listing_id}")
         time.sleep(2)
         shoot(driver, out_dir, "06-detail-sheet")
+
+    # The requirements sheet: own wishes, add/remove buttons side by side.
+    driver.get(f"{base}/#dashboard?campaignId={cid}&sheet=requirements")
+    time.sleep(2)
+    shoot(driver, out_dir, "07-requirements-sheet")
+
+    # The knowledge sheet: brief, copy button, proposed facts with their
+    # buttons -- where "Auftrag kopieren" broke over two lines.
+    driver.get(f"{base}/#dashboard?campaignId={cid}&sheet=knowledge")
+    time.sleep(3)
+    shoot(driver, out_dir, "08-knowledge-sheet")
+
+    if WRAPPED:
+        raise SystemExit(
+            "Buttons whose label wraps onto a second line:\n  " + "\n  ".join(WRAPPED)
+        )
 
 
 def main():

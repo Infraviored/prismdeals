@@ -26,3 +26,12 @@ describe('withoutGeneration', () => {
     expect(withoutGeneration('corsair-vengeance-32gb')).toBe('corsair-vengeance-32gb');
   });
 });
+
+describe('withoutGeneration keeps a model that ends in letters and digits', () => {
+  it('cuts a generation code, not the model', () => {
+    expect(withoutGeneration('yamaha-r1-rn19')).toBe('yamaha-r1');
+    expect(withoutGeneration('Honda CBR 1000 RR SC59')).toBe('Honda CBR 1000 RR');
+    expect(withoutGeneration('yamaha-yzf-r1')).toBe('yamaha-yzf-r1');
+    expect(withoutGeneration('lenovo-thinkpad-t480')).toBe('lenovo-thinkpad-t480');
+  });
+});

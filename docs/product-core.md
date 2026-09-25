@@ -346,6 +346,16 @@ Four kinds of needs; the kind decides where a need flows:
 - Map: one number = one popup with exactly those offers; listings sharing a postal code never split by zoom.
   - No search circles; fit to the shape once, never on re-render.
 - One request per page: listings, all pins of the tab (page 1) and the corridor shape.
+- Edit screen shows how the hunt is stored: per model, for all models, what is searched.
+- Change with AI: one sentence ("CBR nur SC59, unter 5000 km") -> the hunt document changed.
+  - Changes listed by code (diff), not by the model; "Übernehmen" fills the form, "Speichern" stores.
+  - A generation joins the model name; the search term stays without it (no new crawl).
+  - Requirements for one model carry `applies_to` (term ids): judge, score and hash respect it.
+  - Own-word reading includes the detail page's attributes (Kilometerstand from details).
+- Buttons are one line (CSS `button { white-space: nowrap }`); the CI shot run fails on a wrapped
+  button or a page wider than the window, at 360, 480 and 1440 px.
+- Research answers: footnotes ("[1][5]" + list) become URLs before classifying; the brief asks for
+  sources, not for a form. ~~"Nenne zu jeder Aussage die vollständige URL"~~ — produced debris.
 - Corridor after the fact: the hunt keeps terms, requirements, verdicts.
   - Every term runs in every circle; town searches rest (links inactive, finds stay).
   - Removing the corridor brings the town searches back.

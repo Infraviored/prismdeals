@@ -18,6 +18,7 @@ import re
 import sqlite3
 import sys
 
+import citations
 import claims
 import db_schema
 import profiles
@@ -176,7 +177,6 @@ def cmd_brief(args):
 
     if not what_to_know:
         # Default questions from profile
-        headings = getattr(profile, "research_headings", ())
         name = campaign["name"] or node_key
         what_to_know = [
             f"Bekannte Schwachstellen und typische Schäden bei {name}",
@@ -204,6 +204,18 @@ def cmd_brief(args):
     return 0
 
 
+# Remarks of the research AI about the task, not about the product.
+_META = re.compile(
+    r"(Einordnung der Vorgaben|deine[rn]? (ausdrücklichen )?Vorgabe|wie gewünscht|"
+    r"ich nenne|nenne ich|hier deine Erkenntnisse)",
+    re.IGNORECASE,
+)
+_BULLET = re.compile(r"^(?:[-*•]\s+|\d{1,2}[.)]\s+)")
+# A paragraph that opens with a bold label is a fact of its own:
+# "**Honda SC57 – Lichtmaschine:** Besonders für 2004/05 …".
+_LABELLED = re.compile(r"^\*\*[^*]{3,80}:?\*\*")
+
+
 def _fallback_parse_answer(text):
     """Heuristic fallback to extract claims when LLM is unavailable."""
     found = []
@@ -225,8 +237,6 @@ def _fallback_parse_answer(text):
         "einsatz": "benchmark",
     }
 
-    url_re = re.compile(r"https?://[^\s\"')>]+", re.IGNORECASE)
-
     for line in text.splitlines():
         line = line.strip()
         if not line:
@@ -239,29 +249,30 @@ def _fallback_parse_answer(text):
                     break
             continue
 
-        if line.startswith(("-", "*", "•")) or (
-            line[0].isdigit() and line[1:3] in (". ", ") ")
-        ):
-            stmt = re.sub(r"^[-*•\d.)\s]+", "", line).strip()
-            urls = url_re.findall(stmt)
-            # Remove URLs from statement body for readability
-            clean_stmt = url_re.sub("", stmt).strip().rstrip("(: -")
-            if not clean_stmt and urls:
-                clean_stmt = stmt
-            if clean_stmt:
-                weight = "costly" if current_kind == "weakness" else "minor"
-                found.append(
-                    {
-                        "kind": current_kind,
-                        "statement": clean_stmt,
-                        "check_path": "text"
-                        if current_kind in ("warning_sign", "seller_question")
-                        else "on_site",
-                        "weight": weight,
-                        "sources": urls,
-                        "unsourced": len(urls) == 0,
-                    }
-                )
+        # "**Bold**" at the start of a line is not a bullet: only "- ", "* ",
+        # "• ", "3. " start one, or a paragraph opened by a bold label.
+        if not (_BULLET.match(line) or _LABELLED.match(line)):
+            continue
+        stmt = _BULLET.sub("", line).strip()
+        if _META.search(stmt):
+            continue
+        urls = citations.urls_in(stmt)
+        clean_stmt = citations.clean_statement(stmt)
+        if not clean_stmt:
+            continue
+        weight = "costly" if current_kind == "weakness" else "minor"
+        found.append(
+            {
+                "kind": current_kind,
+                "statement": clean_stmt,
+                "check_path": "text"
+                if current_kind in ("warning_sign", "seller_question")
+                else "on_site",
+                "weight": weight,
+                "sources": urls,
+                "unsourced": len(urls) == 0,
+            }
+        )
     return found
 
 
@@ -277,12 +288,18 @@ def cmd_classify(args):
         print(json.dumps({"error": "No answer text provided via stdin or --text"}))
         return 1
 
+    # Footnotes ("[1][5]" and a list at the end) become the URLs they stand
+    # for, so every sentence carries its own sources into either reader.
+    raw_text = citations.resolve(raw_text)
+
     parsed_claims = []
     if not args.no_llm:
         classify_prompt = research_bridge.build_classify_prompt(
             raw_text, node_key, profile
         )
-        resp_text = _try_llm_call(classify_prompt, max_tokens=3000)
+        # Seventeen facts with URLs do not fit in 3000 tokens; the cut-off
+        # reply failed to parse and the line splitter took over.
+        resp_text = _try_llm_call(classify_prompt, max_tokens=8000)
         if resp_text:
             parsed_claims = research_bridge.parse_classify_response(resp_text)
 
@@ -296,7 +313,10 @@ def cmd_classify(args):
 
             checker = dossiers.default_url_checker()
         except Exception:
-            checker = lambda u: True
+
+            def checker(_url):
+                return True
+
         parsed_claims, _ = claims.verify_sources(parsed_claims, checker)
 
     # Insert proposed claims into database

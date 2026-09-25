@@ -128,8 +128,16 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
 
   const { selectedListing, openListing, openPartial } = useLinkedListing(listings, campaign?.id ?? null);
 
+  // A link can open a sheet (?sheet=requirements, ?sheet=knowledge), also
+  // when only the part after # changes and the page does not reload.
   useEffect(() => {
-    if (/[?&]sheet=requirements/.test(window.location.hash)) setRequirementsOpen(true);
+    const openFromHash = () => {
+      if (/[?&]sheet=requirements/.test(window.location.hash)) setRequirementsOpen(true);
+      if (/[?&]sheet=knowledge/.test(window.location.hash)) setKnowledgeOpen(true);
+    };
+    openFromHash();
+    window.addEventListener('hashchange', openFromHash);
+    return () => window.removeEventListener('hashchange', openFromHash);
   }, []);
 
   // Every listing of the tab when the family sends its pins; otherwise what
