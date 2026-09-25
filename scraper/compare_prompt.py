@@ -202,6 +202,12 @@ def parse_compare_response(
                     c.get("title", ""),
                     c.get("detailed_description", ""),
                     c.get("short_description", ""),
+                    # The page attributes are in the prompt, so quotes from them count.
+                    *(
+                        f"{k}: {v}"
+                        for k, v in (c.get("details") or {}).items()
+                        if isinstance(c.get("details"), dict)
+                    ),
                 ],
             )
         )

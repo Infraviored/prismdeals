@@ -331,3 +331,22 @@ def test_merging_a_targeted_node_moves_the_hunt_with_it(conn):
         ).fetchone()[0]
         == 1
     )
+
+
+def test_an_in_condition_on_a_site_filter_narrows_the_crawl(conn):
+    doc = _doc(
+        targets=[{"typed": "Honda CBR 1000 RR SC59"}],
+        conditions=[
+            {
+                "label": "Getriebe",
+                "op": "in",
+                "value": ["Manuell"],
+                "importance": "must",
+            }
+        ],
+    )
+    cid = hunts.save(conn, doc, ask=_answers)
+    ((url,),) = conn.execute(
+        "SELECT url FROM searches WHERE campaign_id = ?", (cid,)
+    ).fetchall()
+    assert "+motorraeder_roller.shift_s:manuell" in url

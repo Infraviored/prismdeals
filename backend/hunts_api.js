@@ -305,7 +305,7 @@ module.exports = (query, get) => {
   router.post('/api/hunts/draft', async (req, res) => {
     const text = String((req.body || {}).text || '').trim();
     if (!text) return res.status(400).json({ error: 'Was wird gesucht?' });
-    const result = await graph(['draft', text]);
+    const result = await graph(['draft', '--', text]);
     res.status(result.status).json(result.body);
   });
 

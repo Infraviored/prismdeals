@@ -120,19 +120,26 @@ def year_of(facts):
 def by_years(conn, node_id, year):
     """The one generation below `node_id` whose years hold `year`, or None.
 
-    A first registration never precedes the build year but may follow it: the
-    range is [from, to + 1], with no slack below.
+    The generation whose own years hold it wins; only when none does, a first
+    registration one year after the last build year counts (a late SC57 in
+    2008 is still an SC57 when no SC59 was built that year).
     """
     if year is None:
         return None
-    fits = [
-        c["id"]
+    generations = [
+        c
         for c in store.children(conn, node_id)
-        if c["kind"] == "generation"
-        and c["years_from"]
-        and c["years_from"] <= year <= (c["years_to"] or c["years_from"]) + 1
+        if c["kind"] == "generation" and c["years_from"]
     ]
-    return fits[0] if len(fits) == 1 else None
+    for slack in (0, 1):
+        fits = [
+            c["id"]
+            for c in generations
+            if c["years_from"] <= year <= (c["years_to"] or c["years_from"]) + slack
+        ]
+        if fits:
+            return fits[0] if len(fits) == 1 else None
+    return None
 
 
 def resolve(conn, listing, prior=()):

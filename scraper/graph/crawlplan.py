@@ -33,8 +33,8 @@ def plan(conn, campaign_id=None, now=None):
               FROM searches s
               JOIN search_family_searches sfs ON sfs.search_id = s.id AND sfs.active = 1
               JOIN search_families f ON f.id = sfs.family_id AND f.enabled = 1
-              JOIN hunt_targets t ON t.campaign_id = f.campaign_id AND t.position = 0
-             WHERE s.enabled = 1 {"AND f.campaign_id = ?" if campaign_id is not None else ""}
+             WHERE s.enabled = 1
+               AND EXISTS (SELECT 1 FROM hunt_targets t WHERE t.campaign_id = f.campaign_id) {"AND f.campaign_id = ?" if campaign_id is not None else ""}
              GROUP BY s.id""",
         (campaign_id,) if campaign_id is not None else (),
     ).fetchall()

@@ -134,10 +134,12 @@ def _site_filters(conn, conditions, target_ids):
             low = c["value"] if c["op"] == "min" else ""
             high = c["value"] if c["op"] == "max" else ""
             out.append(f"{key}:{_num(low)},{_num(high)}")
-        elif c["op"] == "eq":
-            value = _option_value(attrs[0], c["value"])
-            if value:
-                out.append(f"{key}:{value}")
+        elif c["op"] in ("eq", "in"):
+            # The same key twice means "either of these" to the site.
+            wanted = c["value"] if c["op"] == "in" else [c["value"]]
+            values = [_option_value(attrs[0], w) for w in wanted]
+            if all(values):
+                out += [f"{key}:{v}" for v in values]
     return out
 
 
@@ -283,6 +285,15 @@ def save(conn, doc, campaign_id=None, ask=llm.ask_json):
     return campaign_id
 
 
+def _single(condition):
+    """The one value an "eq" or a one-element "in" condition asks for."""
+    if condition["op"] == "eq":
+        return str(condition["value"])
+    if condition["op"] == "in" and len(condition["value"]) == 1:
+        return str(condition["value"][0])
+    return None
+
+
 def _art_of(conn, node_id, conditions):
     """The "Art" a must condition selects that names this class of goods."""
     node = store.node(conn, node_id)
@@ -292,12 +303,12 @@ def _art_of(conn, node_id, conditions):
     for c in conditions:
         if (
             c["attr_id"] == "art"
-            and c["op"] == "eq"
             and c["importance"] == "must"
             and c["node_id"] in (None, node_id)
-            and store.same_goods(node["name"], str(c["value"]))
+            and _single(c) is not None
+            and store.same_goods(node["name"], _single(c))
         ):
-            return str(c["value"])
+            return _single(c)
     return None
 
 

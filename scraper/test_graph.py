@@ -219,8 +219,9 @@ def test_a_searching_target_counts_as_its_brand(bikes):
     assert _key(conn, facts.process(conn, "e", prior=[target])) == "yamaha/r1"
 
 
-def test_a_year_on_the_border_of_two_generations_decides_nothing(bikes):
-    """ "Juli 2007" can be a late RN12 or an early RN19."""
+def test_a_year_names_the_generation_built_then_and_only_then_the_one_before(bikes):
+    """2007: the RN19's own first year, not a late RN12. 2025: no R1 was built
+    then, so a registration one year after the RN49 is an RN49."""
     conn, _ = bikes
     model = store.node(
         conn,
@@ -230,8 +231,16 @@ def test_a_year_on_the_border_of_two_generations_decides_nothing(bikes):
     )
     from graph import resolve
 
-    assert resolve.by_years(conn, model["id"], 2007) is None
-    assert store.node(conn, resolve.by_years(conn, model["id"], 2005))["name"] == "RN12"
+    name = lambda y: store.node(conn, resolve.by_years(conn, model["id"], y))["name"]  # noqa: E731
+    assert name(2007) == "RN19"
+    assert name(2005) == "RN12"
+    assert name(2015) == "RN22"
+
+
+def test_a_number_is_read_after_a_long_label():
+    from graph.numbers import read_number
+
+    assert read_number("arbeitsspeicher: 32 gb, ssd 1 tb", "Arbeitsspeicher GB") == 32
 
 
 def test_title_keys_glue_words_but_never_across_punctuation():

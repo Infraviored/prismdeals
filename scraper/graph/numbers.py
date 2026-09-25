@@ -82,8 +82,13 @@ def read_number(text, label):
     ]
     if not hits:
         return None
+    # Measured from either end of the label's word: "Arbeitsspeicher: 32 GB"
+    # has its number 18 characters after the word starts, 2 after it ends.
     anchors = [
-        m.start() for w in label_words(label) for m in re.finditer(re.escape(w), text)
+        edge
+        for w in label_words(label)
+        for m in re.finditer(re.escape(w), text)
+        for edge in (m.start(), m.end())
     ]
     if not anchors:
         return hits[0][1]
