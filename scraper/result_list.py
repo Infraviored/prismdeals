@@ -45,11 +45,15 @@ ADID_RE = re.compile(r'data-adid="(\d+)"')
 HREF_RE = re.compile(r'data-href="([^"]+)"')
 LD_JSON_RE = re.compile(r'<script type="application/ld\+json">(.*?)</script>', re.S)
 TOTAL_RE = re.compile(r"([\d.]+)\s+Ergebnisse?")
+# Category searches say "1 - 25 von 139 gebrauchte Notebooks" instead, measured
+# 2026-09-25; only keyword-only searches still print "21 Ergebnisse".
+RANGE_TOTAL_RE = re.compile(r"\d+\s*-\s*\d+\s+von\s+([\d.]+)")
 
 # "<title> <Bundesland> - <Ort> Vorschau" — the state name anchors the split, so
 # a title that itself contains a hyphen cannot be mistaken for the location. The
 # names come from geo so this pattern and the gazetteer cannot drift apart;
 # longest-first, or "Sachsen" would match the start of "Sachsen-Anhalt".
+PLZ_TOWN_RE = re.compile(r">\s*(\d{5})\s+([^<]{2,60}?)\s*<")
 ALT_LOCATION_RE = re.compile(
     r'alt="[^"]*?\b('
     + "|".join(sorted(map(re.escape, geo.FEDERAL_STATES), key=len, reverse=True))
@@ -144,7 +148,7 @@ def result_list_html(page_html):
 
 def total_results(page_html):
     """The count the site reports, or None."""
-    match = TOTAL_RE.search(page_html)
+    match = RANGE_TOTAL_RE.search(page_html) or TOTAL_RE.search(page_html)
     if not match:
         return None
     return int(match.group(1).replace(".", ""))
@@ -185,12 +189,20 @@ def parse(page_html):
         title, description = _title_and_description(segment)
 
         location, state = None, None
+        # Every card prints "85238 Petershausen"; the code places it on a map.
+        plz = PLZ_TOWN_RE.search(segment)
         match = ALT_LOCATION_RE.search(segment)
         if match:
             state, location = (
                 clean_text(match.group(1)),
                 clean_text(match.group(2)),
             )
+        else:
+            # Some cards name the district, not the state, in the alt text
+            # ("Kr. Dachau - Petershausen"): the card's own "85238 Petershausen"
+            # still names the town. Without this the row said "Ohne Ort".
+            if plz:
+                location = clean_text(plz.group(2))
 
         image = None
         image_match = CARD_IMAGE_RE.search(segment)
@@ -220,6 +232,7 @@ def parse(page_html):
                 "image": image,
                 "location": location,
                 "state": state,
+                "postal_code": plz.group(1) if plz else None,
                 "source": "kleinanzeigen",
                 "source_id": adid,
             }
@@ -247,6 +260,7 @@ class CanonicalListing:
     source_id: Optional[str] = None
     place: Optional[str] = None
     state: Optional[str] = None
+    postal_code: Optional[str] = None
     detailed_description: str = ""
     # The card's own photograph. One is enough for a row and for a first look;
     # the rest arrive with the detail page, when there is a reason to fetch it.
@@ -267,6 +281,7 @@ class CanonicalListing:
             "location": self.location,
             "place": self.place,
             "state": self.state,
+            "postal_code": self.postal_code,
             "url": self.url,
             "short_description": self.short_description,
             "detailed_description": self.detailed_description,
@@ -320,6 +335,7 @@ def as_canonical(parsed) -> CanonicalListing:
         place=parsed.get("place") or parsed.get("location"),
         images=[parsed["image"]] if parsed.get("image") else [],
         state=state,
+        postal_code=parsed.get("postal_code"),
         url=parsed.get("url") or "",
         short_description=parsed.get("description")
         or parsed.get("short_description")

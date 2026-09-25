@@ -147,6 +147,7 @@ def test_compose_and_decompose_search_url():
         "max_price": None,
         "query": "drucker",
         "category": None,
+        "category_slug": None,
         "attributes": [],
     }
 
@@ -178,8 +179,54 @@ def test_compose_and_decompose_search_url():
         "max_price": 150,
         "query": "drucker",
         "category": None,
+        "category_slug": None,
         "attributes": [],
     }
+
+
+def test_urls_without_location_do_not_produce_bogus_location():
+    # Category only
+    cat_dec = search_url.decompose_search_url(
+        "https://www.kleinanzeigen.de/s-pc-zubehoer-software/k0c225"
+    )
+    assert cat_dec["location_slug"] is None
+    assert cat_dec["location_id"] is None
+    assert cat_dec["category"] == "225"
+    assert cat_dec["category_slug"] == "pc-zubehoer-software"
+    assert cat_dec["query"] is None
+
+    # Category with query
+    cat_q_dec = search_url.decompose_search_url(
+        "https://www.kleinanzeigen.de/s-pc-zubehoer-software/corsair/k0c225"
+    )
+    assert cat_q_dec["location_slug"] is None
+    assert cat_q_dec["location_id"] is None
+    assert cat_q_dec["category"] == "225"
+    assert cat_q_dec["category_slug"] == "pc-zubehoer-software"
+    assert cat_q_dec["query"] == "corsair"
+
+    # Query only (nationwide)
+    q_dec = search_url.decompose_search_url(
+        "https://www.kleinanzeigen.de/s-thinkpad-t14s/k0"
+    )
+    assert q_dec["location_slug"] is None
+    assert q_dec["location_id"] is None
+    assert q_dec["category"] is None
+    assert q_dec["query"] == "thinkpad-t14s"
+
+    # Compose without location does not use s-suchanfrage when query is given
+    comp_q = search_url.compose_search_url(query="thinkpad-t14s")
+    assert comp_q == "https://www.kleinanzeigen.de/s-thinkpad-t14s/k0"
+
+    # Compose without location with category slug and query
+    comp_cat = search_url.compose_search_url(
+        category_slug="pc-zubehoer-software",
+        category="225",
+        query="corsair",
+    )
+    assert (
+        comp_cat == "https://www.kleinanzeigen.de/s-pc-zubehoer-software/corsair/k0c225"
+    )
 
 
 # --- Category attribute filters -------------------------------------------

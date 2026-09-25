@@ -214,10 +214,10 @@ def with_price(url, min_price=None, max_price=None):
 
 
 def decompose_search_url(url):
-    """Decomposes a Kleinanzeigen search URL into its four constituent fields.
+    """Decomposes a Kleinanzeigen search URL into its constituent fields.
 
     Returns dict with location_slug, location_id, radius, min_price, max_price,
-    query, and category.
+    query, category, category_slug, and attributes.
     """
     parts = parse_tail(url)
     if not parts:
@@ -229,7 +229,7 @@ def decompose_search_url(url):
         return None
 
     root_seg = segments[0]
-    location_slug = root_seg[2:] if root_seg.startswith("s-") else root_seg
+    root_without_prefix = root_seg[2:] if root_seg.startswith("s-") else root_seg
 
     price = parse_price(url)
 
@@ -243,32 +243,65 @@ def decompose_search_url(url):
     loc_id = parts["location"].lstrip("l") if parts.get("location") else None
     cat_id = parts["category"].lstrip("c") if parts.get("category") else None
 
+    location_slug = None
+    category_slug = None
+
+    if loc_id:
+        location_slug = (
+            None if root_without_prefix == "suchanfrage" else root_without_prefix
+        )
+    else:
+        if cat_id:
+            category_slug = root_without_prefix
+        elif not query and root_without_prefix != "suchanfrage" and ":" not in root_seg:
+            query = root_without_prefix
+
     return {
         "location_slug": location_slug,
         "location_id": loc_id,
-        "radius": parts.get("radius"),
+        "radius": parts.get("radius") if loc_id else None,
         "min_price": price["min"] if price else None,
         "max_price": price["max"] if price else None,
         "query": query,
         "category": cat_id,
+        "category_slug": category_slug,
         "attributes": parts.get("attributes") or [],
     }
 
 
 def compose_search_url(
-    location_slug,
-    location_id,
+    location_slug=None,
+    location_id=None,
     radius=None,
     min_price=None,
     max_price=None,
     query=None,
     category=None,
+    category_slug=None,
     attributes=None,
     origin="https://www.kleinanzeigen.de",
 ):
-    """Constructs a canonical Kleinanzeigen search URL from the four composer fields."""
-    clean_slug = slugify(location_slug) if location_slug else "suchanfrage"
-    root = clean_slug if clean_slug.startswith("s-") else f"s-{clean_slug}"
+    """Constructs a canonical Kleinanzeigen search URL from the composer fields."""
+    clean_loc = slugify(location_slug) if location_slug else None
+    clean_q = slugify(query) if query else None
+    clean_cat = slugify(category_slug) if category_slug else None
+
+    has_location = bool(location_id or (clean_loc and clean_loc != "suchanfrage"))
+
+    query_in_path = None
+    if has_location and clean_loc:
+        root = clean_loc if clean_loc.startswith("s-") else f"s-{clean_loc}"
+        query_in_path = clean_q
+    elif clean_cat:
+        root = clean_cat if clean_cat.startswith("s-") else f"s-{clean_cat}"
+        query_in_path = clean_q
+    elif clean_q:
+        root = clean_q if clean_q.startswith("s-") else f"s-{clean_q}"
+        query_in_path = None
+    else:
+        root = "s-suchanfrage"
+        query_in_path = None
+
     segments = ["", root]
 
     p_min = (
@@ -286,17 +319,15 @@ def compose_search_url(
         s_max = str(p_max) if p_max is not None else ""
         segments.append(f"preis:{s_min}:{s_max}")
 
-    if query:
-        q_slug = slugify(query)
-        if q_slug:
-            segments.append(q_slug)
+    if query_in_path:
+        segments.append(query_in_path)
 
     kw = "k0"
     cat = f"c{category}" if category else ""
-    loc = f"l{str(location_id).lstrip('l')}" if location_id else ""
+    loc = f"l{str(location_id).lstrip('l')}" if (has_location and location_id) else ""
     rad = (
         f"r{int(round(float(radius)))}"
-        if radius is not None and str(radius).strip() != ""
+        if (has_location and radius is not None and str(radius).strip() != "")
         else ""
     )
     attrs = "".join(f"+{a}" for a in (attributes or []) if a)
@@ -305,3 +336,56 @@ def compose_search_url(
 
     path = "/".join(segments)
     return f"{origin.rstrip('/')}{path}"
+
+
+def with_page(url, page):
+    """Result page `page` of a search URL: `/seite:N/` after the first path part.
+
+    The crawler (`scraper.scrape_listings_requests`) has always built page two
+    this way; the probe used to insert it elsewhere.
+    """
+    if page <= 1:
+        return url
+    if "/seite:" in url:
+        return re.sub(r"/seite:\d+(/|$)", f"/seite:{page}\\1", url)
+    parts = url.split("/")
+    if len(parts) < 4:
+        return url
+    rest = "/".join(parts[4:]) if len(parts) > 4 else ""
+    return f"{'/'.join(parts[:3])}/{parts[3]}/seite:{page}/{rest}"
+
+
+def for_hunt(
+    category_code=None,
+    query=None,
+    price=None,
+    location_id=None,
+    radius_km=None,
+    attributes=None,
+):
+    """A search URL from a hunt's frame, with the category's own path slug.
+
+    The slug is cosmetic (the site answers `/s-oled-laptop/k0c278` and
+    `/s-notebooks/oled-laptop/k0c278` alike, measured). What mattered is the
+    radius: a place without one is that town only (Vilgertshofen: 11 offers
+    instead of 56 257), which made every probe count nothing.
+    """
+    from intent_taxonomy import find_category
+
+    price = price or {}
+    category = str(category_code or "").lstrip("c") or None
+    known = find_category(category) if category else None
+    # No radius means no limit: a location without a radius is that one town
+    # only, which answered "0 laptops" for all of Germany.
+    if radius_km in (None, "", 0):
+        location_id = None
+    return compose_search_url(
+        location_id=location_id,
+        radius=radius_km,
+        min_price=price.get("min"),
+        max_price=price.get("max"),
+        query=query,
+        category=category,
+        category_slug=(known or {}).get("slug") or "suchanfrage",
+        attributes=attributes or [],
+    )

@@ -9,9 +9,44 @@
 
 const express = require('express');
 const path = require('path');
+const { findPython } = require('./python');
 const { spawn } = require('child_process');
 
 const router = express.Router();
+
+
+/**
+ * Judges every search of a campaign with the free stages, then starts the
+ * comparison. The one path after anything that changes what a hunt sees or
+ * wants: a finished crawl (server-side, app open or not) and saved
+ * requirements (no crawl -- Kleinanzeigen is not asked again for that).
+ */
+async function judgeCampaignWith(query, judgeOne, campaignId) {
+  const searches = await query('SELECT id FROM searches WHERE campaign_id = ? AND enabled = 1', [campaignId]);
+  if (searches.length === 0) {
+    return { status: 404, body: { error: 'No searches in this campaign' } };
+  }
+  const totals = { fit: 0, unclear: 0, no: 0 };
+  const problems = [];
+  for (const search of searches) {
+    const result = await judgeOne(search.id);
+    if (result.error) {
+      problems.push({ search_id: search.id, error: result.error });
+      continue;
+    }
+    for (const key of Object.keys(totals)) totals[key] += result[key] || 0;
+  }
+  // The comparison reads the verdicts, so it starts after them.
+  require('./compare_api').startCompare(campaignId);
+  // A campaign whose searches have no requirements yet is not a failure to
+  // hide: it is the one thing the buyer has to do.
+  if (problems.length === searches.length) {
+    return { status: 400, body: { error: problems[0].error, problems } };
+  }
+  return { body: { success: true, counts: totals, problems } };
+}
+
+let judgeCampaign = async () => ({ status: 503, body: { error: 'not ready' } });
 
 module.exports = (query, get) => {
   // What the free stages make of every listing in a search. No model is called
@@ -19,9 +54,14 @@ module.exports = (query, get) => {
   // words, and the model is left for the handful that stay unclear.
   function judgeOne(searchId) {
     return new Promise(resolve => {
-      const python = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+      const python = findPython();
       const script = path.join(__dirname, '..', 'scraper', 'judge_cli.py');
       const child = spawn(python, [script, String(searchId)]);
+
+      child.on('error', err => {
+        console.error('Failed to spawn python for judge:', err.message);
+        resolve({ error: 'failed' });
+      });
 
       let out = '';
       let err = '';
@@ -42,46 +82,51 @@ module.exports = (query, get) => {
     });
   }
 
+  // Express 4 does not catch a rejected async handler, and on this Node an
+  // unhandled rejection ends the process: a busy database would take the API.
   router.post('/api/searches/:id/judge', async (req, res) => {
-    const search = await get('SELECT id FROM searches WHERE id = ?', [req.params.id]);
-    if (!search) return res.status(404).json({ error: 'Unknown search' });
-    const result = await judgeOne(req.params.id);
-    if (result.error) return res.status(400).json(result);
-    res.json({ success: true, counts: result });
+    try {
+      const search = await get('SELECT id FROM searches WHERE id = ?', [req.params.id]);
+      if (!search) return res.status(404).json({ error: 'Unknown search' });
+      const result = await judgeOne(req.params.id);
+      if (result.error) return res.status(400).json(result);
+      res.json({ success: true, counts: result });
+    } catch (error) {
+      console.error('Judging a search failed:', error);
+      res.status(500).json({ error: 'Judging failed' });
+    }
   });
 
   // A campaign is what the results screen shows, and it can hold several
   // searches -- a family expands to one per model per place. Judging by
   // campaign is therefore the button the screen can actually offer.
   router.post('/api/campaigns/:id/judge', async (req, res) => {
-    const searches = await query('SELECT id FROM searches WHERE campaign_id = ?', [req.params.id]);
-    if (searches.length === 0) return res.status(404).json({ error: 'No searches in this campaign' });
-
-    const totals = { fit: 0, unclear: 0, no: 0 };
-    const problems = [];
-    for (const search of searches) {
-      const result = await judgeOne(search.id);
-      if (result.error) {
-        problems.push({ search_id: search.id, error: result.error });
-        continue;
-      }
-      for (const key of Object.keys(totals)) totals[key] += result[key] || 0;
+    try {
+      const result = await judgeCampaign(Number(req.params.id));
+      if (result.status) return res.status(result.status).json(result.body);
+      res.json(result.body);
+    } catch (error) {
+      console.error('Judging a campaign failed:', error);
+      res.status(500).json({ error: 'Judging failed' });
     }
-
-    // A campaign whose searches have no requirements yet is not a failure to
-    // hide: it is the one thing the buyer has to do.
-    if (problems.length === searches.length) {
-      return res.status(400).json({ error: problems[0].error, problems });
-    }
-    res.json({ success: true, counts: totals, problems });
   });
 
   router.get('/api/searches/:id/fit', async (req, res) => {
     try {
       const rows = await query(
         `SELECT listing_id, verdict, reason, facts_json, stage, judged_at
-           FROM listing_fit WHERE search_id = ?`,
-        [req.params.id]
+           FROM (
+             SELECT listing_id, verdict, reason, facts_json, stage, judged_at,
+                    ROW_NUMBER() OVER (PARTITION BY listing_id ORDER BY judged_at DESC) AS rn
+               FROM listing_fit
+              WHERE (requirements_hash IS NOT NULL AND requirements_hash = (
+                       SELECT ks.requirements_hash FROM searches s_rh
+                       JOIN knowledge_sets ks ON ks.id = s_rh.knowledge_set_id
+                       WHERE s_rh.id = ?
+                     ))
+                 OR (requirements_hash IS NULL AND search_id = ?)
+           ) WHERE rn = 1`,
+        [req.params.id, req.params.id]
       );
       res.json({
         fit: rows.map(r => ({
@@ -101,5 +146,8 @@ module.exports = (query, get) => {
     }
   });
 
+  judgeCampaign = campaignId => judgeCampaignWith(query, judgeOne, campaignId);
   return router;
 };
+
+module.exports.judgeCampaign = campaignId => judgeCampaign(campaignId);

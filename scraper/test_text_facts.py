@@ -143,3 +143,29 @@ def test_the_reading_patterns_never_reach_a_model():
 
     # And the playbook itself keeps them, because the reader needs them.
     assert any("text_patterns" in f for f in MEMORY["fields"])
+
+
+HEILIGENHAUS = """32GB Corsair Vengeance LPX DDR4 RAM Arbeitsspeicher
+Ich verkaufe hier zwei Arbeitsspeicher-Module aus der Vengeance LPX Serie von Corsair.
+- 2 Stück RAM-Module je 16GB
+- Typ: DDR4
+Die Riegel sind in einem sehr guten Zustand."""
+
+
+def test_sticks_and_size_written_out_in_words_are_read():
+    # Listing 3507841883: the kit was judged unclear because "2 Stück
+    # RAM-Module je 16GB" was not recognised as two sticks of 16 GB.
+    facts = text_facts.read(MEMORY, HEILIGENHAUS)
+    assert facts["stickCount"] == 2
+    assert facts["gbPerStick"] == 16
+    assert text_facts.read(MEMORY, "zwei Riegel à 16 GB, DDR4")["stickCount"] == 2
+
+
+def test_unclear_says_what_is_missing_first():
+    # The stored reason keeps the first three entries; "DDR4; DIMM; kein
+    # Defekt" under "unclear" said nothing about why.
+    v, _, reasons = text_facts.judge(MEMORY, WANTS, HEILIGENHAUS)
+    assert v == "unclear"
+    assert reasons[0].endswith("nicht angegeben")
+    assert any("Takt" in r for r in reasons[:2])
+    assert any("Latenz" in r for r in reasons[:2])

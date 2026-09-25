@@ -19,6 +19,8 @@
  * docs/ROADMAP.md requires of scoring.
  */
 
+const { fitJoinOn } = require('./requirements_hash');
+
 // How often the accent may fire. Measured against the stored 1,266 listings:
 // "20 % under the median" marked 35 % of every list, and a colour a third of
 // the rows wear says nothing. The cheapest twentieth of a search marks 75 of
@@ -83,9 +85,11 @@ async function referencePrices(query, searchIds) {
                MAX(1, CAST(COUNT(*) OVER (PARTITION BY lsh.search_id) * ${DEAL_PERCENTILE} AS INTEGER)) AS cheap_rn
           FROM listing_search_hits lsh
           JOIN listings l ON l.id = lsh.listing_id
+          LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 'lsh.search_id')}
          WHERE lsh.search_id IN (${placeholders})
            AND l.price_eur IS NOT NULL
            AND l.price_eur > 0
+           AND (fit.verdict IS NULL OR fit.verdict <> 'no')
       )
      GROUP BY search_id
   `;
@@ -110,28 +114,72 @@ async function referencePrices(query, searchIds) {
  * the "deals only" filter had selected then rendered with no coral and no
  * saving, because it was re-judged against a different search's market.
  */
-async function annotateDeals(query, listings) {
+async function annotateDeals(query, listings, scopeSearchIds = null) {
   if (listings.length === 0) return listings;
+  if (Array.isArray(scopeSearchIds) && scopeSearchIds.length === 0) {
+    for (const l of listings) {
+      l.is_deal = false;
+      l.price_delta_eur = null;
+    }
+    return listings;
+  }
+
+  const scopeSet = scopeSearchIds ? new Set(scopeSearchIds.map(Number)) : null;
 
   const searchesByListing = new Map();
   const addSearch = (listingId, searchId) => {
     if (!searchId) return;
+    const numId = Number(searchId);
+    if (scopeSet && !scopeSet.has(numId)) return;
     const key = String(listingId);
     if (!searchesByListing.has(key)) searchesByListing.set(key, new Set());
-    searchesByListing.get(key).add(Number(searchId));
+    searchesByListing.get(key).add(numId);
   };
-  for (const listing of listings) addSearch(listing.id, listing.search_id);
 
   const ids = listings.map(l => String(l.id));
   const CHUNK_SIZE = 500;
   for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
     const chunk = ids.slice(i, i + CHUNK_SIZE);
-    const hits = await query(
-      `SELECT listing_id, search_id FROM listing_search_hits
-        WHERE listing_id IN (${chunk.map(() => '?').join(',')})`,
-      chunk
-    );
+    let hitsSql = `
+      SELECT lsh.listing_id, lsh.search_id
+        FROM listing_search_hits lsh
+        LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'lsh.search_id')}
+       WHERE lsh.listing_id IN (${chunk.map(() => '?').join(',')})
+         AND (fit.verdict IS NULL OR fit.verdict <> 'no')
+    `;
+    const params = [...chunk];
+    if (scopeSet) {
+      const scopeArr = [...scopeSet];
+      hitsSql += ` AND lsh.search_id IN (${scopeArr.map(() => '?').join(',')})`;
+      params.push(...scopeArr);
+    }
+    const hits = await query(hitsSql, params);
     for (const hit of hits) addSearch(hit.listing_id, hit.search_id);
+  }
+
+  // Fallback for listings that have no search hits in listing_search_hits but have listing.search_id:
+  // only if not rejected in listing_fit for that search_id.
+  const missing = listings.filter(
+    l => !searchesByListing.has(String(l.id)) && l.search_id && (!scopeSet || scopeSet.has(Number(l.search_id)))
+  );
+  if (missing.length > 0) {
+    const missingIds = missing.map(l => String(l.id));
+    // Every chunk's verdicts are read before any listing is judged by them.
+    const rejectedPairs = new Set();
+    for (let i = 0; i < missingIds.length; i += CHUNK_SIZE) {
+      const chunk = missingIds.slice(i, i + CHUNK_SIZE);
+      const rejected = await query(
+        `SELECT listing_id, search_id FROM listing_fit
+          WHERE verdict = 'no' AND listing_id IN (${chunk.map(() => '?').join(',')})`,
+        chunk
+      );
+      for (const r of rejected) rejectedPairs.add(`${r.listing_id}:${r.search_id}`);
+    }
+    for (const listing of missing) {
+      if (!rejectedPairs.has(`${listing.id}:${listing.search_id}`)) {
+        addSearch(listing.id, listing.search_id);
+      }
+    }
   }
 
   const searchIds = [...new Set([...searchesByListing.values()].flatMap(set => [...set]))];
@@ -139,8 +187,11 @@ async function annotateDeals(query, listings) {
 
   for (const listing of listings) {
     let best = { isDeal: false, delta: null };
+    let median = null;
     for (const searchId of searchesByListing.get(String(listing.id)) || []) {
-      const verdict = judge(listing.price_eur, references.get(searchId));
+      const ref = references.get(searchId);
+      if (ref && median === null) median = ref.median;
+      const verdict = judge(listing.price_eur, ref);
       // A deal beats a non-deal; between two of either, the larger saving.
       const better =
         (verdict.isDeal && !best.isDeal) ||
@@ -149,6 +200,8 @@ async function annotateDeals(query, listings) {
     }
     listing.is_deal = best.isDeal;
     listing.price_delta_eur = best.delta;
+    // The usual price this listing was judged against; the score weighs value by it.
+    listing.market_median = median;
   }
   return listings;
 }
@@ -179,9 +232,11 @@ async function dealListingIds(query, searchIds) {
     `SELECT DISTINCT lsh.search_id AS search_id, l.id AS id, l.price_eur AS price_eur
        FROM listing_search_hits lsh
        JOIN listings l ON l.id = lsh.listing_id
+       LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 'lsh.search_id')}
       WHERE lsh.search_id IN (${searchIdList.map(() => '?').join(',')})
         AND l.price_eur IS NOT NULL
-        AND l.price_eur > 0`,
+        AND l.price_eur > 0
+        AND (fit.verdict IS NULL OR fit.verdict <> 'no')`,
     searchIdList
   );
 

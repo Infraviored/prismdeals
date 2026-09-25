@@ -58,6 +58,7 @@ describe('searchUrl utilities', () => {
       maxPrice: 150,
       query: 'drucker',
       category: null,
+      categorySlug: null,
       attributes: [],
     });
   });
@@ -86,6 +87,67 @@ describe('searchUrl utilities', () => {
     expect(composed).toBe(
       'https://www.kleinanzeigen.de/s-muenchen/preis::300/k0l6411r50'
     );
+  });
+
+  it('decomposes category-only URL without misidentifying category as location', () => {
+    const dec = decomposeSearchUrl('https://www.kleinanzeigen.de/s-pc-zubehoer-software/k0c225');
+    expect(dec).toEqual({
+      locationSlug: null,
+      locationId: null,
+      radius: null,
+      minPrice: null,
+      maxPrice: null,
+      query: null,
+      category: '225',
+      categorySlug: 'pc-zubehoer-software',
+      attributes: [],
+    });
+  });
+
+  it('decomposes category with query without misidentifying category as location', () => {
+    const dec = decomposeSearchUrl('https://www.kleinanzeigen.de/s-pc-zubehoer-software/corsair/k0c225');
+    expect(dec).toEqual({
+      locationSlug: null,
+      locationId: null,
+      radius: null,
+      minPrice: null,
+      maxPrice: null,
+      query: 'corsair',
+      category: '225',
+      categorySlug: 'pc-zubehoer-software',
+      attributes: [],
+    });
+  });
+
+  it('decomposes nationwide search without location without treating query as location', () => {
+    const dec = decomposeSearchUrl('https://www.kleinanzeigen.de/s-thinkpad-t14s/k0');
+    expect(dec).toEqual({
+      locationSlug: null,
+      locationId: null,
+      radius: null,
+      minPrice: null,
+      maxPrice: null,
+      query: 'thinkpad-t14s',
+      category: null,
+      categorySlug: null,
+      attributes: [],
+    });
+  });
+
+  it('composes search URL without location and without s-suchanfrage when query is provided', () => {
+    const composed = composeSearchUrl({
+      query: 'thinkpad-t14s',
+    });
+    expect(composed).toBe('https://www.kleinanzeigen.de/s-thinkpad-t14s/k0');
+  });
+
+  it('composes search URL without location with category slug and query', () => {
+    const composed = composeSearchUrl({
+      categorySlug: 'pc-zubehoer-software',
+      category: '225',
+      query: 'corsair',
+    });
+    expect(composed).toBe('https://www.kleinanzeigen.de/s-pc-zubehoer-software/corsair/k0c225');
   });
 });
 
@@ -171,5 +233,30 @@ describe('the search list reads a filtered URL', () => {
 
     expect(filtered).toBe(plain);
     expect(filtered).toContain('30 km');
+  });
+
+  it('writes no place without a radius: that would be one town only', () => {
+    const unlimited = composeSearchUrl({ locationSlug: 'vilgertshofen', locationId: '7074', radius: null, query: 'motorrad', category: '305' });
+    expect(unlimited).toBe('https://www.kleinanzeigen.de/s-motorrad/k0c305');
+    const limited = composeSearchUrl({ locationSlug: 'vilgertshofen', locationId: '7074', radius: 200, query: 'motorrad', category: '305' });
+    expect(limited).toBe('https://www.kleinanzeigen.de/s-vilgertshofen/motorrad/k0c305l7074r200');
+  });
+});
+
+describe('setup and edit compose the same URL', () => {
+  it('keeps "suchanfrage" as the root of a search without a place', () => {
+    const saved = 'https://www.kleinanzeigen.de/s-suchanfrage/preis::150/corsair-vengeance/k0c225';
+    const d = decomposeSearchUrl(saved)!;
+    const again = composeSearchUrl({
+      locationSlug: d.locationSlug,
+      locationId: d.locationId,
+      radius: null,
+      maxPrice: d.maxPrice,
+      query: 'corsair-vengeance',
+      category: d.category,
+      categorySlug: 'suchanfrage',
+      attributes: d.attributes,
+    });
+    expect(again).toBe(saved);
   });
 });

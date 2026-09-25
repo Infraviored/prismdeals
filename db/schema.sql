@@ -28,7 +28,10 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS campaigns (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT UNIQUE
+      name TEXT UNIQUE,
+      hunt_type TEXT,
+      profile_key TEXT,
+      intent_json TEXT
     );
 
 CREATE TABLE IF NOT EXISTS dossiers (
@@ -201,6 +204,10 @@ ALTER TABLE route_searches ADD COLUMN family_id INTEGER;
 
 ALTER TABLE route_search_circles ADD COLUMN family_id INTEGER;
 
+-- The card's postal code, apart from the printed place: it is what places a
+-- listing on the map, and the place text stays what the seller wrote.
+ALTER TABLE listings ADD COLUMN postal_code TEXT;
+
 -- Phase 0: Canonical source and source ID tracking.
 -- Quelle zuerst: listings.source mit Vorgabe 'kleinanzeigen' und source_id.
 ALTER TABLE listings ADD COLUMN source TEXT DEFAULT 'kleinanzeigen';
@@ -299,3 +306,195 @@ CREATE TABLE IF NOT EXISTS listing_price_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_price_history_listing ON listing_price_history(listing_id, seen_at);
+
+-- Tracking when a search was last successfully scraped.
+--
+-- A re-aimed family marks its old searches inactive (active = 0) and creates a
+-- new search for the new parameters. Until the new search runs its first crawl,
+-- the old search's listings and verdicts must stay visible in the campaign view
+-- so saving never looks like "everything was deleted".
+ALTER TABLE searches ADD COLUMN last_scraped_at TEXT;
+
+-- P1: Hunt engine model columns on campaigns
+
+-- Probe cache: raw HTML of fetched search pages, reusable within 6 hours.
+--
+-- Editing a hunt and re-probing costs nothing when URLs repeat.
+CREATE TABLE IF NOT EXISTS probe_cache (
+    url        TEXT PRIMARY KEY,
+    fetched_at TEXT NOT NULL,
+    status     INTEGER NOT NULL,
+    html_gz    BLOB NOT NULL
+);
+
+-- Search memory: terms probed per knowledge node, remembered for next time.
+--
+-- Written after every probe - read as extra seed terms next time for the same
+-- node (node = profile key until P7 gives real nodes).
+CREATE TABLE IF NOT EXISTS node_terms (
+    node_key      TEXT NOT NULL,
+    term          TEXT NOT NULL,
+    category_code TEXT,
+    total         INTEGER NOT NULL,
+    likely_share  REAL NOT NULL,
+    probed_at     TEXT NOT NULL,
+    PRIMARY KEY (node_key, term)
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_terms_key ON node_terms(node_key, probed_at DESC);
+
+-- Hunt engine campaign intent and profile tracking
+ALTER TABLE campaigns ADD COLUMN hunt_type TEXT;
+ALTER TABLE campaigns ADD COLUMN profile_key TEXT;
+ALTER TABLE campaigns ADD COLUMN intent_json TEXT;
+
+-- Model proposals for class hunts (package P5).
+--
+-- Caches candidate models proposed by the small model per class node for 30 days.
+-- Also tracks probe counts and title hits so the hallucination guard can drop
+-- models never seen in marketplace titles after two probes.
+CREATE TABLE IF NOT EXISTS class_models (
+    node_key    TEXT NOT NULL,
+    model       TEXT NOT NULL,
+    years       TEXT,
+    proposed_at TEXT NOT NULL,
+    probe_count INTEGER NOT NULL DEFAULT 0,
+    title_hits  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (node_key, model)
+);
+
+CREATE INDEX IF NOT EXISTS idx_class_models_node ON class_models(node_key);
+
+-- P6: comparative judging runs.
+--
+-- One row per complete comparison session. A session is 3 shuffled runs whose
+-- ranks are averaged, and the row records the merged result.  The requirements_hash
+-- and knowledge_hash let the code decide whether a cached run still applies
+-- after the buyer edits requirements or new research arrives.
+CREATE TABLE IF NOT EXISTS judge_runs (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id      INTEGER NOT NULL,
+    requirements_hash TEXT,
+    knowledge_hash   TEXT,
+    created_at       TEXT NOT NULL,
+    model            TEXT,
+    tokens_in        INTEGER,
+    tokens_out       INTEGER,
+    cost_eur         REAL,
+    duration_s       REAL,
+    candidate_count  INTEGER,
+    kendall_tau      REAL,
+    status           TEXT NOT NULL DEFAULT 'complete'
+);
+
+CREATE INDEX IF NOT EXISTS idx_judge_runs_campaign ON judge_runs(campaign_id, created_at DESC);
+
+-- What each must meant when a run judged it, as a JSON map id to buyer_wants.
+-- A judged state is applied only while the buyer still wants the same thing.
+ALTER TABLE judge_runs ADD COLUMN requirements_json TEXT;
+
+-- P6: per-listing rank from a comparative run.
+--
+-- Each listing that entered the candidate set gets one row per run. The rank is
+-- the mean across the 3 shuffled sub-runs, and a spread > 5 marks the listing
+-- uncertain.  musts_json, facts_json and questions_json carry the structured
+-- output the prompt returned, validated (quotes checked) before storage.
+CREATE TABLE IF NOT EXISTS listing_ranks (
+    run_id       INTEGER NOT NULL REFERENCES judge_runs(id) ON DELETE CASCADE,
+    listing_id   TEXT NOT NULL,
+    rank         INTEGER NOT NULL,
+    rank_of      INTEGER NOT NULL,
+    reason       TEXT,
+    musts_json   TEXT,
+    facts_json   TEXT,
+    questions_json TEXT,
+    same_as      TEXT,
+    uncertain    INTEGER NOT NULL DEFAULT 0,
+    spread       REAL,
+    PRIMARY KEY (run_id, listing_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_listing_ranks_listing ON listing_ranks(listing_id);
+
+-- P9: verdict per requirements version
+--
+-- A verdict is keyed by (listing, requirements hash) rather than by
+-- (listing, search).  Editing search terms creates new searches but the
+-- requirements are the same, so verdicts stay visible without re-judging.
+-- Editing musts changes the hash and the old verdicts no longer match.
+--
+-- The column is nullable so old rows survive the migration.  The backfill
+-- script (backend/migrations/p9_backfill.js) fills them in.
+ALTER TABLE listing_fit ADD COLUMN requirements_hash TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_listing_fit_reqhash ON listing_fit(requirements_hash, listing_id);
+
+-- Cached hash on the knowledge set itself, so readers can resolve it
+-- without re-parsing item_json at query time.
+ALTER TABLE knowledge_sets ADD COLUMN requirements_hash TEXT;
+
+-- P8: market node per listing
+--
+-- A listing's market node is the product identity that decides what "the usual
+-- price" means. A search for "Motorrad bis 7000 EUR" mixes 125cc and 1000cc
+-- bikes that live in different markets. A node like "motorrad/yamaha-r1"
+-- groups only R1 listings so the median is meaningful.
+--
+-- source tracks where the node came from: 'identity' (scraper/identity.py
+-- from fact_sheets), 'rank' (comparative judge run via listing_ranks.node),
+-- 'playbook' (playbook-specific node from RAM generation+capacity), or
+-- 'hunt' (fallback = the search/campaign itself)
+CREATE TABLE IF NOT EXISTS listing_nodes (
+    listing_id TEXT NOT NULL PRIMARY KEY,
+    node_key   TEXT NOT NULL,
+    source     TEXT NOT NULL DEFAULT 'hunt',
+    computed_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_listing_nodes_node ON listing_nodes(node_key);
+
+-- P7 may write a node into listing_ranks from the comparative call.
+-- If present at read time, P8 prefers it over its own assignment.
+ALTER TABLE listing_ranks ADD COLUMN node TEXT;
+
+-- P7: Knowledge claims per node.
+--
+-- A claim is one piece of product knowledge: a weakness, a check, a
+-- maintenance item or any of the other kinds listed below.  Each claim hangs
+-- at the highest node where it is true and inherits downward.  Claims are
+-- proposed by the research bridge and stored only after the buyer approves.
+--
+-- node_key is a path like motorrad/supersport/yamaha-r1/rn19.  Reading
+-- claims for a listing walks the path from leaf to root, nearest first.
+CREATE TABLE IF NOT EXISTS claims (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_key    TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    axis        TEXT,
+    statement   TEXT NOT NULL,
+    check_path  TEXT,
+    weight      TEXT,
+    sources     TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT,
+    approved    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_claims_node ON claims(node_key, approved);
+CREATE INDEX IF NOT EXISTS idx_claims_kind ON claims(kind);
+
+-- Which knowledge node the comparative call assigned to each listing.
+-- Nullable for runs that predate P7.
+ALTER TABLE listing_ranks ADD COLUMN node_key TEXT;
+
+-- Build years of a model generation ("Yamaha R1" "RN19" -> 2007 to 2008),
+-- asked once from the small model and kept. A model list naming a generation
+-- judges each offer's first registration against it.
+CREATE TABLE IF NOT EXISTS model_generations (
+    model      TEXT NOT NULL,
+    generation TEXT NOT NULL,
+    year_from  INTEGER,
+    year_to    INTEGER,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (model, generation)
+);

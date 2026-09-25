@@ -74,6 +74,19 @@ describe('FundeScreen', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      // A hunt's listings come from its family, corridor or not; the first
+      // page brings the pins and the corridor along.
+      if (url.includes('/api/search-families/5/listings')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            total: 3,
+            listings: mockRouteData.listings,
+            points: mockRouteData.listings.map(l => ({ ...l, lat: 48, lon: 11 })),
+            route: { origin: 'Landsberg', destination: 'Konstanz', half_width_km: 20, polyline: [] },
+          }),
+        });
+      }
       if (url.includes('/api/search-families/5')) {
         return Promise.resolve({
           ok: true,
@@ -142,7 +155,7 @@ describe('FundeScreen', () => {
 
     // The toggle moved into the filter sheet: seven controls did not fit across
     // 390 px, and the corridor pill rendered clipped as "rridor".
-    fireEvent.click(screen.getByText('Filter'));
+    fireEvent.click(screen.getAllByText('Filter')[0]);
     fireEvent.click(screen.getByText('Deals only'));
 
     await waitFor(() => {
@@ -181,6 +194,20 @@ describe('FundeScreen', () => {
             }),
         });
       }
+      if (url.includes('/overview')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              campaign_id: 1,
+              pots: { all: 0, fit: 0, unclear: 0, no: 0 },
+              last_crawled_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+              market: null,
+              requirements: [],
+              rejections: [],
+            }),
+        });
+      }
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ total: 0, listings: [] }),
@@ -189,18 +216,126 @@ describe('FundeScreen', () => {
 
     render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
 
-    expect(await screen.findByTestId('surface-empty-line')).toBeInTheDocument();
-    expect(screen.getByText('No matches within 30 km')).toBeInTheDocument();
-    expect(screen.getByText('50 km')).toBeInTheDocument();
-    expect(screen.getByText('100 km')).toBeInTheDocument();
+    // The printer case: a search that ran and found nothing says so, and
+    // offers the wider radii that would find something -- not "press fetch".
+    expect(await screen.findByText(/Searched .* nothing found/)).toBeInTheDocument();
+    expect(screen.getByText('Search 50 km')).toBeInTheDocument();
+    expect(screen.getByText('Search 100 km')).toBeInTheDocument();
+    expect(screen.getByText('Change search terms')).toBeInTheDocument();
+    expect(screen.queryByText(/Fetching listings starts it/)).not.toBeInTheDocument();
   });
 
-  it('toggles map view when clicking Map pill', async () => {
+  it('an empty match tab in a campaign with listings points to the unclear ones', async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/overview')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              campaign_id: 1,
+              pots: { all: 4, fit: 0, unclear: 4, no: 0 },
+              rejections: [],
+              market: null,
+              requirements: [],
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ total: 0, listings: [] }),
+      });
+    });
+
     render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
 
-    const mapPill = await screen.findByText('Map');
-    fireEvent.click(mapPill);
+    expect(await screen.findByText('Nothing matches for certain yet.')).toBeInTheDocument();
+    expect(screen.getByText('Show unclear')).toBeInTheDocument();
+    expect(screen.queryByText(/within \d+ km/)).not.toBeInTheDocument();
+  });
+
+  it('closes the list with a map of every find, without a toggle', async () => {
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
 
     expect(await screen.findByTestId('mock-route-corridor-map')).toBeInTheDocument();
+    // One request carries list, pins and corridor; the map asks for nothing.
+    const asked = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+      .map(c => String(c[0]));
+    expect(asked.some(u => u.includes('view=map') || u.includes('/route?'))).toBe(false);
+  });
+
+  it('orders by distance or score on the server, over the whole hunt', async () => {
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('Nearest'));
+    fireEvent.click(screen.getByText('Best rated'));
+    await waitFor(() => {
+      const asked = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+        .map(c => String(c[0]));
+      expect(asked.some(u => u.includes('/listings?') && u.includes('sort=near'))).toBe(true);
+      expect(asked.some(u => u.includes('/listings?') && u.includes('sort=score'))).toBe(true);
+    });
+  });
+
+  it('offers a corridor for a hunt that already runs', async () => {
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
+
+    fireEvent.click((await screen.findAllByText('Corridor'))[0]);
+    expect(await screen.findByText('Search along a route')).toBeInTheDocument();
+    expect(screen.getByTestId('corridor-save')).toBeDisabled();
+    expect(await screen.findByTestId('corridor-current')).toHaveTextContent('Landsberg → Konstanz');
+  });
+
+  it('a shared link opens the find even when it is not in the loaded list', async () => {
+    window.location.hash = '#dashboard?campaignId=1&listingId=shared-42';
+    const base = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/listings/shared-42')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ id: 'shared-42', title: 'Geteilter Fund', price_eur: 99, images: [] }),
+        });
+      }
+      return (base as typeof fetch)(url);
+    });
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
+    expect(await screen.findByTestId('listing-number')).toHaveTextContent('shared-42');
+    window.location.hash = '';
+  });
+
+  it('says a search is running while it runs, not when the last one was', async () => {
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} isScraping />);
+    expect(await screen.findByText('Searching now …')).toBeInTheDocument();
+  });
+
+  it('displays real schedule interval in freshness header (#7)', async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/campaigns/1/route')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockRouteData),
+        });
+      }
+      if (url.includes('/api/campaigns/1/overview')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            // Minutes, as the scheduler reads it (intervalMinutes * 60 * 1000).
+            schedule_interval: 360,
+            last_crawled_at: new Date(Date.now() - 3600000).toISOString(),
+            pots: { all: 3, fit: 2, unclear: 0, no: 1 },
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ total: 0, listings: [] }),
+      });
+    });
+
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
+
+    const freshnessEl = await screen.findByTestId('freshness');
+    expect(freshnessEl).toHaveTextContent(/searches every 6h|sucht alle 6 Std/);
+    expect(freshnessEl).not.toHaveTextContent(/searches hourly|stündlich/);
   });
 });

@@ -20,6 +20,7 @@ export interface DecomposedSearchUrl {
   maxPrice: number | null;
   query: string | null;
   category: string | null;
+  categorySlug: string | null;
   attributes: string[];
 }
 
@@ -31,6 +32,7 @@ export interface ComposeSearchUrlParams {
   maxPrice?: number | null;
   query?: string | null;
   category?: string | null;
+  categorySlug?: string | null;
   attributes?: string[] | null;
   origin?: string;
 }
@@ -113,8 +115,9 @@ export function decomposeSearchUrl(url: string): DecomposedSearchUrl | null {
     const tailInfo = parseTail(url);
     if (!tailInfo) return null;
 
+    const locId = tailInfo.location ? tailInfo.location.replace(/^l/, '') : null;
     const rootSeg = segments[0];
-    const locationSlug = rootSeg.startsWith('s-') ? rootSeg.slice(2) : rootSeg;
+    const rootWithoutPrefix = rootSeg.startsWith('s-') ? rootSeg.slice(2) : rootSeg;
 
     const price = parsePrice(url);
 
@@ -127,16 +130,30 @@ export function decomposeSearchUrl(url: string): DecomposedSearchUrl | null {
       }
     }
 
-    const locId = tailInfo.location ? tailInfo.location.replace(/^l/, '') : null;
+    let locationSlug: string | null = null;
+    let categorySlug: string | null = null;
+
+    if (locId) {
+      // True location search: root is location slug
+      locationSlug = rootWithoutPrefix === 'suchanfrage' ? null : rootWithoutPrefix;
+    } else {
+      // No location in tail: root segment is either a category slug or query
+      if (tailInfo.category) {
+        categorySlug = rootWithoutPrefix;
+      } else if (!query && rootWithoutPrefix !== 'suchanfrage' && !rootSeg.includes(':')) {
+        query = rootWithoutPrefix;
+      }
+    }
 
     return {
       locationSlug: locationSlug || null,
       locationId: locId || null,
-      radius: tailInfo.radius,
+      radius: locId ? tailInfo.radius : null,
       minPrice: price ? price.min : null,
       maxPrice: price ? price.max : null,
       query,
       category: tailInfo.category,
+      categorySlug: categorySlug || null,
       attributes: tailInfo.attributes,
     };
   } catch {
@@ -173,22 +190,46 @@ export function composeSearchUrl({
   maxPrice,
   query,
   category,
+  categorySlug,
   attributes,
   origin = 'https://www.kleinanzeigen.de',
 }: ComposeSearchUrlParams): string {
-  const cleanSlug = locationSlug ? slugify(locationSlug) : 'suchanfrage';
-  const root = cleanSlug.startsWith('s-') ? cleanSlug : `s-${cleanSlug}`;
+  const cleanLoc = locationSlug ? slugify(locationSlug) : null;
+  const cleanQ = query ? slugify(query) : null;
+  const cleanCat = categorySlug ? slugify(categorySlug) : null;
+
+  // A place without a radius is that one town only ("Vilgertshofen": 6
+  // motorcycles). No limit means no place in the URL.
+  const hasRadius = radius !== null && radius !== undefined && Number(radius) > 0;
+  const hasLocation = hasRadius && Boolean(locationId || (cleanLoc && cleanLoc !== 'suchanfrage'));
+
+  let root: string;
+  let queryInPath: string | null;
+
+  if (hasLocation && cleanLoc) {
+    root = cleanLoc.startsWith('s-') ? cleanLoc : `s-${cleanLoc}`;
+    queryInPath = cleanQ;
+  } else if (cleanCat) {
+    root = cleanCat.startsWith('s-') ? cleanCat : `s-${cleanCat}`;
+    queryInPath = cleanQ;
+  } else if (cleanQ) {
+    root = cleanQ.startsWith('s-') ? cleanQ : `s-${cleanQ}`;
+    queryInPath = null;
+  } else {
+    root = 's-suchanfrage';
+    queryInPath = null;
+  }
+
   const segments: string[] = ['', root];
 
   const priceSeg = formatPriceSegment(minPrice, maxPrice);
   if (priceSeg) segments.push(priceSeg);
 
-  if (query) {
-    const qSlug = slugify(query);
-    if (qSlug) segments.push(qSlug);
+  if (queryInPath) {
+    segments.push(queryInPath);
   }
 
-  segments.push(formatTailSegment(category, locationId, radius, attributes));
+  segments.push(formatTailSegment(category, hasLocation ? locationId : null, hasLocation ? radius : null, attributes));
   const cleanOrigin = origin.replace(/\/+$/, '');
   return `${cleanOrigin}${segments.join('/')}`;
 }

@@ -8,6 +8,7 @@ import AppScreen from './screens/AppScreen';
 import LandingScreen from './screens/LandingScreen';
 import FundeScreen from './screens/FundeScreen';
 import EditScreen from './screens/EditScreen';
+import HuntSetupScreen from './screens/HuntSetupScreen';
 import CreateCampaignScreen from './screens/CreateCampaignScreen';
 import KeptScreen from './screens/KeptScreen';
 
@@ -94,11 +95,24 @@ export default function App() {
             const campaignSearches = appData.searches.filter(s => s.campaign_id === c.id);
             navigate(campaignSearches.length === 0 ? 'edit' : 'dashboard', c.id, null);
           }}
-          onCreateCampaign={() => setView('create-campaign')}
+          onCreateCampaign={() => navigate('hunt-setup', null, null)}
           onOpenKept={() => setView('kept')}
           onOpenApp={() => setView('settings')}
         />
       </div>
+    );
+  }
+
+  if (view === 'hunt-setup') {
+    return (
+      <HuntSetupScreen
+        onBack={() => navigate('landing', null, null)}
+        onSaved={({ campaignId }) => {
+          appData.refreshAll();
+          navigate('dashboard', campaignId, null);
+          scraper.handleStartScrape(campaignId);
+        }}
+      />
     );
   }
 
@@ -111,6 +125,7 @@ export default function App() {
           onConfigure={configureCurrentCampaign}
           onStartScrape={() => scraper.handleStartScrape(currentCampaignId)}
           isScraping={scraper.isScraping}
+          onCampaignChanged={() => appData.refreshAll()}
         />
       </div>
     );
@@ -133,12 +148,18 @@ export default function App() {
             if (configured) navigate('dashboard', currentCampaignId, null);
             else navigate('landing', null, null);
           }}
-          onSaved={(savedFamily) => {
+          onSaved={(savedFamily, change) => {
             if (currentCampaignId) {
               appData.setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, family_id: savedFamily.id } : c));
             }
             appData.refreshAll();
             navigate('dashboard', currentCampaignId, null);
+            // A changed search is a new question to Kleinanzeigen. Ask it now:
+            // waiting for the schedule (which is usually off) left the buyer
+            // looking at a list that could not change.
+            // Only when something about the search changed; a new name is not
+            // worth a crawl.
+            if (change?.searchChanged !== false) scraper.handleStartScrape(currentCampaignId);
           }}
           onDelete={(camp) => {
             campaignEdit.handleDeleteCampaign(camp);

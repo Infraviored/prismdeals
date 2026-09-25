@@ -14,9 +14,12 @@
 
 const express = require('express');
 const path = require('path');
+const { findPython } = require('./python');
 const { spawn } = require('child_process');
+const { requirementsHash } = require('./db/requirements_hash');
 
 const router = express.Router();
+
 
 /**
  * The questions this campaign's category can answer.
@@ -24,11 +27,20 @@ const router = express.Router();
  * They live in the playbook, which is Python, so this is the same shape of
  * helper as the judge: one question, one JSON answer, no scraper.
  */
-function askableFields(campaignId) {
+function askableFields(campaignId, categoryOrUrl) {
   return new Promise(resolve => {
-    const python = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const python = findPython();
     const script = path.join(__dirname, '..', 'scraper', 'requirements_cli.py');
-    const child = spawn(python, [script, String(campaignId)]);
+    const args = [script, String(campaignId)];
+    if (categoryOrUrl) args.push(String(categoryOrUrl));
+    const child = spawn(python, args, {
+      env: { ...process.env, PRISMDEALS_DB: process.env.PRISMDEALS_DB || '' }
+    });
+
+    child.on('error', err => {
+      console.error('Failed to spawn python for requirements:', err.message);
+      resolve({ playbook: null, fields: [] });
+    });
 
     let out = '';
     let err = '';
@@ -105,6 +117,7 @@ module.exports = (query, get, run) => {
       if (!search) return res.status(404).json({ error: 'Unknown search' });
 
       const payload = JSON.stringify({ fields, dimensions_enabled: false });
+      const reqHash = requirementsHash(fields);
 
       let setId = search.knowledge_set_id;
       if (!setId) {
@@ -112,13 +125,13 @@ module.exports = (query, get, run) => {
         // create these and leave them empty; this is the same row with
         // something in it.
         const created = await run(
-          `INSERT INTO knowledge_sets (name, item_json) VALUES (?, ?)`,
-          [`${search.name} (${search.id})`, payload]
+          `INSERT INTO knowledge_sets (name, item_json, requirements_hash) VALUES (?, ?, ?)`,
+          [`${search.name} (${search.id})`, payload, reqHash]
         );
         setId = created.id;
         await run('UPDATE searches SET knowledge_set_id = ? WHERE id = ?', [setId, search.id]);
       } else {
-        await run('UPDATE knowledge_sets SET item_json = ? WHERE id = ?', [payload, setId]);
+        await run('UPDATE knowledge_sets SET item_json = ?, requirements_hash = ? WHERE id = ?', [payload, reqHash, setId]);
       }
 
       res.json({ success: true, knowledge_set_id: setId, requirements: fields });
@@ -134,13 +147,29 @@ module.exports = (query, get, run) => {
   // -- setting them thirteen times by hand is not a feature.
   router.get('/api/campaigns/:id/requirements', async (req, res) => {
     try {
+      const [campaign] = await query('SELECT id, name FROM campaigns WHERE id = ?', [
+        req.params.id,
+      ]);
+      if (!campaign) return res.status(404).json({ error: 'Unknown campaign' });
+
       const searches = await query(
         'SELECT id, knowledge_set_id FROM searches WHERE campaign_id = ?',
         [req.params.id]
       );
-      if (searches.length === 0) return res.status(404).json({ error: 'Unknown campaign' });
+      const families = await query(
+        'SELECT id, knowledge_set_id, base_url FROM search_families WHERE campaign_id = ?',
+        [req.params.id]
+      );
+      const routes = await query(
+        'SELECT id, knowledge_set_id, base_url FROM route_searches WHERE campaign_id = ?',
+        [req.params.id]
+      );
 
-      const withSet = searches.find(s => s.knowledge_set_id);
+      const withSet =
+        searches.find(s => s.knowledge_set_id) ||
+        families.find(f => f.knowledge_set_id) ||
+        routes.find(r => r.knowledge_set_id);
+
       let stored = [];
       if (withSet) {
         const row = await get('SELECT item_json FROM knowledge_sets WHERE id = ?', [
@@ -153,8 +182,16 @@ module.exports = (query, get, run) => {
         }
       }
 
-      const { playbook, fields } = await askableFields(req.params.id);
-      res.json({ playbook, fields, requirements: stored, searches: searches.length });
+      const { playbook, fields } = await askableFields(
+        req.params.id,
+        req.query.category || req.query.url
+      );
+      // Only the searches that still run: retired ones ("alle 7 Suchen" for a
+      // hunt with two terms) made the sheet's sentence wrong.
+      const running = await query('SELECT COUNT(*) AS n FROM searches WHERE campaign_id = ? AND enabled = 1', [
+        req.params.id,
+      ]);
+      res.json({ playbook, fields, requirements: stored, searches: running[0]?.n ?? searches.length });
     } catch (error) {
       console.error('Error reading campaign requirements:', error);
       res.status(500).json({ error: 'Failed to read requirements' });
@@ -167,32 +204,72 @@ module.exports = (query, get, run) => {
     if (problem) return res.status(400).json({ error: problem });
 
     try {
+      const [campaign] = await query('SELECT id, name FROM campaigns WHERE id = ?', [
+        req.params.id,
+      ]);
+      if (!campaign) return res.status(404).json({ error: 'Unknown campaign' });
+
       const searches = await query(
         'SELECT id, name, knowledge_set_id FROM searches WHERE campaign_id = ?',
         [req.params.id]
       );
-      if (searches.length === 0) return res.status(404).json({ error: 'Unknown campaign' });
+      const families = await query(
+        'SELECT id, name, knowledge_set_id FROM search_families WHERE campaign_id = ?',
+        [req.params.id]
+      );
+      const routes = await query(
+        'SELECT id, name, knowledge_set_id FROM route_searches WHERE campaign_id = ?',
+        [req.params.id]
+      );
 
       const payload = JSON.stringify({ fields, dimensions_enabled: false });
-      for (const search of searches) {
-        if (search.knowledge_set_id) {
-          await run('UPDATE knowledge_sets SET item_json = ? WHERE id = ?', [
-            payload,
-            search.knowledge_set_id,
-          ]);
-        } else {
-          const created = await run('INSERT INTO knowledge_sets (name, item_json) VALUES (?, ?)', [
-            `${search.name} (${search.id})`,
-            payload,
-          ]);
-          await run('UPDATE searches SET knowledge_set_id = ? WHERE id = ?', [
-            created.id,
-            search.id,
-          ]);
-        }
+      const reqHash = requirementsHash(fields);
+
+      let existingSetId =
+        (searches.find(s => s.knowledge_set_id) ||
+          families.find(f => f.knowledge_set_id) ||
+          routes.find(r => r.knowledge_set_id))?.knowledge_set_id;
+
+      if (!existingSetId) {
+        const created = await run('INSERT INTO knowledge_sets (name, item_json, requirements_hash) VALUES (?, ?, ?)', [
+          `${campaign.name} (${campaign.id})`,
+          payload,
+          reqHash,
+        ]);
+        existingSetId = created.id;
+      } else {
+        await run('UPDATE knowledge_sets SET item_json = ?, requirements_hash = ? WHERE id = ?', [
+          payload,
+          reqHash,
+          existingSetId,
+        ]);
       }
 
-      res.json({ success: true, searches: searches.length, requirements: fields });
+      if (searches.length > 0) {
+        await run('UPDATE searches SET knowledge_set_id = ? WHERE campaign_id = ?', [
+          existingSetId,
+          campaign.id,
+        ]);
+      }
+      if (families.length > 0) {
+        await run('UPDATE search_families SET knowledge_set_id = ? WHERE campaign_id = ?', [
+          existingSetId,
+          campaign.id,
+        ]);
+      }
+      if (routes.length > 0) {
+        await run('UPDATE route_searches SET knowledge_set_id = ? WHERE campaign_id = ?', [
+          existingSetId,
+          campaign.id,
+        ]);
+      }
+
+      res.json({
+        success: true,
+        searches: searches.length,
+        requirements: fields,
+        knowledge_set_id: existingSetId,
+      });
     } catch (error) {
       console.error('Error saving campaign requirements:', error);
       res.status(500).json({ error: 'Failed to save requirements' });

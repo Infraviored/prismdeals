@@ -27,31 +27,8 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# taxonomy filter key -> playbook field id, per playbook.
-FILTER_TO_FIELD = {
-    "electronics/laptops": {
-        "notebooks.brand_s": "brand",
-        "notebooks.processor_s": "cpuModel",
-        "notebooks.ram_s": "ramGb",
-        "notebooks.storage_s": "storageGb",
-        "notebooks.screen_size_s": "screenInches",
-        "global.zustand": "conditionGrade",
-    },
-    "electronics/phones": {
-        "handy_telekom.art_s": "brand",
-        "global.zustand": "conditionGrade",
-    },
-    "computing/memory": {
-        "pc_zubehoer_software.art_s": "productLine",
-        "global.zustand": "conditionGrade",
-    },
-    "vehicles/cars": {
-        "autos.marke_s": "make",
-        "autos.km_i": "mileageKm",
-        "autos.ez_i": "firstRegistrationYear",
-        "global.zustand": "conditionGrade",
-    },
-}
+from playbook_filters import FILTER_TO_FIELD
+
 
 # The site's five condition values, in each playbook's own words. Without this
 # the intent asks for `like_new` against an enum of neuwertig/gut/gebraucht/

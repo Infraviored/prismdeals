@@ -24,7 +24,7 @@ describe('EditScreen', () => {
               name: 'Drucker',
               base_url: 'https://www.kleinanzeigen.de/s-drucker/landsberg-am-lech/anzeige:angebote/preis::150/r30/k0l7437',
               terms: [
-                { id: 1, term: 'brother-hl-l2350dw', label: 'Brother HL-L2350DW', enabled: true },
+                { id: 1, term: 'brother-hl-l2350dw', label: 'Brother HL-L2350DW', enabled: true, listings: 12, fit_listings: 3 },
                 { id: 2, term: 'hp-m428', label: 'HP M428', enabled: true },
               ],
             }),
@@ -81,11 +81,14 @@ describe('EditScreen', () => {
     // 3. Wie weit / How far -- a slider and a typed number, not four presets.
     //    10, 30, 50 and 100 km are not the distances people live at: Landsberg
     //    to Augsburg is 38, to Munich 57.
+    //    And no limit until one is chosen: a preset 30 km was a limit nobody set.
     expect(screen.getByText(/^(Wie weit|How far)$/i)).toBeInTheDocument();
+    expect(await screen.findByRole('radio', { name: /No limit|Ohne Grenze/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: /Limit radius|Umkreis begrenzen/ }));
     const slider = screen.getByRole('slider');
     expect(slider).toHaveAttribute('max', '200');
-    expect(slider).toHaveValue('30');
-    expect(screen.getByRole('spinbutton', { name: '' })).toHaveValue(30);
+    expect(slider).toHaveValue('50');
     expect(screen.getByText('km')).toBeInTheDocument();
 
     // 4. Bis wie viel / Up to how much (Price)
@@ -139,15 +142,36 @@ describe('EditScreen', () => {
     fireEvent.click(removeBtn);
     expect(screen.queryByText('Brother HL-L2350DW')).not.toBeInTheDocument();
 
-    // Add a new model
-    const addBtn = screen.getByTitle(/Add model|Modell hinzufügen/i);
-    fireEvent.click(addBtn);
-
-    const modelInput = screen.getByPlaceholderText(/Add model|Modell hinzufügen/i);
-    fireEvent.change(modelInput, { target: { value: 'Canon MF445dw' } });
-    fireEvent.keyDown(modelInput, { key: 'Enter', code: 'Enter' });
+    // Add a new term
+    const termInput = screen.getByLabelText(/Search terms on Kleinanzeigen|Suchbegriffe bei Kleinanzeigen/i);
+    fireEvent.change(termInput, { target: { value: 'Canon MF445dw' } });
+    fireEvent.keyDown(termInput, { key: 'Enter', code: 'Enter' });
 
     expect(screen.getByText('Canon MF445dw')).toBeInTheDocument();
+  });
+
+  it('never saves the narrow name as the search term', async () => {
+    // The Corsair incident: with no term set, the name itself became the term,
+    // "corsair-vengeance-32gb-2x16-ddr4-3200-cl16", and found almost nothing.
+    const plainCampaign = { id: 7, name: 'Corsair Vengeance 32GB (2x16) DDR4-3200 CL16' };
+    render(<EditScreen campaign={plainCampaign} searches={[]} onBack={vi.fn()} onSaved={vi.fn()} />);
+
+    expect(await screen.findByText('corsair vengeance 32gb')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/^(Save|Speichern)$/));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/search-families', expect.objectContaining({ method: 'POST' }));
+    });
+    const [, init] = fetchMock.mock.calls.find(([url]) => String(url) === '/api/search-families')!;
+    const saved = JSON.parse(String((init as RequestInit).body));
+    expect(saved.terms.map((t: { term: string }) => t.term)).toEqual(['corsair-vengeance-32gb']);
+    expect(saved.base_url).not.toContain('ddr4-3200');
+  });
+
+  it('shows what each term found', async () => {
+    render(<EditScreen campaign={mockCampaign} onBack={vi.fn()} />);
+    expect(await screen.findByText('Brother HL-L2350DW')).toBeInTheDocument();
+    expect(screen.getByText('12 found, 3 matching')).toBeInTheDocument();
   });
 
   it('saves and compiles structured search url when Speichern is clicked', async () => {
@@ -176,13 +200,13 @@ describe('EditScreen', () => {
     )!;
     const saved = JSON.parse(String((init as RequestInit).body));
 
-    // The grammar is /s-<place>/[preis:a:b/]<term>/k0[c<cat>]l<place>r<radius>.
-    expect(saved.base_url).toMatch(
-      /^https:\/\/www\.kleinanzeigen\.de\/s-landsberg-am-lech\//
-    );
+    // No radius was chosen: the search is not limited, so no place is
+    // written. A place without a radius is that one town on Kleinanzeigen
+    // (measured: Vilgertshofen alone 11 motorcycles, with r200 56 257).
+    expect(saved.base_url).not.toContain('landsberg');
+    expect(saved.base_url).not.toMatch(/l7437/);
     expect(saved.base_url).toContain('preis::150');
-    expect(saved.base_url).toContain('/drucker/');
-    expect(saved.base_url).toMatch(/\/k0(c\d+)?l7437r30$/);
+    expect(saved.base_url).toContain('brother-hl-l2350dw');
 
     expect(onSavedMock).toHaveBeenCalled();
   });

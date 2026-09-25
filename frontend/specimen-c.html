@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Musterbogen C</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112..125,500..800&family=Fira+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --nacht: #011F1F;   /* Grund */
+      --grube: #00100F;   /* tiefer als der Grund: Randstreifen, Seitenspalte */
+      --tisch: #06322C;   /* Erhebung */
+      --kante: #0E4A40;   /* Linien */
+      --lampe: #E4D6BE;   /* Fotopassepartout, Hauptknopf */
+      --kalk: #F2F5F4;    /* Schrift */
+      --asche: #8FA6A1;   /* Beiwerk */
+      --moos: #4E8C6A;    /* passt */
+      --messing: #C9A227; /* unklar, alt */
+      --glut: #E87967;    /* nur das Preissignal */
+
+      --body: 'Fira Sans', system-ui, sans-serif;
+      --display: 'Archivo', 'Fira Sans', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--grube);
+      color: var(--kalk);
+      font: 15px/1.4 var(--body);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, a { font: inherit; color: inherit; }
+    :focus-visible { outline: 2px solid var(--lampe); outline-offset: 2px; }
+
+    .num {
+      font-family: var(--display);
+      font-stretch: 125%;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.01em;
+    }
+
+    /* Werkzeugleiste des Musterbogens, verschwindet mit ?clean=1 */
+    #toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 8px 16px; font-size: 12px; color: var(--asche);
+      border-bottom: 1px solid var(--kante);
+    }
+    #toolbar strong { color: var(--kalk); font-weight: 500; margin-right: auto; }
+    #toolbar button {
+      background: none; border: 1px solid var(--kante); border-radius: 3px;
+      padding: 3px 9px; cursor: pointer; color: var(--asche);
+    }
+    #toolbar button[aria-pressed="true"] { color: var(--kalk); border-color: var(--asche); }
+
+    /* Die Seite misst sich an ihrem Behälter, nicht am Fenster:
+       so zeigt der 390-px-Schalter auf dem Rechner dasselbe wie ein Telefon. */
+    #page {
+      container-type: inline-size;
+      margin: 0 auto;
+      max-width: 1440px;
+      background: var(--nacht);
+      min-height: 100vh;
+    }
+    #page.w390 { max-width: 390px; border-inline: 1px solid var(--kante); }
+
+    /* ---------- Kopf ---------- */
+    .strip {
+      display: flex; align-items: center; gap: 12px;
+      height: 44px; padding: 0 16px;
+      background: var(--grube);
+      border-bottom: 1px solid var(--kante);
+      font-size: 14px;
+    }
+    .strip a { color: var(--asche); text-decoration: none; }
+    .strip a:hover { color: var(--kalk); }
+    .back::before { content: '‹'; font-size: 20px; line-height: 0; margin-right: 6px; position: relative; top: 1px; }
+    .strip .spacer { flex: 1; }
+    .strip .edit {
+      border: 1px solid var(--kante); border-radius: 3px; padding: 5px 10px;
+      color: var(--kalk);
+    }
+    .strip .edit:hover { border-color: var(--asche); }
+
+    .masthead { padding: 28px 16px 20px; }
+    .masthead h1 {
+      font-family: var(--display);
+      font-stretch: 125%;
+      font-weight: 700;
+      font-size: 22px;
+      line-height: 1.1;
+      letter-spacing: -0.005em;
+    }
+    .verdict {
+      margin-top: 10px;
+      font-size: 16px;
+      color: var(--kalk);
+      max-width: 72ch;
+    }
+    .verdict .quiet { color: var(--asche); }
+    .freshness {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--asche);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .freshness::before {
+      content: ''; width: 7px; height: 7px; border-radius: 50%;
+      background: var(--moos); flex: none;
+    }
+
+    .tabs {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; gap: 4px;
+      padding: 0 8px;
+      background: var(--nacht);
+      border-bottom: 1px solid var(--kante);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tab {
+      background: none; border: 0; cursor: pointer;
+      padding: 13px 8px 11px;
+      border-bottom: 2px solid transparent;
+      color: var(--asche);
+      font-size: 14px;
+      white-space: nowrap;
+      display: flex; align-items: baseline; gap: 7px;
+    }
+    .tab .num { font-size: 13px; }
+    .tab:hover { color: var(--kalk); }
+    .tab[aria-selected="true"] { color: var(--kalk); border-bottom-color: var(--lampe); font-weight: 500; }
+
+    @container (min-width: 900px) {
+      .strip { padding: 0 32px; }
+      .masthead { padding: 40px 32px 28px; }
+      .masthead h1 { font-size: 34px; }
+      .verdict { font-size: 18px; }
+      .tabs { padding: 0 24px; gap: 12px; }
+    }
+
+    /* ---------- Raster ---------- */
+    .layout { display: flex; flex-direction: column; }
+    .main { flex: 1; min-width: 0; }
+    .aside { background: var(--grube); border-top: 1px solid var(--kante); padding: 24px 16px 40px; }
+    @container (min-width: 900px) {
+      .layout { flex-direction: row; }
+      .aside {
+        width: 400px; flex: none;
+        border-top: 0; border-left: 1px solid var(--kante);
+        padding: 28px 32px 48px;
+      }
+    }
+
+    /* ---------- Bester Fund ---------- */
+    .best { padding: 16px; border-bottom: 1px solid var(--kante); background: var(--tisch); }
+    .best-label { font-size: 13px; color: var(--asche); margin-bottom: 12px; }
+    .best-body { display: flex; flex-direction: column; gap: 16px; }
+    .mat {
+      background: var(--lampe);
+      padding: 6px;
+      border-radius: 2px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--nacht); font-size: 12px;
+      overflow: hidden;
+    }
+    .mat img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .best .mat { width: 100%; aspect-ratio: 16 / 10; max-height: 34vh; }
+    .best h2 { font-size: 19px; font-weight: 600; line-height: 1.25; }
+    .best .where { margin-top: 4px; font-size: 14px; color: var(--asche); }
+    .best .specs { margin-top: 10px; font-size: 14px; color: var(--kalk); display: flex; flex-wrap: wrap; gap: 4px 16px; }
+    .price-block { margin-top: 18px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 24px; }
+    .best .price { font-size: 52px; line-height: 0.9; color: var(--glut); }
+    .price-why { font-size: 14px; line-height: 1.35; }
+    .price-why .delta { color: var(--glut); font-weight: 500; }
+    .price-why .was { color: var(--asche); }
+    .price-why s { text-decoration-thickness: 1px; }
+    .actions { margin-top: 20px; display: flex; gap: 8px; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      height: 42px; padding: 0 18px; border-radius: 3px;
+      font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer;
+      border: 1px solid var(--kante); background: none; color: var(--kalk);
+    }
+    .btn:hover { border-color: var(--asche); }
+    .btn.primary { background: var(--lampe); border-color: var(--lampe); color: var(--nacht); flex: 1; }
+    .btn.primary:hover { background: #F0E4CE; }
+
+    @container (min-width: 900px) {
+      .best { padding: 24px 32px 28px; }
+      .best-body { flex-direction: row; gap: 28px; }
+      .best .mat { width: 46%; max-width: 440px; max-height: none; flex: none; }
+      .best-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      .best h2 { font-size: 22px; }
+      .best .price { font-size: 64px; }
+      .price-block { margin-top: auto; padding-top: 20px; }
+      .btn.primary { flex: none; }
+    }
+
+    /* ---------- Liste ---------- */
+    .list-head {
+      padding: 20px 16px 8px;
+      font-size: 13px; color: var(--asche);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 76px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--kante);
+      text-decoration: none;
+    }
+    .row:hover { background: rgba(6, 50, 44, 0.55); }
+    .row .mat { width: 76px; height: 60px; padding: 3px; }
+    .row h3 {
+      font-size: 15px; font-weight: 500; line-height: 1.3;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .row .where { margin-top: 3px; font-size: 13px; color: var(--asche); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row .specs {
+      margin-top: 3px; font-size: 13px; color: var(--kalk);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .row .specs span + span { margin-left: 9px; }
+    .row .note { margin-top: 3px; font-size: 13px; color: var(--messing); }
+    .row .reason { margin-top: 3px; font-size: 13px; color: var(--asche); }
+    .row .price { font-size: 23px; text-align: right; align-self: center; }
+    .row.gone .mat { filter: grayscale(0.8); opacity: 0.55; }
+    .row.gone h3, .row.gone .price { color: var(--asche); }
+
+    @container (min-width: 900px) {
+      .list-head { padding: 24px 32px 8px; }
+      .row { grid-template-columns: 128px 1fr auto; gap: 20px; padding: 14px 32px; }
+      .row .mat { width: 128px; height: 92px; padding: 5px; }
+      .row h3 { font-size: 16px; }
+      .row .price { font-size: 32px; }
+    }
+
+    .more {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+      padding: 20px 16px 32px;
+      font-size: 14px; color: var(--asche);
+    }
+    .more p { flex: 1; min-width: 200px; }
+    @container (min-width: 900px) { .more { padding: 24px 32px 40px; } }
+
+    /* ---------- Seitenspalte ---------- */
+    .panel + .panel { margin-top: 32px; padding-top: 28px; border-top: 1px solid var(--kante); }
+    .panel h2 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+    .panel .lead { font-size: 14px; color: var(--kalk); line-height: 1.45; }
+    .panel .lead .quiet { color: var(--asche); }
+
+    .hist { position: relative; margin-top: 20px; }
+    .bars { display: flex; align-items: flex-end; gap: 3px; height: 84px; }
+    .bar { flex: 1; background: var(--kante); min-height: 3px; border-radius: 1px 1px 0 0; }
+    .bar.deal { background: var(--glut); }
+    .median-line {
+      position: absolute; top: -6px; bottom: 18px; width: 0;
+      border-left: 1px dashed var(--lampe);
+    }
+    .axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; color: var(--asche); }
+    .legend { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--asche); }
+    .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; border-radius: 1px; }
+    .legend .l-deal { background: var(--glut); }
+    .legend .l-median { width: 0; height: 12px; border-left: 1px dashed var(--lampe); margin-right: 9px; }
+
+    .req { padding: 10px 0; border-bottom: 1px solid var(--kante); font-size: 14px; }
+    .req:last-child { border-bottom: 0; }
+    .req-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+    .req-top .num { font-size: 13px; color: var(--asche); }
+    .req-top .num b { color: var(--kalk); font-weight: 600; }
+    .meter { margin-top: 6px; height: 3px; background: var(--kante); border-radius: 2px; overflow: hidden; }
+    .meter span { display: block; height: 100%; background: var(--moos); }
+
+    .why { list-style: none; margin-top: 4px; }
+    .why li { display: grid; grid-template-columns: 40px 1fr; padding: 5px 0; font-size: 14px; color: var(--asche); }
+    .why .num { color: var(--kalk); font-size: 13px; }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .row, .tab, .btn { transition: background-color .15s, border-color .15s, color .15s; }
+    }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <strong>Musterbogen C</strong>
+    <button type="button" data-w="w390" aria-pressed="false">Telefon 390 px</button>
+    <button type="button" data-w="" aria-pressed="true">Volle Breite</button>
+  </div>
+
+  <div id="page">
+    <nav class="strip" aria-label="Navigation">
+      <a class="back" href="#">Alle Suchen</a>
+      <span class="spacer"></span>
+      <a class="edit" href="#">Anforderungen ändern</a>
+    </nav>
+
+    <header class="masthead">
+      <h1>Corsair Vengeance 32GB</h1>
+      <p class="verdict" id="verdict"></p>
+      <p class="freshness" id="freshness"></p>
+    </header>
+
+    <div class="tabs" role="tablist" id="tabs"></div>
+
+    <div class="layout">
+      <main class="main">
+        <section class="best" id="best" aria-label="Bester Fund"></section>
+        <p class="list-head" id="list-head"></p>
+        <div id="rows"></div>
+        <div class="more" id="more"></div>
+      </main>
+
+      <aside class="aside" aria-label="Markt und Anforderungen">
+        <section class="panel" id="market"></section>
+        <section class="panel" id="requirements"></section>
+        <section class="panel" id="rejections"></section>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    // Der Musterbogen zeigt einen festen Stand: die Suche lief zuletzt um 17:09 UTC,
+    // angesehen wird zwei Stunden später.
+    const LAST_RUN = new Date('2026-09-22T17:09:19Z');
+    const NOW = new Date(LAST_RUN.getTime() + 2 * 3600e3);
+
+    // Was die Suche verlangt. Dieselben Regeln wie im Playbook des Scrapers.
+    const WANTS = [
+      { label: 'Zwei Riegel à 16 GB', ok: f => f.stickCount === 2 && f.gbPerStick === 16 },
+      { label: 'DDR4', ok: f => f.generation === 'ddr4' },
+      { label: 'Mindestens 3200 MHz', ok: f => f.speedMhz >= 3200 },
+      { label: 'CL16 oder schneller', ok: f => f.casLatency > 0 && f.casLatency <= 16 },
+    ];
+    const MISSING = { casLatency: 'CL nicht angegeben', speedMhz: 'Takt nicht angegeben', stickCount: 'Anzahl Riegel nicht angegeben' };
+
+    const TABS = [
+      { key: 'fit', label: 'Passend' },
+      { key: 'unclear', label: 'Unklar' },
+      { key: 'no', label: 'Abgelehnt' },
+      { key: 'all', label: 'Alle' },
+    ];
+
+    let items = [];
+    let tab = 'fit';
+
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const eur = n => `${n} €`;
+
+    function place(loc) {
+      if (!loc) return { city: '', full: 'Ort nicht angegeben' };
+      const [state, city] = loc.split(/\s+-\s+/);
+      return city ? { city, full: `${city}, ${state}` } : { city: state, full: state };
+    }
+
+    function ago(iso) {
+      const h = Math.round((NOW - new Date(iso)) / 3600e3);
+      if (h < 1) return 'gerade eben';
+      if (h < 24) return `vor ${h} Std`;
+      const d = Math.round(h / 24);
+      return d === 1 ? 'gestern' : `vor ${d} Tagen`;
+    }
+
+    function specs(f = {}) {
+      const out = [];
+      if (f.stickCount && f.gbPerStick) out.push(`${f.stickCount}×${f.gbPerStick} GB`);
+      if (f.generation) out.push(f.generation.toUpperCase() + (f.speedMhz ? `-${f.speedMhz}` : ''));
+      if (f.casLatency) out.push(`CL${f.casLatency}`);
+      return out;
+    }
+
+    function median(sorted) {
+      const m = Math.floor(sorted.length / 2);
+      return sorted.length % 2 ? sorted[m] : Math.round((sorted[m - 1] + sorted[m]) / 2);
+    }
+
+    // Wurde das Angebot bei der letzten Suche nicht mehr gefunden, ist es womöglich weg.
+    const stale = i => i.last_seen_at && new Date(i.last_seen_at) < LAST_RUN - 60e3;
+
+    function priceDrop(i) {
+      const h = i.price_history || [];
+      if (h.length < 2) return null;
+      const before = h[h.length - 2].price_eur, now = h[h.length - 1].price_eur;
+      return before > now ? { before, when: ago(h[h.length - 1].seen_at) } : null;
+    }
+
+    function byVerdict(v) {
+      return v === 'all' ? items : items.filter(i => i.fit?.verdict === v);
+    }
+
+    function stats() {
+      const prices = items.map(i => i.price_eur).filter(p => p > 0).sort((a, b) => a - b);
+      const fits = byVerdict('fit').slice().sort((a, b) => a.price_eur - b.price_eur);
+      const best = fits.find(i => i.is_deal) || fits[0];
+      return { prices, med: median(prices), fits, best };
+    }
+
+    /* ---------- Kopf ---------- */
+    function renderHead(s) {
+      const deal = s.best?.is_deal;
+      document.getElementById('verdict').innerHTML =
+        `${s.fits.length} von ${items.length} Angeboten passen. ` +
+        (deal
+          ? `Das günstigste liegt ${eur(s.best.price_delta_eur)} unter dem Marktpreis.`
+          : `<span class="quiet">Keines liegt deutlich unter dem Marktpreis.</span>`);
+      document.getElementById('freshness').textContent =
+        `Zuletzt gesucht ${ago(LAST_RUN)}, sucht stündlich weiter`;
+
+      document.getElementById('tabs').innerHTML = TABS.map(t => `
+        <button class="tab" role="tab" type="button" data-tab="${t.key}" aria-selected="${t.key === tab}">
+          ${t.label} <span class="num">${byVerdict(t.key).length}</span>
+        </button>`).join('');
+    }
+
+    /* ---------- Bester Fund ---------- */
+    function renderBest(s) {
+      const el = document.getElementById('best');
+      const i = s.best;
+      if (!i || (tab !== 'fit' && tab !== 'all')) { el.hidden = true; return; }
+      el.hidden = false;
+      const p = place(i.location);
+      const drop = priceDrop(i);
+      el.innerHTML = `
+        <p class="best-label">${i.is_deal ? 'Bester Fund' : 'Günstigstes passendes Angebot'}</p>
+        <div class="best-body">
+          <div class="mat">${i.image_url ? `<img src="${esc(i.image_url)}" alt="">` : 'Kein Foto'}</div>
+          <div class="best-info">
+            <h2>${esc(i.title)}</h2>
+            <p class="where">${esc(p.full)}, gesehen ${ago(i.last_seen_at)}</p>
+            <p class="specs">${specs(i.fit?.facts).map(x => `<span>${x}</span>`).join('')}</p>
+            <div class="price-block">
+              <div class="price num">${eur(i.price_eur)}</div>
+              <p class="price-why">
+                ${i.is_deal ? `<span class="delta">${eur(i.price_delta_eur)} unter Markt</span>, üblich sind ${eur(s.med)}` : `Marktpreis ${eur(s.med)}`}
+                ${drop ? `<br><span class="was">Gesenkt ${drop.when}, vorher <s>${eur(drop.before)}</s></span>` : ''}
+              </p>
+            </div>
+            <div class="actions">
+              <a class="btn primary" href="${esc(i.url)}" target="_blank" rel="noopener">Bei Kleinanzeigen öffnen</a>
+              <button class="btn" type="button">Merken</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    /* ---------- Liste ---------- */
+    function rowNote(i, list) {
+      if (stale(i)) return `<p class="note">Seit ${ago(i.last_seen_at).replace('vor ', '')} nicht mehr gesehen</p>`;
+      const twin = list.find(o => o !== i && o.location && o.location === i.location && o.price_eur === i.price_eur);
+      if (twin && list.indexOf(twin) < list.indexOf(i)) return `<p class="note">Zweites Kit aus ${esc(place(i.location).city)} zum selben Preis</p>`;
+      return '';
+    }
+
+    function rowDetail(i) {
+      const v = i.fit?.verdict, f = i.fit?.facts || {};
+      if (v === 'no') return `<p class="reason">${esc(i.fit.reason)}</p>`;
+      if (v === 'unclear') {
+        const gap = Object.keys(MISSING).find(k => f[k] == null);
+        return `<p class="note">${gap ? MISSING[gap] : 'Nicht eindeutig'}</p>`;
+      }
+      return `<p class="specs">${specs(f).map(x => `<span>${x}</span>`).join('')}</p>`;
+    }
+
+    function renderList(s) {
+      let list = byVerdict(tab).slice().sort((a, b) => a.price_eur - b.price_eur);
+      const heroShown = tab === 'fit' || tab === 'all';
+      if (heroShown && s.best) list = list.filter(i => i !== s.best);
+
+      const heads = {
+        fit: `Weitere ${list.length} passende Angebote, nach Preis`,
+        unclear: `${list.length} Angebote, bei denen eine Angabe fehlt`,
+        no: `${list.length} Angebote, die nicht passen`,
+        all: `Alle weiteren ${list.length} Angebote, nach Preis`,
+      };
+      document.getElementById('list-head').textContent = heads[tab];
+
+      document.getElementById('rows').innerHTML = list.map(i => `
+        <a class="row${i.fit?.verdict === 'no' ? ' gone' : ''}" href="${esc(i.url)}" target="_blank" rel="noopener">
+          <div class="mat">${i.image_url ? `<img src="${esc(i.image_url)}" alt="" loading="lazy">` : 'Kein Foto'}</div>
+          <div style="min-width:0">
+            <h3>${esc(i.title)}</h3>
+            <p class="where">${esc(place(i.location).full)}</p>
+            ${rowNote(i, list) || rowDetail(i)}
+          </div>
+          <div class="price num">${eur(i.price_eur)}</div>
+        </a>`).join('');
+
+      const more = document.getElementById('more');
+      if (tab === 'fit') {
+        const top = topReasons()[0];
+        const n = byVerdict('no').length;
+        more.innerHTML = `<p>${n} Angebote passen nicht, die meisten wegen: ${esc(top.label)}.</p>
+          <button class="btn" type="button" data-tab="no">Abgelehnte ansehen</button>`;
+      } else {
+        more.innerHTML = '';
+      }
+    }
+
+    /* ---------- Seitenspalte ---------- */
+    function renderMarket(s) {
+      const { prices, med, best } = s;
+      const lo = prices[0], hi = prices[prices.length - 1];
+      const step = 20, start = Math.floor(lo / step) * step;
+      const n = Math.floor((hi - start) / step) + 1;
+      const bins = Array(n).fill(0);
+      prices.forEach(p => bins[Math.floor((p - start) / step)]++);
+      const peak = Math.max(...bins);
+      const dealBin = best?.is_deal ? Math.floor((best.price_eur - start) / step) : -1;
+
+      // Wo die Masse liegt: die beiden häufigsten Preise
+      const freq = {};
+      prices.forEach(p => freq[p] = (freq[p] || 0) + 1);
+      const common = Object.keys(freq).map(Number).sort((a, b) => freq[b] - freq[a]).slice(0, 2).sort((a, b) => a - b);
+      const share = Math.round(100 * prices.filter(p => p >= common[0] && p <= common[common.length - 1]).length / prices.length);
+
+      const lead = best?.is_deal
+        ? `${share} % der Angebote kosten ${eur(common[0])} bis ${eur(common[common.length - 1])}. Für ${eur(best.price_eur)} in ${esc(place(best.location).city)} ist dieses Kit das einzige passende deutlich darunter.`
+        : `${share} % der Angebote kosten ${eur(common[0])} bis ${eur(common[common.length - 1])}.`;
+
+      const medPos = ((med - start + step / 2) / (n * step)) * 100;
+
+      document.getElementById('market').innerHTML = `
+        <h2>Markt</h2>
+        <p class="lead">${lead}</p>
+        <div class="hist" role="img" aria-label="Preisverteilung von ${eur(lo)} bis ${eur(hi)}, Median ${eur(med)}">
+          <div class="bars">${bins.map((c, k) => `<div class="bar${k === dealBin ? ' deal' : ''}" style="height:${Math.max(4, (c / peak) * 100)}%" title="${start + k * step}–${start + (k + 1) * step - 1} €: ${c}"></div>`).join('')}</div>
+          <div class="median-line" style="left:${medPos}%"></div>
+          <div class="axis"><span class="num">${eur(lo)}</span><span class="num">${eur(hi)}</span></div>
+        </div>
+        <p class="legend">
+          <span><i class="l-median"></i>Median ${eur(med)}</span>
+          ${dealBin >= 0 ? `<span><i class="l-deal"></i>Bester Fund ${eur(best.price_eur)}</span>` : ''}
+        </p>`;
+    }
+
+    function renderRequirements() {
+      const total = items.length;
+      document.getElementById('requirements').innerHTML = `
+        <h2>Was du willst</h2>
+        <p class="lead"><span class="quiet">Wie viele der ${total} Angebote jede Anforderung erfüllen</span></p>
+        <div style="margin-top:8px">${WANTS.map(w => {
+          const c = items.filter(i => w.ok(i.fit?.facts || {})).length;
+          return `<div class="req">
+            <div class="req-top"><span>${w.label}</span><span class="num"><b>${c}</b> von ${total}</span></div>
+            <div class="meter"><span style="width:${(c / total) * 100}%"></span></div>
+          </div>`;
+        }).join('')}</div>`;
+    }
+
+    function topReasons() {
+      const count = {};
+      byVerdict('no').forEach(i => {
+        const r = (i.fit.reason || 'passt nicht')
+          .replace('Anzahl Module 4 statt 2', 'vier Riegel statt zwei')
+          .replace(/Sodimm statt Dimm/i, 'Laptop-Riegel (SODIMM)')
+          .replace(/^Bauform /, '')
+          .replace(/^Defekt$/, 'als defekt beschrieben');
+        count[r] = (count[r] || 0) + 1;
+      });
+      return Object.entries(count).sort((a, b) => b[1] - a[1]).map(([label, n]) => ({ label, n }));
+    }
+
+    function renderRejections() {
+      const reasons = topReasons();
+      document.getElementById('rejections').innerHTML = `
+        <h2>Warum abgelehnt</h2>
+        <ul class="why">${reasons.map(r => `<li><span class="num">${r.n}×</span><span>${esc(r.label)}</span></li>`).join('')}</ul>`;
+    }
+
+    function render() {
+      const s = stats();
+      renderHead(s);
+      renderBest(s);
+      renderList(s);
+      renderMarket(s);
+      renderRequirements();
+      renderRejections();
+    }
+
+    document.addEventListener('click', e => {
+      const t = e.target.closest('[data-tab]');
+      if (t) { tab = t.dataset.tab; render(); document.getElementById('tabs').scrollIntoView({ block: 'nearest' }); }
+      const w = e.target.closest('#toolbar button');
+      if (w) {
+        document.getElementById('page').className = w.dataset.w;
+        document.querySelectorAll('#toolbar button').forEach(b => b.setAttribute('aria-pressed', b === w));
+      }
+    });
+
+    const params = new URLSearchParams(location.search);
+    if (params.get('clean') === '1') document.getElementById('toolbar').hidden = true;
+    if (params.get('tab')) tab = params.get('tab');
+
+    fetch('/specimen_corsair.json')
+      .then(r => r.json())
+      .then(data => { items = data; render(); })
+      .catch(err => { document.getElementById('verdict').textContent = 'Daten konnten nicht geladen werden.'; console.error(err); });
+  </script>
+</body>
+</html>

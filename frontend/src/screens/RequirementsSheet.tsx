@@ -15,6 +15,21 @@ export interface AskableField {
 interface StoredRequirement {
   id: string;
   buyer_wants: Record<string, unknown>;
+  label?: string;
+  importance?: string;
+  own?: boolean;
+  [key: string]: unknown;
+}
+
+function isOwn(id: string, requirement?: StoredRequirement): boolean {
+  return id.startsWith('own_') || Boolean(requirement?.own) || Array.isArray(requirement?.keywords);
+}
+
+/** A must or wish in the buyer's own words ("ABS"), read as words by the judge. */
+function ownRequirement(label: string, importance: 'high' | 'low'): StoredRequirement {
+  const clean = label.trim();
+  const slug = clean.toLowerCase().replace(/[^a-z0-9äöüß]+/g, '_').replace(/^_|_$/g, '');
+  return { id: `own_${slug}`, label: clean, importance, own: true, buyer_wants: { present: true } };
 }
 
 export interface RequirementsSheetProps {
@@ -48,12 +63,19 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchCount, setSearchCount] = useState(0);
+  const [showMore, setShowMore] = useState(false);
+  const [configuredFieldIds, setConfiguredFieldIds] = useState<Set<string>>(new Set());
+  // Everything stored, so a save keeps importance and labels it does not edit.
+  const [stored, setStored] = useState<Record<string, StoredRequirement>>({});
+  const [own, setOwn] = useState<StoredRequirement[]>([]);
+  const [ownText, setOwnText] = useState('');
 
   useEffect(() => {
     if (!isOpen || !campaignId) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setShowMore(false);
 
     fetch(`/api/campaigns/${campaignId}/requirements`, { credentials: 'same-origin' })
       .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
@@ -62,10 +84,26 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
         setFields(data.fields || []);
         setSearchCount(data.searches || 0);
         const stored: Record<string, Record<string, unknown>> = {};
+        const configured = new Set<string>();
         for (const requirement of data.requirements || []) {
-          stored[requirement.id] = requirement.buyer_wants || {};
+          if (requirement.buyer_wants && Object.keys(requirement.buyer_wants).length > 0) {
+            stored[requirement.id] = requirement.buyer_wants;
+            configured.add(requirement.id);
+          }
         }
         setWants(stored);
+        setConfiguredFieldIds(configured);
+        const askable = new Set((data.fields || []).map(f => f.id));
+        const all: Record<string, StoredRequirement> = {};
+        const mine: StoredRequirement[] = [];
+        for (const requirement of data.requirements || []) {
+          all[requirement.id] = requirement;
+          if (requirement.own || requirement.id.startsWith('own_') || !askable.has(requirement.id)) {
+            mine.push(requirement);
+          }
+        }
+        setStored(all);
+        setOwn(mine);
       })
       .catch(() => !cancelled && setError(t('surface.requirementsLoadFailed')))
       .finally(() => !cancelled && setLoading(false));
@@ -94,13 +132,24 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify({
-          requirements: Object.entries(wants).map(([id, buyer_wants]) => ({ id, buyer_wants })),
+          requirements: [
+            // Own-word requirements come from `own` alone. Filtering only
+            // the ones still listed there sent a removed one back from
+            // `wants`, and "ABS" returned after every save.
+            ...Object.entries(wants)
+              .filter(([id]) => !isOwn(id, stored[id]))
+              .map(([id, buyer_wants]) => ({ ...(stored[id] || {}), id, buyer_wants })),
+            ...own,
+          ],
         }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error((body && body.error) || String(res.status));
       }
+      // New wants, same offers: judge again (and compare), but do not ask
+      // Kleinanzeigen again -- nothing about the search changed.
+      await fetch(`/api/campaigns/${campaignId}/judge`, { method: 'POST' }).catch(() => {});
       onSaved?.();
       onClose();
     } catch (err) {
@@ -108,7 +157,14 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
     } finally {
       setSaving(false);
     }
-  }, [campaignId, wants, onSaved, onClose, t]);
+  }, [campaignId, wants, own, stored, onSaved, onClose, t]);
+
+  const addOwn = (importance: 'high' | 'low') => {
+    if (!ownText.trim()) return;
+    const next = ownRequirement(ownText, importance);
+    setOwn(prev => [...prev.filter(o => o.id !== next.id), next]);
+    setOwnText('');
+  };
 
   const numberInput = (
     field: AskableField,
@@ -117,7 +173,7 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
   ) => {
     const current = wants[field.id]?.[operator];
     return (
-      <label className="flex items-center gap-2 text-xs text-[#9FB3B0]">
+      <label className="flex items-center gap-2 text-xs text-[#8FA6A1]">
         <span className="w-10 shrink-0">{placeholder}</span>
         <input
           type="number"
@@ -130,12 +186,73 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
             else next[operator] = Number(raw);
             setWant(field.id, next);
           }}
-          className="w-full min-w-0 bg-white/[0.05] border border-white/[0.08] rounded px-2 py-1.5 text-sm text-[#F2F5F4] tabular-nums focus:outline-none focus:border-white/25"
+          className="w-full min-w-0 bg-[#00100F] border border-[#0E4A40] rounded px-2.5 py-1.5 text-sm text-[#F2F5F4] [font-variant-numeric:tabular-nums] focus:outline-none focus:border-[#8FA6A1]"
         />
         {field.unit && <span className="shrink-0">{field.unit}</span>}
       </label>
     );
   };
+
+  const renderField = (field: AskableField) => (
+    <div key={field.id} className="flex flex-col gap-2">
+      <div className="text-sm font-medium text-[#F2F5F4]">
+        {field.label}
+        {field.unit ? ` (${field.unit})` : ''}
+      </div>
+
+      {field.type === 'number' && (
+        <div className="flex gap-3">
+          {numberInput(field, 'min', t('surface.atLeast'))}
+          {numberInput(field, 'max', t('surface.atMost'))}
+        </div>
+      )}
+
+      {field.type === 'enum' && (
+        <div className="flex flex-wrap gap-1.5">
+          {(field.options || []).map(option => {
+            const chosen = ((wants[field.id]?.preferred as string[]) || []).includes(
+              option
+            );
+            return (
+              <Pill
+                key={option}
+                label={option.toUpperCase()}
+                active={chosen}
+                onClick={() => {
+                  const list = [...((wants[field.id]?.preferred as string[]) || [])];
+                  const at = list.indexOf(option);
+                  if (at === -1) list.push(option);
+                  else list.splice(at, 1);
+                  setWant(field.id, list.length ? { preferred: list } : {});
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {field.type === 'boolean' && (
+        <div className="flex gap-1.5">
+          {[true, false].map(value => (
+            <Pill
+              key={String(value)}
+              label={value ? t('surface.yes') : t('surface.no')}
+              active={wants[field.id]?.match === value}
+              onClick={() =>
+                setWant(
+                  field.id,
+                  wants[field.id]?.match === value ? {} : { match: value }
+                )
+              }
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const storedFields = fields.filter(f => configuredFieldIds.has(f.id));
+  const suggestionFields = fields.filter(f => !configuredFieldIds.has(f.id));
 
   return (
     <Sheet
@@ -147,7 +264,7 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
           type="button"
           onClick={save}
           disabled={saving || loading}
-          className="w-full min-h-[44px] rounded-full bg-white/[0.14] text-[#F2F5F4] text-sm font-semibold disabled:opacity-40"
+          className="w-full min-h-[40px] rounded bg-[#E4D6BE] hover:bg-[#d8c8af] text-[#011F1F] text-sm font-semibold disabled:opacity-40 transition-colors cursor-pointer"
         >
           {saving ? t('surface.saving') : t('surface.saveRequirements')}
         </button>
@@ -155,80 +272,80 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
     >
       {error && <p className="text-sm text-[#E87967] mb-3">{error}</p>}
 
-      {loading && <p className="text-sm text-[#9FB3B0]">{t('surface.loading')}</p>}
+      {loading && <p className="text-sm text-[#8FA6A1]">{t('surface.loading')}</p>}
 
       {!loading && fields.length === 0 && (
-        <p className="text-sm text-[#9FB3B0]">{t('surface.requirementsNoFields')}</p>
+        <p className="text-sm text-[#8FA6A1]">{t('surface.requirementsNoFields')}</p>
       )}
 
       {!loading && fields.length > 0 && (
         <>
-          <p className="text-xs text-[#9FB3B0] mb-4">
+          <p className="text-xs text-[#8FA6A1] mb-4">
             {t('surface.requirementsIntro', { searches: searchCount })}
           </p>
 
           <div className="flex flex-col gap-5">
-            {fields.map(field => (
-              <div key={field.id} className="flex flex-col gap-2">
-                <div className="text-sm font-medium text-[#F2F5F4]">
-                  {field.label}
-                  {field.unit ? ` (${field.unit})` : ''}
+            {/* The buyer's own words: "ABS" as a wish lifts the score, as a
+                must it decides. */}
+            <div className="flex flex-col gap-2" data-testid="own-requirements">
+              <div className="text-sm font-medium text-[#F2F5F4]">{t('surface.ownTitle')}</div>
+              {own.map(o => (
+                <div key={o.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 text-[#F2F5F4]">
+                    {o.label || o.id}
+                    <span className="ml-2 text-xs text-[#8FA6A1]">
+                      {o.importance === 'high' || o.hard ? t('surface.ownMust') : t('surface.ownWish')}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setOwn(prev => prev.filter(x => x.id !== o.id))}
+                    className="shrink-0 text-xs text-[#8FA6A1] hover:text-[#F2F5F4] cursor-pointer"
+                  >
+                    {t('surface.ownRemove')}
+                  </button>
                 </div>
+              ))}
+              <input
+                type="text"
+                value={ownText}
+                onChange={e => setOwnText(e.target.value)}
+                placeholder={t('surface.ownPlaceholder')}
+                className="w-full bg-[#00100F] border border-[#0E4A40] rounded px-3 py-2 text-sm text-[#F2F5F4] placeholder-[#8FA6A1]/60 focus:outline-none focus:border-[#8FA6A1]"
+              />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => addOwn('low')} disabled={!ownText.trim()}
+                  className="px-3 py-1.5 rounded border border-[#0E4A40] text-sm text-[#E4D6BE] disabled:opacity-40 cursor-pointer">
+                  {t('surface.ownAddWish')}
+                </button>
+                <button type="button" onClick={() => addOwn('high')} disabled={!ownText.trim()}
+                  className="px-3 py-1.5 rounded border border-[#0E4A40] text-sm text-[#E4D6BE] disabled:opacity-40 cursor-pointer">
+                  {t('surface.ownAddMust')}
+                </button>
+              </div>
+            </div>
 
-                {field.type === 'number' && (
-                  <div className="flex gap-3">
-                    {numberInput(field, 'min', t('surface.atLeast'))}
-                    {numberInput(field, 'max', t('surface.atMost'))}
+            {storedFields.length === 0 && own.length === 0 && (
+              <p className="text-sm text-[#8FA6A1]">{t('surface.requirementsEmpty')}</p>
+            )}
+            {storedFields.map(renderField)}
+
+            {suggestionFields.length > 0 && (
+              <div className="flex flex-col gap-4 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowMore(prev => !prev)}
+                  className="w-full py-2.5 px-3 text-xs font-medium text-[#8FA6A1] hover:text-[#F2F5F4] border border-[#0E4A40] hover:border-[#8FA6A1] rounded text-center transition-colors cursor-pointer bg-transparent"
+                >
+                  {showMore ? t('surface.fewerCriteria') : t('surface.moreCriteria')}
+                </button>
+                {showMore && (
+                  <div className="flex flex-col gap-5 pt-1" data-testid="suggestion-fields">
+                    {suggestionFields.map(renderField)}
                   </div>
-                )}
-
-                {field.type === 'enum' && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {(field.options || []).map(option => {
-                      const chosen = ((wants[field.id]?.preferred as string[]) || []).includes(
-                        option
-                      );
-                      return (
-                        <Pill
-                          key={option}
-                          label={option.toUpperCase()}
-                          active={chosen}
-                          onClick={() => {
-                            const list = [...((wants[field.id]?.preferred as string[]) || [])];
-                            const at = list.indexOf(option);
-                            if (at === -1) list.push(option);
-                            else list.splice(at, 1);
-                            setWant(field.id, list.length ? { preferred: list } : {});
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-
-                {field.type === 'boolean' && (
-                  <div className="flex gap-1.5">
-                    {[true, false].map(value => (
-                      <Pill
-                        key={String(value)}
-                        label={value ? t('surface.yes') : t('surface.no')}
-                        active={wants[field.id]?.match === value}
-                        onClick={() =>
-                          setWant(
-                            field.id,
-                            wants[field.id]?.match === value ? {} : { match: value }
-                          )
-                        }
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {field.description && (
-                  <p className="text-2xs text-[#9FB3B0]/70 leading-snug">{field.description}</p>
                 )}
               </div>
-            ))}
+            )}
           </div>
         </>
       )}

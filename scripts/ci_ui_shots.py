@@ -25,6 +25,10 @@ EMAIL = "ui-shots@localhost"
 PASSWORD = "ui-shots-only"
 
 
+# scripts/seed_fixture_db.js stamps everything 2026-01-01T12:00:00Z.
+FROZEN_NOW_MS = 1767276000000  # 2026-01-01T14:00:00Z
+
+
 def free_port():
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -71,7 +75,27 @@ def build_driver(width, height):
     options.add_argument(f"--window-size={width},{height}")
 
     service = Service()
-    return webdriver.Chrome(service=service, options=options)
+    driver = webdriver.Chrome(service=service, options=options)
+    # The fixture's dates are fixed, but "vor 2 Std" is measured against the
+    # browser's clock, so an unfrozen clock made every baseline wrong the next
+    # day. Two hours after the fixture's timestamp, before any page script runs.
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {
+            "source": (
+                "(() => {"
+                f"  const frozen = {FROZEN_NOW_MS};"
+                "  const RealDate = Date;"
+                "  class FrozenDate extends RealDate {"
+                "    constructor(...a) { super(...(a.length ? a : [frozen])); }"
+                "    static now() { return frozen; }"
+                "  }"
+                "  globalThis.Date = FrozenDate;"
+                "})();"
+            )
+        },
+    )
+    return driver
 
 
 # Belt and braces alongside --force-prefers-reduced-motion: Tailwind's
@@ -193,6 +217,20 @@ def walk(driver, base, out_dir, width, height):
     time.sleep(2)
     shoot(driver, out_dir, "05-settings")
 
+    # A find's sheet. Never photographed before, which is how a footer of
+    # three buttons with its main action broken over three lines went live.
+    listing_id = driver.execute_async_script(
+        "const done = arguments[arguments.length - 1];"
+        "fetch('/api/listings?campaign_id=' + arguments[0] + '&limit=1&sort=price_asc')"
+        ".then(r => r.json()).then(d => done((d.listings || [])[0]?.id || null))"
+        ".catch(() => done(null));",
+        cid,
+    )
+    if listing_id:
+        driver.get(f"{base}/#dashboard?campaignId={cid}&listingId={listing_id}")
+        time.sleep(2)
+        shoot(driver, out_dir, "06-detail-sheet")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -208,13 +246,14 @@ def main():
     if args.db and os.path.exists(args.db):
         db_path = args.db
     else:
-        db_path = os.path.join(args.out, "fixture.db")
+        db_path = os.path.abspath(os.path.join(args.out, "fixture.db"))
         print(f"Seeding fixture database: {db_path}")
         subprocess.run(
             ["node", os.path.join(ROOT, "scripts", "seed_fixture_db.js"), db_path],
             check=True,
             cwd=ROOT,
         )
+    db_path = os.path.abspath(db_path)
 
     port = free_port()
     server = None

@@ -73,6 +73,8 @@ function parseCsvLine(line) {
 }
 
 let places = [];
+// Folded name -> places, so reading a printed town is a lookup, not a scan.
+let byKey = new Map();
 
 function load() {
   try {
@@ -97,6 +99,13 @@ function load() {
         _namePlain: plain(name),
         _fullPlain: plain(town),
       });
+    }
+    byKey = new Map();
+    for (const place of places) {
+      for (const key of new Set([place._name, place._full, place._namePlain, place._fullPlain])) {
+        if (!byKey.has(key)) byKey.set(key, []);
+        byKey.get(key).push(place);
+      }
     }
     console.log(`Loaded ${places.length} places for route lookup`);
   } catch (error) {
@@ -166,6 +175,42 @@ function suggest(query, limit = 8) {
   return scored.slice(0, limit).map(row => row[3]);
 }
 
+/**
+ * Places whose name is exactly this one, in this state when given.
+ *
+ * For reading a printed place back ("Bayern - Germering", "Landsberg (Lech)"),
+ * not for typing: a near-miss would put a listing in the wrong town.
+ */
+function byName(name, state = null) {
+  const bare = String(name || '').replace(/\(.*?\)/g, ' ');
+  const full = String(name || '').replace(/[()]/g, ' ');
+  const keys = new Set([spelled(bare), spelled(full), plain(bare), plain(full)]);
+  keys.delete('');
+  const matches = [...new Set([...keys].flatMap(key => byKey.get(key) || []))];
+  if (!state) return matches;
+  const inState = matches.filter(p => p.state === state);
+  return inState.length ? inState : matches;
+}
+
+const PLZ_PATH = path.join(__dirname, '..', 'scraper', 'reference', 'plz_centroids.csv');
+let plzTable = null;
+
+/** [lat, lon] of a postal code's centroid, or null. Read on first use. */
+function byPostalCode(code) {
+  if (!plzTable) {
+    plzTable = new Map();
+    try {
+      for (const line of fs.readFileSync(PLZ_PATH, 'utf-8').split('\n').slice(1)) {
+        const [postalCode, lat, lon] = parseCsvLine(line);
+        if (postalCode && lat && lon) plzTable.set(postalCode.trim(), [Number(lat), Number(lon)]);
+      }
+    } catch (error) {
+      console.error('Could not load the postal code table:', error.message);
+    }
+  }
+  return plzTable.get(code) || null;
+}
+
 load();
 
-module.exports = { suggest, reload: load, count: () => places.length };
+module.exports = { suggest, byName, byPostalCode, reload: load, count: () => places.length };

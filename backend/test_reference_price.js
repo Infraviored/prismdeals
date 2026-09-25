@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { judge, referencePrices, MIN_GROUP_SIZE } = require('./db/reference_price');
+const { judge, referencePrices, dealListingIds, annotateDeals, MIN_GROUP_SIZE } = require('./db/reference_price');
 
 // A market with a clear cheap end: a dozen listings around 150, one at 40.
 const BUSY = { median: 150, cheapest: 60, count: 40 };
@@ -56,10 +56,118 @@ function run() {
       throw new Error('should not have queried');
     },
     []
-  ).then(map => {
-    assert.strictEqual(map.size, 0, 'no searches, no references, no query');
-    console.log('reference_price: all assertions passed');
-  });
+  )
+    .then(map => {
+      assert.strictEqual(map.size, 0, 'no searches, no references, no query');
+      return rejectedListingsStayOutOfTheMedian();
+    })
+    .then(() => rejectedListingsAreNotDeals())
+    .then(() => console.log('reference_price: all assertions passed'));
+}
+
+// A search for 2x16 GB kits also finds 4x8 GB kits, which the judge rejects.
+// They are a different thing at a different price; letting them into the
+// median made a matching kit at the usual price look expensive and an ordinary
+// one look like a deal.
+async function rejectedListingsStayOutOfTheMedian() {
+  const sqlite3 = require('sqlite3');
+  const db = new sqlite3.Database(':memory:');
+  const run = (sql, params = []) =>
+    new Promise((resolve, reject) => db.run(sql, params, err => (err ? reject(err) : resolve())));
+  const query = (sql, params) =>
+    new Promise((resolve, reject) => db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows))));
+
+  await run('CREATE TABLE listings (id TEXT PRIMARY KEY, price_eur INTEGER)');
+  await run('CREATE TABLE listing_search_hits (listing_id TEXT, search_id INTEGER, first_seen_at TEXT)');
+  await run('CREATE TABLE searches (id INTEGER PRIMARY KEY, knowledge_set_id INTEGER)');
+  await run('CREATE TABLE knowledge_sets (id INTEGER PRIMARY KEY, requirements_hash TEXT)');
+  await run('CREATE TABLE listing_fit (listing_id TEXT, search_id INTEGER, verdict TEXT, requirements_hash TEXT)');
+
+  // Five matching kits at 150, five rejected four-stick kits at 60.
+  const rows = [
+    ...[1, 2, 3, 4, 5].map(i => [`fit-${i}`, 150, 'fit']),
+    ...[1, 2, 3, 4, 5].map(i => [`four-${i}`, 60, 'no']),
+    ['unjudged', 150, null],
+  ];
+  for (const [id, price, verdict] of rows) {
+    await run('INSERT INTO listings VALUES (?, ?)', [id, price]);
+    await run("INSERT INTO listing_search_hits VALUES (?, 7, '2026-09-22')", [id]);
+    if (verdict) await run('INSERT INTO listing_fit (listing_id, search_id, verdict) VALUES (?, 7, ?)', [id, verdict]);
+  }
+
+  const ref = (await referencePrices(query, [7])).get(7);
+  assert.strictEqual(ref.count, 6, 'rejected listings are not counted; unjudged ones are');
+  assert.strictEqual(ref.median, 150, 'the median is the price of what is actually hunted');
+  db.close();
+}
+
+async function rejectedListingsAreNotDeals() {
+  const sqlite3 = require('sqlite3');
+  const db = new sqlite3.Database(':memory:');
+  const run = (sql, params = []) =>
+    new Promise((resolve, reject) => db.run(sql, params, err => (err ? reject(err) : resolve())));
+  const query = (sql, params) =>
+    new Promise((resolve, reject) => db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows))));
+
+  await run('CREATE TABLE listings (id TEXT PRIMARY KEY, price_eur INTEGER)');
+  await run('CREATE TABLE listing_search_hits (listing_id TEXT, search_id INTEGER, first_seen_at TEXT)');
+  await run('CREATE TABLE searches (id INTEGER PRIMARY KEY, knowledge_set_id INTEGER)');
+  await run('CREATE TABLE knowledge_sets (id INTEGER PRIMARY KEY, requirements_hash TEXT)');
+  await run('CREATE TABLE listing_fit (listing_id TEXT, search_id INTEGER, verdict TEXT, requirements_hash TEXT)');
+
+  // Five matching kits at 150 (fit), one unjudged at 150
+  const baseRows = [
+    ...[1, 2, 3, 4, 5].map(i => [`fit-${i}`, 150, 'fit']),
+    ['unjudged-1', 150, null],
+  ];
+  for (const [id, price, verdict] of baseRows) {
+    await run('INSERT INTO listings VALUES (?, ?)', [id, price]);
+    await run("INSERT INTO listing_search_hits VALUES (?, 7, '2026-09-22')", [id]);
+    if (verdict) await run('INSERT INTO listing_fit (listing_id, search_id, verdict) VALUES (?, 7, ?)', [id, verdict]);
+  }
+
+  // A cheap listing that was rejected ('no') for search 7
+  await run('INSERT INTO listings VALUES (?, ?)', ['cheap-rejected', 60]);
+  await run("INSERT INTO listing_search_hits VALUES (?, 7, '2026-09-22')", ['cheap-rejected']);
+  await run("INSERT INTO listing_fit (listing_id, search_id, verdict) VALUES (?, 7, 'no')", ['cheap-rejected']);
+
+  // A cheap listing that matches ('fit') for search 7
+  await run('INSERT INTO listings VALUES (?, ?)', ['cheap-fit', 70]);
+  await run("INSERT INTO listing_search_hits VALUES (?, 7, '2026-09-22')", ['cheap-fit']);
+  await run("INSERT INTO listing_fit (listing_id, search_id, verdict) VALUES (?, 7, 'fit')", ['cheap-fit']);
+
+  // An unjudged cheap listing for search 7 (unjudged remains allowed)
+  await run('INSERT INTO listings VALUES (?, ?)', ['cheap-unjudged', 70]);
+  await run("INSERT INTO listing_search_hits VALUES (?, 7, '2026-09-22')", ['cheap-unjudged']);
+
+  const dealIds = await dealListingIds(query, [7]);
+  assert(!dealIds.includes('cheap-rejected'), 'rejected listing must not be in dealListingIds');
+  assert(dealIds.includes('cheap-fit'), 'fit cheap listing must be in dealListingIds');
+  assert(dealIds.includes('cheap-unjudged'), 'unjudged cheap listing must be in dealListingIds');
+
+  const annotated = await annotateDeals(query, [
+    { id: 'cheap-rejected', price_eur: 60, search_id: 7 },
+    { id: 'cheap-fit', price_eur: 70, search_id: 7 },
+    { id: 'cheap-unjudged', price_eur: 70, search_id: 7 },
+  ]);
+
+  assert.strictEqual(
+    annotated.find(l => l.id === 'cheap-rejected').is_deal,
+    false,
+    'rejected listing must not be marked as deal in annotateDeals'
+  );
+  assert.strictEqual(
+    annotated.find(l => l.id === 'cheap-fit').is_deal,
+    true,
+    'fit cheap listing must be marked as deal in annotateDeals'
+  );
+  assert.strictEqual(
+    annotated.find(l => l.id === 'cheap-unjudged').is_deal,
+    true,
+    'unjudged cheap listing must be marked as deal in annotateDeals'
+  );
+
+  db.close();
 }
 
 run();

@@ -1,19 +1,25 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { RadiusField } from '../components/RadiusField';
+import { RadiusChoice } from '../components/RadiusChoice';
+import { MaxPriceField } from '../components/MaxPriceField';
 import CategoryFilters from '../components/CategoryFilters';
-import { Bar, Pill } from '../components/surface';
+import { Bar } from '../components/surface';
 import PlaceInput, { type Place } from '../components/PlaceInput';
-import ModelPillGroup from '../components/ModelPillGroup';
+import SearchTermsField from '../components/SearchTermsField';
 import { RequirementsSheet } from './RequirementsSheet';
+import { EditProbeSheet } from './EditProbeSheet';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign, SearchTarget, SearchFamilyTerm } from '../types';
 import { composeSearchUrl, decomposeSearchUrl, slugify } from '../utils/searchUrl';
+import { withoutGeneration, broadenQuery } from '../utils/searchTerms';
 
 export interface EditScreenProps {
   campaign: Campaign | undefined;
   searches?: SearchTarget[];
   onBack: () => void;
-  onSaved?: (savedFamily: { id: number; searches?: number; conflicts?: unknown[] }) => void;
+  onSaved?: (
+    savedFamily: { id: number; searches?: number; conflicts?: unknown[] },
+    change?: { searchChanged: boolean }
+  ) => void;
   onDelete?: (campaign: Campaign) => void;
 }
 
@@ -30,7 +36,9 @@ export const EditScreen: React.FC<EditScreenProps> = ({
   const [place, setPlace] = useState<Place | null>(null);
   const [locationId, setLocationId] = useState<string | null>(null);
   const [locationSlug, setLocationSlug] = useState<string | null>(null);
-  const [radius, setRadius] = useState<number>(30);
+  // No limit until the buyer sets one. A radius only means something around a
+  // place, and 30 km preset on a search without one was a limit nobody chose.
+  const [radius, setRadius] = useState<number | null>(null);
   const [maxPrice, setMaxPrice] = useState<number | null>(null);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [attributes, setAttributes] = useState<string[]>([]);
@@ -38,6 +46,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
   const [saving, setSaving] = useState(false);
   const [requirementsOpen, setRequirementsOpen] = useState(false);
+  const [probeOpen, setProbeOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const lookupSeq = useRef(0);
@@ -85,14 +94,9 @@ export const EditScreen: React.FC<EditScreenProps> = ({
           if (!data) return;
           if (data.name) setName(data.name);
           if (Array.isArray(data.terms)) {
-            setTerms(
-              data.terms.map((t: { id?: number; term: string; label?: string; enabled?: boolean | number }) => ({
-                id: t.id,
-                term: t.term,
-                label: t.label || t.term,
-                enabled: t.enabled !== 0 && t.enabled !== false,
-              }))
-            );
+            setTerms(data.terms.map((t: Omit<SearchFamilyTerm, 'enabled'> & { enabled?: boolean | number }) => ({
+              id: t.id, term: t.term, label: t.label || t.term, enabled: t.enabled !== 0 && t.enabled !== false, listings: t.listings, fit_listings: t.fit_listings,
+            })));
           }
           if (data.base_url) applyDecomposedUrl(data.base_url);
         })
@@ -102,6 +106,20 @@ export const EditScreen: React.FC<EditScreenProps> = ({
       if (activeSearches.length > 0 && activeSearches[0].url) {
         applyDecomposedUrl(activeSearches[0].url);
       }
+      // A campaign of plain searches already asks Kleinanzeigen something. Show
+      // those terms, so saving converts them instead of replacing them with the
+      // hunt's name -- which is how "corsair vengeance 32gb" (50 found) once
+      // became "...-2x16-ddr4-3200-cl16" (almost nothing).
+      const seen = new Set<string>();
+      const existing: SearchFamilyTerm[] = [];
+      for (const search of activeSearches) {
+        const query = search.url ? decomposeSearchUrl(search.url)?.query : null;
+        if (query && !seen.has(query)) {
+          seen.add(query);
+          existing.push({ term: query, label: query.replace(/-/g, ' '), enabled: true });
+        }
+      }
+      if (existing.length > 0) setTerms(existing);
     }
   }, [campaign, searches, applyDecomposedUrl]);   
 
@@ -158,42 +176,64 @@ export const EditScreen: React.FC<EditScreenProps> = ({
     setSaving(true);
     setSaveError(null);
 
+    const fallback = broadenQuery(trimmedName) || trimmedName;
+    const effectiveTerms = terms.length > 0
+      ? terms.map((t) => ({
+          ...(t.id ? { id: t.id } : {}),
+          term: withoutGeneration(t.term),
+          label: t.label || t.term,
+          enabled: true,
+        }))
+      : [{ term: slugify(fallback), label: fallback, enabled: true }];
+
+    // One search per term: "yamaha-r1-rn19" and "yamaha-r1" become the same.
+    const seenTerms = new Set<string>();
+    for (let i = effectiveTerms.length - 1; i >= 0; i--) {
+      if (seenTerms.has(effectiveTerms[i].term)) effectiveTerms.splice(i, 1);
+      else seenTerms.add(effectiveTerms[i].term);
+    }
+
     const composedBaseUrl = composeSearchUrl({
       locationSlug: place ? slugify(place.name) : locationSlug,
-      // Only a resolved Kleinanzeigen location id, never a postal code: they
-      // are different namespaces, and l86899 is not Landsberg (7091). Writing
-      // the PLZ into the tail produced a URL the scraper crawled somewhere
-      // else entirely, with nothing to show for it.
       locationId,
-      radius,
+      radius: place || locationId ? radius : null,
       maxPrice,
-      query: trimmedName ? slugify(trimmedName) : undefined,
+      query: effectiveTerms[0]?.term ? slugify(effectiveTerms[0].term) : undefined,
       category: categoryId,
+      // As the setup writes it: without a place the first path part is
+      // "suchanfrage", not the first term. Composed differently here, a mere
+      // rename changed the URL and started a crawl.
+      categorySlug: 'suchanfrage',
       attributes,
     });
 
-    const effectiveTerms =
-      terms.length > 0
-        ? terms.map((t) => ({
-            ...(t.id ? { id: t.id } : {}),
-            term: t.term,
-            label: t.label || t.term,
-            enabled: true,
-          }))
-        : [{ term: slugify(trimmedName), label: trimmedName, enabled: true }];
-
     try {
       const isUpdate = Boolean(campaign?.family_id);
+      // Only what goes into the URL is a new question to Kleinanzeigen: the
+      // terms, place, radius, price and filters. A renamed hunt is not.
+      let searchChanged = true;
+      if (isUpdate) {
+        const before = await fetch(`/api/search-families/${campaign!.family_id}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        if (before) {
+          const oldTerms = (before.terms || [])
+            .filter((t: { enabled?: number | boolean }) => t.enabled !== 0 && t.enabled !== false)
+            .map((t: { term: string }) => t.term)
+            .sort()
+            .join('|');
+          const newTerms = effectiveTerms.map((t) => t.term).sort().join('|');
+          searchChanged = before.base_url !== composedBaseUrl || oldTerms !== newTerms;
+        }
+      }
       const endpoint = isUpdate ? `/api/search-families/${campaign!.family_id}` : '/api/search-families';
       const method = isUpdate ? 'PUT' : 'POST';
       const payload: Record<string, unknown> = {
         name: trimmedName,
         base_url: composedBaseUrl,
         terms: effectiveTerms,
+        ...(!isUpdate && campaign?.id ? { campaign_id: campaign.id } : {}),
       };
-      if (!isUpdate && campaign?.id) {
-        payload.campaign_id = campaign.id;
-      }
 
       const res = await fetch(endpoint, {
         method,
@@ -215,7 +255,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
         }).catch(() => {});
       }
 
-      if (onSaved) onSaved(data);
+      if (onSaved) onSaved(data, { searchChanged });
       else onBack();
     } catch {
       setSaveError(t('common.connectionIssueFailed'));
@@ -231,20 +271,22 @@ export const EditScreen: React.FC<EditScreenProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col font-sans w-full">
-      {/* 1. Header Bar (48px) */}
+    <div className="min-h-screen bg-[#011F1F] text-[#F2F5F4] flex flex-col font-sans w-full overflow-x-hidden">
+      {/* 1. Header Bar (44px) */}
       <Bar
         measure="max-w-xl"
         title={t('surface.setupTitle', { name: name || campaign?.name || '' })}
         onBack={onBack}
+        backLabel={t('surface.back')}
         actions={
-          <Pill
-            label={saving ? t('surface.saving') : t('surface.save')}
-            active
+          <button
+            type="button"
             disabled={saving || !name.trim()}
             onClick={handleSave}
-            className="font-semibold text-xs px-4 py-1.5 cursor-pointer"
-          />
+            className="px-3 py-1.5 rounded text-xs font-semibold bg-[#E4D6BE] text-[#011F1F] hover:bg-[#d8c8af] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving ? t('surface.saving') : t('surface.save')}
+          </button>
         }
       />
 
@@ -252,7 +294,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
       <main className="w-full max-w-xl mx-auto px-4 py-6 flex-1 flex flex-col space-y-6">
         {/* Field 1: Was (What) */}
         <div className="space-y-2">
-          <label htmlFor="setup-what" className="block text-xs font-medium text-[#9FB3B0]">
+          <label htmlFor="setup-what" className="block text-xs font-medium text-[#8FA6A1]">
             {t('surface.what')}
           </label>
           <input
@@ -261,34 +303,24 @@ export const EditScreen: React.FC<EditScreenProps> = ({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t('surface.whatPlaceholder')}
-            className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-[#F2F5F4] placeholder-[#9FB3B0]/40 focus:outline-none focus:border-white/30 text-sm transition-colors"
-          />
-
-          {/* Models as pills */}
-          <ModelPillGroup
-            terms={terms}
-            onAdd={handleAddModel}
-            onRemove={handleRemoveModel}
-            addPlaceholder={t('surface.addModel')}
-            addTitle={t('surface.addModel')}
+            className="w-full px-3.5 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] placeholder-[#8FA6A1]/40 focus:outline-none focus:border-[#8FA6A1] text-sm transition-colors"
           />
         </div>
 
-        {resolveFailed && (
-          <p className="text-sm text-[#D9A441]">{t('surface.placeUnresolved')}</p>
-        )}
-
-        <CategoryFilters
-          categoryId={categoryId}
-          attributes={attributes}
-          term={name}
-          onCategoryChange={setCategoryId}
-          onAttributesChange={setAttributes}
+        <SearchTermsField
+          terms={terms}
+          suggestion={broadenQuery(name)}
+          onAdd={handleAddModel}
+          onRemove={handleRemoveModel}
         />
+
+        {resolveFailed && (
+          <p className="text-sm text-[#C9A227]">{t('surface.placeUnresolved')}</p>
+        )}
 
         {/* Field 2: Wo (Where) */}
         <div className="space-y-2">
-          <label className="block text-xs font-medium text-[#9FB3B0]">
+          <label className="block text-xs font-medium text-[#8FA6A1]">
             {t('surface.where')}
           </label>
           <PlaceInput
@@ -302,71 +334,70 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
         {/* Field 3: Wie weit (How far) */}
         <div className="space-y-2">
-          <label className="block text-xs font-medium text-[#9FB3B0]">
+          <label className="block text-xs font-medium text-[#8FA6A1]">
             {t('surface.howFar')}
           </label>
-          <RadiusField value={radius} onChange={setRadius} />
+          <RadiusChoice hasPlace={Boolean(place || locationId)} radius={radius} onChange={setRadius} />
         </div>
 
         {/* Field 4: Bis wie viel (Max price) */}
         <div className="space-y-2">
-          <label htmlFor="setup-price" className="block text-xs font-medium text-[#9FB3B0]">
+          <label htmlFor="setup-price" className="block text-xs font-medium text-[#8FA6A1]">
             {t('surface.maxPrice')}
           </label>
-          <div className="relative w-36">
-            <input
-              id="setup-price"
-              type="number"
-              min="0"
-              step="5"
-              value={maxPrice !== null && maxPrice !== undefined ? maxPrice : ''}
-              onChange={(e) => {
-                const val = e.target.value.trim();
-                setMaxPrice(val ? parseInt(val, 10) : null);
-              }}
-              placeholder="150"
-              className="w-full pl-3.5 pr-8 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-[#F2F5F4] placeholder-[#9FB3B0]/40 focus:outline-none focus:border-white/30 text-sm tabular-nums font-mono text-right transition-colors"
-            />
-            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-[#9FB3B0] pointer-events-none font-medium">
-              €
-            </span>
-          </div>
+          <MaxPriceField value={maxPrice} onChange={setMaxPrice} />
         </div>
 
-        {/* Field 5: what the site cannot filter on.
-            "Up to 150 EUR, memory" is all Kleinanzeigen can narrow to. "Two
-            sticks of sixteen, DDR4, at least 3200" is the difference between
-            fifty offers and the nine worth opening, and it belongs beside the
-            other four questions rather than behind an error message. */}
+        <CategoryFilters
+          categoryId={categoryId}
+          attributes={attributes}
+          term={name}
+          onCategoryChange={setCategoryId}
+          onAttributesChange={setAttributes}
+        />
+
+        {/* Field 5: what the site cannot filter on */}
         {campaign && (
           <div className="space-y-2">
-            <label className="block text-xs font-medium text-[#9FB3B0]">
+            <label className="block text-xs font-medium text-[#8FA6A1]">
               {t('surface.requirements')}
             </label>
             <button
               type="button"
               onClick={() => setRequirementsOpen(true)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-left text-sm text-[#9FB3B0] hover:text-[#F2F5F4] hover:border-white/30 transition-colors cursor-pointer"
+              className="w-full px-3.5 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-left text-sm text-[#8FA6A1] hover:text-[#F2F5F4] hover:border-[#8FA6A1] transition-colors cursor-pointer"
             >
               {t('surface.requirementsOpen')}
             </button>
           </div>
         )}
 
+        {/* Field 6: Markt neu prüfen (Plan §6) */}
+        <div className="space-y-2">
+          <label className="block text-xs font-medium text-[#8FA6A1]">
+            {t('hunt.step5Title')}
+          </label>
+          <button
+            type="button"
+            data-testid="edit-probe-btn"
+            onClick={() => setProbeOpen(true)}
+            className="w-full px-3.5 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-left text-sm text-[#8FA6A1] hover:text-[#F2F5F4] hover:border-[#8FA6A1] transition-colors cursor-pointer"
+          >
+            {t('hunt.probeAgain')}
+          </button>
+        </div>
+
         {saveError && (
-          <p className="text-xs text-status-danger font-semibold">{saveError}</p>
+          <p className="text-xs text-[#E87967] font-semibold">{saveError}</p>
         )}
 
         {/* Quiet delete button at the bottom */}
         {campaign && (
           <div className="pt-10 pb-6">
-            {/* A destructive action rendered as bare grey text is indistinguishable
-                from a caption. It gets a border and a hit area like any control,
-                and stays quiet in colour rather than in affordance. */}
             <button
               type="button"
               onClick={handleDelete}
-              className="w-full px-4 py-3 rounded-xl border border-white/[0.12] text-sm text-[#9FB3B0] hover:text-[#F2F5F4] hover:border-white/30 transition-colors cursor-pointer bg-transparent"
+              className="w-full px-4 py-2.5 rounded border border-[#0E4A40] text-sm text-[#8FA6A1] hover:text-[#F2F5F4] hover:border-[#8FA6A1] transition-colors cursor-pointer bg-transparent"
             >
               {t('surface.deleteSearch')}
             </button>
@@ -378,6 +409,16 @@ export const EditScreen: React.FC<EditScreenProps> = ({
         isOpen={requirementsOpen}
         onClose={() => setRequirementsOpen(false)}
         campaignId={campaign?.id ?? null}
+      />
+
+      <EditProbeSheet
+        isOpen={probeOpen}
+        onClose={() => setProbeOpen(false)}
+        terms={terms}
+        locationId={locationId}
+        radius={radius}
+        maxPrice={maxPrice}
+        categoryId={categoryId}
       />
     </div>
   );

@@ -148,48 +148,68 @@ export default function PlaceInput({ label, placeholder, value, onChange, emptyH
     listRef.current?.children[active]?.scrollIntoView({ block: 'nearest' })
   }, [active, open])
 
+  const clear = () => {
+    skipNextLookup.current = true
+    setText('')
+    setMatches([])
+    setOpen(false)
+    onChange(null)
+  }
+
   return (
     <div className="space-y-1.5 relative" ref={containerRef}>
-      <label htmlFor={`${listId}-input`} className="text-sm text-text-secondary font-semibold block">
-        {label}
-      </label>
-      <Input
-        id={`${listId}-input`}
-        type="text"
-        role="combobox"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        aria-activedescendant={open && matches.length ? `${listId}-${active}` : undefined}
-        autoComplete="off"
-        value={text}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-          setText(e.target.value)
-          // The typed text no longer describes the chosen place.
-          if (value) onChange(null)
-        }}
-        onFocus={() => { if (matches.length) setOpen(true) }}
-        onKeyDown={onKeyDown}
-        placeholder={placeholder}
-      />
+      {label ? (
+        <label htmlFor={`${listId}-input`} className="text-xs text-[#8FA6A1] font-medium block">
+          {label}
+        </label>
+      ) : null}
+      <div className="relative flex items-center">
+        <Input
+          id={`${listId}-input`}
+          type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={open && matches.length ? `${listId}-${active}` : undefined}
+          autoComplete="off"
+          value={text}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+            setText(e.target.value)
+            // The typed text no longer describes the chosen place.
+            if (value) onChange(null)
+          }}
+          onFocus={() => { if (matches.length) setOpen(true) }}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          className={text ? 'pr-9' : ''}
+        />
+        {text ? (
+          <button
+            type="button"
+            data-testid="clear-place-button"
+            aria-label="Ort löschen"
+            onClick={clear}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full text-[#8FA6A1] hover:text-[#F2F5F4] hover:bg-[#0E4A40]/50 cursor-pointer transition-colors text-xs font-bold"
+          >
+            ✕
+          </button>
+        ) : null}
+      </div>
 
       {/* The chosen place stood a second time underneath the field, in green,
           repeating what the field already said. The field is the answer; only
           the absence of one needs a line of its own. */}
       {!value && text.trim().length >= 2 && !searching && matches.length === 0 ? (
-        <p className="text-sm text-text-muted">{emptyHint}</p>
+        <p className="text-sm text-[#8FA6A1]">{emptyHint}</p>
       ) : null}
 
       {open && matches.length > 0 && (
-        /* Wider than the field it belongs to, and able to grow past it. The
-           town name is the thing being chosen, so it gets the line to itself:
-           sharing it with the postal code and the state left "Landsberg ..."
-           truncated in a 220 px column, hiding the very word being read. */
         <ul
           id={listId}
           ref={listRef}
           role="listbox"
-          className="absolute z-30 left-0 top-full mt-1 min-w-full w-max max-w-[min(28rem,80vw)] max-h-72 overflow-y-auto rounded-xl border border-border-subtle bg-bg-surface shadow-2xl py-1"
+          className="absolute z-30 left-0 top-full mt-1 min-w-full w-max max-w-[min(28rem,80vw)] max-h-72 overflow-y-auto rounded border border-[#0E4A40] bg-[#06322C] py-1 shadow-2xl"
         >
           {matches.map((place, index) => (
             <li
@@ -200,15 +220,14 @@ export default function PlaceInput({ label, placeholder, value, onChange, emptyH
               onMouseEnter={() => setActive(index)}
               onMouseDown={e => { e.preventDefault(); choose(place) }}
               className={`px-3 py-2.5 min-h-[44px] flex flex-col justify-center cursor-pointer transition-colors ${
-                index === active ? 'bg-bg-surface-hover' : ''
+                index === active ? 'bg-[#00100F]' : ''
               }`}
             >
-              <div className="text-base text-text-primary font-semibold leading-snug">
+              <div className="text-sm text-[#F2F5F4] font-medium leading-snug">
                 {place.qualifier ? `${place.name} ${place.qualifier}` : place.name}
               </div>
-              <div className="text-sm text-text-muted flex items-center gap-2 leading-snug">
-                <span className="font-mono tabular-nums">{place.postal_code}</span>
-                <span aria-hidden="true">·</span>
+              <div className="text-xs text-[#8FA6A1] flex items-center gap-2 leading-snug">
+                <span className="tabular-nums">{place.postal_code}</span>
                 <span>{place.state}</span>
               </div>
             </li>

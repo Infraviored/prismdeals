@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bar, Pill } from '../components/surface';
+import { Bar } from '../components/surface';
 import { useTranslation } from '../hooks/useTranslation';
 
 export interface AppScreenProps {
@@ -70,32 +70,35 @@ export const AppScreen: React.FC<AppScreenProps> = ({
     []
   );
 
-  const row = 'w-full px-3.5 py-3 min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-between gap-3 text-sm';
+  const row = 'w-full px-3.5 py-3 min-h-[42px] rounded bg-[#06322C] border border-[#0E4A40] flex items-center justify-between gap-3 text-sm';
 
   return (
     <div className="w-full bg-[#011F1F] text-[#F2F5F4] flex flex-col min-h-screen">
-      <Bar title={t('surface.app')} onBack={onBack} measure="max-w-xl" />
+      <Bar title={t('surface.app')} onBack={onBack} backLabel={t('surface.back')} measure="max-w-xl" />
 
       <main className="flex-1 px-4 py-5 space-y-6 max-w-xl w-full mx-auto">
         <section className="space-y-2">
-          <h2 className="text-xs font-medium text-[#9FB3B0]">{t('surface.connection')}</h2>
+          <h2 className="text-xs font-medium text-[#8FA6A1]">{t('surface.connection')}</h2>
           <div className={row}>
-            <span className="text-[#9FB3B0] truncate">
+            <span className="text-[#8FA6A1] truncate">
               {sessionEmail || t('surface.notConnected')}
             </span>
-            <Pill
-              label={sessionEmail ? t('common.reauth') : t('common.login')}
+            <button
+              type="button"
               onClick={onConnect}
               disabled={busy}
-            />
+              className="px-3 py-1.5 rounded text-xs font-semibold bg-[#E4D6BE] text-[#011F1F] hover:bg-[#d8c8af] transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {sessionEmail ? t('common.reauth') : t('common.login')}
+            </button>
           </div>
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-xs font-medium text-[#9FB3B0]">{t('surface.schedule')}</h2>
+          <h2 className="text-xs font-medium text-[#8FA6A1]">{t('surface.schedule')}</h2>
 
           <label className={row} htmlFor="app-interval">
-            <span className="text-[#9FB3B0]">{t('surface.crawlEvery')}</span>
+            <span className="text-[#8FA6A1]">{t('surface.crawlEvery')}</span>
             <span className="flex items-baseline gap-1 shrink-0">
               <input
                 id="app-interval"
@@ -103,12 +106,12 @@ export const AppScreen: React.FC<AppScreenProps> = ({
                 min={0}
                 value={schedule.interval}
                 onChange={e => save({ ...schedule, interval: parseInt(e.target.value, 10) || 0 })}
-                className="w-16 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[#F2F5F4] focus:outline-none focus:border-white/30 text-sm tabular-nums text-right"
+                className="w-16 px-2 py-1 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] focus:outline-none focus:border-[#8FA6A1] text-sm tabular-nums text-right"
               />
-              <span className="text-[#9FB3B0]">{t('surface.minutes')}</span>
+              <span className="text-[#8FA6A1]">{t('surface.minutes')}</span>
             </span>
           </label>
-          <p className="px-1 text-2xs text-[#9FB3B0]/70">
+          <p className="px-1 text-2xs text-[#8FA6A1]">
             {schedule.interval === 0 ? t('settings.frequencyOff') : t('settings.frequencyDesc')}
           </p>
 
@@ -118,8 +121,8 @@ export const AppScreen: React.FC<AppScreenProps> = ({
             aria-pressed={schedule.autoAiEval}
             className={row}
           >
-            <span className="text-[#9FB3B0]">{t('surface.autoEvaluate')}</span>
-            <span className={schedule.autoAiEval ? 'text-[#F2F5F4]' : 'text-[#9FB3B0]/50'}>
+            <span className="text-[#8FA6A1]">{t('surface.autoEvaluate')}</span>
+            <span className={schedule.autoAiEval ? 'text-[#4E8C6A] font-semibold' : 'text-[#8FA6A1]/50'}>
               {schedule.autoAiEval ? '✓' : t('surface.off')}
             </span>
           </button>
@@ -127,23 +130,23 @@ export const AppScreen: React.FC<AppScreenProps> = ({
 
         <section className="space-y-2">
           <button type="button" onClick={toggleLanguage} className={row}>
-            <span className="text-[#9FB3B0]">{t('surface.language')}</span>
+            <span className="text-[#8FA6A1]">{t('surface.language')}</span>
             <span className="text-[#F2F5F4]">{lang === 'de' ? 'Deutsch' : 'English'}</span>
           </button>
         </section>
 
         {status === 'failed' && (
-          <p className="text-sm text-[#D9A441]">{t('settings.saveError')}</p>
+          <p className="text-sm text-[#C9A227]">{t('settings.saveError')}</p>
         )}
         {status === 'saved' && (
-          <p className="text-sm text-[#9FB3B0]">{t('settings.saveSuccess')}</p>
+          <p className="text-sm text-[#4E8C6A]">{t('settings.saveSuccess')}</p>
         )}
 
         <div className="pt-4">
           <button
             type="button"
             onClick={onLogout}
-            className="w-full px-4 py-3 rounded-xl border border-white/[0.12] text-sm text-[#9FB3B0] hover:text-[#F2F5F4] hover:border-white/30 transition-colors bg-transparent"
+            className="w-full px-4 py-2.5 rounded border border-[#0E4A40] text-sm text-[#8FA6A1] hover:text-[#F2F5F4] hover:border-[#8FA6A1] transition-colors bg-transparent cursor-pointer"
           >
             {t('auth.logout')}
           </button>

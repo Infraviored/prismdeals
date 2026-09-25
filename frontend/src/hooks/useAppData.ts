@@ -1,12 +1,13 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import type { Campaign, KnowledgeSet, SearchTarget, Listing, RouteCorridorData } from '../types';
+import type { ViewState } from './useHashRouter';
 import { transformListing } from '../utils/listingTransformer';
 
 interface UseAppDataProps {
   currentCampaignId: number | null;
   setCurrentCampaignId: (id: number | null) => void;
   view: string;
-  navigate: (view: 'landing' | 'dashboard' | 'edit' | 'create-campaign' | 'settings', campaignId?: number | null, searchId?: number | null) => void;
+  navigate: (view: ViewState, campaignId?: number | null, searchId?: number | null) => void;
   appUser: { email: string; role: string } | null;
 }
 
@@ -79,7 +80,11 @@ export function useAppData({
     if (currentCampaignId && view === 'dashboard' && searches.length > 0) {
       const campaignSearches = searches.filter(s => s.campaign_id === currentCampaignId);
       const c = campaigns.find(item => item.id === currentCampaignId);
-      const empty = campaignSearches.length === 0 && !c?.route_id && !c?.family_id;
+      // A campaign not in the list yet was just created and the refresh is
+      // still on its way: judging it empty sent every new hunt to setup
+      // instead of its results.
+      if (!c) return;
+      const empty = campaignSearches.length === 0 && !c.route_id && !c.family_id;
       if (empty && redirectedFor.current !== currentCampaignId) {
         redirectedFor.current = currentCampaignId;
         navigate('edit', currentCampaignId, null);

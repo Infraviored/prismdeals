@@ -71,27 +71,16 @@ def save_plan(
     what makes overlapping corridors cheap rather than an error; reuse of a row
     that means something else is a problem the caller has to see.
     """
-    ensure_schema(conn)
-
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO route_searches (name, campaign_id, knowledge_set_id, base_url, "
-        "origin, destination, radius_km, half_width_km, plan_json, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            name or f"{origin} → {destination}",
-            campaign_id,
-            knowledge_set_id,
-            base_url,
-            origin,
-            destination,
-            plan.radius_km,
-            plan.half_width_km,
-            json.dumps(plan.as_dict(), ensure_ascii=False),
-            _now(),
-        ),
+    route_id = insert_route(
+        conn,
+        plan,
+        base_url,
+        origin,
+        destination,
+        name=name,
+        campaign_id=campaign_id,
+        knowledge_set_id=knowledge_set_id,
     )
-    route_id = cursor.lastrowid
 
     conflicts = attach_circles(
         conn,
@@ -104,6 +93,73 @@ def save_plan(
     )
     conn.commit()
     return route_id, conflicts
+
+
+def insert_route(
+    conn,
+    plan,
+    base_url,
+    origin,
+    destination,
+    name=None,
+    campaign_id=None,
+    knowledge_set_id=None,
+    family_id=None,
+):
+    """Writes the route row alone, without registering any search."""
+    ensure_schema(conn)
+    cursor = conn.execute(
+        "INSERT INTO route_searches (name, campaign_id, knowledge_set_id, base_url, "
+        "origin, destination, radius_km, half_width_km, plan_json, created_at, "
+        "family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            name or f"{origin} → {destination}",
+            campaign_id,
+            knowledge_set_id,
+            base_url,
+            str(origin),
+            str(destination),
+            plan.radius_km,
+            plan.half_width_km,
+            json.dumps(plan.as_dict(), ensure_ascii=False),
+            _now(),
+            family_id,
+        ),
+    )
+    return cursor.lastrowid
+
+
+def delete_route(conn, route_search_id):
+    """Removes a route with its circles and detours; searches stay, but stop.
+
+    A circle search nothing else owns any more is switched off here:
+    recompute_enabled leaves ownerless searches alone (it reads them as made
+    by hand), so after a corridor was dropped its circles were crawled forever.
+    """
+    import family_store
+
+    circle_sids = [
+        r[0]
+        for r in conn.execute(
+            "SELECT DISTINCT search_id FROM route_search_circles WHERE route_search_id = ?",
+            (route_search_id,),
+        ).fetchall()
+    ]
+    for table, column in (
+        ("listing_route_geo", "route_search_id"),
+        ("route_search_circles", "route_search_id"),
+        ("route_searches", "id"),
+    ):
+        conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (route_search_id,))
+    for sid in circle_sids:
+        owned = conn.execute(
+            "SELECT 1 FROM search_family_searches WHERE search_id = ? "
+            "UNION SELECT 1 FROM route_search_circles WHERE search_id = ? LIMIT 1",
+            (sid, sid),
+        ).fetchone()
+        if not owned:
+            conn.execute("UPDATE searches SET enabled = 0 WHERE id = ?", (sid,))
+    family_store.recompute_enabled(conn, circle_sids)
 
 
 def _register_search(cursor, label, url, campaign_id, knowledge_set_id, display_label):
@@ -314,10 +370,15 @@ def listings_for_route(conn, route_search_id):
     A listing found by two circles appears once: it is one listing, and the
     corridor is one search from the buyer's point of view.
     """
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
+    postal = "l.postal_code" if "postal_code" in columns else "NULL"
     rows = conn.execute(
-        "SELECT DISTINCT l.id, l.title, l.price, l.location, l.url "
+        # Every circle that found it, not only the first finder: a hunt given
+        # a corridor afterwards had found its listings by its town search.
+        f"SELECT DISTINCT l.id, l.title, l.price, l.location, l.url, {postal} "
         "FROM listings l "
-        "JOIN route_search_circles c ON l.search_id = c.search_id "
+        "JOIN listing_search_hits h ON h.listing_id = l.id "
+        "JOIN route_search_circles c ON h.search_id = c.search_id "
         "WHERE c.route_search_id = ?",
         (route_search_id,),
     ).fetchall()
@@ -328,6 +389,7 @@ def listings_for_route(conn, route_search_id):
             "price": row[2],
             "location": row[3],
             "url": row[4],
+            "postal_code": row[5],
         }
         for row in rows
     ]
@@ -390,10 +452,19 @@ def pending_geo(conn, route_search_id):
     downtime turns into a permanent gap.
     """
     known = geo_for_route(conn, route_search_id)
+
+    def pending(listing):
+        status = known.get(listing["id"], {}).get("status", FAILED)
+        # "No place" was settled before cards gave a postal code; one that has
+        # one now is worth another try.
+        return status in RETRYABLE or (
+            status == UNPLACEABLE and listing.get("postal_code")
+        )
+
     return [
         listing
         for listing in listings_for_route(conn, route_search_id)
-        if known.get(listing["id"], {}).get("status", FAILED) in RETRYABLE
+        if pending(listing)
     ]
 
 

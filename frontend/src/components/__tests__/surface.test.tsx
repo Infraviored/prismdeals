@@ -44,6 +44,8 @@ describe('Surface Components P1', () => {
 
       expect(screen.getByText('Federkern-Matratze Ikea 140x200')).toBeInTheDocument();
       expect(screen.getByTestId('listing-price')).toHaveTextContent('90 €');
+      // No score, no score line: nothing invented under the price.
+      expect(screen.queryByTestId('listing-score')).not.toBeInTheDocument();
       expect(screen.getByText('Landsberg')).toBeInTheDocument();
       // The wording follows the interface language: German says "auf Route".
       expect(screen.getByText(/on route|auf Route/)).toBeInTheDocument();
@@ -129,12 +131,12 @@ describe('Surface Components P1', () => {
 
       render(<Row listing={listing} />);
       const staleEl = screen.getByText(/Tagen|ago/);
-      expect(staleEl).toHaveClass('text-[#D9A441]');
+      expect(staleEl).toHaveClass('text-[#C9A227]');
     });
   });
 
   describe('Pill component', () => {
-    it('renders inactive and active state with click event', () => {
+    it('renders inactive and active state with click event and distinct styling', () => {
       const handleClick = vi.fn();
       const { rerender } = render(
         <Pill label="30 km" count={12} active={false} onClick={handleClick} />
@@ -142,6 +144,7 @@ describe('Surface Components P1', () => {
 
       const pill = screen.getByTestId('surface-pill');
       expect(pill).toHaveAttribute('data-active', 'false');
+      expect(pill).toHaveClass('border-[#0E4A40]');
       expect(screen.getByTestId('surface-pill-count')).toHaveTextContent('12');
 
       fireEvent.click(pill);
@@ -149,6 +152,8 @@ describe('Surface Components P1', () => {
 
       rerender(<Pill label="30 km" count={12} active={true} />);
       expect(screen.getByTestId('surface-pill')).toHaveAttribute('data-active', 'true');
+      expect(screen.getByTestId('surface-pill')).toHaveClass('bg-[#0E4A40]');
+      expect(screen.getByTestId('surface-pill')).toHaveClass('border-[#F2F5F4]');
     });
   });
 
@@ -179,6 +184,26 @@ describe('Surface Components P1', () => {
       fireEvent.keyDown(window, { key: 'Escape' });
       expect(handleClose).toHaveBeenCalledTimes(2);
     });
+
+    it('leaves focus alone when the parent re-renders with a new onClose', () => {
+      // The app re-renders every two seconds. Moving focus each time threw
+      // away a text selection on Android, copy bar and all.
+      const sheet = (onClose: () => void) => (
+        <Sheet isOpen={true} onClose={onClose} title="Anforderungen">
+          <input data-testid="inside" />
+        </Sheet>
+      );
+      const { rerender } = render(sheet(() => {}));
+      const input = screen.getByTestId('inside');
+      input.focus();
+      rerender(sheet(() => {}));
+      expect(document.activeElement).toBe(input);
+
+      const latest = vi.fn();
+      rerender(sheet(latest));
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(latest).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('EmptyLine component', () => {
@@ -195,5 +220,41 @@ describe('Surface Components P1', () => {
       expect(screen.getByText('Keine Treffer in 30 km')).toBeInTheDocument();
       expect(screen.getByText('100 km')).toBeInTheDocument();
     });
+  });
+});
+
+describe('Row score', () => {
+  it('shows the score under the price', () => {
+    render(<Row listing={{ id: 's1', title: 'Kit', price_eur: 150, price: '150 €', score: 86.6 }} onClick={() => {}} />);
+    expect(screen.getByTestId('listing-score')).toHaveTextContent('87 %');
+  });
+});
+
+describe('Row keeps rank out of the list', () => {
+  it('shows the percent but not the comparison rank', () => {
+    render(
+      <Row
+        listing={{ id: '1', title: 'Corsair', price: '140 €', price_eur: 140, score: 80, rank: 2, rank_of: 12 }}
+        onClick={() => {}}
+      />
+    );
+    expect(screen.getByTestId('listing-score')).toHaveTextContent('80');
+    expect(screen.queryByText(/12/)).not.toBeInTheDocument();
+  });
+});
+
+describe('Row shows a vehicle’s registration and mileage', () => {
+  it('reads them from the listing details', () => {
+    render(
+      <Row
+        listing={{
+          id: '9', title: 'Yamaha R1 RN12', price: '5300 €', price_eur: 5300,
+          details: { Erstzulassung: 'Mai 2005', Kilometerstand: '13.000 km' },
+        }}
+        onClick={() => {}}
+      />
+    );
+    expect(screen.getByText('EZ 2005')).toBeInTheDocument();
+    expect(screen.getByText('13.000 km')).toBeInTheDocument();
   });
 });

@@ -4,8 +4,9 @@ import { useTranslation } from '../../hooks/useTranslation';
 export interface SheetProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Pinned below the scrolling content, never over it. */
   footer?: React.ReactNode;
+  /** Small controls in the header, before the close button. */
+  actions?: React.ReactNode;
   title?: React.ReactNode;
   children: React.ReactNode;
   side?: 'right' | 'bottom';
@@ -16,6 +17,7 @@ export const Sheet: React.FC<SheetProps> = ({
   isOpen,
   onClose,
   footer,
+  actions,
   title,
   children,
   side = 'right',
@@ -23,11 +25,17 @@ export const Sheet: React.FC<SheetProps> = ({
 }) => {
   const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
+  // Parents pass a fresh arrow function on every render, and the app renders
+  // every two seconds (the processing poll). With onClose as a dependency the
+  // effect below re-ran each time: focus went back to the page behind and then
+  // to the panel, which on Android threw away a text selection and its copy
+  // bar, over and over. Read it through a ref; open and close are the only
+  // moments focus should move.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
-  // A modal that does not hold the focus is not modal. Opening a sheet left the
-  // focus on BODY, so Tab walked the covered page behind it: a keyboard buyer
-  // could not reach "Open on Kleinanzeigen" and could fire actions they could
-  // not see.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -36,14 +44,16 @@ export const Sheet: React.FC<SheetProps> = ({
         panelRef.current?.querySelectorAll<HTMLElement>(
           'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         ) ?? []
-      ).filter(el => el.offsetParent !== null);
+      ).filter((el) => el.offsetParent !== null);
 
     const returnTo = document.activeElement as HTMLElement | null;
-    (focusable()[0] ?? panelRef.current)?.focus();
+    // The panel, not its first control: with the actions in the header that
+    // control is "keep", and a ring around it on open read as already pressed.
+    panelRef.current?.focus();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -58,8 +68,6 @@ export const Sheet: React.FC<SheetProps> = ({
       const last = items[items.length - 1];
       const active = document.activeElement as HTMLElement | null;
 
-      // Anything outside the panel -- including the covered page -- is sent
-      // back to the edge it should have come from.
       if (!active || !panelRef.current?.contains(active)) {
         e.preventDefault();
         (e.shiftKey ? last : first).focus();
@@ -77,14 +85,14 @@ export const Sheet: React.FC<SheetProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       returnTo?.focus?.();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const panelLayout =
     side === 'right'
-      ? 'fixed inset-y-0 right-0 w-full max-w-lg border-l border-white/[0.08] shadow-2xl animate-slide-left'
-      : 'fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t border-white/[0.08] shadow-2xl animate-fade-in';
+      ? 'fixed inset-0 sm:inset-y-0 sm:left-auto sm:right-0 w-full sm:max-w-lg border-l border-[#0E4A40] shadow-2xl animate-slide-left'
+      : 'fixed inset-0 sm:inset-x-0 sm:bottom-0 sm:max-h-[85vh] sm:rounded-t-[3px] border-t border-[#0E4A40] shadow-2xl animate-fade-in';
 
   return (
     <div
@@ -95,7 +103,7 @@ export const Sheet: React.FC<SheetProps> = ({
     >
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-[#00100F] sm:bg-[#00100F]/70 sm:backdrop-blur-sm transition-opacity"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -105,19 +113,20 @@ export const Sheet: React.FC<SheetProps> = ({
         ref={panelRef}
         tabIndex={-1}
         data-testid="surface-sheet-panel"
-        className={`${panelLayout} z-10 flex flex-col bg-[#012828] text-[#F2F5F4] focus:outline-none ${className}`}
+        className={`${panelLayout} z-10 flex flex-col bg-[#011F1F] text-[#F2F5F4] focus:outline-none ${className}`}
       >
-        {/* Header (48px matching Bar) */}
-        <div className="h-12 min-h-[48px] max-h-[48px] px-4 border-b border-white/[0.08] flex items-center justify-between gap-3 shrink-0">
-          <div className="text-sm font-semibold font-heading truncate text-[#F2F5F4]">
+        {/* Header */}
+        <div className="h-11 min-h-[44px] max-h-[44px] px-4 border-b border-[#0E4A40] flex items-center justify-between gap-3 shrink-0">
+          <div className="text-sm font-semibold truncate text-[#F2F5F4] flex-1 min-w-0">
             {title}
           </div>
+          {actions && <div className="flex items-center gap-1 shrink-0">{actions}</div>}
           <button
             type="button"
             data-testid="surface-sheet-close"
             onClick={onClose}
             aria-label={t('surface.close')}
-            className="flex items-center justify-center min-w-[36px] min-h-[36px] -mr-1.5 text-[#9FB3B0] hover:text-[#F2F5F4] rounded transition-colors cursor-pointer"
+            className="flex items-center justify-center min-w-[36px] min-h-[36px] text-[#8FA6A1] hover:text-[#F2F5F4] rounded-[3px] transition-colors cursor-pointer"
           >
             <svg
               className="w-4 h-4"
@@ -136,12 +145,9 @@ export const Sheet: React.FC<SheetProps> = ({
           {children}
         </div>
 
-        {/* A pinned action belongs outside the scrolling area. Sticky inside it
-            hovers over the text instead of making room, so the last lines of a
-            description sat behind the button and no amount of bottom padding
-            could help -- padding is in the flow the button has left. */}
+        {/* Pinned action footer */}
         {footer && (
-          <div className="shrink-0 p-4 sm:p-5 bg-[#012828] border-t border-white/[0.08]">
+          <div className="shrink-0 p-4 sm:p-5 bg-[#06322C] border-t border-[#0E4A40]">
             {footer}
           </div>
         )}

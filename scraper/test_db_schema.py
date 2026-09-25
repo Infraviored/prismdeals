@@ -117,11 +117,11 @@ def test_no_module_declares_tables_outside_the_schema_file():
     runtimes before this file existed.
     """
     offenders = []
+    skipped = {".git", "node_modules", "venv", ".venv", ".wt", "data_copy"}
     for directory, _, filenames in os.walk(ROOT):
-        if any(
-            part in directory
-            for part in (".git", "node_modules", "venv", ".wt", "data_copy")
-        ):
+        # Judged by the path inside the repository: a checkout that lives in a
+        # worktree (".wt/…") skipped every file, and the rule checked nothing.
+        if skipped & set(os.path.relpath(directory, ROOT).split(os.sep)):
             continue
         for filename in filenames:
             if not filename.endswith((".py", ".js")):
@@ -132,6 +132,8 @@ def test_no_module_declares_tables_outside_the_schema_file():
             relative = os.path.relpath(path, ROOT)
             if relative in ("scripts/seed_fixture_db.js",):
                 continue  # builds a throwaway CI fixture, deliberately its own
+            if relative == "scraper/rate_limiter.py":
+                continue  # its own database file, shared by every process
             try:
                 text = open(path, encoding="utf-8").read()
             except (OSError, UnicodeDecodeError):

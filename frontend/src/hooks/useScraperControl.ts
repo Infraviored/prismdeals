@@ -19,6 +19,11 @@ export function useScraperControl({
   const [processingStatus, setProcessingStatus] = useState('');
   const [activeProcessingListingIds, setActiveProcessingListingIds] = useState<string[]>([]);
 
+  // The campaign whose crawl is running. When it finishes, its listings are
+  // judged with the free title/description sieve, so a search that found the
+  // same listings again gets its verdicts back without anyone pressing a button.
+  const crawlingCampaignRef = useRef<number | null>(null);
+
   const refreshAllRef = useRef(refreshAll);
   const onScrapeCompletedRef = useRef(onScrapeCompleted);
   useEffect(() => {
@@ -46,8 +51,15 @@ export function useScraperControl({
           setIsScraping(false);
           setScrapingProgress(null);
           setScrapingStatus('Scraping completed!');
+          crawlingCampaignRef.current = null;
+          // The server judges and compares after the crawl, whether this page
+          // is open or not; look again once its verdicts are in.
           refreshAllRef.current();
           onScrapeCompletedRef.current?.();
+          setTimeout(() => {
+            refreshAllRef.current();
+            onScrapeCompletedRef.current?.();
+          }, 8000);
         }
       } catch {
         // silent
@@ -68,7 +80,10 @@ export function useScraperControl({
         setActiveProcessingListingIds(prev => {
           const finished = prev.filter(id => !data.active.includes(id));
           if (finished.length > 0) refreshAllRef.current();
-          return data.active;
+          // Same ids, same array: a new one re-rendered the whole app every
+          // two seconds for nothing.
+          const same = prev.length === data.active.length && prev.every((id, i) => id === data.active[i]);
+          return same ? prev : data.active;
         });
       } catch {
         // silent
@@ -80,6 +95,7 @@ export function useScraperControl({
   }, []);
 
   const handleStartScrape = async (campaignId: number | null) => {
+    crawlingCampaignRef.current = campaignId;
     setIsScraping(true);
     setScrapingStatus('Spawning scraper worker...');
     setLiveLogs('Initializing browser context and logging session...');

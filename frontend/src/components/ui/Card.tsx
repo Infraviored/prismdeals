@@ -10,9 +10,9 @@ export const Card: React.FC<CardProps> = ({
   children,
   ...props
 }) => {
-  const baseStyle = 'bg-bg-surface/50 backdrop-blur-xl border border-border-subtle rounded-2xl shadow-xl flex flex-col';
+  const baseStyle = 'bg-[#06322C] border border-[#0E4A40] rounded-[3px] text-[#F2F5F4] flex flex-col';
   const interactiveStyle = interactive
-    ? 'hover:border-brand-accent/30 hover:-translate-y-0.5 transition-all cursor-pointer group'
+    ? 'hover:border-[#8FA6A1] transition-colors cursor-pointer'
     : '';
 
   return (

@@ -29,6 +29,8 @@ export interface CategoryFiltersProps {
   term?: string;
   onCategoryChange: (id: string | null) => void;
   onAttributesChange: (attributes: string[]) => void;
+  /** Filters not to offer, e.g. the brand when the hunt names its models. */
+  hideFilter?: (key: string) => boolean;
 }
 
 interface Suggestion {
@@ -54,13 +56,13 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
   term = '',
   onCategoryChange,
   onAttributesChange,
+  hideFilter,
 }) => {
   const { t } = useTranslation();
   const [tree, setTree] = useState<TaxonomyCategory[]>([]);
   const [filters, setFilters] = useState<TaxonomyFilter[]>([]);
   const [categoryName, setCategoryName] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [openFilter, setOpenFilter] = useState<TaxonomyFilter | null>(null);
   const [search, setSearch] = useState('');
   const [unavailable, setUnavailable] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -124,7 +126,9 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
           (d.filters || []).filter(
             (f: TaxonomyFilter) =>
               f.location === 'tail' &&
-              (f.type === 'attribute_boolean' || (f.options || []).length > 0)
+              (f.type === 'attribute_boolean' ||
+                f.type === 'attribute_range' ||
+                (f.options || []).length > 0)
           )
         );
       })
@@ -155,8 +159,8 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
   };
 
   const rowClass = (selected: boolean) =>
-    `w-full text-left px-3 py-3 min-h-[44px] border-b border-white/[0.08] text-sm flex items-center justify-between gap-3 ${
-      selected ? 'text-[#F2F5F4]' : 'text-[#9FB3B0]'
+    `w-full text-left px-3 py-3 min-h-[44px] border-b border-[#0E4A40] hover:bg-[#00100F] text-sm flex items-center justify-between gap-3 transition-colors ${
+      selected ? 'text-[#F2F5F4] font-medium' : 'text-[#8FA6A1]'
     }`;
 
   const shown = search.trim()
@@ -167,17 +171,17 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
 
   return (
     <div className="space-y-2">
-      <label className="block text-xs font-medium text-[#9FB3B0]">
+      <label className="block text-xs font-medium text-[#8FA6A1]">
         {t('surface.category')}
       </label>
 
       <button
         type="button"
         onClick={() => setPickerOpen(true)}
-        className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-left text-sm text-[#F2F5F4] hover:border-white/30 transition-colors"
+        className="w-full px-3.5 py-2.5 min-h-[40px] rounded bg-[#00100F] border border-[#0E4A40] text-left text-sm text-[#F2F5F4] hover:border-[#8FA6A1] transition-colors cursor-pointer"
       >
         {categoryName || (
-          <span className="text-[#9FB3B0]">{t('surface.anyCategory')}</span>
+          <span className="text-[#8FA6A1]">{t('surface.anyCategory')}</span>
         )}
       </button>
 
@@ -188,51 +192,120 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
               key={`${suggestion.id}-${suggestion.filter || ''}`}
               type="button"
               onClick={() => applySuggestion(suggestion)}
-              className="px-3 min-h-[36px] rounded-full bg-white/[0.04] border border-white/[0.08] text-xs text-[#9FB3B0] hover:text-[#F2F5F4] hover:border-white/30 transition-colors"
+              className="px-3 py-1.5 rounded bg-[#06322C] border border-[#0E4A40] text-xs text-[#8FA6A1] hover:text-[#F2F5F4] hover:border-[#8FA6A1] transition-colors cursor-pointer"
             >
               {suggestion.filter_label || suggestion.name}
-              <span className="text-[#9FB3B0]/50"> · {suggestion.name}</span>
+              <span className="text-[#8FA6A1]/60"> ({suggestion.name})</span>
             </button>
           ))}
         </div>
       )}
 
-      {filters.map(filter => {
+      {filters.filter(filter => !hideFilter?.(filter.key)).map(filter => {
         const current = valueOf(filter.key);
+        const id = `filter-${filter.key}`;
 
         // A boolean has one useful state: on. The site writes it as
-        // `+key:true` and offers no second value to choose from.
+        // `+key:true` and offers no second value to choose from -- so it is a
+        // switch, not a list with one entry.
         if (filter.type === 'attribute_boolean') {
           const on = current === 'true';
           return (
-            <button
+            <label
               key={filter.key}
-              type="button"
-              aria-pressed={on}
-              onClick={() => setValue(filter.key, on ? null : 'true')}
-              className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-between gap-3 text-sm hover:border-white/30 transition-colors"
+              htmlFor={id}
+              className="w-full px-3.5 py-2.5 min-h-[44px] rounded bg-[#00100F] border border-[#0E4A40] flex items-center justify-between gap-3 text-sm cursor-pointer hover:border-[#8FA6A1] transition-colors"
             >
-              <span className="text-[#9FB3B0]">{filter.label}</span>
-              <span className={on ? 'text-[#F2F5F4]' : 'text-[#9FB3B0]/50'}>
-                {on ? '✓' : t('surface.anyValue')}
-              </span>
-            </button>
+              <span className={on ? 'text-[#F2F5F4]' : 'text-[#8FA6A1]'}>{filter.label}</span>
+              <button
+                id={id}
+                type="button"
+                role="switch"
+                aria-checked={on}
+                onClick={() => setValue(filter.key, on ? null : 'true')}
+                className={`relative shrink-0 w-10 h-6 rounded-full border transition-colors cursor-pointer ${
+                  on ? 'bg-[#4E8C6A] border-[#4E8C6A]' : 'bg-[#06322C] border-[#0E4A40]'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 w-4.5 h-4.5 rounded-full bg-[#F2F5F4] transition-all ${
+                    on ? 'left-[18px]' : 'left-0.5'
+                  }`}
+                />
+              </button>
+            </label>
           );
         }
 
-        const label = filter.options?.find(o => o.value === current)?.label || current;
+        if (filter.type === 'attribute_range') {
+          const [minVal, maxVal] = (current || '').split(',');
+          return (
+            <div
+              key={filter.key}
+              className="w-full px-3.5 py-1.5 min-h-[44px] rounded bg-[#00100F] border border-[#0E4A40] flex items-center justify-between gap-2 text-sm focus-within:border-[#8FA6A1] hover:border-[#8FA6A1] transition-colors"
+            >
+              <label htmlFor={id} className="text-[#8FA6A1] shrink-0">
+                {filter.label}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  id={`${id}-min`}
+                  type="number"
+                  inputMode="numeric"
+                  placeholder={t('surface.atLeast')}
+                  value={minVal || ''}
+                  onChange={e => {
+                    const nextMin = e.target.value.trim();
+                    const curMax = maxVal || '';
+                    if (!nextMin && !curMax) setValue(filter.key, null);
+                    else setValue(filter.key, `${nextMin},${curMax}`);
+                  }}
+                  className="w-[4.5rem] bg-[#011F1F] border border-[#0E4A40] rounded px-2 py-1 text-sm text-right text-[#F2F5F4] [font-variant-numeric:tabular-nums] placeholder-[#8FA6A1]/50 focus:outline-none focus:border-[#8FA6A1]"
+                />
+                <span className="text-[#8FA6A1] text-xs">–</span>
+                <input
+                  id={`${id}-max`}
+                  type="number"
+                  inputMode="numeric"
+                  placeholder={t('surface.atMost')}
+                  value={maxVal || ''}
+                  onChange={e => {
+                    const curMin = minVal || '';
+                    const nextMax = e.target.value.trim();
+                    if (!curMin && !nextMax) setValue(filter.key, null);
+                    else setValue(filter.key, `${curMin},${nextMax}`);
+                  }}
+                  className="w-[4.5rem] bg-[#011F1F] border border-[#0E4A40] rounded px-2 py-1 text-sm text-right text-[#F2F5F4] [font-variant-numeric:tabular-nums] placeholder-[#8FA6A1]/50 focus:outline-none focus:border-[#8FA6A1]"
+                />
+              </div>
+            </div>
+          );
+        }
+
         return (
-          <button
+          <div
             key={filter.key}
-            type="button"
-            onClick={() => setOpenFilter(filter)}
-            className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-between gap-3 text-sm hover:border-white/30 transition-colors"
+            className="w-full px-3.5 min-h-[44px] rounded bg-[#00100F] border border-[#0E4A40] flex items-center justify-between gap-3 text-sm focus-within:border-[#8FA6A1] hover:border-[#8FA6A1] transition-colors"
           >
-            <span className="text-[#9FB3B0]">{filter.label}</span>
-            <span className={label ? 'text-[#F2F5F4]' : 'text-[#9FB3B0]/50'}>
-              {label || t('surface.anyValue')}
-            </span>
-          </button>
+            <label htmlFor={id} className="text-[#8FA6A1] shrink-0">
+              {filter.label}
+            </label>
+            <select
+              id={id}
+              value={current ?? ''}
+              onChange={e => setValue(filter.key, e.target.value || null)}
+              className={`min-w-0 max-w-[60%] py-2.5 bg-transparent text-right text-sm cursor-pointer focus:outline-none ${
+                current ? 'text-[#F2F5F4]' : 'text-[#8FA6A1]/60'
+              }`}
+            >
+              <option value="">{t('surface.anyValue')}</option>
+              {filter.options?.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
         );
       })}
 
@@ -246,10 +319,10 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder={t('surface.searchCategory')}
-          className="w-full mb-2 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-[#F2F5F4] placeholder-[#9FB3B0]/40 focus:outline-none focus:border-white/30 text-sm"
+          className="w-full mb-2 px-3.5 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] placeholder-[#8FA6A1]/40 focus:outline-none focus:border-[#8FA6A1] text-sm"
         />
         {unavailable ? (
-          <p className="px-3 py-3 text-sm text-[#9FB3B0]">{t('surface.categoriesUnavailable')}</p>
+          <p className="px-3 py-3 text-sm text-[#8FA6A1]">{t('surface.categoriesUnavailable')}</p>
         ) : (
           <div className="flex flex-col">
             <button onClick={() => pickCategory(null)} className={rowClass(!categoryId)}>
@@ -259,7 +332,7 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
               <button key={c.id} onClick={() => pickCategory(c.id)} className={rowClass(categoryId === c.id)}>
                 <span>{c.name}</span>
                 {c.parent_name && (
-                  <span className="text-2xs text-[#9FB3B0]/60 shrink-0">{c.parent_name}</span>
+                  <span className="text-2xs text-[#8FA6A1]/60 shrink-0">{c.parent_name}</span>
                 )}
               </button>
             ))}
@@ -267,35 +340,6 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
         )}
       </Sheet>
 
-      <Sheet
-        isOpen={openFilter !== null}
-        onClose={() => setOpenFilter(null)}
-        title={openFilter?.label || ''}
-      >
-        <div className="flex flex-col">
-          <button
-            onClick={() => {
-              if (openFilter) setValue(openFilter.key, null);
-              setOpenFilter(null);
-            }}
-            className={rowClass(openFilter ? valueOf(openFilter.key) === null : false)}
-          >
-            {t('surface.anyValue')}
-          </button>
-          {openFilter?.options?.map(option => (
-            <button
-              key={option.value}
-              onClick={() => {
-                setValue(openFilter.key, option.value);
-                setOpenFilter(null);
-              }}
-              className={rowClass(valueOf(openFilter.key) === option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </Sheet>
     </div>
   );
 };

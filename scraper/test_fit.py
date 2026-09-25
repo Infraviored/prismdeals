@@ -19,7 +19,7 @@ import fit  # noqa: E402
 
 SCHEMA = """
 CREATE TABLE searches (id INTEGER PRIMARY KEY, url TEXT, knowledge_set_id INTEGER);
-CREATE TABLE knowledge_sets (id INTEGER PRIMARY KEY, item_json TEXT);
+CREATE TABLE knowledge_sets (id INTEGER PRIMARY KEY, item_json TEXT, requirements_hash TEXT);
 CREATE TABLE listings (
     id TEXT PRIMARY KEY, search_id INTEGER, title TEXT,
     detailed_description TEXT, short_description TEXT
@@ -31,6 +31,7 @@ CREATE TABLE listing_search_hits (
 CREATE TABLE listing_fit (
     listing_id TEXT NOT NULL, search_id INTEGER NOT NULL, verdict TEXT NOT NULL,
     reason TEXT, facts_json TEXT, stage TEXT NOT NULL, judged_at TEXT NOT NULL,
+    requirements_hash TEXT,
     PRIMARY KEY (listing_id, search_id)
 );
 """
@@ -416,3 +417,36 @@ def test_a_listing_another_search_found_first_is_judged_too(conn):
         "SELECT verdict FROM listing_fit WHERE listing_id='shared' AND search_id=2"
     ).fetchone()
     assert row == ("fit",)
+
+
+def test_the_fact_sheet_does_not_turn_a_request_back_into_an_offer(conn):
+    """judge_search says "Gesuch"; the model's fact sheet must not undo it."""
+    import playbooks
+
+    conn.execute(
+        "INSERT INTO listings (id, title, search_id) VALUES ('g', ?, 1)",
+        ("Suche Corsair Vengeance 2x16 GB DDR4-3200 CL16",),
+    )
+    fit.judge_search(conn, 1)
+    extracted = {
+        "criteria": {
+            "stickCount": {"value": 2},
+            "gbPerStick": {"value": 16},
+            "generation": {"value": "DDR4"},
+            "speedMhz": {"value": 3200},
+            "casLatency": {"value": 16},
+            "hasFunctionalDefect": {"value": False},
+        }
+    }
+    verdict = fit.from_extracted(
+        conn,
+        "g",
+        1,
+        playbooks.get_playbook("computing/memory"),
+        extracted,
+        WANTS["fields"],
+    )
+    assert verdict == "no"
+    assert conn.execute(
+        "SELECT verdict, reason FROM listing_fit WHERE listing_id='g'"
+    ).fetchone() == ("no", "Gesuch, kein Angebot")

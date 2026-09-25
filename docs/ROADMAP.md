@@ -4,6 +4,9 @@ Stand: 11. August 2026. Ausführliche Fassung mit Marktanalyse, Kategoriebewertu
 und Fallbeispielen als Artifact:
 <https://claude.ai/code/artifact/67a9de19-ccf6-496e-8067-17ac8dd27994>
 
+> **Was davon heute wirklich läuft**, gezählt an der Live-Datenbank: [`backend-bestand.md`](backend-bestand.md).
+> **Wie prismdeals urteilt** (fünf Achsen, Profile je Kategorie, Wissensbaum, Recherche-Brücke, Bewertung in Stapeln): [`product-core.md`](product-core.md).
+
 ---
 
 ## Das Problem

@@ -1,15 +1,21 @@
-import React, { useState, useCallback } from 'react';
-import { Bar, Row, Pill, EmptyLine, type RowListing } from '../components/surface';
-import RouteCorridorMap, { type RouteCircle, type RouteListingGeo } from '../components/RouteCorridorMap';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { Row, Pill, type RowListing } from '../components/surface';
+import RouteCorridorMap, { type RouteListingGeo } from '../components/RouteCorridorMap';
 import { FundeDetailSheet } from './FundeDetailSheet';
 import { FundeModelsSheet } from './FundeModelsSheet';
 import { FundeFilterSheet } from './FundeFilterSheet';
 import { RequirementsSheet } from './RequirementsSheet';
-import { useFundeData } from '../hooks/useFundeData';
+import { FundeAside } from './FundeAside';
+import { FundeBestHero } from './FundeBestHero';
+import { KnowledgeSheet } from './KnowledgeSheet';
+import { FundeCorridorSheet } from './FundeCorridorSheet';
+import { useFundeData, type FundeTabKey, type FundeSort } from '../hooks/useFundeData';
 import { useKept } from '../hooks/useKept';
 import { useTranslation } from '../hooks/useTranslation';
-import type { Campaign, SearchFamilyTerm, RadiusDiagnosis } from '../types';
-import { RefreshCw, Settings, X } from 'lucide-react';
+import type { Campaign } from '../types';
+import { useLinkedListing } from '../hooks/useLinkedListing';
+import FundeEmpty from './FundeEmpty';
+import Freshness from './Freshness';
 
 export interface FundeScreenProps {
   campaign: Campaign | undefined;
@@ -17,239 +23,15 @@ export interface FundeScreenProps {
   onConfigure: () => void;
   onStartScrape?: () => void;
   isScraping?: boolean;
+  /** The campaign itself changed (a corridor added): reload the list of them. */
+  onCampaignChanged?: () => void;
 }
 
-interface FundeBarActionsProps {
-  isCorridor: boolean;
-  viewMode: 'list' | 'map';
-  setViewMode: (mode: 'list' | 'map') => void;
-  sort: string;
-  cycleSort: () => void;
-  sortLabel: string;
-  dealsOnly: boolean;
-  setDealsOnly: (on: boolean) => void;
-  maxDetour: number | null;
-  onOpenFilter: () => void;
-  keptOnly: boolean;
-  keptCount: number;
-  onToggleKeptOnly: () => void;
-  fitOnly: boolean;
-  judgedCount: number;
-  judging: boolean;
-  onToggleFitOnly: () => void;
-  onJudge?: () => void;
-  termId: number | null;
-  activeTermLabel: string | null;
-  onOpenModels: () => void;
-  familyTerms: SearchFamilyTerm[];
-  clusterFilterCount: number | null;
-  onClearClusterFilter: () => void;
-  onStartScrape?: () => void;
-  isScraping: boolean;
-  onConfigure: () => void;
+/** The usual price of the listing's own product (P8), when known. */
+function marketFor(listing: RowListing | null | undefined): number | null {
+  const median = listing?.score_parts?.market_basis?.median;
+  return typeof median === 'number' ? median : null;
 }
-
-const FundeBarActions: React.FC<FundeBarActionsProps> = ({
-  isCorridor,
-  viewMode,
-  setViewMode,
-  sort,
-  cycleSort,
-  sortLabel,
-  dealsOnly,
-  setDealsOnly,
-  maxDetour,
-  onOpenFilter,
-  keptOnly,
-  keptCount,
-  onToggleKeptOnly,
-  fitOnly,
-  judgedCount,
-  judging,
-  onToggleFitOnly,
-  onJudge,
-  termId,
-  activeTermLabel,
-  onOpenModels,
-  familyTerms,
-  clusterFilterCount,
-  onClearClusterFilter,
-  onStartScrape,
-  isScraping,
-  onConfigure,
-}) => {
-  const { t } = useTranslation();
-
-  return (
-    <>
-      {/* Cluster Area Filter Active Pill */}
-      {clusterFilterCount !== null && (
-        <Pill
-          label={t('surface.areaFilter', { count: clusterFilterCount })}
-          active={true}
-          icon={<X className="w-3 h-3" />}
-          onClick={onClearClusterFilter}
-          title={t('surface.clearAreaFilter')}
-        />
-      )}
-
-      {/* One pill, not one per model. The model names belong to the setup
-          screen; on a results bar they were the "Checked Models" list the owner
-          asked to have removed, and three of them alone put the button count
-          over budget. */}
-      {familyTerms.length > 0 && (
-        <Pill
-          label={activeTermLabel || t('surface.models')}
-          active={termId !== null}
-          onClick={onOpenModels}
-          title={t('surface.models')}
-        />
-      )}
-
-      {keptCount > 0 && (
-        <Pill
-          label={t('surface.kept')}
-          active={keptOnly}
-          onClick={onToggleKeptOnly}
-        />
-      )}
-
-      {onJudge && (
-        <Pill
-          label={judging ? t('surface.judging') : t('surface.judge')}
-          onClick={onJudge}
-          disabled={judging}
-          title={t('surface.judgeTitle')}
-        />
-      )}
-
-      {judgedCount > 0 && (
-        <Pill label={t('surface.fitsOnly')} active={fitOnly} onClick={onToggleFitOnly} />
-      )}
-
-      {/* One filter pill, because seven controls did not fit across 390 px --
-          the corridor pill rendered as "rridor", clipped mid-word. But off a
-          corridor the sheet holds a single checkbox, and opening a 512px
-          drawer the height of a 1440px screen to offer one option is not a
-          filter panel, it is an empty room. */}
-      {isCorridor ? (
-        <Pill
-          label={t('surface.filter')}
-          active={dealsOnly || maxDetour !== null}
-          onClick={onOpenFilter}
-        />
-      ) : (
-        <Pill
-          label={t('surface.dealsOnly')}
-          active={dealsOnly}
-          onClick={() => setDealsOnly(!dealsOnly)}
-        />
-      )}
-
-      {/* Sort Pill */}
-      <Pill
-        label={sortLabel}
-        active={sort !== 'default'}
-        onClick={cycleSort}
-        title={t('surface.sort')}
-      />
-
-      {/* Map / List View Toggle */}
-      {isCorridor && (
-        <Pill
-          label={viewMode === 'map' ? t('surface.list') : t('surface.map')}
-          active={viewMode === 'map'}
-          onClick={() => setViewMode(viewMode === 'map' ? 'list' : 'map')}
-        />
-      )}
-
-      {/* Scrape / Refresh Action */}
-      {onStartScrape && (
-        <Pill
-          icon={<RefreshCw className={`w-3.5 h-3.5 ${isScraping ? 'animate-spin text-[#10B981]' : ''}`} />}
-          onClick={onStartScrape}
-          disabled={isScraping}
-          title={t('surface.fetchListings')}
-        />
-      )}
-
-      {/* Settings */}
-      <Pill
-        data-testid="campaign-settings-btn"
-        icon={<Settings className="w-3.5 h-3.5" />}
-        onClick={onConfigure}
-        title={t('surface.settings')}
-      />
-    </>
-  );
-};
-
-interface FundeEmptyStateProps {
-  radiusDiagnosis: RadiusDiagnosis | null;
-  hasActiveFilters: boolean;
-  onResetFilters: () => void;
-  /** True before anything has ever been harvested for this search. */
-  neverHarvested: boolean;
-  isScraping: boolean;
-  onStartScrape?: () => void;
-  onConfigure: () => void;
-}
-
-const FundeEmptyState: React.FC<FundeEmptyStateProps> = ({
-  radiusDiagnosis,
-  hasActiveFilters,
-  onResetFilters,
-  neverHarvested,
-  isScraping,
-  onStartScrape,
-  onConfigure,
-}) => {
-  const { t } = useTranslation();
-
-  // Empty is not a report. A search nobody has run yet says so and offers the
-  // run; one that ran and found nothing offers a wider radius or the settings.
-  // "Keine Treffer in 30 km" on its own reads like a fault.
-  if (neverHarvested) {
-    return (
-      <EmptyLine
-        message={isScraping ? t('surface.searching') : t('surface.notSearchedYet')}
-        actions={
-          !isScraping && onStartScrape ? (
-            <Pill label={t('surface.fetchListings')} onClick={onStartScrape} />
-          ) : null
-        }
-      />
-    );
-  }
-
-  return (
-    <EmptyLine
-      message={t('surface.noMatchesInRadius', { radius: 30 })}
-      actions={
-        <>
-          <Pill label={t('surface.settings')} onClick={onConfigure} />
-          {onStartScrape && !isScraping && (
-            <Pill label={t('surface.fetchListings')} onClick={onStartScrape} />
-          )}
-          {radiusDiagnosis?.options?.map((opt) => (
-            <Pill
-              key={opt.radius}
-              label={`${opt.radius} km`}
-              count={opt.count}
-              onClick={() => {}}
-            />
-          ))}
-          {hasActiveFilters && (
-            <Pill
-              label={t('surface.resetFilter')}
-              onClick={onResetFilters}
-            />
-          )}
-        </>
-      }
-    />
-  );
-};
 
 export const FundeScreen: React.FC<FundeScreenProps> = ({
   campaign,
@@ -257,319 +39,467 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   onConfigure,
   onStartScrape,
   isScraping = false,
+  onCampaignChanged,
 }) => {
   const { t } = useTranslation();
-  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-  const [selectedListing, setSelectedListing] = useState<RowListing | null>(null);
-  const [clusterListingIds, setClusterListingIds] = useState<string[] | null>(null);
+  const { kept, toggle } = useKept();
+
+  const [requirementsOpen, setRequirementsOpen] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [researchRecommended, setResearchRecommended] = useState(false);
+  const [corridorOpen, setCorridorOpen] = useState(false);
+
+  useEffect(() => {
+    if (!campaign?.id) return;
+    let active = true;
+    fetch(`/api/campaigns/${campaign.id}/brief?check=1`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!active) return;
+        if (data?.research_value && data.research_value !== 'none') {
+          setResearchRecommended(true);
+        } else {
+          setResearchRecommended(false);
+        }
+      })
+      .catch(() => {
+        if (active) setResearchRecommended(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [campaign?.id]);
 
   const {
     listings,
     total,
-    rawTotal,
     loading,
     loadingMore,
     hasMore,
     loadMore,
     reload,
-    sort,
-    setSort,
+    tab,
+    setTab,
+    overview,
+    bestListing,
     dealsOnly,
     setDealsOnly,
-    fitOnly,
-    setFitOnly,
     maxDetour,
     setMaxDetour,
     termId,
     setTermId,
     familyTerms,
+    route,
+    mapPoints,
+    sort,
+    setSort,
     radiusDiagnosis,
-    routeData,
+    diagnosing,
+    applyRadius,
+    filtered,
+    resetFilters,
   } = useFundeData({ campaign, isScraping });
 
-  const { kept, toggle: toggleKeep } = useKept();
-  const [keptOnly, setKeptOnly] = useState(false);
-  const [judging, setJudging] = useState(false);
-  const [judgeError, setJudgeError] = useState<string | null>(null);
-  const [requirementsOpen, setRequirementsOpen] = useState(false);
+  const [comparing, setComparing] = useState(false);
 
-  // Read out once, so the callback depends on the id and not on the whole
-  // campaign object: the compiler infers the wider dependency from `campaign?.id`
-  // read inline, and then refuses to keep the memoization at all.
-  const campaignId = campaign?.id ?? null;
-
-  // By campaign, not by search: a family expands to one search per model per
-  // place, and this screen shows all of them at once.
-  const runJudge = useCallback(async () => {
-    if (!campaignId) return;
-    setJudging(true);
-    setJudgeError(null);
+  const campaignId = campaign?.id;
+  const handleCompare = useCallback(async () => {
+    if (!campaignId || comparing) return;
+    setComparing(true);
     try {
-      const res = await fetch(`/api/campaigns/${campaignId}/judge`, {
-        method: 'POST',
-        credentials: 'same-origin',
-      });
-      if (res.ok) {
-        reload();
-        return;
+      const res = await fetch(`/api/campaigns/${campaignId}/compare`, { method: 'POST' });
+      if (!res.ok) return;
+      // The comparison runs in the background for a minute or two; ask until
+      // it is done, then show the ranks.
+      for (let i = 0; i < 100; i++) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        const status = await fetch(`/api/campaigns/${campaignId}/ranks`).then(r => r.json());
+        if (!status.running) break;
       }
-      // Swallowing this made the button look broken. The commonest reason is a
-      // search nobody has told what to want yet, and that is worth saying in so
-      // many words.
-      const body = await res.json().catch(() => null);
-      const said = String(body?.error || '');
-      if (said.includes('no requirements')) {
-        // Not an error to read and shrug at: the one thing missing is a list
-        // this screen can take, so it opens it instead of complaining.
-        setRequirementsOpen(true);
-        return;
-      }
-      setJudgeError(said || t('surface.judgeFailed'));
-    } catch {
-      setJudgeError(t('surface.judgeFailed'));
+      reload();
+    } catch (e) {
+      console.error('Failed to trigger comparison:', e);
     } finally {
-      setJudging(false);
+      setComparing(false);
     }
-  }, [campaignId, reload, t]);
-  const [modelsOpen, setModelsOpen] = useState(false);
-  const [filterOpen, setFilterOpen] = useState(false);
-  const activeTerm = familyTerms.find((term) => term.id === termId);
-  const activeTermLabel = activeTerm ? (activeTerm.label || activeTerm.term) : null;
+  }, [campaignId, comparing, reload]);
 
-  const cycleSort = () => {
-    const sortCycle = ['default', 'price_asc', 'price_desc', 'newest', 'score'];
-    const nextIdx = (sortCycle.indexOf(sort) + 1) % sortCycle.length;
-    setSort(sortCycle[nextIdx]);
-  };
+  const { selectedListing, openListing, openPartial } = useLinkedListing(listings, campaign?.id ?? null);
 
-  const getSortLabel = (): string => {
-    if (sort === 'price_asc') return `⇅ ${t('surface.sortPriceAsc')}`;
-    if (sort === 'price_desc') return `⇅ ${t('surface.sortPriceDesc')}`;
-    if (sort === 'newest') return `⇅ ${t('surface.sortNewest')}`;
-    if (sort === 'score') return `⇅ ${t('surface.sortScore')}`;
-    return '⇅';
-  };
+  useEffect(() => {
+    if (/[?&]sheet=requirements/.test(window.location.hash)) setRequirementsOpen(true);
+  }, []);
 
-  const isCorridor = !!campaign?.route_id;
-  const hasActiveFilters =
-    dealsOnly ||
-    fitOnly ||
-    termId !== null ||
-    maxDetour !== null ||
-    sort !== 'default' ||
-    clusterListingIds !== null;
+  // Every listing of the tab when the family sends its pins; otherwise what
+  // is loaded. Memoised: a fresh array each render refitted the map.
+  const mapListings: RouteListingGeo[] = useMemo(
+    () =>
+      mapPoints.length > 0
+        ? mapPoints
+        : listings.filter((l) => typeof l.lat === 'number' && typeof l.lon === 'number'),
+    [mapPoints, listings]
+  );
 
-  // Filter listings by cluster area if tapped on map
-  const inArea = clusterListingIds
-    ? listings.filter((l) => clusterListingIds.includes(l.id))
-    : listings;
+  const openFromMap = useCallback(
+    (id: string) => {
+      const loaded = listings.find((l) => l.id === id);
+      if (loaded) return openListing(loaded);
+      // A pin past the loaded page carries only what a pin shows; the sheet
+      // needs verdict, score and description, so it is fetched in full.
+      const pin = mapPoints.find((p) => p.id === id);
+      if (pin) openPartial({ ...pin, title: pin.title || '', images: pin.images || [] } as RowListing);
+    },
+    [listings, mapPoints, openListing, openPartial]
+  );
 
-  // Kept finds are filtered here rather than on the server: a shortlist is a
-  // handful of rows the buyer has already seen, so there is nothing to page
-  // through and nothing to be wrong about in a count.
-  const withKept = keptOnly ? inArea.filter((l) => kept.has(l.id)) : inArea;
-  // "Nur passende" is filtered by the server, like deals, so `total` already
-  // describes it. Filtering the loaded page here instead told the buyer a
-  // fifty-row search held twelve matches while the bar still said fifty.
-  const activeListings = withKept;
+  // One corridor button, in the desktop strip and the phone row.
+  const corridorButton = (placement: string) =>
+    campaign?.family_id ? (
+      <button type="button" className={`edit cursor-pointer ${placement}`} onClick={() => setCorridorOpen(true)}>
+        {t('surface.corridorSet')}
+      </button>
+    ) : null;
 
-  const mapListings: RouteListingGeo[] = listings.map((l) => ({
-    id: l.id,
-    title: l.title,
-    price: l.price || '',
-    location: l.location || '',
-    url: l.url || '',
-    lat: typeof l.lat === 'number' ? l.lat : null,
-    lon: typeof l.lon === 'number' ? l.lon : null,
-    detour_min: l.detour_min ?? null,
-    offroute_km: l.offroute_km ?? null,
-    niceness_score: l.niceness_score ?? null,
-    images: l.images || [],
-  }));
+  const sorts: Array<{ key: FundeSort; label: string }> = [
+    { key: 'price_asc', label: t('surface.sortCheap') },
+    { key: 'near', label: t('surface.sortNear') },
+    { key: 'score', label: t('surface.sortBest') },
+  ];
 
-  const mapCircles: RouteCircle[] = (routeData?.route?.circles || []).map((c) => ({
-    lat: c.lat,
-    lon: c.lon,
-    radius_km: c.radius_km,
-    label: c.label || '',
-  }));
+  // A hunt without requirements has nothing to judge, so nothing is
+  // "missing": every offer sat under "Unklar" behind an empty "Passend" tab
+  // ("Noch passt keines sicher"). Show them all instead, once per hunt.
+  const openedAllFor = React.useRef<number | null>(null);
+  useEffect(() => {
+    const pots = overview?.pots;
+    if (!campaign?.id || !pots || openedAllFor.current === campaign.id) return;
+    if (pots.all > 0 && pots.unjudged === pots.all && tab === 'fit') {
+      openedAllFor.current = campaign.id;
+      setTab('all');
+    }
+  }, [overview?.pots, campaign?.id, tab, setTab]);
+
+  // Counts for tabs from overview or fallback
+  const potFit = overview?.pots?.fit ?? listings.filter((l) => l.fit?.verdict === 'fit').length;
+  const potUnclear = overview?.pots?.unclear ?? listings.filter((l) => l.fit?.verdict === 'unclear').length;
+  const potNo = overview?.pots?.no ?? listings.filter((l) => l.fit?.verdict === 'no').length;
+  const potAll = overview?.pots?.all ?? total;
+
+  const tabs: Array<{ key: FundeTabKey; label: string; count: number }> = [
+    { key: 'fit', label: t('surface.tabFit'), count: potFit },
+    { key: 'unclear', label: t('surface.tabUnclear'), count: potUnclear },
+    { key: 'no', label: t('surface.tabNo'), count: potNo },
+    { key: 'all', label: t('surface.tabAll'), count: potAll },
+  ];
+
+  // Hero: shown when tab is fit or all, and bestListing exists
+  const heroShown = (tab === 'fit' || tab === 'all') && bestListing !== null;
+  const heroListing = heroShown ? bestListing : null;
+  // The server orders, over the whole hunt; only the hero leaves the list.
+  const displayListings = heroListing ? listings.filter((l) => l.id !== heroListing.id) : listings;
+
+  // Weak market banner (§9.7): best candidate is above median or misses a must
+  const isWeakMarket = useMemo(() => {
+    if (!bestListing) return false;
+    // The product's own market, as the sheet and the score use it. The hunt's
+    // overall median mixed in rejected offers (cheap R1s beside the CBRs) and
+    // called a fair CBR "above the usual price".
+    const median = marketFor(bestListing) ?? overview?.market?.median;
+    if (typeof median === 'number' && typeof bestListing.price_eur === 'number' && bestListing.price_eur > median) {
+      return 'median';
+    }
+    if (
+      bestListing.fit?.verdict === 'no' ||
+      (bestListing.score_parts?.gate?.violated && bestListing.score_parts.gate.violated.length > 0)
+    ) {
+      return 'must';
+    }
+    return false;
+  }, [bestListing, overview?.market?.median]);
+
+  // Masthead verdict sentence
+  const deal = bestListing?.is_deal;
+  const delta = bestListing?.price_delta_eur;
+  const verdictText = potAll === 0 ? (
+    <span className="quiet">{t('surface.verdictEmpty')}</span>
+  ) : (
+    <>
+      {t('surface.verdictSummary', { fits: potFit, total: potAll })}{' '}
+      {deal && delta ? (
+        t('surface.verdictCheapest', { amount: delta })
+      ) : (
+        <span className="quiet">{t('surface.noDealNotice')}</span>
+      )}
+    </>
+  );
+
+  // List head text based on active tab
+  const listHeadText = useMemo(() => {
+    const count = displayListings.length;
+    switch (tab) {
+      case 'fit':
+        return t('surface.listHeadFit', { count });
+      case 'unclear':
+        return t('surface.listHeadUnclear', { count });
+      case 'no':
+        return t('surface.listHeadNo', { count });
+      case 'all':
+      default:
+        return t('surface.listHeadAll', { count });
+    }
+  }, [tab, displayListings.length, t]);
+
+  const topReason = overview?.rejections?.[0]?.reason || null;
 
   return (
-    <div
-      className={`w-full bg-[#011F1F] text-[#F2F5F4] flex flex-col ${
-        viewMode === 'map' ? 'h-screen overflow-hidden' : 'min-h-screen'
-      }`}
-    >
-      {/* 1. Sticky Bar (48px) */}
-      <Bar
-        title={campaign?.name || 'Funde'}
-        count={
-          loading && listings.length === 0
-            ? undefined
-            : clusterListingIds || keptOnly
-            ? // Both of these are browser-side by design: a map cluster and a
-              // shortlist are handfuls the buyer has already seen, with nothing
-              // to page through.
-              activeListings.length
-            : total
-        }
-        onBack={onBack}
-        backLabel={t('surface.back')}
-        actions={
-          <FundeBarActions
-            isCorridor={isCorridor}
-            viewMode={viewMode}
-            setViewMode={setViewMode}
-            sort={sort}
-            cycleSort={cycleSort}
-            sortLabel={getSortLabel()}
-            dealsOnly={dealsOnly}
-            setDealsOnly={setDealsOnly}
-            maxDetour={maxDetour}
-            onOpenFilter={() => setFilterOpen(true)}
-            keptOnly={keptOnly}
-            keptCount={kept.size}
-            onToggleKeptOnly={() => setKeptOnly((v) => !v)}
-            fitOnly={fitOnly}
-            judgedCount={listings.filter((l) => l.fit).length}
-            judging={judging}
-            onToggleFitOnly={() => setFitOnly((v) => !v)}
-            onJudge={campaign?.id ? runJudge : undefined}
-            termId={termId}
-            activeTermLabel={activeTermLabel}
-            onOpenModels={() => setModelsOpen(true)}
-            familyTerms={familyTerms}
-            clusterFilterCount={clusterListingIds ? clusterListingIds.length : null}
-            onClearClusterFilter={() => setClusterListingIds(null)}
-            onStartScrape={onStartScrape}
+    <div className="c-page">
+      {/* 1. Kopfstreifen (strip) */}
+      <nav className="strip" aria-label="Navigation">
+        <button type="button" data-testid="surface-bar-back" className="back" onClick={onBack}>
+          {t('surface.allSearches')}
+        </button>
+        <span data-testid="surface-bar-count" className="sr-only">{total}</span>
+        <span className="spacer" />
+        {corridorButton('hidden sm:inline-flex')}
+        {familyTerms.length > 0 && (
+          <button type="button" className="edit cursor-pointer hidden sm:inline-flex" onClick={() => setModelsOpen(true)}>
+            {t('surface.models')}
+          </button>
+        )}
+        <button type="button" className="edit cursor-pointer hidden sm:inline-flex" onClick={() => setFilterOpen(true)}>
+          {t('surface.filter')}
+        </button>
+        {onStartScrape && (
+          <button type="button" className="edit cursor-pointer hidden sm:inline-flex" onClick={onStartScrape} disabled={isScraping}>
+            {isScraping ? t('surface.searching') : t('surface.fetchListings')}
+          </button>
+        )}
+        {campaign?.id && (
+          <button
+            type="button"
+            className="edit cursor-pointer hidden sm:inline-flex"
+            onClick={handleCompare}
+            disabled={comparing}
+            data-testid="compare-btn"
+          >
+            {comparing ? t('surface.comparing') : t('surface.compare')}
+          </button>
+        )}
+        {campaign?.id && researchRecommended && (
+          <button
+            type="button"
+            className="edit cursor-pointer hidden sm:inline-flex items-center gap-1 text-[#4E8C6A] border-[#4E8C6A]/50"
+            onClick={() => setKnowledgeOpen(true)}
+            data-testid="knowledge-btn"
+          >
+            {t('surface.knowledge')}
+          </button>
+        )}
+        <button type="button" className="edit cursor-pointer" onClick={onConfigure}>
+          {t('surface.editRequirements')}
+        </button>
+      </nav>
+
+        {/* 2. Masthead */}
+        <header className="masthead">
+          <h1>{campaign?.name || '—'}</h1>
+          <p className="verdict" id="verdict">
+            {verdictText}
+          </p>
+          <Freshness
             isScraping={isScraping}
-            onConfigure={onConfigure}
+            lastCrawledAt={overview?.last_crawled_at || listings[0]?.first_seen_at || listings[0]?.last_seen_at}
+            scheduleMinutes={overview?.schedule_interval ?? 0}
           />
-        }
-      />
+        </header>
 
-      {/* 2. Main Viewport */}
-      {viewMode === 'map' && isCorridor ? (
-        <div className="flex-1 w-full h-[calc(100vh-48px)] relative">
-          <RouteCorridorMap
-            polyline={routeData?.route?.polyline || []}
-            circles={mapCircles}
-            listings={mapListings}
-            selectedListingId={selectedListing?.id || null}
-            onSelectListing={(id) => {
-              const found = listings.find((l) => l.id === id);
-              if (found) setSelectedListing(found);
-            }}
-            onSelectCluster={(ids) => {
-              setClusterListingIds(ids);
-            }}
-            originName={routeData?.route?.origin}
-            destinationName={routeData?.route?.destination}
-            className="w-full h-full"
-          />
+        {/* 3. Sticky Tabs */}
+        <div className="tabs" role="tablist" id="tabs">
+          {tabs.map((tabItem) => (
+            <button key={tabItem.key} className="tab" role="tab" type="button" data-tab={tabItem.key} aria-selected={tab === tabItem.key} onClick={() => setTab(tabItem.key)}>
+              {tabItem.label} <span className="num">{tabItem.count}</span>
+            </button>
+          ))}
         </div>
-      ) : (
-        <main className="w-full max-w-3xl mx-auto flex-1 flex flex-col">
-          {judgeError && (
-            <div
-              role="status"
-              className="px-4 py-3 text-sm text-[#F2F5F4] bg-[#012828] border-b border-white/[0.08] flex items-start gap-3"
-            >
-              <span className="flex-1">{judgeError}</span>
-              <button
-                type="button"
-                onClick={() => setJudgeError(null)}
-                className="text-[#9FB3B0] hover:text-[#F2F5F4] shrink-0"
-                aria-label={t('surface.close')}
-              >
-                ×
-              </button>
-            </div>
+        <div className="sm:hidden flex items-center gap-2 px-4 py-2 overflow-x-auto border-b border-[var(--kante)] bg-[var(--grube)] text-xs text-[var(--kalk)]">
+          {corridorButton('whitespace-nowrap')}
+          {familyTerms.length > 0 && (
+            <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setModelsOpen(true)}>
+              {t('surface.models')}
+            </button>
           )}
+          <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setFilterOpen(true)}>
+            {t('surface.filter')}
+          </button>
+          {onStartScrape && (
+            <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={onStartScrape} disabled={isScraping}>
+              {isScraping ? t('surface.searching') : t('surface.fetchListings')}
+            </button>
+          )}
+          {/* No compare button on the phone: the comparison runs after every
+              crawl on its own. */}
+          {campaign?.id && researchRecommended && (
+            <button
+              type="button"
+              className="edit cursor-pointer whitespace-nowrap text-[#4E8C6A] border-[#4E8C6A]/50"
+              onClick={() => setKnowledgeOpen(true)}
+              data-testid="knowledge-btn-mobile"
+            >
+              {t('surface.knowledge')}
+            </button>
+          )}
+        </div>
 
-          {/* A first load used to paint an empty dark screen, which reads as a
-              crash rather than as work in progress. */}
-          {loading && listings.length === 0 && (
-            <div className="flex flex-col" aria-busy="true">
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <div
-                  key={i}
-                  className="h-[88px] w-full px-3 sm:px-4 py-2 flex items-center gap-3 border-b border-white/[0.08]"
-                >
-                  <div className="w-[72px] h-[72px] rounded bg-white/[0.06] animate-pulse shrink-0" />
-                  <div className="flex-1 flex flex-col gap-2">
-                    <div className="h-3 w-3/5 rounded bg-white/[0.06] animate-pulse" />
-                    <div className="h-3 w-2/5 rounded bg-white/[0.04] animate-pulse" />
-                  </div>
-                  <div className="h-4 w-14 rounded bg-white/[0.06] animate-pulse" />
-                </div>
+        {/* Weak market banner (§9.7) */}
+        {isWeakMarket && (
+          <div
+            data-testid="weak-market-banner"
+            className="mx-4 sm:mx-8 mt-3 mb-1 px-4 py-2.5 rounded bg-[var(--messing)]/10 border border-[var(--messing)]/40 text-xs text-[var(--messing)] flex items-center gap-2"
+          >
+            <span>
+              {isWeakMarket === 'median'
+                ? t('surface.weakMarketAboveMedian')
+                : t('surface.weakMarketMissesMust')}
+            </span>
+          </div>
+        )}
+
+        {/* 4. Raster: Main + 400px Aside via Container Query */}
+        <div className="layout">
+          <main className="main">
+            {/* Bester Fund Hero Block */}
+            {heroListing && (
+              <FundeBestHero
+                listing={heroListing}
+                medianPrice={marketFor(heroListing) ?? overview?.market?.median ?? null}
+                tab={tab}
+                isKept={kept.has(heroListing.id)}
+                onToggleKeep={toggle}
+                onOpenListing={(l) => openListing(l)}
+              />
+            )}
+
+            {/* List Head */}
+            {displayListings.length > 0 && (
+              <div className="list-head flex flex-wrap items-center justify-between gap-2" id="list-head">
+                <span>{listHeadText}</span>
+                <span className="flex gap-1" role="group" aria-label={t('surface.sortBy')} data-testid="sort-pills">
+                  {sorts.map((s) => (
+                    <Pill key={s.key} active={sort === s.key} aria-pressed={sort === s.key} onClick={() => setSort(s.key)}>
+                      {s.label}
+                    </Pill>
+                  ))}
+                </span>
+              </div>
+            )}
+
+            {/* Rows */}
+            <div id="rows">
+              {displayListings.map((listing) => (
+                <Row
+                  key={listing.id}
+                  listing={listing}
+                  isKept={kept.has(listing.id)}
+                  onToggleKeep={toggle}
+                  onClick={(l) => openListing(l)}
+                />
               ))}
             </div>
+
+            {/* Empty state */}
+            {displayListings.length === 0 && !loading && (
+              <FundeEmpty
+                tab={tab}
+                potAll={potAll}
+                potUnclear={potUnclear}
+                termCount={familyTerms.length || 1}
+                lastCrawledAt={overview?.last_crawled_at}
+                isScraping={isScraping}
+                radiusDiagnosis={radiusDiagnosis}
+                diagnosing={diagnosing}
+                onShowUnclear={() => setTab('unclear')}
+                onWiden={async (km) => {
+                  if (await applyRadius(km)) onStartScrape?.();
+                }}
+                onConfigure={onConfigure}
+                filtered={filtered}
+                onResetFilters={resetFilters}
+              />
+            )}
+
+        {/* More block at list bottom */}
+        <div className="more" id="more">
+          {tab === 'fit' && potNo > 0 && topReason && (
+            <>
+              <p>
+                {t('surface.moreRejected', { count: potNo, reason: topReason })}
+              </p>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => setTab('no')}
+              >
+                {t('surface.viewRejected')}
+              </button>
+            </>
           )}
 
-          {activeListings.map((listing) => (
-            <Row
-              key={listing.id}
-              listing={listing}
-              isKept={kept.has(listing.id)}
-              onToggleKeep={toggleKeep}
-              onClick={(l) => setSelectedListing(l)}
-            />
-          ))}
-
-          {/* Empty State */}
-          {!loading && activeListings.length === 0 && (
-            <FundeEmptyState
-              // A radius diagnosis is proof the search ran and measured: it
-              // knows how many listings sit at 50 and 100 km. Only a search
-              // with nothing at all and nothing measured has never run.
-              neverHarvested={rawTotal === 0 && !hasActiveFilters && !radiusDiagnosis}
-              isScraping={!!isScraping}
-              onStartScrape={onStartScrape}
-              onConfigure={onConfigure}
-              radiusDiagnosis={radiusDiagnosis}
-              hasActiveFilters={hasActiveFilters}
-              onResetFilters={() => {
-                setDealsOnly(false);
-                setFitOnly(false);
-                setTermId(null);
-                setMaxDetour(null);
-                setClusterListingIds(null);
-                setSort('default');
-              }}
-            />
+          {hasMore && (
+            <button
+              className="btn"
+              type="button"
+              onClick={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? t('surface.loading') : t('surface.loadMore')}
+            </button>
           )}
+        </div>
 
-          {/* Pagination: Load More Trigger */}
-          {hasMore && !clusterListingIds && (
-            <div className="py-4 px-4 flex justify-center items-center border-b border-white/[0.08]">
-              <Pill
-                label={loadingMore ? t('surface.loading') : `${t('surface.loadMore')} (${listings.length}/${rawTotal})`}
-                disabled={loadingMore}
-                onClick={loadMore}
-                className="px-6 py-2 text-sm"
+        {/* The map closes the list: every find of this tab, not only the page. */}
+        {mapListings.length > 0 && (
+          <section className="map-block" aria-label={t('surface.mapAll')} data-testid="funde-map">
+            <p className="list-head">
+              {t('surface.mapAll')}
+              {potAll > mapListings.length && tab === 'all' && (
+                <span className="quiet ml-3">{t('surface.mapUnplaced', { count: potAll - mapListings.length })}</span>
+              )}
+            </p>
+            <div className="map-frame">
+              {/* No search circles: where the hunt looks is known, and a
+                  50 km ring over a street map only got in the way. */}
+              <RouteCorridorMap
+                polyline={route?.polyline}
+                listings={mapListings}
+                selectedListingId={selectedListing?.id || null}
+                onSelectListing={openFromMap}
+                originName={route?.origin}
+                destinationName={route?.destination}
               />
             </div>
-          )}
-        </main>
-      )}
+          </section>
+        )}
+      </main>
 
-      {/* 3. Detail Sheet */}
-      <FundeFilterSheet
-        isOpen={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        dealsOnly={dealsOnly}
-        setDealsOnly={setDealsOnly}
-        isCorridor={isCorridor}
-        maxDetour={maxDetour}
-        setMaxDetour={setMaxDetour}
+      {/* 400px Seitenspalte */}
+      <FundeAside overview={overview} bestListing={bestListing} />
+    </div>
+
+      {/* Sheets */}
+      <FundeDetailSheet
+        listing={selectedListing}
+        onClose={() => openListing(null)}
+        isKept={selectedListing ? kept.has(selectedListing.id) : false}
+        onToggleKeep={toggle}
       />
 
       <RequirementsSheet
         isOpen={requirementsOpen}
         onClose={() => setRequirementsOpen(false)}
         campaignId={campaign?.id ?? null}
-        onSaved={runJudge}
+        onSaved={reload}
       />
 
       <FundeModelsSheet
@@ -580,10 +510,35 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         onSelect={setTermId}
       />
 
-      <FundeDetailSheet
-        listing={selectedListing}
-        onClose={() => setSelectedListing(null)}
+      <FundeFilterSheet
+        isOpen={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        dealsOnly={dealsOnly}
+        setDealsOnly={setDealsOnly}
+        isCorridor={Boolean(campaign?.route_id)}
+        maxDetour={maxDetour}
+        setMaxDetour={setMaxDetour}
       />
+
+      <FundeCorridorSheet
+        isOpen={corridorOpen}
+        onClose={() => setCorridorOpen(false)}
+        familyId={campaign?.family_id ?? null}
+        current={route}
+        onChanged={() => {
+          // The crawl's end reloads the list; reloading now showed nothing new.
+          onCampaignChanged?.();
+          onStartScrape?.();
+        }}
+      />
+
+      {campaign?.id && (
+        <KnowledgeSheet
+          isOpen={knowledgeOpen}
+          onClose={() => setKnowledgeOpen(false)}
+          campaignId={campaign.id}
+        />
+      )}
     </div>
   );
 };

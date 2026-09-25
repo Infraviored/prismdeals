@@ -23,6 +23,10 @@ import logging
 
 import playbooks
 import text_facts
+from requirements_hash import requirements_hash as _compute_hash
+import generation
+import hunt_identity
+import wishes
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +90,36 @@ def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted, tex
         if "absent_means" in field and field["id"] not in facts:
             facts[field["id"]] = field["absent_means"]
 
-    verdict, known, reasons = text_facts.judge_facts(wanted, facts, playbook)
+    req_hash = _compute_hash(wanted)
+    playbook_wanted, own = _split_wanted(playbook, wanted)
+    title, details = _title_and_details(conn, listing_id)
+    checks = _listing_checks(
+        conn,
+        title,
+        f"{title}\n{text or ''}",
+        details,
+        hunt_identity.hunt_models(conn, search_id),
+        own,
+        {},
+    )
+    if checks["reject"]:
+        reason, own_facts, _ = checks["reject"]
+        _store(conn, listing_id, search_id, "no", reason, own_facts, "model", req_hash)
+        return "no"
+
+    verdict, known, reasons = text_facts.judge_facts(playbook_wanted, facts, playbook)
     stored = {"candidate": "fit", "reject": "no", "unclear": "unclear"}[verdict]
-    _store(conn, listing_id, search_id, stored, "; ".join(reasons[:3]), known, "model")
+    stored, reasons = _open_for(stored, reasons, checks)
+    _store(
+        conn,
+        listing_id,
+        search_id,
+        stored,
+        "; ".join(reasons[:3]),
+        {**known, **checks["own_facts"]},
+        "model",
+        req_hash,
+    )
     return stored
 
 
@@ -116,17 +147,21 @@ def _typed(field_type, value):
     return value
 
 
-def _store(conn, listing_id, search_id, verdict, reason, facts, stage):
+def _store(
+    conn, listing_id, search_id, verdict, reason, facts, stage, requirements_hash=None
+):
     conn.execute(
         """INSERT INTO listing_fit
-               (listing_id, search_id, verdict, reason, facts_json, stage, judged_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
+               (listing_id, search_id, verdict, reason, facts_json, stage, judged_at,
+                requirements_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(listing_id, search_id) DO UPDATE SET
                verdict = excluded.verdict,
                reason = excluded.reason,
                facts_json = excluded.facts_json,
                stage = excluded.stage,
-               judged_at = excluded.judged_at""",
+               judged_at = excluded.judged_at,
+               requirements_hash = excluded.requirements_hash""",
         (
             str(listing_id),
             int(search_id),
@@ -135,8 +170,111 @@ def _store(conn, listing_id, search_id, verdict, reason, facts, stage):
             json.dumps(facts, ensure_ascii=False),
             stage,
             datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+            requirements_hash,
         ),
     )
+
+
+def _own_words(fields, text):
+    """Facts and a verdict for requirements written in the buyer's own words.
+
+    A must denied in the text rejects, a must not mentioned leaves the offer
+    open; a wish only becomes a fact for the score and never changes the
+    verdict -- an unmentioned "ABS" must not turn a good offer "unclear".
+    """
+    facts, verdict, reasons = {}, None, []
+    for field in fields:
+        value = wishes.read_wish(field, text)
+        if value is not None:
+            facts[field["id"]] = value
+        if field.get("importance") != "high" and not field.get("hard"):
+            continue
+        label = field.get("label") or field["id"]
+        if value is False:
+            return facts, "reject", [f"{label}: nein"]
+        if value is None:
+            verdict = "unclear"
+            reasons.append(f"{label} nicht angegeben")
+    return facts, verdict, reasons
+
+
+def _generation_check(conn, title, details, models, cache):
+    """(verdict, reason) for the generation the matching model names, if any."""
+    model = hunt_identity.matching_model(title, models) if models else None
+    if not model:
+        return None, ""
+    base, code = generation.split_generation(model)
+    if not code:
+        return None, ""
+    if (base, code) not in cache:
+        cache[(base, code)] = generation.years_for(conn, base, code)
+    return generation.judge_generation(title, details, code, cache[(base, code)])
+
+
+def _listing_checks(conn, title, text, details, models, own, gen_cache):
+    """What rules a listing out before any playbook field is read.
+
+    Shared by the title/description judge and the model's fact sheet: the
+    fact sheet only knows playbook fields, and re-judging from it alone turned
+    "Suche Corsair …" and a wrong generation back into a fit.
+    """
+    # Somebody wanting one is not an offer.
+    if hunt_identity.is_request(title):
+        return {"reject": ("Gesuch, kein Angebot", {}, "title")}
+    # In a model list the model is the first must: named in the title, or
+    # the offer stays open ("Yamaha WR 125 R" came back for "yamaha r1").
+    model_seen = not models or hunt_identity.names_a_model(title, models)
+    # A generation named with the model ("R1 RN19") is a must too: its
+    # build years against the offer's first registration.
+    gen_verdict, gen_reason = _generation_check(conn, title, details, models, gen_cache)
+    if gen_verdict == "no":
+        return {"reject": (gen_reason, {}, "title")}
+    own_facts, own_verdict, own_reasons = _own_words(own, text)
+    if own_verdict == "reject":
+        return {"reject": ("; ".join(own_reasons), own_facts, "description")}
+    return {
+        "reject": None,
+        "model_seen": model_seen,
+        "gen_verdict": gen_verdict,
+        "gen_reason": gen_reason,
+        "own_facts": own_facts,
+        "own_verdict": own_verdict,
+        "own_reasons": own_reasons,
+    }
+
+
+def _details_column(conn):
+    """l.details, or NULL on older stores (and small test schemas)."""
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
+    return "details" if "details" in columns else "NULL"
+
+
+def _title_and_details(conn, listing_id):
+    row = conn.execute(
+        f"SELECT title, {_details_column(conn)} FROM listings WHERE id = ?",
+        (str(listing_id),),
+    ).fetchone()
+    return (row[0] or "", row[1]) if row else ("", None)
+
+
+def _split_wanted(playbook, wanted):
+    """(playbook fields, fields in the buyer's own words)."""
+    known = {f.get("id") for f in (playbook or {}).get("fields", [])}
+    own = [f for f in wanted if f.get("id") not in known and wishes.is_own(f)]
+    return [f for f in wanted if f.get("id") in known], own
+
+
+def _open_for(stored, reasons, checks):
+    """A fit the checks leave open becomes unclear, with the reason first."""
+    if stored != "fit":
+        return stored, reasons
+    if checks["own_verdict"] == "unclear":
+        return "unclear", checks["own_reasons"] + list(reasons)
+    if not checks["model_seen"]:
+        return "unclear", ["Modell im Titel nicht erkennbar"] + list(reasons)
+    if checks["gen_verdict"]:
+        return "unclear", [checks["gen_reason"]] + list(reasons)
+    return stored, reasons
 
 
 def judge_search(conn, search_id, use_descriptions=True):
@@ -152,19 +290,36 @@ def judge_search(conn, search_id, use_descriptions=True):
         raise ValueError(f"No search {search_id}")
 
     playbook = playbooks.playbook_for_url(search[1])
-    if playbook is None:
-        return {"error": "no playbook for this search's category"}
 
     wanted = intent_for(conn, search_id)
-    if not wanted:
+    req_hash = _compute_hash(wanted)
+    # The verdicts below are found through the knowledge set's hash. A set
+    # written by a path that did not store it would hide them all.
+    if req_hash:
+        conn.execute(
+            """UPDATE knowledge_sets SET requirements_hash = ?
+                WHERE id = (SELECT knowledge_set_id FROM searches WHERE id = ?)
+                  AND requirements_hash IS NOT ?""",
+            (req_hash, int(search_id), req_hash),
+        )
+    models = hunt_identity.hunt_models(conn, search_id)
+    if not wanted and not models:
         return {"error": "this search has no requirements to judge against"}
+    # Fields the category's playbook knows are read with its patterns; the
+    # buyer's own words ("ABS") are read as words (wishes.py).
+    wanted, own = _split_wanted(playbook, wanted)
+    if playbook is None and not (own or models):
+        return {"error": "no playbook for this search's category"}
 
     # Every listing this search found, not only the ones it found first.
     # listings.search_id names the first finder and never changes, so a kit
     # another search had already seen was never judged against this search's
     # requirements -- and "fits only" then hid it, though it matched perfectly.
+    # Older stores (and small test schemas) have no details column.
+    details_col = _details_column(conn)
+    details_col = "l.details" if details_col == "details" else "NULL"
     rows = conn.execute(
-        """SELECT DISTINCT l.id, l.title, l.detailed_description, l.short_description
+        f"""SELECT DISTINCT l.id, l.title, l.detailed_description, l.short_description, {details_col}
              FROM listings l
              LEFT JOIN listing_search_hits h ON h.listing_id = l.id
             WHERE l.search_id = ? OR h.search_id = ?""",
@@ -172,8 +327,39 @@ def judge_search(conn, search_id, use_descriptions=True):
     ).fetchall()
 
     counts = {v: 0 for v in VERDICTS}
+    gen_cache = {}
     for row in rows:
-        listing_id, title, detailed, short = row
+        listing_id, title, detailed, short, details = row
+
+        checks = _listing_checks(
+            conn,
+            title,
+            f"{title}\n{detailed or short or ''}",
+            details,
+            models,
+            own,
+            gen_cache,
+        )
+        if checks["reject"]:
+            reason, facts, stage = checks["reject"]
+            counts["no"] += 1
+            _store(conn, listing_id, search_id, "no", reason, facts, stage, req_hash)
+            continue
+        own_facts = checks["own_facts"]
+        if not wanted:
+            stored, reasons = _open_for("fit", [], checks)
+            counts[stored] += 1
+            _store(
+                conn,
+                listing_id,
+                search_id,
+                stored,
+                "; ".join(reasons[:3]),
+                own_facts,
+                "title",
+                req_hash,
+            )
+            continue
 
         verdict, facts, reasons = text_facts.judge(playbook, wanted, title)
         # Only what the title stated is carried forward as settled. What was
@@ -196,9 +382,18 @@ def judge_search(conn, search_id, use_descriptions=True):
                 stage = "description"
 
         stored = {"candidate": "fit", "reject": "no", "unclear": "unclear"}[verdict]
+        facts = {**facts, **own_facts}
+        stored, reasons = _open_for(stored, reasons, checks)
         counts[stored] += 1
         _store(
-            conn, listing_id, search_id, stored, "; ".join(reasons[:3]), facts, stage
+            conn,
+            listing_id,
+            search_id,
+            stored,
+            "; ".join(reasons[:3]),
+            facts,
+            stage,
+            req_hash,
         )
 
     conn.commit()

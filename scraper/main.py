@@ -1,5 +1,8 @@
 import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import datetime
 import db_schema
 import json
@@ -197,6 +200,38 @@ def run_route_mode(args):
     )
 
 
+def run_family_route_mode(args):
+    """Gives a hunt a corridor after the fact, or takes it away."""
+    import family_route
+
+    if not args.family_id:
+        print("__FAMILY_ROUTE_ERROR__:Missing family id")
+        return
+    conn = get_db_connection()
+    try:
+        if args.mode == "family-route-clear":
+            family_route.clear_route(conn, args.family_id)
+            print("__FAMILY_ROUTE__:" + json.dumps({"route_id": None}))
+            return
+        if not args.origin or not args.destination:
+            print("__FAMILY_ROUTE_ERROR__:Missing start or destination")
+            return
+        route_id, plan = family_route.set_route(
+            conn,
+            args.family_id,
+            args.origin,
+            args.destination,
+            radius_km=args.radius_km,
+            half_width_km=args.corridor_km,
+        )
+        print(
+            "__FAMILY_ROUTE__:"
+            + json.dumps({"route_id": route_id, "circles": len(plan.circles)})
+        )
+    except ValueError as error:
+        print(f"__FAMILY_ROUTE_ERROR__:{error}")
+
+
 def run_family_mode(args):
     """Handles search family preview, creation, updates, and deletion."""
     import family_store
@@ -308,6 +343,36 @@ def _thin(points, limit):
     return thinned
 
 
+def run_probe_mode(args):
+    """Executes search probing: builds search ladders, measures gain/overlap, snowballs."""
+    import probe
+
+    conn = get_db_connection()
+    payload = {}
+    if args.payload_json:
+        try:
+            payload = json.loads(args.payload_json)
+        except Exception as exc:
+            print(f"__PROBE_ERROR__:Invalid payload_json: {exc}", flush=True)
+            return
+    elif not sys.stdin.isatty():
+        try:
+            payload = json.load(sys.stdin)
+        except Exception as exc:
+            print(f"__PROBE_ERROR__:Invalid stdin JSON: {exc}", flush=True)
+            return
+
+    def on_rung(rung):
+        print("__PROBE_RUNG__:" + json.dumps(rung), flush=True)
+
+    try:
+        result = probe.run_probe(payload, conn=conn, on_rung=on_rung)
+        print("__PROBE_RESULT__:" + json.dumps(result), flush=True)
+    except Exception as exc:
+        logger.exception("Probe execution failed: %s", exc)
+        print(f"__PROBE_ERROR__:{exc}", flush=True)
+
+
 def main():
     """Main entry point that acts as a wrapper for different functionalities"""
     parser = argparse.ArgumentParser(
@@ -329,12 +394,17 @@ def main():
             "family-create",
             "family-update",
             "family-delete",
+            "family-route",
+            "family-route-clear",
+            "route-delete",
+            "probe",
         ],
         default="both",
         help=(
             "Operation mode: scrape, process, both, preview, update-all, "
             "route-preview, route-replan, route-create, route-annotate, "
-            "family-preview, family-create, family-update, or family-delete"
+            "family-preview, family-create, family-update, family-delete, "
+            "family-route, family-route-clear, route-delete, or probe"
         ),
     )
 
@@ -452,6 +522,26 @@ def main():
         "family-delete",
     ):
         run_family_mode(args)
+        return
+
+    if args.mode in ("family-route", "family-route-clear"):
+        run_family_route_mode(args)
+        return
+
+    if args.mode == "route-delete":
+        import route_store
+
+        conn = get_db_connection()
+        if not args.route_id:
+            print("__ROUTE_DELETE_ERROR__:Missing route id")
+            return
+        route_store.delete_route(conn, args.route_id)
+        conn.commit()
+        print("__ROUTE_DELETED__:" + json.dumps({"route_id": args.route_id}))
+        return
+
+    if args.mode == "probe":
+        run_probe_mode(args)
         return
 
     if args.mode == "preview":
@@ -578,8 +668,8 @@ def main():
                             INSERT INTO listings (
                                 id, source, source_id, title, price, price_eur,
                                 location, url, short_description, detailed_description,
-                                search_id, last_seen_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                search_id, last_seen_at, postal_code
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ON CONFLICT(id) DO UPDATE SET
                                 last_seen_at = excluded.last_seen_at,
                                 delisted_at = NULL
@@ -597,6 +687,7 @@ def main():
                                 item.get("detailed_description", ""),
                                 search_id,
                                 last_seen_at,
+                                item.get("postal_code"),
                             ),
                         )
                         if search_id is not None:
@@ -612,6 +703,14 @@ def main():
                                     now_iso,
                                 ),
                             )
+                    if search_id is not None:
+                        now_scraped = datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat()
+                        cursor.execute(
+                            "UPDATE searches SET last_scraped_at = ? WHERE id = ?",
+                            (now_scraped, search_id),
+                        )
                     conn.commit()
 
             except ScrapeRefused as refusal:

@@ -1,5 +1,12 @@
 const express = require('express');
 const { annotateDeals, dealListingIds } = require('./db/reference_price');
+const { annotateNodeMarket } = require('./db/market_node');
+const { attachScores } = require('./db/score');
+const { attachRanks } = require('./compare_api');
+const { resolveCampaignScope } = require('./overview/scope');
+const { BEST_FIT_ORDER_SQL, FIT_FIRST_SQL, fitOf, fitJoinOn } = require('./db/fit');
+
+const { SFS_ACTIVE_OR_PENDING_SQL } = require('./db/family_scope');
 const fs = require('fs');
 const path = require('path');
 
@@ -21,6 +28,9 @@ const app = express();
 const port = Number(process.env.PRISMDEALS_PORT) || 3030;
 const { spawn } = require('child_process');
 const places = require('./places');
+const { placeListings } = require('./listing_geo');
+const { findPython } = require('./python');
+const { listingOrder } = require('./listing_order');
 const sqlite3 = require('sqlite3').verbose();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
@@ -47,7 +57,23 @@ const { applySchema } = require('./db/schema');
 // five places, and the campaign dashboard returned 500 on every fresh install
 // because this file queried route_searches while only Python created it.
 applySchema(db)
-  .then(() => seedDefaultUser())
+  .then(async () => {
+    seedDefaultUser();
+    // One after the other: they share this one connection, and each step
+    // reads what the one before wrote.
+    try {
+      await require('./migrations/p1_backfill').backfillHuntTypes(query, run);
+      // Idempotent: hashes knowledge sets and old verdicts so verdicts found
+      // under unchanged requirements survive a search edit (P9).
+      const p9 = await require('./migrations/p9_backfill').backfillP9Verdicts(query, run);
+      console.log('P9 backfill:', JSON.stringify(p9));
+      // Which product each listing is (P8): nothing else assigns it yet.
+      const p8 = await require('./migrations/p8_backfill_nodes').backfillP8Nodes(query, run);
+      console.log('P8 nodes:', JSON.stringify(p8));
+    } catch (error) {
+      console.error('Startup backfill failed:', error);
+    }
+  })
   .catch(err => {
     console.error('Could not bring the database up to db/schema.sql:', err.message);
     process.exit(1);
@@ -88,9 +114,10 @@ function seedDefaultUser() {
   });
 
   backfillListingTimestamps();
-  const { backfillCanonicalListings, backfillListingText } = require('./db/backfill');
+  const { backfillCanonicalListings, backfillListingText, backfillSearchLastScraped } = require('./db/backfill');
   backfillCanonicalListings(db);
   backfillListingText(db);
+  backfillSearchLastScraped(db);
 }
 
 /**
@@ -114,6 +141,12 @@ function backfillListingTimestamps() {
         AND llm_processed = 1
         AND llm_processed_time IS NOT NULL`,
     err => { if (err) console.error('Backfilling last_ai_evaluated_at:', err); }
+  );
+  // Places stored before the postal code had its own column ("81547 Au").
+  db.run(
+    `UPDATE listings SET postal_code = substr(location, 1, 5)
+      WHERE postal_code IS NULL AND location GLOB '[0-9][0-9][0-9][0-9][0-9] *'`,
+    err => { if (err) console.error('Backfilling postal_code:', err); }
   );
 }
 
@@ -204,6 +237,16 @@ const authenticateToken = async (req, res, next) => {
   }
 
   if (!token) {
+    // Development only, and only from this machine: set by mistake on the
+    // server it would have logged every visitor in as the first user.
+    const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+    if (process.env.PRISMDEALS_DEV_AUTH === '1' && process.env.NODE_ENV !== 'production' && local) {
+      const user = await get("SELECT id, email, role FROM users LIMIT 1");
+      if (user) {
+        req.user = user;
+        return next();
+      }
+    }
     return res.status(401).json({ error: 'Authentication required. No token provided.' });
   }
 
@@ -232,7 +275,17 @@ async function recalculateItemScores(searchId, scoringModelStr) {
   }
 
   const weights = scoringModel.weights || {};
-  const listings = await query('SELECT id, extracted_facts FROM listings WHERE search_id = ?', [searchId]);
+  const listings = await query(
+    `SELECT DISTINCT l.id, l.extracted_facts
+       FROM listings l
+       JOIN listing_search_hits lsh ON lsh.listing_id = l.id
+      WHERE lsh.search_id = ?
+      UNION
+      SELECT l.id, l.extracted_facts
+        FROM listings l
+       WHERE l.search_id = ?`,
+    [searchId, searchId]
+  );
 
   for (const listing of listings) {
     let envelope = {};
@@ -262,7 +315,7 @@ async function recalculateItemScores(searchId, scoringModelStr) {
 // Helper to execute Python AI Worker tasks (like drafting)
 function runPythonWorker(args) {
   return new Promise((resolve, reject) => {
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const python = spawn(pythonExecutable, [path.join(__dirname, '..', 'scraper', 'agent_worker.py'), ...args]);
     let stdout = '';
     let stderr = '';
@@ -413,18 +466,57 @@ async function attachPriceHistory(query, listings) {
 // else is the same list Kleinanzeigen shows, with a 4x8 kit between the
 // matches. A sort the buyer picked by hand is left alone: "price lowest" has to
 // mean price.
-const FIT_FIRST =
-  "CASE fit.verdict WHEN 'fit' THEN 0 WHEN 'unclear' THEN 1 WHEN 'no' THEN 2 ELSE 1 END ASC, ";
+const FIT_FIRST = FIT_FIRST_SQL;
 
-function fitOf(row) {
-  if (!row.fit_verdict) return null;
-  return {
-    verdict: row.fit_verdict,
-    reason: row.fit_reason,
-    stage: row.fit_stage,
-    facts: JSON.parse(row.fit_facts || '{}'),
-  };
-}
+// One listing, by its Kleinanzeigen id, so a find can be shared as a link.
+//
+// Its verdict is the best one any search gave it (fit > unclear > no), the
+// same rule the lists use; with campaign_id it is the best one within that
+// campaign, so a link opened in the campaign shows that campaign's judgement.
+app.get('/api/listings/:id', async (req, res) => {
+  try {
+    const params = [req.params.id];
+    let scopeSql = '';
+    if (req.query.campaign_id) {
+      scopeSql = ' AND s.campaign_id = ?';
+      params.push(req.query.campaign_id);
+    }
+    const row = await get(
+      `WITH ranked AS (
+         SELECT l.*, s.name AS item_name, c.name AS campaign_name,
+                lsh.first_seen_at,
+                fit.verdict AS fit_verdict, fit.reason AS fit_reason,
+                fit.facts_json AS fit_facts, fit.stage AS fit_stage,
+                lsh.search_id AS hit_search_id,
+                ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY ${BEST_FIT_ORDER_SQL}) AS rn
+           FROM listings l
+           JOIN listing_search_hits lsh ON lsh.listing_id = l.id
+           JOIN searches s ON s.id = lsh.search_id
+           LEFT JOIN campaigns c ON c.id = s.campaign_id
+           LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 'lsh.search_id')}
+          WHERE l.id = ?${scopeSql}
+       )
+       SELECT * FROM ranked WHERE rn = 1`,
+      params
+    );
+    if (!row) return res.status(404).json({ error: 'Listing not found' });
+    const listing = {
+      ...row,
+      images: row.images ? JSON.parse(row.images) : [],
+      details: row.details ? JSON.parse(row.details) : {},
+      fit: fitOf(row),
+    };
+    await annotateDeals(query, [listing], [Number(row.hit_search_id)]);
+    await annotateNodeMarket(query, [listing], [Number(row.hit_search_id)]);
+    await attachRanks(query, get, [listing], req.query.campaign_id ? Number(req.query.campaign_id) : null);
+    await attachScores(query, [listing], [Number(row.hit_search_id)]);
+    const [withHistory] = await attachPriceHistory(query, [listing]);
+    res.json(withHistory || listing);
+  } catch (err) {
+    console.error('GET /api/listings/:id failed:', err);
+    res.status(500).json({ error: 'Could not load listing' });
+  }
+});
 
 app.get('/api/listings', async (req, res) => {
   try {
@@ -432,27 +524,47 @@ app.get('/api/listings', async (req, res) => {
     const isPaginated =
       limitParam !== undefined || offsetParam !== undefined || sort !== undefined || q !== undefined;
 
-    const whereConditions = [];
-    const whereParams = [];
-
     // A listing belongs to every search that found it, not only to the one
     // that found it first. l.search_id is that first finder and never changes,
     // so scoping on it alone made a search that had just harvested fifty rows
     // answer with none of them, because another search had seen them first.
+    // The same holds for the verdict: it is the best one among the searches in
+    // view, never the first finder's, which may belong to another campaign.
+    let scopeSearchIds = null;
+    let scopeCampaign = null;
+
     if (search_id) {
-      whereConditions.push(
-        '(l.search_id = ? OR EXISTS (SELECT 1 FROM listing_search_hits h' +
-          ' WHERE h.listing_id = l.id AND h.search_id = ?))'
+      const scopeSearch = await get(
+        'SELECT s.id, s.name, s.campaign_id, c.name as campaign_name FROM searches s LEFT JOIN campaigns c ON c.id = s.campaign_id WHERE s.id = ?',
+        [search_id]
       );
-      whereParams.push(search_id, search_id);
+      if (scopeSearch) {
+        scopeSearchIds = [Number(scopeSearch.id)];
+        if (scopeSearch.campaign_id) {
+          scopeCampaign = { id: scopeSearch.campaign_id, name: scopeSearch.campaign_name };
+        }
+      } else {
+        scopeSearchIds = [Number(search_id)];
+      }
     } else if (campaign_id) {
-      whereConditions.push(
-        '(s.campaign_id = ? OR EXISTS (SELECT 1 FROM listing_search_hits h' +
-          ' JOIN searches hs ON hs.id = h.search_id' +
-          ' WHERE h.listing_id = l.id AND hs.campaign_id = ?))'
+      scopeCampaign = await get('SELECT id, name FROM campaigns WHERE id = ?', [campaign_id]);
+      const campaignSearches = await query(
+        'SELECT id FROM searches WHERE campaign_id = ?',
+        [campaign_id]
       );
-      whereParams.push(campaign_id, campaign_id);
+      scopeSearchIds = campaignSearches.map(s => Number(s.id));
     }
+
+    if (scopeSearchIds && scopeSearchIds.length === 0) {
+      if (isPaginated) {
+        return res.json({ listings: [], total: 0 });
+      } else {
+        return res.json([]);
+      }
+    }
+
+    const whereConditions = [];
+    const whereParams = [];
 
     if (q && q.trim() !== '') {
       const qVal = `%${q.trim()}%`;
@@ -460,29 +572,45 @@ app.get('/api/listings', async (req, res) => {
       whereParams.push(qVal, qVal);
     }
 
+    const minPrice = req.query.min_price ?? req.query.minPrice;
+    if (minPrice !== undefined && minPrice !== '' && !isNaN(Number(minPrice))) {
+      whereConditions.push('l.price_eur >= ?');
+      whereParams.push(Number(minPrice));
+    }
+    const maxPrice = req.query.max_price ?? req.query.maxPrice;
+    if (maxPrice !== undefined && maxPrice !== '' && !isNaN(Number(maxPrice))) {
+      whereConditions.push('l.price_eur <= ?');
+      whereParams.push(Number(maxPrice));
+    }
+
     // Filtered here, not in the browser. Hiding rejected rows from the fifty
     // already loaded and calling the remainder the answer is the same mistake
     // the deals filter made: it told a buyer a fifty-row search held twelve
     // matches when it held fifty-three.
-    const fitOnly = req.query.fitOnly === '1' || req.query.fitOnly === 'true';
-    if (fitOnly) {
-      whereConditions.push("fit.verdict IS NOT NULL AND fit.verdict <> 'no'");
+    const verdict = req.query.verdict;
+    const fitOnly = (req.query.fitOnly === '1' || req.query.fitOnly === 'true') && verdict !== 'all';
+    const verdictCol = 'bs.fit_verdict';
+    if (verdict === 'fit') {
+      whereConditions.push(`${verdictCol} = 'fit'`);
+    } else if (verdict === 'no') {
+      whereConditions.push(`${verdictCol} = 'no'`);
+    } else if (verdict === 'unclear') {
+      whereConditions.push(`(${verdictCol} = 'unclear' OR ${verdictCol} IS NULL)`);
+    } else if (fitOnly) {
+      whereConditions.push(`${verdictCol} IS NOT NULL AND ${verdictCol} <> 'no'`);
     }
 
     // Deals only. The family endpoint has had this since the filter moved to
     // the server; here it was silently ignored, so pressing the pill on an
     // ordinary search did nothing at all and said nothing about it.
     if (req.query.dealsOnly === '1' || req.query.dealsOnly === 'true') {
-      const scopeRows = search_id
-        ? [{ id: Number(search_id) }]
-        : campaign_id
-        ? await query('SELECT id FROM searches WHERE campaign_id = ?', [campaign_id])
-        : await query('SELECT id FROM searches');
-      const dealIds = await dealListingIds(query, scopeRows.map(r => Number(r.id)));
-      // An empty result is still an answer of the same shape. Returning the
-      // paginated object here regardless meant an unparameterised caller got an
-      // array on most days and an object on the day its search held no deals,
-      // and `data.map` threw.
+      const targetSearchIds = scopeSearchIds
+        ? scopeSearchIds
+        : (await query('SELECT id FROM searches')).map(r => Number(r.id));
+      const dealIds = await dealListingIds(query, targetSearchIds);
+      // An empty result is still an answer of the same shape. Returning early
+      // here meant an unparameterised caller got an array on most days and an
+      // object on the day its search held no deals, and `data.map` threw.
       whereConditions.push(
         dealIds.length ? `l.id IN (${dealIds.map(() => '?').join(',')})` : '1 = 0'
       );
@@ -491,27 +619,11 @@ app.get('/api/listings', async (req, res) => {
 
     const whereSql = whereConditions.length ? 'WHERE ' + whereConditions.join(' AND ') : '';
 
-    const FIT_JOIN = `LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = ${
-      search_id ? 'CAST(? AS INTEGER)' : 'l.search_id'
-    }`;
-
-    const countRow = await get(
-      `SELECT COUNT(DISTINCT l.id) as total
-         FROM listings l
-         LEFT JOIN searches s ON l.search_id = s.id
-         ${fitOnly ? FIT_JOIN : ''}
-        ${whereSql}`,
-      fitOnly && search_id ? [search_id, ...whereParams] : whereParams
-    );
-    const total = countRow ? Number(countRow.total || 0) : 0;
-
-    // Fit first by default. A list ordered by anything else is the same list
-    // Kleinanzeigen shows, with a 4x8 kit between the matches.
-    let orderBy = FIT_FIRST + '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+    let orderBy = FIT_FIRST + '(l.price_eur IS NULL) ASC, l.price_eur ASC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
     if (sort === 'price_asc') {
-      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
     } else if (sort === 'price_desc') {
-      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, l.id DESC';
+      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
     } else if (sort === 'newest' || sort === 'freshness') {
       orderBy = 'first_seen_at DESC, l.id DESC';
     } else if (sort === 'score') {
@@ -521,36 +633,153 @@ app.get('/api/listings', async (req, res) => {
     const limit = Math.max(1, parseInt(limitParam, 10) || 50);
     const offset = offsetParam ? Math.max(0, parseInt(offsetParam, 10) || 0) : 0;
 
-    const rows = await query(
-      `SELECT l.*, s.name as item_name, c.name as campaign_name,
-              -- When this search first saw it; with no search in view, when
-              -- anything did. Pinned to l.search_id it reported the first
-              -- finder's date under a search that had only just found it.
-              MIN(lsh.first_seen_at) as first_seen_at,
-              fit.verdict AS fit_verdict, fit.reason AS fit_reason,
-              fit.facts_json AS fit_facts, fit.stage AS fit_stage
-         FROM listings l
-         LEFT JOIN searches s ON l.search_id = s.id
-         LEFT JOIN campaigns c ON s.campaign_id = c.id
-         LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id${
-           search_id ? ' AND lsh.search_id = CAST(? AS INTEGER)' : ''
-         }
-         -- The verdict belongs to the search being looked at, not to whichever
-         -- search happened to find the listing first. With l.search_id, a
-         -- listing viewed under search 2 showed search 1's judgement, against
-         -- requirements that are not the ones on screen.
-         ${FIT_JOIN}
-        ${whereSql}
-        GROUP BY l.id
-        ORDER BY ${orderBy}
-        ${isPaginated ? 'LIMIT ? OFFSET ?' : ''}`,
-      [
-        // One for the first-seen join, one for the verdict join, then the scope.
-        ...(search_id ? [search_id, search_id] : []),
-        ...whereParams,
-        ...(isPaginated ? [limit, offset] : []),
-      ]
-    );
+    let total = 0;
+    let rows = [];
+
+    if (scopeSearchIds) {
+      const searchPlaceholders = scopeSearchIds.map(() => '?').join(',');
+      const cteSql = `
+        WITH scope_hits AS (
+          SELECT lsh.listing_id, lsh.search_id, lsh.first_seen_at
+            FROM listing_search_hits lsh
+           WHERE lsh.search_id IN (${searchPlaceholders})
+          UNION
+          SELECT l.id AS listing_id, l.search_id, COALESCE(l.last_seen_at, datetime('now')) AS first_seen_at
+            FROM listings l
+           WHERE l.search_id IN (${searchPlaceholders})
+             AND NOT EXISTS (
+               SELECT 1 FROM listing_search_hits h
+                WHERE h.listing_id = l.id AND h.search_id = l.search_id
+             )
+        ),
+        ranked_scope AS (
+          SELECT lsh.listing_id,
+                 lsh.search_id,
+                 lsh.first_seen_at,
+                 s.name AS search_name,
+                 c.name AS campaign_name,
+                 fit.verdict AS fit_verdict,
+                 fit.reason AS fit_reason,
+                 fit.facts_json AS fit_facts,
+                 fit.stage AS fit_stage,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY lsh.listing_id
+                   ORDER BY ${BEST_FIT_ORDER_SQL}
+                 ) AS rn,
+                 MIN(lsh.first_seen_at) OVER (PARTITION BY lsh.listing_id) AS min_seen_at
+            FROM scope_hits lsh
+            LEFT JOIN searches s ON s.id = lsh.search_id
+            LEFT JOIN campaigns c ON c.id = s.campaign_id
+            LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'lsh.search_id')}
+        ),
+        best_scope AS (
+          SELECT * FROM ranked_scope WHERE rn = 1
+        )
+      `;
+
+      const countRow = await get(
+        `${cteSql}
+         SELECT COUNT(*) AS total
+           FROM listings l
+           JOIN best_scope bs ON bs.listing_id = l.id
+          ${whereSql}`,
+        [...scopeSearchIds, ...scopeSearchIds, ...whereParams]
+      );
+      total = countRow ? Number(countRow.total || 0) : 0;
+
+      rows = await query(
+        `${cteSql}
+         SELECT l.*,
+                bs.search_name AS item_name,
+                COALESCE(bs.campaign_name, ?) AS campaign_name,
+                bs.min_seen_at AS first_seen_at,
+                bs.fit_verdict,
+                bs.fit_reason,
+                bs.fit_facts,
+                bs.fit_stage
+           FROM listings l
+           JOIN best_scope bs ON bs.listing_id = l.id
+          ${whereSql}
+          ORDER BY ${orderBy}
+          ${isPaginated ? 'LIMIT ? OFFSET ?' : ''}`,
+        [
+          ...scopeSearchIds,
+          ...scopeSearchIds,
+          scopeCampaign ? scopeCampaign.name : null,
+          ...whereParams,
+          ...(isPaginated ? [limit, offset] : []),
+        ]
+      );
+    } else {
+      const cteSql = `
+        WITH all_hits AS (
+          SELECT lsh.listing_id, lsh.search_id, lsh.first_seen_at
+            FROM listing_search_hits lsh
+          UNION
+          SELECT l.id AS listing_id, l.search_id, COALESCE(l.last_seen_at, datetime('now')) AS first_seen_at
+            FROM listings l
+           WHERE l.search_id IS NOT NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM listing_search_hits h
+                WHERE h.listing_id = l.id AND h.search_id = l.search_id
+             )
+        ),
+        ranked_scope AS (
+          SELECT lsh.listing_id,
+                 lsh.search_id,
+                 lsh.first_seen_at,
+                 s.name AS search_name,
+                 c.name AS campaign_name,
+                 fit.verdict AS fit_verdict,
+                 fit.reason AS fit_reason,
+                 fit.facts_json AS fit_facts,
+                 fit.stage AS fit_stage,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY lsh.listing_id
+                   ORDER BY ${BEST_FIT_ORDER_SQL}
+                 ) AS rn,
+                 MIN(lsh.first_seen_at) OVER (PARTITION BY lsh.listing_id) AS min_seen_at
+            FROM all_hits lsh
+            LEFT JOIN searches s ON s.id = lsh.search_id
+            LEFT JOIN campaigns c ON c.id = s.campaign_id
+            LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'lsh.search_id')}
+        ),
+        best_scope AS (
+          SELECT * FROM ranked_scope WHERE rn = 1
+        )
+      `;
+
+      const countRow = await get(
+        `${cteSql}
+         SELECT COUNT(DISTINCT l.id) AS total
+           FROM listings l
+           LEFT JOIN best_scope bs ON bs.listing_id = l.id
+          ${whereSql}`,
+        whereParams
+      );
+      total = countRow ? Number(countRow.total || 0) : 0;
+
+      rows = await query(
+        `${cteSql}
+         SELECT l.*,
+                bs.search_name AS item_name,
+                bs.campaign_name AS campaign_name,
+                COALESCE(bs.min_seen_at, l.last_seen_at) AS first_seen_at,
+                bs.fit_verdict,
+                bs.fit_reason,
+                bs.fit_facts,
+                bs.fit_stage
+           FROM listings l
+           LEFT JOIN best_scope bs ON bs.listing_id = l.id
+          ${whereSql}
+          ORDER BY ${orderBy}
+          ${isPaginated ? 'LIMIT ? OFFSET ?' : ''}`,
+        [
+          ...whereParams,
+          ...(isPaginated ? [limit, offset] : []),
+        ]
+      );
+    }
 
     const listings = rows.map(r => ({
       ...r,
@@ -563,7 +792,10 @@ app.get('/api/listings', async (req, res) => {
       fit: fitOf(r),
     }));
 
-    await annotateDeals(query, listings);
+    await annotateDeals(query, listings, scopeSearchIds);
+    await annotateNodeMarket(query, listings, scopeSearchIds);
+    await attachRanks(query, get, listings, campaign_id ? Number(campaign_id) : null);
+    await attachScores(query, listings, scopeSearchIds);
     await attachPriceHistory(query, listings);
 
     if (isPaginated) {
@@ -598,7 +830,7 @@ app.get('/api/campaigns', async (req, res) => {
                -- results screen counts them. A re-aimed family keeps its old
                -- links, and counting them here made the list promise rows the
                -- results screen then refused to show.
-               WHERE sfs.active = 1
+               WHERE ${SFS_ACTIVE_OR_PENDING_SQL}
                  AND sfs.family_id = (
                      SELECT id FROM search_families sf2
                       WHERE sf2.campaign_id = c.id ORDER BY sf2.id DESC LIMIT 1)
@@ -616,9 +848,9 @@ app.get('/api/campaigns', async (req, res) => {
                   JOIN searches s2 ON s2.id = lsh.search_id
                  WHERE s2.campaign_id = c.id
              )) AS campaign_listings,
-             (SELECT COUNT(DISTINCT l.id)
-                FROM listings l
-                JOIN route_search_circles rsc ON rsc.search_id = l.search_id
+             (SELECT COUNT(DISTINCT lsh.listing_id)
+                FROM listing_search_hits lsh
+                JOIN route_search_circles rsc ON rsc.search_id = lsh.search_id
                WHERE rsc.route_search_id = (
                      SELECT id FROM route_searches r2
                       WHERE r2.campaign_id = c.id ORDER BY r2.id DESC LIMIT 1)
@@ -648,15 +880,45 @@ app.get('/api/campaigns', async (req, res) => {
 // API: Create/Update campaign
 app.post('/api/campaigns', async (req, res) => {
   try {
-    const { id, name } = req.body;
+    const { id, name, hunt_type, profile_key, intent_json } = req.body;
     if (!name) {
       return res.status(400).json({ error: 'Missing campaign name' });
     }
+    const valErr = require('./campaign_hunt_api').validateHuntPayload({ hunt_type, profile_key, intent_json });
+    if (valErr) return res.status(400).json({ error: valErr });
+
+    const storedIntent =
+      intent_json === undefined
+        ? undefined
+        : intent_json === null
+        ? null
+        : typeof intent_json === 'object'
+        ? JSON.stringify(intent_json)
+        : intent_json;
+
     let campaignId = id;
     if (campaignId) {
-      await run('UPDATE campaigns SET name = ? WHERE id = ?', [name, campaignId]);
+      const updates = ['name = ?'];
+      const values = [name];
+      if (hunt_type !== undefined) {
+        updates.push('hunt_type = ?');
+        values.push(hunt_type);
+      }
+      if (profile_key !== undefined) {
+        updates.push('profile_key = ?');
+        values.push(profile_key);
+      }
+      if (storedIntent !== undefined) {
+        updates.push('intent_json = ?');
+        values.push(storedIntent);
+      }
+      values.push(campaignId);
+      await run(`UPDATE campaigns SET ${updates.join(', ')} WHERE id = ?`, values);
     } else {
-      const result = await run('INSERT INTO campaigns (name) VALUES (?)', [name]);
+      const result = await run(
+        'INSERT INTO campaigns (name, hunt_type, profile_key, intent_json) VALUES (?, ?, ?, ?)',
+        [name, hunt_type || null, profile_key || null, storedIntent || null]
+      );
       campaignId = result.id;
     }
     res.json({ success: true, id: campaignId });
@@ -722,19 +984,23 @@ app.delete('/api/campaigns/:id', async (req, res) => {
 // API: Delete a campaign's route corridor to return to single location mode
 app.delete('/api/campaigns/:id/route', async (req, res) => {
   try {
-    const campaignId = req.params.id;
-    await run(
-      `DELETE FROM listing_route_geo WHERE route_search_id IN
-         (SELECT id FROM route_searches WHERE campaign_id = ?)`,
-      [campaignId]
-    ).catch(() => {});
-    await run(
-      `DELETE FROM route_search_circles WHERE route_search_id IN
-         (SELECT id FROM route_searches WHERE campaign_id = ?)`,
-      [campaignId]
-    ).catch(() => {});
-    await run('DELETE FROM route_searches WHERE campaign_id = ?', [campaignId])
-      .catch(() => {});
+    const routes = await query(
+      'SELECT id, family_id FROM route_searches WHERE campaign_id = ?',
+      [req.params.id]
+    );
+    // Through the planner, so the circles' searches stop and a hunt's town
+    // searches come back -- deleting the rows here left both crawling.
+    for (const route of routes) {
+      const args = route.family_id
+        ? ['--mode', 'family-route-clear', '--family-id', String(route.family_id)]
+        : ['--mode', 'route-delete', '--route-id', String(route.id)];
+      const result = await runPlanner(args);
+      const refused = readMarker(result.stdout, 'FAMILY_ROUTE_ERROR') || readMarker(result.stdout, 'ROUTE_DELETE_ERROR');
+      if (refused || result.code !== 0) {
+        console.error('Removing a route failed:', refused || result.stderr);
+        return res.status(500).json({ error: 'Failed to delete campaign route' });
+      }
+    }
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting campaign route:', error);
@@ -746,7 +1012,18 @@ app.use(require('./location_resolver'));
 app.use(require('./taxonomy'));
 app.use(require('./kept')(query, get, run));
 app.use(require('./requirements_api')(query, get, run));
+app.use(require('./campaign_hunt_api')(query, get, run));
 app.use(require('./fit_api')(query, get));
+require('./compare_api').onCompareDone(() =>
+  require('./migrations/p8_backfill_nodes').backfillP8Nodes(query, run)
+);
+app.use(require('./overview_api')(query, get));
+app.use(require('./intent_api'));
+
+app.use(require('./compare_api')(query, get));
+app.use(require('./knowledge_api')(query, get, run));
+
+require('./probe_api')(app);
 
 
 // API: Get search items
@@ -825,7 +1102,7 @@ app.get('/api/places/suggest', (req, res) => {
 function runPlanner(args, res = null) {
   return new Promise((resolve, reject) => {
     const python = spawn(
-      path.join(__dirname, '..', '.venv', 'bin', 'python3'),
+      findPython(),
       [path.join(__dirname, '..', 'scraper', 'main.py'), ...args],
       { env: { ...process.env } }
     );
@@ -991,7 +1268,7 @@ app.post('/api/route-searches', (req, res) => {
     });
   }
 
-  const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+  const pythonExecutable = findPython();
   const args = [
     path.join(__dirname, '..', 'scraper', 'main.py'),
     '--mode', 'route-create',
@@ -1130,34 +1407,75 @@ async function getRouteCorridorPayload(route, options = {}) {
     };
   });
 
+  const circleSearchIds = circles.map(c => Number(c.search_id));
+
+  let termConditionSql = '';
+  const termParams = [];
+  if (options.term !== undefined && options.term !== '') {
+    const termVal = options.term;
+    const termNum = parseInt(termVal, 10);
+    if (!isNaN(termNum) && String(termNum) === String(termVal).trim()) {
+      termConditionSql = 'AND (sfs.term_id = ? OR t.term = ? OR t.label = ?)';
+      termParams.push(termNum, termVal, termVal);
+    } else {
+      termConditionSql = 'AND (t.term = ? OR t.label = ?)';
+      termParams.push(termVal, termVal);
+    }
+  }
+
   // Scoped by the route's own circles, not by the campaign.
-  const whereConditions = ['c.route_search_id = ?'];
-  const whereParams = [route.id];
-
-  // The verdict belongs to the search the circle runs. Without this join the
-  // "Passend" filter had nothing to read on a corridor campaign and emptied
-  // the list, and every row showed its location where its specification
-  // should have been.
-  const FIT_JOIN =
-    'LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = c.search_id';
-
   // A listing is in the corridor when one of its circles found it -- not only
   // when the circle found it first. listings.search_id names the first finder
   // and never changes, so a mattress a nationwide search had already seen was
   // missing from the corridor that then found it too: 117 of 1,498 rows.
-  const CIRCLE_JOIN = `
-      JOIN listing_search_hits lsh ON lsh.listing_id = l.id
-      JOIN route_search_circles c ON c.search_id = lsh.search_id`;
+  //
+  // The verdict belongs to the search the circle runs. Best verdict across
+  // circles wins (fit > unclear > no > unjudged), exactly matching the overview.
+  const cteSql = `
+    WITH ranked_route_listings AS (
+      SELECT c.search_id,
+             s.name AS search_name,
+             lsh.listing_id,
+             lsh.first_seen_at,
+             fit.verdict AS fit_verdict,
+             fit.reason AS fit_reason,
+             fit.facts_json AS fit_facts,
+             fit.stage AS fit_stage,
+             ROW_NUMBER() OVER (
+               PARTITION BY lsh.listing_id
+               ORDER BY ${BEST_FIT_ORDER_SQL}
+             ) AS rn,
+             MAX(lsh.first_seen_at) OVER (PARTITION BY lsh.listing_id) AS max_seen_at
+        FROM route_search_circles c
+        JOIN listing_search_hits lsh ON lsh.search_id = c.search_id
+        JOIN searches s ON s.id = c.search_id
+        LEFT JOIN search_family_searches sfs ON sfs.search_id = c.search_id AND sfs.active = 1
+        LEFT JOIN search_family_terms t ON t.id = sfs.term_id
+        LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'c.search_id')}
+       WHERE c.route_search_id = ?
+         ${termConditionSql}
+    )
+  `;
 
-  if (options.fitOnly === '1' || options.fitOnly === 'true') {
-    whereConditions.push("fit.verdict IS NOT NULL AND fit.verdict <> 'no'");
+  const whereConditions = ['rrl.rn = 1'];
+  const whereParams = [];
+
+  const verdict = options.verdict;
+  if (verdict === 'fit') {
+    whereConditions.push("rrl.fit_verdict = 'fit'");
+  } else if (verdict === 'no') {
+    whereConditions.push("rrl.fit_verdict = 'no'");
+  } else if (verdict === 'unclear') {
+    whereConditions.push("(rrl.fit_verdict = 'unclear' OR rrl.fit_verdict IS NULL)");
+  } else if (options.fitOnly === '1' || options.fitOnly === 'true') {
+    whereConditions.push("rrl.fit_verdict IS NOT NULL AND rrl.fit_verdict <> 'no'");
   }
 
   // The filter sheet offers "deals only" on a corridor as it does anywhere
   // else, and the parameter arrived here and was ignored: the pill did nothing
   // and said nothing about it.
   if (options.dealsOnly === '1' || options.dealsOnly === 'true') {
-    const dealIds = await dealListingIds(query, circles.map(c => Number(c.search_id)));
+    const dealIds = await dealListingIds(query, circleSearchIds);
     // No deals is an empty corridor, not a different answer: the caller gets
     // the same payload it always gets, with nothing in it.
     whereConditions.push(
@@ -1180,34 +1498,19 @@ async function getRouteCorridorPayload(route, options = {}) {
     whereParams.push(qVal, qVal);
   }
 
-  if (options.term !== undefined && options.term !== '') {
-    const termVal = options.term;
-    const termNum = parseInt(termVal, 10);
-    if (!isNaN(termNum) && String(termNum) === String(termVal).trim()) {
-      whereConditions.push('(sfs.term_id = ? OR t.term = ? OR t.label = ?)');
-      whereParams.push(termNum, termVal, termVal);
-    } else {
-      whereConditions.push('(t.term = ? OR t.label = ?)');
-      whereParams.push(termVal, termVal);
-    }
-  }
-
   const whereSql = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
 
   const totalCountSql = `
-    SELECT COUNT(DISTINCT l.id) AS total,
-           COUNT(DISTINCT CASE WHEN g.detour_min IS NOT NULL THEN l.id END) AS routed,
-           COUNT(DISTINCT CASE WHEN g.lat IS NULL THEN l.id END) AS unplaced
-      FROM listings l
-      ${CIRCLE_JOIN}
-      JOIN searches s ON s.id = l.search_id
-      LEFT JOIN search_family_searches sfs ON sfs.search_id = c.search_id AND sfs.active = 1
-      LEFT JOIN search_family_terms t ON t.id = sfs.term_id
-      ${FIT_JOIN}
+    ${cteSql}
+    SELECT COUNT(*) AS total,
+           COUNT(CASE WHEN g.detour_min IS NOT NULL THEN 1 END) AS routed,
+           COUNT(CASE WHEN g.lat IS NULL THEN 1 END) AS unplaced
+      FROM ranked_route_listings rrl
+      JOIN listings l ON l.id = rrl.listing_id
       LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
      ${whereSql}
   `;
-  const totalRow = await get(totalCountSql, [route.id, ...whereParams]);
+  const totalRow = await get(totalCountSql, [route.id, ...termParams, route.id, ...whereParams]);
   const total = totalRow ? Number(totalRow.total || 0) : 0;
   const routed = totalRow ? Number(totalRow.routed || 0) : 0;
   const unplaced = totalRow ? Number(totalRow.unplaced || 0) : 0;
@@ -1215,9 +1518,9 @@ async function getRouteCorridorPayload(route, options = {}) {
   let orderBy = '';
   const sort = options.sort;
   if (sort === 'price_asc') {
-    orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
+    orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
   } else if (sort === 'price_desc') {
-    orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, l.id DESC';
+    orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
   } else if (sort === 'newest' || sort === 'freshness') {
     orderBy = 'first_seen_at DESC, l.id DESC';
   } else if (sort === 'score') {
@@ -1232,6 +1535,7 @@ async function getRouteCorridorPayload(route, options = {}) {
   const offset = options.offset ? Math.max(0, parseInt(options.offset, 10) || 0) : 0;
 
   const listingsSql = `
+    ${cteSql}
     SELECT l.id, l.title, l.price, l.price_eur, l.location, l.url,
            l.short_description, l.detailed_description, l.details,
            l.extracted_facts, l.niceness_score, l.llm_processed,
@@ -1239,25 +1543,20 @@ async function getRouteCorridorPayload(route, options = {}) {
            l.search_id, l.images, l.last_description_changed_at,
            l.last_ai_evaluated_at, l.last_seen_at, l.delisted_at,
            l.source, l.source_id,
-           MAX(lsh.first_seen_at) AS first_seen_at,
-           s.name as search_name,
+           rrl.max_seen_at AS first_seen_at,
+           rrl.search_name,
            g.lat, g.lon, g.offroute_km, g.detour_min, g.status as geo_status,
-           fit.verdict AS fit_verdict, fit.reason AS fit_reason,
-           fit.facts_json AS fit_facts, fit.stage AS fit_stage
-      FROM listings l
-      ${CIRCLE_JOIN}
-      JOIN searches s ON s.id = l.search_id
-      LEFT JOIN search_family_searches sfs ON sfs.search_id = c.search_id AND sfs.active = 1
-      LEFT JOIN search_family_terms t ON t.id = sfs.term_id
-      ${FIT_JOIN}
+           rrl.fit_verdict, rrl.fit_reason,
+           rrl.fit_facts, rrl.fit_stage
+      FROM ranked_route_listings rrl
+      JOIN listings l ON l.id = rrl.listing_id
       LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
      ${whereSql}
-     GROUP BY l.id
      ORDER BY ${orderBy}
      LIMIT ? OFFSET ?
   `;
 
-  const listings = await query(listingsSql, [route.id, ...whereParams, limit, offset]);
+  const listings = await query(listingsSql, [route.id, ...termParams, route.id, ...whereParams, limit, offset]);
 
   const parsedListings = listings.map(l => ({
     ...l,
@@ -1323,7 +1622,23 @@ async function getRouteCorridorPayload(route, options = {}) {
     total,
     offset,
     limit,
-    listings: await attachPriceHistory(query, await annotateDeals(query, parsedListings)),
+    listings: await attachPriceHistory(
+      query,
+      await attachScores(
+        query,
+        await attachRanks(
+          query,
+          get,
+          await annotateNodeMarket(
+            query,
+            await annotateDeals(query, parsedListings, circleSearchIds),
+            circleSearchIds
+          ),
+          route.campaign_id || null
+        ),
+        circleSearchIds
+      )
+    ),
     counts: {
       total,
       routed,
@@ -1510,7 +1825,7 @@ app.get('/api/search-families', async (req, res) => {
              (SELECT COUNT(DISTINCT lsh.listing_id)
                 FROM search_family_searches sfs
                 JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-               WHERE sfs.family_id = f.id AND sfs.active = 1) AS listings
+               WHERE sfs.family_id = f.id AND ${SFS_ACTIVE_OR_PENDING_SQL}) AS listings
         FROM search_families f
     `;
     const params = [];
@@ -1563,7 +1878,14 @@ app.get('/api/search-families/:id', async (req, res) => {
                  FROM search_family_searches sfs
                  JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
                 WHERE sfs.family_id = t.family_id AND sfs.term_id = t.id
-                  AND sfs.active = 1) AS listings
+                  AND ${SFS_ACTIVE_OR_PENDING_SQL}) AS listings,
+              (SELECT COUNT(DISTINCT lsh.listing_id)
+                 FROM search_family_searches sfs
+                 JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+                 JOIN listing_fit lf ON ${fitJoinOn('lsh.listing_id', 'sfs.search_id', 'lf')}
+                WHERE sfs.family_id = t.family_id AND sfs.term_id = t.id
+                  AND lf.verdict = 'fit'
+                  AND ${SFS_ACTIVE_OR_PENDING_SQL}) AS fit_listings
          FROM search_family_terms t
         WHERE t.family_id = ?
         ORDER BY t.position ASC, t.id ASC`,
@@ -1575,7 +1897,8 @@ app.get('/api/search-families/:id', async (req, res) => {
       term: t.term,
       label: t.label || t.term,
       enabled: Boolean(t.enabled),
-      listings: Number(t.listings || 0)
+      listings: Number(t.listings || 0),
+      fit_listings: Number(t.fit_listings || 0)
     }));
 
     // Determine whether this family has been crawled (listings found or target scraped in scraper.log)
@@ -1589,7 +1912,7 @@ app.get('/api/search-families/:id', async (req, res) => {
         `SELECT MAX(lsh.first_seen_at) as last_hit
            FROM search_family_searches sfs
            JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-          WHERE sfs.family_id = ? AND sfs.active = 1`,
+          WHERE sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}`,
         [fam.id]
       );
       if (hitTimeRow && hitTimeRow.last_hit) last_crawled_at = hitTimeRow.last_hit;
@@ -1705,7 +2028,7 @@ app.post('/api/search-families/:id/diagnose-radius', async (req, res) => {
 
     const pythonScript = `
 import sys, os, time, json, requests
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scraper'))
+sys.path.insert(0, ${JSON.stringify(path.join(__dirname, '..', 'scraper'))})
 import result_list, search_url
 
 payload = json.loads(sys.argv[1])
@@ -1767,7 +2090,7 @@ result = {
 print('__RADIUS_PROBE__:' + json.dumps(result))
 `;
 
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const python = spawn(
       pythonExecutable,
       ['-c', pythonScript, JSON.stringify(payload)],
@@ -1833,7 +2156,7 @@ app.put('/api/search-families/:id/radius', async (req, res) => {
 
     const pythonScript = `
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scraper'))
+sys.path.insert(0, ${JSON.stringify(path.join(__dirname, '..', 'scraper'))})
 import search_url
 
 base_url = sys.argv[1]
@@ -1847,7 +2170,7 @@ new_base = search_url.with_location(base_url, parts['location'], new_radius)
 print('__RADIUS_BASE_URL__:' + new_base)
 `;
 
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const child = spawn(
       pythonExecutable,
       ['-c', pythonScript, fam.base_url, String(newRadius)],
@@ -1907,6 +2230,52 @@ print('__RADIUS_BASE_URL__:' + new_base)
   } catch (error) {
     console.error('Error updating family radius:', error);
     res.status(500).json({ error: 'Failed to update family radius' });
+  }
+});
+
+// API: Give a hunt a corridor after it was made, or take it away.
+//
+// The hunt keeps its terms, requirements and verdicts; only where it looks
+// changes. The caller starts a crawl afterwards, which also works out the
+// detours.
+app.put('/api/search-families/:id/route', async (req, res) => {
+  const { origin, destination, radius_km, corridor_km } = req.body || {};
+  if (!origin || !destination) {
+    return res.status(400).json({ error: 'Missing origin or destination' });
+  }
+  const args = ['--mode', 'family-route', '--family-id', String(req.params.id),
+    '--from', String(origin), '--to', String(destination)];
+  if (radius_km) args.push('--radius-km', String(radius_km));
+  if (corridor_km) args.push('--corridor-km', String(corridor_km));
+  try {
+    // No `res`: a buyer who closes the tab must not stop a half-written change.
+    const result = await runPlanner(args);
+    const refused = readMarker(result.stdout, 'FAMILY_ROUTE_ERROR');
+    if (refused) return res.status(400).json({ error: refused });
+    const done = readMarker(result.stdout, 'FAMILY_ROUTE');
+    if (!done) {
+      console.error('Family route produced nothing:', result.stdout, result.stderr);
+      const reason = (result.stderr.match(/ValueError: (.+)/) || [])[1];
+      return res.status(500).json({ error: reason || 'Could not plan this corridor.' });
+    }
+    res.json(JSON.parse(done));
+  } catch (error) {
+    console.error('Could not set the family route:', error);
+    res.status(500).json({ error: 'Could not plan this corridor.' });
+  }
+});
+
+app.delete('/api/search-families/:id/route', async (req, res) => {
+  try {
+    const result = await runPlanner(
+      ['--mode', 'family-route-clear', '--family-id', String(req.params.id)]
+    );
+    const refused = readMarker(result.stdout, 'FAMILY_ROUTE_ERROR');
+    if (refused) return res.status(400).json({ error: refused });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Could not clear the family route:', error);
+    res.status(500).json({ error: 'Could not remove the corridor.' });
   }
 });
 
@@ -2017,13 +2386,13 @@ app.delete('/api/search-families/:id', async (req, res) => {
 // every item so the frontend can display which model(s) hit and support filtering.
 app.get('/api/search-families/:id/listings', async (req, res) => {
   try {
-    const fam = await get('SELECT id FROM search_families WHERE id = ?', [req.params.id]);
+    const fam = await get('SELECT id, campaign_id, base_url FROM search_families WHERE id = ?', [req.params.id]);
     if (!fam) {
       return res.status(404).json({ error: 'Search family not found' });
     }
 
     const route = await get(
-      'SELECT id FROM route_searches WHERE family_id = ? ORDER BY id DESC LIMIT 1',
+      'SELECT id, origin, destination, half_width_km, plan_json FROM route_searches WHERE family_id = ? ORDER BY id DESC LIMIT 1',
       [fam.id]
     );
     const routeId = route ? route.id : null;
@@ -2032,46 +2401,76 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     // links so nothing is lost from the database, but showing their results as
     // current is misleading: those listings were found at a radius or a keyword
     // the buyer has since changed. Kept, not shown.
-    const whereConditions = ['sfs.family_id = ?', 'sfs.active = 1'];
-    const whereParams = [fam.id];
-
-    // Same reason as the corridor: a family campaign had no verdict to filter
-    // or to show.
-    const FIT_JOIN =
-      'LEFT JOIN listing_fit fit ON fit.listing_id = l.id AND fit.search_id = sfs.search_id';
-
-    if (req.query.fitOnly === '1' || req.query.fitOnly === 'true') {
-      whereConditions.push("fit.verdict IS NOT NULL AND fit.verdict <> 'no'");
+    const termVal = req.query.term;
+    let termConditionSql = '';
+    const termParams = [];
+    if (termVal !== undefined && termVal !== '') {
+      const termNum = parseInt(termVal, 10);
+      if (!isNaN(termNum) && String(termNum) === String(termVal).trim()) {
+        termConditionSql = 'AND (sfs.term_id = ? OR t.term = ? OR t.label = ?)';
+        termParams.push(termNum, termVal, termVal);
+      } else {
+        termConditionSql = 'AND (t.term = ? OR t.label = ?)';
+        termParams.push(termVal, termVal);
+      }
     }
+
+    const cteSql = `
+      WITH ranked_family_listings AS (
+        SELECT sfs.search_id,
+               sfs.term_id,
+               s.name AS search_name,
+               lsh.listing_id,
+               lsh.first_seen_at,
+               fit.verdict AS fit_verdict,
+               fit.reason AS fit_reason,
+               fit.facts_json AS fit_facts,
+               fit.stage AS fit_stage,
+               ROW_NUMBER() OVER (
+                 PARTITION BY lsh.listing_id
+                 ORDER BY ${BEST_FIT_ORDER_SQL}
+               ) AS rn,
+               MAX(lsh.first_seen_at) OVER (PARTITION BY lsh.listing_id) AS max_seen_at
+          FROM search_family_searches sfs
+          LEFT JOIN search_family_terms t ON t.id = sfs.term_id
+          JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+          JOIN searches s ON s.id = sfs.search_id
+          LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'sfs.search_id')}
+         WHERE sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}
+           ${termConditionSql}
+      )
+    `;
+
+    const whereConditions = [];
+    const whereParams = [];
+
+    const verdict = req.query.verdict;
+    if (verdict === 'fit') {
+      whereConditions.push("rfl.fit_verdict = 'fit'");
+    } else if (verdict === 'no') {
+      whereConditions.push("rfl.fit_verdict = 'no'");
+    } else if (verdict === 'unclear') {
+      whereConditions.push("(rfl.fit_verdict = 'unclear' OR rfl.fit_verdict IS NULL)");
+    } else if (req.query.fitOnly === '1' || req.query.fitOnly === 'true') {
+      whereConditions.push("rfl.fit_verdict IS NOT NULL AND rfl.fit_verdict <> 'no'");
+    }
+
+    const familySearchIds = (
+      await query(
+        `SELECT sfs.search_id FROM search_family_searches sfs WHERE sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}`,
+        [fam.id]
+      )
+    ).map(r => Number(r.search_id));
 
     // Deals only, decided here rather than in the browser. Filtering the fifty
     // loaded rows and reporting that count as the search's size told the buyer
     // a 1,266-listing search held two deals.
     if (req.query.dealsOnly === '1' || req.query.dealsOnly === 'true') {
-      const searchIds = (
-        await query(
-          'SELECT search_id FROM search_family_searches WHERE family_id = ? AND active = 1',
-          [fam.id]
-        )
-      ).map(r => Number(r.search_id));
-      const dealIds = await dealListingIds(query, searchIds);
+      const dealIds = await dealListingIds(query, familySearchIds);
       whereConditions.push(
         dealIds.length ? `l.id IN (${dealIds.map(() => '?').join(',')})` : '1 = 0'
       );
       whereParams.push(...dealIds);
-    }
-
-    // Filter by term
-    if (req.query.term !== undefined && req.query.term !== '') {
-      const termVal = req.query.term;
-      const termNum = parseInt(termVal, 10);
-      if (!isNaN(termNum) && String(termNum) === String(termVal).trim()) {
-        whereConditions.push('(sfs.term_id = ? OR t.term = ? OR t.label = ?)');
-        whereParams.push(termNum, termVal, termVal);
-      } else {
-        whereConditions.push('(t.term = ? OR t.label = ?)');
-        whereParams.push(termVal, termVal);
-      }
     }
 
     // Filter by maxDetour
@@ -2090,76 +2489,52 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
       whereParams.push(qVal, qVal);
     }
 
-    const whereSql = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
-
-    // Total count query after filters
-    const totalCountSql = `
-      SELECT COUNT(DISTINCT l.id) AS total
-        FROM search_family_searches sfs
-        LEFT JOIN search_family_terms t ON t.id = sfs.term_id
-        JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-        JOIN listings l ON l.id = lsh.listing_id
-        ${FIT_JOIN}
-        LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
-       ${whereSql}
-    `;
-    const totalRow = await get(totalCountSql, [routeId, ...whereParams]);
-    const total = totalRow ? Number(totalRow.total || 0) : 0;
-
-    // Sorting
-    let orderBy = '';
-    const sort = req.query.sort;
-    if (sort === 'price_asc') {
-      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur ASC, l.id DESC';
-    } else if (sort === 'price_desc') {
-      orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, l.id DESC';
-    } else if (sort === 'newest' || sort === 'freshness') {
-      orderBy = 'first_seen_at DESC, l.id DESC';
-    } else if (sort === 'score') {
-      orderBy = '(l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
-    } else if (sort === 'detour' || sort === 'route') {
-      orderBy = '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
-    } else if (routeId) {
-      orderBy =
-        FIT_FIRST +
-        '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
-    } else {
-      orderBy = FIT_FIRST + 'l.niceness_score DESC, l.id DESC';
+    const minPrice = req.query.min_price ?? req.query.minPrice;
+    if (minPrice !== undefined && minPrice !== '' && !isNaN(Number(minPrice))) {
+      whereConditions.push('l.price_eur >= ?');
+      whereParams.push(Number(minPrice));
     }
+    const maxPrice = req.query.max_price ?? req.query.maxPrice;
+    if (maxPrice !== undefined && maxPrice !== '' && !isNaN(Number(maxPrice))) {
+      whereConditions.push('l.price_eur <= ?');
+      whereParams.push(Number(maxPrice));
+    }
+
+    const whereSql = whereConditions.length > 0 ? 'AND ' + whereConditions.join(' AND ') : '';
 
     // Pagination (default limit 50, offset 0)
     const limit = Math.max(1, parseInt(req.query.limit, 10) || 50);
     const offset = req.query.offset ? Math.max(0, parseInt(req.query.offset, 10) || 0) : 0;
 
+    // The whole hunt is read and ordered here, not in SQL: distance and score
+    // only exist once the rows are placed and scored. A hunt is tens of
+    // listings, not thousands. SQL gives the base order ties fall back to.
     const listingsSql = `
+      ${cteSql}
       SELECT l.id, l.title, l.price, l.price_eur, l.location, l.url,
              l.short_description, l.detailed_description, l.details,
              l.extracted_facts, l.niceness_score, l.llm_processed,
              l.llm_processed_time, l.full_info_obtained, l.status,
              l.search_id, l.images, l.last_description_changed_at,
              l.last_ai_evaluated_at, l.last_seen_at, l.delisted_at,
-             l.source, l.source_id,
-             MAX(lsh.first_seen_at) AS first_seen_at,
-             s.name AS search_name,
+             l.source, l.source_id, l.postal_code,
+             rfl.max_seen_at AS first_seen_at,
+             rfl.search_name,
              g.lat, g.lon, g.offroute_km, g.detour_min, g.status AS geo_status,
-             fit.verdict AS fit_verdict, fit.reason AS fit_reason,
-             fit.facts_json AS fit_facts, fit.stage AS fit_stage
-        FROM search_family_searches sfs
-        LEFT JOIN search_family_terms t ON t.id = sfs.term_id
-        JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-        JOIN listings l ON l.id = lsh.listing_id
-        ${FIT_JOIN}
-        LEFT JOIN searches s ON s.id = l.search_id
+             rfl.fit_verdict, rfl.fit_reason,
+             rfl.fit_facts, rfl.fit_stage
+        FROM ranked_family_listings rfl
+        JOIN listings l ON l.id = rfl.listing_id
         LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?
+       WHERE rfl.rn = 1
        ${whereSql}
-       GROUP BY l.id
-       ORDER BY ${orderBy}
-       LIMIT ? OFFSET ?
+       ORDER BY ${FIT_FIRST}l.niceness_score DESC, l.id DESC
     `;
 
-    const rows = await query(listingsSql, [routeId, ...whereParams, limit, offset]);
+    const rows = await query(listingsSql, [fam.id, ...termParams, routeId, ...whereParams]);
+    const total = rows.length;
 
-    const listings = rows.map(r => ({
+    let listings = rows.map(r => ({
       ...r,
       llm_processed: !!r.llm_processed,
       full_info_obtained: !!r.full_info_obtained,
@@ -2170,43 +2545,63 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
       fit: fitOf(r)
     }));
 
+    placeListings(listings, fam.base_url);
+
+    await annotateDeals(query, listings, familySearchIds);
+    await annotateNodeMarket(query, listings, familySearchIds);
+    await attachRanks(query, get, listings, fam.campaign_id || null);
+    await attachScores(query, listings, familySearchIds);
+
+    // Every pin of the tab rides along with the first page, so the map needs
+    // no request of its own.
+    const points = offset > 0 ? undefined : listings
+      .filter(l => typeof l.lat === 'number' && typeof l.lon === 'number')
+      .map(l => ({
+        id: l.id, title: l.title, price: l.price, location: l.location, url: l.url,
+        lat: l.lat, lon: l.lon, detour_min: l.detour_min, offroute_km: l.offroute_km,
+        distance_km: l.distance_km, images: l.images.slice(0, 1),
+      }));
+
+    const order = listingOrder(req.query.sort, Boolean(routeId));
+    if (order) listings.sort(order);
+    listings = listings.slice(offset, offset + limit);
+
     if (listings.length > 0) {
       const listingIds = listings.map(l => l.id);
       const termsByListing = {};
-      const CHUNK_SIZE = 500;
-
-      for (let i = 0; i < listingIds.length; i += CHUNK_SIZE) {
-        const chunk = listingIds.slice(i, i + CHUNK_SIZE);
-        const placeholders = chunk.map(() => '?').join(',');
-        const termsRows = await query(
-          `SELECT DISTINCT lsh.listing_id, t.id AS term_id, COALESCE(t.label, t.term) AS label
-             FROM search_family_searches sfs
-             JOIN search_family_terms t ON t.id = sfs.term_id
-             JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-            WHERE sfs.family_id = ? AND sfs.active = 1
-              AND lsh.listing_id IN (${placeholders})
-            ORDER BY t.position ASC, t.id ASC`,
-          [fam.id, ...chunk]
-        );
-
-        for (const tr of termsRows) {
-          if (!termsByListing[tr.listing_id]) termsByListing[tr.listing_id] = [];
-          termsByListing[tr.listing_id].push({
-            id: tr.term_id,
-            label: tr.label
-          });
-        }
+      const termsRows = await query(
+        `SELECT DISTINCT lsh.listing_id, t.id AS term_id, COALESCE(t.label, t.term) AS label
+           FROM search_family_searches sfs
+           JOIN search_family_terms t ON t.id = sfs.term_id
+           JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
+          WHERE sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}
+            AND lsh.listing_id IN (${listingIds.map(() => '?').join(',')})
+          ORDER BY t.position ASC, t.id ASC`,
+        [fam.id, ...listingIds]
+      );
+      for (const tr of termsRows) {
+        if (!termsByListing[tr.listing_id]) termsByListing[tr.listing_id] = [];
+        termsByListing[tr.listing_id].push({ id: tr.term_id, label: tr.label });
       }
-
       for (const l of listings) {
         l.matched_terms = termsByListing[l.id] || [];
       }
     }
-
-    await annotateDeals(query, listings);
     await attachPriceHistory(query, listings);
 
-    res.json({ total, offset, limit, listings });
+    // The corridor's shape for the map, so it needs no second request.
+    let routeShape = null;
+    if (route) {
+      const plan = JSON.parse(route.plan_json || '{}');
+      routeShape = {
+        origin: route.origin,
+        destination: route.destination,
+        half_width_km: route.half_width_km,
+        polyline: thin(plan.polyline),
+      };
+    }
+
+    res.json({ total, offset, limit, route: routeShape, points, listings });
   } catch (error) {
     console.error('Error fetching family listings:', error);
     res.status(500).json({ error: 'Failed to fetch family listings' });
@@ -2299,25 +2694,28 @@ app.post('/api/knowledge-sets', async (req, res) => {
     const sourceUrlStr = source_search_url || '';
     const timestampStr = sample_timestamp || '';
 
+    // Readers find verdicts by this hash; a set saved without it hid them (P9).
+    const reqHash = require('./db/requirements_hash').requirementsHash((item_json || {}).fields);
     if (ksId) {
       await run(`
         UPDATE knowledge_sets 
         SET name = ?, expert_knowledge = ?, item_json = ?, market_memo = ?, 
             good_reference_description = ?, bad_reference_description = ?, 
-            market_samples_json = ?, source_search_url = ?, sample_timestamp = ? 
+            market_samples_json = ?, source_search_url = ?, sample_timestamp = ?,
+            requirements_hash = ?
         WHERE id = ?
       `, [
-        name, expertStr, jsonStr, memoStr, goodRefStr, badRefStr, samplesStr, sourceUrlStr, timestampStr, ksId
+        name, expertStr, jsonStr, memoStr, goodRefStr, badRefStr, samplesStr, sourceUrlStr, timestampStr, reqHash, ksId
       ]);
     } else {
       const result = await run(`
         INSERT INTO knowledge_sets (
           name, expert_knowledge, item_json, market_memo, 
           good_reference_description, bad_reference_description, 
-          market_samples_json, source_search_url, sample_timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          market_samples_json, source_search_url, sample_timestamp, requirements_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
-        name, expertStr, jsonStr, memoStr, goodRefStr, badRefStr, samplesStr, sourceUrlStr, timestampStr
+        name, expertStr, jsonStr, memoStr, goodRefStr, badRefStr, samplesStr, sourceUrlStr, timestampStr, reqHash
       ]);
       ksId = result.id;
     }
@@ -2417,7 +2815,7 @@ app.post('/api/searches/preview', (req, res) => {
     return res.status(400).json({ error: 'Invalid search target URL. Only Kleinanzeigen URLs are allowed.' });
   }
 
-  const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+  const pythonExecutable = findPython();
   const scriptPath = path.join(__dirname, '..', 'scraper', 'main.py');
   
   const python = spawn(pythonExecutable, [scriptPath, '--mode', 'preview', '--urls', url]);
@@ -2710,7 +3108,7 @@ app.post('/api/scrape', (req, res) => {
     }
     
     // Spawn scraper execution in 'scrape' mode
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const args = [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'scrape'
@@ -2731,6 +3129,8 @@ app.post('/api/scrape', (req, res) => {
     python.on('close', (code) => {
       console.log(`Python scraper exited with code ${code}`);
       activeScraperProcess = null;
+      // Fresh offers deserve a fresh comparison (about 0.004 USD a run).
+      if (code === 0) afterCrawl(campaignId ? [Number(campaignId)] : null);
     });
     
     res.json({ success: true, message: 'Scraping started' });
@@ -2757,7 +3157,7 @@ app.post('/api/scrape/update-all', (req, res) => {
     }
     
     // Spawn scraper execution in 'update-all' mode
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const args = [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'update-all'
@@ -2807,7 +3207,7 @@ app.post('/api/searches/:search_id/scrape', async (req, res) => {
       try { fs.unlinkSync(progressFile); } catch (e) {}
     }
 
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const python = spawn(pythonExecutable, [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'scrape',
@@ -2827,6 +3227,7 @@ app.post('/api/searches/:search_id/scrape', async (req, res) => {
     python.on('close', (code) => {
       console.log(`Python targeted scraper exited with code ${code}`);
       activeScraperProcess = null;
+      if (code === 0 && search.campaign_id) afterCrawl([Number(search.campaign_id)]);
     });
 
     res.json({ success: true, message: 'Targeted scraping started' });
@@ -2853,7 +3254,7 @@ app.post('/api/process', (req, res) => {
       return res.status(409).json({ error: 'Evaluation already running for this listing' });
     }
 
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const args = [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'process'
@@ -2901,7 +3302,7 @@ app.get('/api/session-status', (req, res) => {
 // API: Trigger interactive manual login session
 app.post('/api/login-session', (req, res) => {
   try {
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const python = spawn(pythonExecutable, [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'scrape',
@@ -3020,7 +3421,7 @@ function runScraper() {
   const mode = autoAiEval ? 'both' : 'scrape';
   console.log(`Scheduled scrape running in mode: ${mode}`);
 
-  const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+  const pythonExecutable = findPython();
   const python = spawn(pythonExecutable, [
     path.join(__dirname, '..', 'scraper', 'main.py'),
     '--mode', mode
@@ -3037,6 +3438,28 @@ function runScraper() {
   });
   python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
   python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
+  // The schedule is the crawl that runs while nobody has the app open: its
+  // finds must be judged and ranked by the time someone does.
+  python.on('close', code => {
+    if (code === 0) afterCrawl(null);
+  });
+}
+
+/**
+ * What follows every finished crawl: market nodes, then judge and compare
+ * each campaign it touched (all with enabled searches when not given).
+ * One campaign after the other; each judge starts its own comparison.
+ */
+async function afterCrawl(campaignIds) {
+  try {
+    await require('./migrations/p8_backfill_nodes').backfillP8Nodes(query, run);
+    const ids = campaignIds || (await query(
+      'SELECT DISTINCT campaign_id AS id FROM searches WHERE enabled = 1 AND campaign_id IS NOT NULL'
+    )).map(r => Number(r.id));
+    for (const id of ids) await require('./fit_api').judgeCampaign(id);
+  } catch (error) {
+    console.error('After-crawl judging failed:', error);
+  }
 }
 
 app.listen(port, () => {

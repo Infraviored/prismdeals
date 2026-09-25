@@ -34,7 +34,7 @@ import json
 import logging
 import sqlite3
 
-from search_url import slugify, with_location, with_query
+from search_url import decompose_search_url, slugify, with_location, with_query
 
 logger = logging.getLogger(__name__)
 
@@ -402,8 +402,13 @@ def attach_terms(
 
         if term_id is not None:
             cursor.execute(
-                "INSERT OR IGNORE INTO search_family_searches (family_id, term_id, search_id) "
-                "VALUES (?, ?, ?)",
+                # Back to a URL this term had before (a filter set and reset,
+                # the first term changed and changed back): the old link row
+                # exists with active = 0, and "OR IGNORE" left it off -- the
+                # search stopped being crawled with nothing on screen saying so.
+                "INSERT INTO search_family_searches (family_id, term_id, search_id, active) "
+                "VALUES (?, ?, ?, 1) "
+                "ON CONFLICT(family_id, term_id, search_id) DO UPDATE SET active = 1",
                 (family_id, term_id, search_id),
             )
 
@@ -495,6 +500,43 @@ def save_family(
         knowledge_set_id=knowledge_set_id,
         route_search_id=route_search_id,
     )
+
+    # When converting a plain campaign into a family: any existing searches of this
+    # campaign that were not reused (because the URL changed due to filter/place/price)
+    # are linked to search_family_searches with active = 0. Their listings and verdicts
+    # stay visible in the campaign view until the new search runs its first scrape.
+    if campaign_id:
+        existing_searches = cursor.execute(
+            """
+            SELECT s.id, s.url, s.name
+            FROM searches s
+            WHERE s.campaign_id = ?
+              AND s.id NOT IN (SELECT search_id FROM search_family_searches WHERE family_id = ?)
+            """,
+            (campaign_id, family_id),
+        ).fetchall()
+        retired_sids = []
+        for old_sid, old_url, old_name in existing_searches:
+            dec = decompose_search_url(old_url) if old_url else None
+            old_term_slug = (dec.get("query") if dec else None) or slugify(old_name)
+            matched_term_id = None
+            for st in stored_terms:
+                if st["term"] == old_term_slug:
+                    matched_term_id = st["id"]
+                    break
+            if not matched_term_id and stored_terms:
+                matched_term_id = stored_terms[0]["id"]
+            if matched_term_id:
+                cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO search_family_searches (family_id, term_id, search_id, active)
+                    VALUES (?, ?, ?, 0)
+                    """,
+                    (family_id, matched_term_id, old_sid),
+                )
+                retired_sids.append(old_sid)
+        if retired_sids:
+            recompute_enabled(conn, retired_sids, cursor=cursor)
 
     # What the family runs now, which is what the caller is told it saved. A
     # re-aimed family keeps its retired links so their listings stay reachable,

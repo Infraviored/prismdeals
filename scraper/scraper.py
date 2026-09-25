@@ -10,7 +10,9 @@ import datetime
 import requests
 from bs4 import BeautifulSoup
 
+import detail_params
 import result_list
+import rate_limiter
 
 # For the legacy interactive Selenium login route:
 from selenium import webdriver
@@ -21,7 +23,14 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-from config import DELAY_BETWEEN_PAGES, DELAY_BETWEEN_LISTINGS, PAGES_TO_SCRAPE
+try:
+    from config import DELAY_BETWEEN_PAGES, DELAY_BETWEEN_LISTINGS, PAGES_TO_SCRAPE
+except ImportError:
+    from config_template import (
+        DELAY_BETWEEN_PAGES,
+        DELAY_BETWEEN_LISTINGS,
+        PAGES_TO_SCRAPE,
+    )
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -48,6 +57,7 @@ def fetch(url, caller=None, timeout=10):
     `apparent_encoding` agrees. Setting it explicitly is the fix, and it belongs
     here so no call site can forget it.
     """
+    rate_limiter.wait()
     caller = caller if caller is not None else requests
     response = caller.get(url, headers=HEADERS, timeout=timeout)
     response.encoding = "utf-8"
@@ -164,6 +174,7 @@ def parse_listing_details_requests(url, session=None):
                 images.append(src)
 
         detailed_description = schema_description or html_description
+        details = detail_params.merge_details(details, response.text)
 
         return {
             "detailed_description": detailed_description,
@@ -482,21 +493,35 @@ def harvest_descriptions(campaign_id=None):
             cursor.execute(
                 """
                 SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
-                JOIN searches s ON l.search_id = s.id
-                WHERE s.enabled = 1 AND s.campaign_id = ? AND (
-                    l.full_info_obtained = 0 OR l.full_info_obtained IS NULL
-                )
+                WHERE (l.full_info_obtained = 0 OR l.full_info_obtained IS NULL)
+                  AND l.delisted_at IS NULL
+                  -- Any running search that found it, not only the first
+                  -- finder: a listing whose first search was retired by an
+                  -- edit was never harvested again.
+                  AND (
+                      EXISTS (SELECT 1 FROM searches s
+                               WHERE s.id = l.search_id AND s.enabled = 1 AND s.campaign_id = ?)
+                      OR EXISTS (
+                      SELECT 1 FROM listing_search_hits h
+                        JOIN searches s ON s.id = h.search_id
+                       WHERE h.listing_id = l.id AND s.enabled = 1 AND s.campaign_id = ?)
+                  )
             """,
-                (campaign_id,),
+                (campaign_id, campaign_id),
             )
         else:
             cursor.execute(
                 """
                 SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
-                JOIN searches s ON l.search_id = s.id
-                WHERE s.enabled = 1 AND (
-                    l.full_info_obtained = 0 OR l.full_info_obtained IS NULL
-                )
+                WHERE (l.full_info_obtained = 0 OR l.full_info_obtained IS NULL)
+                  AND l.delisted_at IS NULL
+                  AND (
+                      EXISTS (SELECT 1 FROM searches s WHERE s.id = l.search_id AND s.enabled = 1)
+                      OR EXISTS (
+                      SELECT 1 FROM listing_search_hits h
+                        JOIN searches s ON s.id = h.search_id
+                       WHERE h.listing_id = l.id AND s.enabled = 1)
+                  )
             """
             )
         rows = cursor.fetchall()
@@ -515,7 +540,12 @@ def harvest_descriptions(campaign_id=None):
                 f"Found {total} listings missing details to harvest.",
             )
 
-        with requests.Session() as session:
+        # No shared session: after the first page Kleinanzeigen sets a cookie
+        # (__ka_pur-ui-v2) and serves every later page in a newer layout this
+        # parser does not read -- every second listing came back without
+        # images or details. Each page fetched on its own gets the readable one.
+        session = None
+        if True:
             for idx, r in enumerate(rows):
                 listing_id = r["id"]
                 url = r["url"]
@@ -667,7 +697,12 @@ def update_all_descriptions_session(campaign_id=None):
                 f"Found {total} listings to check/update.",
             )
 
-        with requests.Session() as session:
+        # No shared session: after the first page Kleinanzeigen sets a cookie
+        # (__ka_pur-ui-v2) and serves every later page in a newer layout this
+        # parser does not read -- every second listing came back without
+        # images or details. Each page fetched on its own gets the readable one.
+        session = None
+        if True:
             for idx, r in enumerate(rows):
                 listing_id = r["id"]
                 url = r["url"]

@@ -760,3 +760,69 @@ def test_re_aiming_a_family_does_not_leave_searches_running_forever(conn):
         "SELECT COUNT(*) FROM search_family_searches WHERE family_id = ?", (fam_id,)
     ).fetchone()[0]
     assert kept == 4, "two re-aimed plus two kept for their history"
+
+
+def test_converting_a_plain_campaign_keeps_its_search_as_a_retired_predecessor(conn):
+    """The Corsair incident: a campaign made of one plain search was saved from
+    the setup screen with one filter changed. The new family got a new search and
+    the old one -- 50 listings, 50 verdicts -- fell out of the campaign view,
+    which looked to the buyer like everything had been deleted.
+
+    The old search must become a retired member of the new family, so the view
+    can keep showing it until the new search has run once.
+    """
+    old_url = (
+        "https://www.kleinanzeigen.de/s-pc-zubehoer-software/preis::150/"
+        "corsair-vengeance-32gb/k0c225"
+    )
+    conn.execute("INSERT INTO campaigns (id, name) VALUES (7, 'Corsair')")
+    conn.execute(
+        "INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (45, 7, 'Corsair', ?, 1)",
+        (old_url,),
+    )
+    conn.commit()
+
+    new_base = old_url.replace("k0c225", "k0c225+pc_zubehoer_software.versand_s:ja")
+    family_id, _, _ = family_store.save_family(
+        conn,
+        "Corsair",
+        new_base,
+        [{"term": "corsair vengeance 32gb", "label": "corsair vengeance 32gb"}],
+        campaign_id=7,
+    )
+
+    rows = conn.execute(
+        "SELECT search_id, active FROM search_family_searches WHERE family_id = ? ORDER BY search_id",
+        (family_id,),
+    ).fetchall()
+    assert (45, 0) in rows, rows
+    active = [sid for sid, a in rows if a == 1]
+    assert len(active) == 1 and active[0] != 45
+    # Retired means no longer crawled.
+    assert conn.execute("SELECT enabled FROM searches WHERE id = 45").fetchone()[0] == 0
+
+
+def test_changing_back_to_an_earlier_url_turns_its_search_on_again(conn):
+    """A filter set and reset: the second edit lands on the first search again.
+
+    Its link row was already there with active = 0, and "INSERT OR IGNORE"
+    left it off. Live, the Honda search of the R1 / CBR hunt stopped being
+    crawled after such an edit, with nothing on screen saying so.
+    """
+    cursor = conn.cursor()
+    r30 = "https://www.kleinanzeigen.de/s-landsberg-am-lech/motorrad/k0l7091r30"
+    r50 = "https://www.kleinanzeigen.de/s-landsberg-am-lech/motorrad/k0l7091r50"
+    fam_id, _, _ = family_store.save_family(
+        conn, name="R1", base_url=r30, terms=["yamaha r1"]
+    )
+    family_store.update_family(conn, fam_id, base_url=r50)
+    family_store.update_family(conn, fam_id, base_url=r30)
+
+    active = cursor.execute(
+        """SELECT s.url, s.enabled FROM search_family_searches sfs
+             JOIN searches s ON s.id = sfs.search_id
+            WHERE sfs.family_id = ? AND sfs.active = 1""",
+        (fam_id,),
+    ).fetchall()
+    assert len(active) == 1
+    assert active[0][0].endswith("r30") and active[0][1] == 1

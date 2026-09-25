@@ -1,52 +1,33 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Campaign, SearchFamilyTerm, RouteCorridorData, RouteListingGeo, RadiusDiagnosis } from '../types';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import type { Campaign, SearchFamilyTerm, RouteListingGeo, RadiusDiagnosis } from '../types';
 import type { RowListing } from '../components/surface';
+import type { CampaignOverviewData } from '../screens/FundeAside';
+import { toRowListing, type ApiListing } from '../utils/toRowListing';
 
-/**
- * One listing as the three endpoints send it.
- *
- * Written down rather than left as `any`: every field below is read by the
- * mapper, and an `any` there means a renamed column reaches the surface as
- * `undefined` with nothing to say so.
- */
-interface ApiListing {
-  id: string | number;
-  title?: string | null;
-  price?: string | null;
-  price_eur?: number | null;
-  location?: string | null;
-  url?: string | null;
-  images?: string[] | null;
-  detour_min?: number | null;
-  offroute_km?: number | null;
-  lat?: number | null;
-  lon?: number | null;
-  geo_status?: string | null;
-  first_seen_at?: string | null;
-  last_seen_at?: string | null;
-  is_deal?: boolean;
-  price_delta_eur?: number | null;
-  price_history?: RowListing['price_history'];
-  fit?: RowListing['fit'];
-  matched_terms?: RowListing['matched_terms'];
-  niceness_score?: number | null;
-  detailed_description?: string | null;
-  short_description?: string | null;
-  description?: string | null;
-  summary?: string | null;
-  reference_comparison?: RowListing['reference_comparison'];
-  extracted_facts?: {
-    summary?: string | null;
-    reference_comparison?: RowListing['reference_comparison'];
-  } | null;
+
+export type FundeTabKey = 'fit' | 'unclear' | 'no' | 'all';
+export type FundeSort = 'price_asc' | 'near' | 'score';
+
+/** One pin: every listing of the tab, not only the loaded page. */
+export interface MapPoint extends RouteListingGeo {
+  distance_km?: number | null;
+}
+
+/** A corridor as the map and the corridor sheet need it. */
+export interface RouteShape {
+  origin: string;
+  destination: string;
+  half_width_km: number;
+  polyline: [number, number][];
 }
 
 export interface UseFundeDataOptions {
   campaign: Campaign | undefined;
   isScraping?: boolean;
+  initialTab?: FundeTabKey;
 }
 
-export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
+export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFundeDataOptions) {
   const [listings, setListings] = useState<RowListing[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [offset, setOffset] = useState<number>(0);
@@ -55,28 +36,39 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters & sorting
-  const [sort, setSort] = useState<string>('default');
+  // Tab & filters
+  const [tab, setTab] = useState<FundeTabKey>(() => {
+    try {
+      const match = window.location.hash.match(/[?&]tab=(fit|unclear|no|all)/);
+      if (match) return match[1] as FundeTabKey;
+      const searchMatch = window.location.search.match(/[?&]tab=(fit|unclear|no|all)/);
+      if (searchMatch) return searchMatch[1] as FundeTabKey;
+    } catch {
+      /* ignore */
+    }
+    return initialTab;
+  });
+  const [sort, setSort] = useState<FundeSort>('price_asc');
   const [maxDetour, setMaxDetour] = useState<number | null>(null);
   const [radius, setRadius] = useState<number>(30);
   const [termId, setTermId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [dealsOnly, setDealsOnly] = useState<boolean>(false);
-  // Asked of the server, like deals. Hiding rejected rows from the fifty
-  // already loaded and calling the remainder the answer is how the bar came
-  // to say 50 over a list of 12.
   const [fitOnly, setFitOnly] = useState<boolean>(false);
 
-  // Route & family metadata
-  const [routeData, setRouteData] = useState<RouteCorridorData | null>(null);
+  // Route & family metadata & overview
+  const [overview, setOverview] = useState<CampaignOverviewData | null>(null);
+  const [route, setRoute] = useState<RouteShape | null>(null);
   const [familyTerms, setFamilyTerms] = useState<SearchFamilyTerm[]>([]);
   const [radiusDiagnosis, setRadiusDiagnosis] = useState<RadiusDiagnosis | null>(null);
+  const [mapPoints, setMapPoints] = useState<MapPoint[]>([]);
+  const [diagnosing, setDiagnosing] = useState(false);
 
   const campaignId = campaign?.id ?? null;
   const routeId = campaign?.route_id ?? null;
   const familyId = campaign?.family_id ?? null;
 
-  // Load family metadata once if present
+  // Load family metadata
   useEffect(() => {
     if (!familyId) {
       setFamilyTerms([]);
@@ -93,6 +85,81 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
       })
       .catch(() => {});
   }, [familyId]);
+
+  // Fetch campaign overview
+  const fetchOverview = useCallback(async () => {
+    if (!campaignId) {
+      setOverview(null);
+      return;
+    }
+    try {
+      const qp = new URLSearchParams();
+      if (searchQuery.trim()) qp.set('q', searchQuery.trim());
+      if (dealsOnly) qp.set('dealsOnly', '1');
+      if (termId !== null) qp.set('term', String(termId));
+      if (maxDetour !== null) qp.set('maxDetour', String(maxDetour));
+
+      const res = await fetch(`/api/campaigns/${campaignId}/overview?${qp.toString()}`, {
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOverview(data);
+      }
+    } catch {
+      // overview is optional progressive enhancement
+    }
+  }, [campaignId, searchQuery, dealsOnly, termId, maxDetour]);
+
+  useEffect(() => {
+    fetchOverview();
+  }, [fetchOverview]);
+
+  // A search that ran and found nothing asks at once how far out there would
+  // be something. Without it the buyer pressed "Funde abrufen" again and again
+  // and watched nothing change -- the printer family, 13 exact model names
+  // within 30 km, is genuinely empty, and only a wider net says so usefully.
+  // The overview counts with the filters on; empty under a filter is not an
+  // empty search, and must not start a probe of Kleinanzeigen.
+  const filtered = Boolean(searchQuery.trim()) || dealsOnly || termId !== null || maxDetour !== null;
+  const searchedEmpty =
+    Boolean(familyId) && !isScraping && !filtered && overview?.pots?.all === 0 && Boolean(overview?.last_crawled_at);
+  // Once per family and crawl. Retrying whenever an answer came back without
+  // options restarted the probe in a loop, and the hint flickered ten times a
+  // second.
+  const diagnosedFor = useRef<string | null>(null);
+  const diagnosisKey = familyId ? `${familyId}@${overview?.last_crawled_at ?? ''}` : null;
+  useEffect(() => {
+    if (!searchedEmpty || radiusDiagnosis || diagnosing || !diagnosisKey) return;
+    if (diagnosedFor.current === diagnosisKey) return;
+    diagnosedFor.current = diagnosisKey;
+    setDiagnosing(true);
+    fetch(`/api/search-families/${familyId}/diagnose-radius`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh: true }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.options)) setRadiusDiagnosis(data);
+      })
+      .catch(() => {})
+      .finally(() => setDiagnosing(false));
+  }, [searchedEmpty, familyId, radiusDiagnosis, diagnosing, diagnosisKey]);
+
+  const applyRadius = useCallback(
+    async (km: number) => {
+      if (!familyId) return false;
+      const res = await fetch(`/api/search-families/${familyId}/radius`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ radius: km }),
+      }).catch(() => null);
+      if (res?.ok) setRadiusDiagnosis(null);
+      return Boolean(res?.ok);
+    },
+    [familyId]
+  );
 
   const activeFetchController = useRef<AbortController | null>(null);
 
@@ -111,11 +178,8 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
       const controller = new AbortController();
       activeFetchController.current = controller;
 
-      if (append) {
-        setLoadingMore(true);
-      } else {
-        setLoading(true);
-      }
+      if (append) setLoadingMore(true);
+      else setLoading(true);
       setError(null);
 
       try {
@@ -123,18 +187,27 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
           limit: String(limit),
           offset: String(targetOffset),
         });
-        if (sort && sort !== 'default') queryParams.set('sort', sort);
+        queryParams.set('sort', sort);
         if (maxDetour !== null) queryParams.set('maxDetour', String(maxDetour));
         if (termId !== null) queryParams.set('term', String(termId));
         if (searchQuery.trim()) queryParams.set('q', searchQuery.trim());
         if (dealsOnly) queryParams.set('dealsOnly', '1');
-        if (fitOnly) queryParams.set('fitOnly', '1');
 
+        // Tab maps to verdict filter
+        if (tab && tab !== 'all') {
+          queryParams.set('verdict', tab);
+        } else if (fitOnly) {
+          queryParams.set('fitOnly', '1');
+        }
+
+        // The family endpoint first, corridor or not: it knows the terms,
+        // the distance and every order. The corridor's own endpoint is for
+        // routes planned without a hunt.
         let url = '';
-        if (routeId) {
-          url = `/api/campaigns/${campaignId}/route?${queryParams.toString()}`;
-        } else if (familyId) {
+        if (familyId) {
           url = `/api/search-families/${familyId}/listings?${queryParams.toString()}`;
+        } else if (routeId) {
+          url = `/api/campaigns/${campaignId}/route?${queryParams.toString()}`;
         } else {
           queryParams.set('campaign_id', String(campaignId));
           url = `/api/listings?${queryParams.toString()}`;
@@ -153,90 +226,55 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
         } else if (data && Array.isArray(data.listings)) {
           rawListings = data.listings as RouteListingGeo[];
           fetchedTotal = typeof data.total === 'number' ? data.total : (data.counts?.total ?? rawListings.length);
-          if (data.route) setRouteData(data as RouteCorridorData);
+          // The first page carries the corridor and every pin of the tab.
+          if (targetOffset === 0) {
+            setRoute(data.route || null);
+            setMapPoints(
+              (data.points || []).map((p: MapPoint & { id: string | number }) => ({ ...p, id: String(p.id) }))
+            );
+          }
         }
 
-        const mapped: RowListing[] = rawListings.map((l: ApiListing) => ({
-          id: String(l.id),
-          title: l.title || '',
-          price: l.price,
-          price_eur: typeof l.price_eur === 'number' ? l.price_eur : null,
-          location: l.location || null,
-          images: Array.isArray(l.images) ? l.images : [],
-          image_url: Array.isArray(l.images) && l.images.length > 0 ? l.images[0] : null,
-          detour_min: typeof l.detour_min === 'number' ? l.detour_min : null,
-          offroute_km: typeof l.offroute_km === 'number' ? l.offroute_km : null,
-          first_seen_at: l.first_seen_at || l.last_seen_at || null,
-          last_seen_at: l.last_seen_at || null,
-          // The server decides this now, from the median price of the same
-          // search. The old rule asked niceness_score >= 85, and 10 of 1266
-          // listings have a score at all -- so the accent never once appeared.
-          is_deal: !!l.is_deal,
-          price_delta_eur: typeof l.price_delta_eur === 'number' ? l.price_delta_eur : null,
-          fit: l.fit || null,
-          price_history: Array.isArray(l.price_history) ? l.price_history : null,
-          status: l.geo_status || null,
-          url: l.url || undefined,
-          matched_terms: Array.isArray(l.matched_terms) ? l.matched_terms : [],
-          lat: typeof l.lat === 'number' ? l.lat : null,
-          lon: typeof l.lon === 'number' ? l.lon : null,
-          description: l.detailed_description || l.short_description || l.description || null,
-          summary: l.summary || l.extracted_facts?.summary || null,
-
-          niceness_score: typeof l.niceness_score === 'number' ? l.niceness_score : null,
-          reference_comparison: l.reference_comparison || l.extracted_facts?.reference_comparison || null,
-        }));
+        const mapped: RowListing[] = rawListings.map((l) => toRowListing(l as ApiListing));
 
         setTotal(fetchedTotal);
         setOffset(targetOffset);
-        if (append) {
-          setListings((prev) => [...prev, ...mapped]);
-        } else {
-          setListings(mapped);
-        }
+        if (append) setListings((prev) => [...prev, ...mapped]);
+        else setListings(mapped);
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== 'AbortError') {
           setError(err.message || 'Failed to load listings');
         }
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        // Only the request still wanted ends the loading: an aborted one
+        // cleared it while its replacement ran, and "Mehr laden" appended the
+        // old order's page two to the new order's page one.
+        if (activeFetchController.current === controller) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
-    [
-      campaignId,
-      routeId,
-      familyId,
-      limit,
-      sort,
-      maxDetour,
-      termId,
-      searchQuery,
-      dealsOnly,
-      fitOnly,
-    ]
+    [campaignId, routeId, familyId, limit, sort, maxDetour, termId, searchQuery, dealsOnly, tab, fitOnly]
   );
 
-  // Trigger initial or filter-reset fetch
   useEffect(() => {
     fetchPage(0, false);
   }, [fetchPage]);
 
-  // Refetch when scraping finishes -- on the transition, not on every render
-  // while it is false.
-  //
-  // With `fetchPage` in this effect's dependencies, both effects fired for the
-  // same change. The second aborted the first, but the first's `finally` still
-  // ran setLoading(false) after the second had set it true, so opening the
-  // screen and every filter change flashed the "no matches" empty state, and
-  // every page was fetched twice.
   const wasScraping = useRef(isScraping);
   useEffect(() => {
     if (wasScraping.current && !isScraping) {
       fetchPage(0, false);
+      fetchOverview();
     }
     wasScraping.current = isScraping;
-  }, [isScraping, fetchPage]);
+  }, [isScraping, fetchPage, fetchOverview]);
+
+  const reload = useCallback(() => {
+    fetchPage(0, false);
+    fetchOverview();
+  }, [fetchPage, fetchOverview]);
 
   const loadMore = useCallback(() => {
     if (loading || loadingMore) return;
@@ -245,22 +283,35 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
     }
   }, [loading, loadingMore, listings.length, total, offset, limit, fetchPage]);
 
-  // The server decides and counts. Filtering here meant the header reported the
-  // number of deals among the fifty loaded rows as the size of the search.
-  const displayedListings = listings;
-  const displayedCount = total;
+  // Best deal or cheapest fitting listing. Not the comparison's rank 1: it
+  // ranks quality without price, and under "Günstigstes passendes Angebot"
+  // it put the most expensive R1 on top.
+  const bestListing = useMemo(() => {
+    const fits = listings
+      .filter((l) => l.fit?.verdict === 'fit')
+      .sort((a, b) => {
+        const pa = typeof a.price_eur === 'number' ? a.price_eur : 999999;
+        const pb = typeof b.price_eur === 'number' ? b.price_eur : 999999;
+        return pa - pb;
+      });
+    return fits.find((l) => l.is_deal) || fits[0] || listings.find((l) => l.is_deal) || null;
+  }, [listings]);
 
   return {
-    listings: displayedListings,
-    total: displayedCount,
+    listings,
+    total,
     rawTotal: total,
     loading,
     loadingMore,
     error,
     hasMore: listings.length < total,
     loadMore,
-    reload: () => fetchPage(0, false),
-    refetch: () => fetchPage(0, false),
+    reload,
+    // Tab control
+    tab,
+    setTab,
+    overview,
+    bestListing,
     // Filter controls
     sort,
     setSort,
@@ -277,8 +328,18 @@ export function useFundeData({ campaign, isScraping }: UseFundeDataOptions) {
     fitOnly,
     setFitOnly,
     // Corridor / Family
-    routeData,
+    route,
+    mapPoints,
     familyTerms,
     radiusDiagnosis,
+    diagnosing,
+    applyRadius,
+    filtered,
+    resetFilters: () => {
+      setSearchQuery('');
+      setDealsOnly(false);
+      setTermId(null);
+      setMaxDetour(null);
+    },
   };
 }

@@ -9,12 +9,12 @@ export interface PillProps extends React.ButtonHTMLAttributes<HTMLButtonElement>
 
 function getPillStateStyles(disabled: boolean, active: boolean): string {
   if (disabled) {
-    return 'opacity-40 cursor-not-allowed bg-white/[0.02] border-transparent text-[#9FB3B0]';
+    return 'opacity-40 cursor-not-allowed bg-transparent border-[#0E4A40]/40 text-[#8FA6A1]';
   }
   if (active) {
-    return 'bg-white/[0.14] text-[#F2F5F4] border-white/20 shadow-sm font-semibold';
+    return 'bg-[#0E4A40] text-[#F2F5F4] border-[#F2F5F4] font-medium';
   }
-  return 'bg-white/[0.05] text-[#9FB3B0] border-transparent hover:bg-white/[0.09] hover:text-[#F2F5F4]';
+  return 'bg-transparent text-[#8FA6A1] border-[#0E4A40] hover:text-[#F2F5F4] hover:border-[#8FA6A1]';
 }
 
 export const Pill: React.FC<PillProps> = ({
@@ -29,7 +29,7 @@ export const Pill: React.FC<PillProps> = ({
 }) => {
   const content = label ?? children;
   const baseStyles =
-    'inline-flex items-center justify-center gap-1.5 px-3 min-h-[36px] rounded-full text-xs font-medium cursor-pointer transition-all border select-none focus:outline-none focus:ring-1 focus:ring-white/30 shrink-0';
+    'inline-flex items-center justify-center gap-1.5 px-3 min-h-[34px] rounded-[3px] text-xs font-medium cursor-pointer transition-colors border select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-[#E4D6BE] shrink-0';
   const stateStyles = getPillStateStyles(disabled, active);
 
   return (
@@ -46,7 +46,7 @@ export const Pill: React.FC<PillProps> = ({
       {count !== undefined && count !== null && (
         <span
           data-testid="surface-pill-count"
-          className="text-2xs tabular-nums opacity-75 font-mono"
+          className="num text-2xs opacity-85 ml-0.5"
         >
           {count}
         </span>
