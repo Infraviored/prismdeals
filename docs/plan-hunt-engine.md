@@ -404,14 +404,22 @@ Replaces the edit screen for **new** hunts; edit screen stays for existing ones,
 
 ---
 
-## 10. P7 — knowledge nodes and research bridge
+## 10. P7 — knowledge nodes and research bridge [done]
 
-- Claims table as in product-core §6 (split today's one-row dossier into claims).
-- Node assignment comes from the P6 call (`node`), with "higher when unsure".
-- Inheritance: read claims along the path.
-- Research bridge: three prompts, copy/paste UI, URL check, approval (product-core §8).
-- Trigger: research value (product-core §5) above threshold **and** node without fresh claims.
-- Benchmarks for features hunts = claims of kind `benchmark` (model → value → source).
+- Claims table in `db/schema.sql`: `claims (id, node_key, kind, axis, statement, check_path, weight, sources, created_at, expires_at, approved)` with indexes on `(node_key, approved)` and `kind`.
+- `ALTER TABLE listing_ranks ADD COLUMN node_key TEXT`: records knowledge node assigned during comparative judging.
+- Node inheritance (`scraper/claims.py`): `claims_for(conn, node_key)` walks path from leaf to root, returning nearest ancestor claims first, filtering out expired or unapproved claims.
+- Research value decision table (`scraper/claims.py`): pure function `research_value(price_eur, profile)` maps price level × hidden risk × model dependence to none/category/shallow/deep; `needs_research` returns "none" when fresh claims exist.
+- Research bridge (`scraper/research_bridge.py`): three prompts (brief prompt, search brief with fixed profile headings, and claim classifier prompt) with response parsers.
+- URL source verification (`scraper/claims.py`): `validate_claim` and `verify_sources` drop claims with confirmed dead URLs, keeping alive/unknown sources.
+- CLI / Worker (`scraper/knowledge_cli.py`): CLI commands `brief`, `classify`, `claims-listing`, `claims-node`, `approve`, `reject`.
+- Backend API (`backend/knowledge_api.js`): mounted in `backend/server.js` with `GET /api/campaigns/:id/brief`, `POST /api/knowledge/classify`, `POST /api/claims/:id/approve`, `POST /api/claims/:id/reject`, `GET /api/listings/:id/claims`, `GET /api/campaigns/:id/claims`.
+- Comparative prompt integration: `build_compare_prompt()` accepts `node_knowledge` section; `compare.py` loads inherited claims for candidate nodes, passes to prompt, and persists `node_key` to `listing_ranks`.
+- Frontend UI:
+  - `KnowledgeSheet.tsx`: mobile-first sheet triggered from `FundeScreen.tsx` when research value > "none"; shows "Was zu wissen ist", copyable search brief, textarea for pasting AI responses, proposed claims with approve/reject actions, and approved claims tree.
+  - `KnowledgeChecklist.tsx`: embedded in `FundeDetailSheet.tsx` under seller questions, displaying listing-specific product checks, weaknesses, and warnings with check paths and source links.
+  - Translations: full German and English keys in `frontend/src/i18n/translations.ts`.
+- Tests: `scraper/test_claims.py` (14 unit tests), `backend/test_knowledge_api.js` (integration round trip), frontend component tests (`KnowledgeChecklist.test.tsx`, `KnowledgeSheet.test.tsx`).
 
 ## 11. P8 — market per node
 
