@@ -144,6 +144,19 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
           matched_terms: l.matched_terms,
         }));
 
+  // A hunt without requirements has nothing to judge, so nothing is
+  // "missing": every offer sat under "Unklar" behind an empty "Passend" tab
+  // ("Noch passt keines sicher"). Show them all instead, once per hunt.
+  const openedAllFor = React.useRef<number | null>(null);
+  useEffect(() => {
+    const pots = overview?.pots;
+    if (!campaign?.id || !pots || openedAllFor.current === campaign.id) return;
+    if (pots.all > 0 && pots.unjudged === pots.all && tab === 'fit') {
+      openedAllFor.current = campaign.id;
+      setTab('all');
+    }
+  }, [overview?.pots, campaign?.id, tab, setTab]);
+
   // Counts for tabs from overview or fallback
   const potFit = overview?.pots?.fit ?? listings.filter((l) => l.fit?.verdict === 'fit').length;
   const potUnclear = overview?.pots?.unclear ?? listings.filter((l) => l.fit?.verdict === 'unclear').length;

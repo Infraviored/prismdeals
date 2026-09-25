@@ -323,10 +323,10 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
     }
   }, [loading, loadingMore, listings.length, total, offset, limit, fetchPage]);
 
-  // Best deal or cheapest fitting listing, or top-ranked candidate from judge run
+  // Best deal or cheapest fitting listing. Not the comparison's rank 1: it
+  // ranks quality without price, and under "Günstigstes passendes Angebot"
+  // it put the most expensive R1 on top.
   const bestListing = useMemo(() => {
-    const ranked1 = listings.find((l) => l.rank === 1 && l.fit?.verdict !== 'no');
-    if (ranked1) return ranked1;
     const fits = listings
       .filter((l) => l.fit?.verdict === 'fit')
       .sort((a, b) => {

@@ -24,6 +24,7 @@ import logging
 import playbooks
 import text_facts
 from requirements_hash import requirements_hash as _compute_hash
+import hunt_identity
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +183,8 @@ def judge_search(conn, search_id, use_descriptions=True):
                   AND requirements_hash IS NOT ?""",
             (req_hash, int(search_id), req_hash),
         )
-    if not wanted:
+    models = hunt_identity.hunt_models(conn, search_id)
+    if not wanted and not models:
         return {"error": "this search has no requirements to judge against"}
 
     # Every listing this search found, not only the ones it found first.
@@ -200,6 +202,30 @@ def judge_search(conn, search_id, use_descriptions=True):
     counts = {v: 0 for v in VERDICTS}
     for row in rows:
         listing_id, title, detailed, short = row
+
+        # Somebody wanting one is not an offer.
+        if hunt_identity.is_request(title):
+            counts["no"] += 1
+            _store(
+                conn,
+                listing_id,
+                search_id,
+                "no",
+                "Gesuch, kein Angebot",
+                {},
+                "title",
+                req_hash,
+            )
+            continue
+        # In a model list the model is the first must: named in the title, or
+        # the offer stays open ("Yamaha WR 125 R" came back for "yamaha r1").
+        model_seen = not models or hunt_identity.names_a_model(title, models)
+        if not wanted:
+            stored = "fit" if model_seen else "unclear"
+            counts[stored] += 1
+            reason = "" if model_seen else "Modell im Titel nicht erkennbar"
+            _store(conn, listing_id, search_id, stored, reason, {}, "title", req_hash)
+            continue
 
         verdict, facts, reasons = text_facts.judge(playbook, wanted, title)
         # Only what the title stated is carried forward as settled. What was
@@ -222,6 +248,9 @@ def judge_search(conn, search_id, use_descriptions=True):
                 stage = "description"
 
         stored = {"candidate": "fit", "reject": "no", "unclear": "unclear"}[verdict]
+        if stored == "fit" and not model_seen:
+            stored = "unclear"
+            reasons = ["Modell im Titel nicht erkennbar"] + list(reasons)
         counts[stored] += 1
         _store(
             conn,

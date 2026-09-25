@@ -138,3 +138,5 @@ def test_a_model_list_also_searches_without_the_generation_code():
     # Sellers write "R1", rarely "R1 RN19" (0 offers vs 115, measured).
     assert "Yamaha R1" in terms
     assert "Honda CBR 1000" not in terms  # "RR" is part of the model, not a code
+    assert "CBR1000RR" in terms  # glued as sellers write it
+    assert "YamahaR1RN19" not in terms  # brand glued to the model found nothing

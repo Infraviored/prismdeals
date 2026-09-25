@@ -109,15 +109,53 @@ def _shortlist_ladder(seed_terms, musts, prefs, models, category_code, filters):
         general = _without_generation(model)
         if general and general.lower() != model.lower():
             rungs.append(_make_rung(general, f"model: {general}"))
-        # Add common spelling variants (no spaces, with spaces)
-        compact = re.sub(r"\s+", "", model)
-        if compact.lower() != model.lower():
+        # Sellers glue model designations: "CBR1000RR" for "Honda CBR 1000 RR".
+        # Only the designation after the brand, and only when it is split;
+        # "YamahaR1RN19" found nothing.
+        words = (general or model).split()
+        if words and words[0].lower() in _BRANDS:
+            words = words[1:]
+        if len(words) >= 2:
+            compact = "".join(words)
             rungs.append(_make_rung(compact, f"variant: {compact}"))
     # Also try seed terms if they differ from models
     for term in seed_terms:
         if not any(term.lower() == m.lower() for m in models):
             rungs.append(_make_rung(term, f"seed: {term}"))
     return rungs
+
+
+_BRANDS = {
+    "yamaha",
+    "honda",
+    "suzuki",
+    "kawasaki",
+    "bmw",
+    "ducati",
+    "ktm",
+    "aprilia",
+    "triumph",
+    "harley",
+    "mv",
+    "audi",
+    "vw",
+    "volkswagen",
+    "mercedes",
+    "opel",
+    "ford",
+    "skoda",
+    "seat",
+    "apple",
+    "samsung",
+    "lenovo",
+    "asus",
+    "dell",
+    "hp",
+    "acer",
+    "msi",
+    "corsair",
+    "kingston",
+}
 
 
 def _without_generation(model):
