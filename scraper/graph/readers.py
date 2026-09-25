@@ -70,11 +70,12 @@ def _typed(attribute, raw):
     if kind == "enum":
         folded = store.fold(text)
         for option in attribute.get("options") or []:
-            if store.fold(option) and (
-                store.fold(option) == folded or folded.startswith(store.fold(option))
-            ):
-                return option
-        return folded or None
+            for name in (option["label"], option["value"]):
+                if store.fold(name) and (
+                    store.fold(name) == folded or folded.startswith(store.fold(name))
+                ):
+                    return option["label"]
+        return text or None
     return text or None
 
 

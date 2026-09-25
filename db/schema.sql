@@ -574,3 +574,30 @@ CREATE TABLE IF NOT EXISTS listing_facts (
     extracted_at TEXT NOT NULL,
     PRIMARY KEY (listing_id, attr_id)
 );
+
+-- Hunts as queries (plan §2.3). A hunt is its targets -- graph nodes at any
+-- depth -- plus conditions on their facts, plus the frame (price, place,
+-- radius, route). Conditions with a node_id apply to that target's subtree
+-- only ("under 5000 km for the SC59"), those without apply to every target.
+ALTER TABLE campaigns ADD COLUMN frame_json TEXT NOT NULL DEFAULT '{}';
+
+CREATE TABLE IF NOT EXISTS hunt_targets (
+    campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    node_id     INTEGER NOT NULL REFERENCES nodes(id),
+    position    INTEGER NOT NULL,
+    typed       TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    PRIMARY KEY (campaign_id, node_id)
+);
+
+CREATE TABLE IF NOT EXISTS hunt_conditions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    node_id     INTEGER REFERENCES nodes(id),
+    attr_id     TEXT NOT NULL,
+    op          TEXT NOT NULL,
+    value_json  TEXT,
+    importance  TEXT NOT NULL,
+    label       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_hunt_conditions_campaign ON hunt_conditions(campaign_id);

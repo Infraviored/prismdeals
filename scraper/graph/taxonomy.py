@@ -82,7 +82,7 @@ def seed(conn, taxonomy_path=TAXONOMY_PATH):
             type_ = _TYPES.get(flt.get("type"))
             if not type_:
                 continue  # price, seller type, ad type: the frame, not the product
-            options = [o.get("value") for o in flt.get("options") or []] or None
+            options = flt.get("options") or None
             store.set_attribute(
                 conn,
                 node_id,

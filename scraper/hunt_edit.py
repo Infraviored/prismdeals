@@ -1,43 +1,33 @@
 """A hunt changed in the buyer's words: "nur SC59 bei der CBR, unter 5000 km".
 
-The edit screen sends the hunt as one document -- its models, what each model
-must have, what all must have, price and radius -- and a sentence. A model
-returns the whole document changed; this module checks it and lists what
-changed, so the screen can show the change before anything is saved. The list
-is computed here, not taken from the model: a summary that says "SC59 only"
-while the document says otherwise is worse than none.
+The edit screen sends the hunt document (graph/hunts.py) and a sentence. The
+model sees what the buyer sees -- targets by name, conditions, price, radius --
+and returns it changed. This module checks the answer, carries each unchanged
+target's node over, and lists what changed. The list is computed here, not
+taken from the model: a summary that says "SC59 only" while the document says
+otherwise is worse than none. Nothing is saved; the screen PUTs the document.
 
-    {"name": "...", "max_price": 7000, "radius_km": 200,
-     "models": [{"name": "Honda CBR 1000 RR SC59",
-                 "requirements": [{"label": "Kilometerstand km",
-                                   "importance": "high",
-                                   "buyer_wants": {"max": 5000}}]}],
-     "requirements": [{"label": "ABS", "importance": "low",
-                       "buyer_wants": {"present": true}}]}
+    stdin  {"document": {...}, "instruction": "..."}
+    stdout {"document": {...}, "changes": ["..."]} | {"error": "..."}
 """
 
 import json
-import logging
-import re
 import sys
 
-logger = logging.getLogger(__name__)
-
-OPERATORS = {"min", "max", "match", "preferred", "excluded", "present"}
-IMPORTANCE = {"high", "low"}
+from graph import hunts, llm
 
 PROMPT = """Du bearbeitest eine gespeicherte Gebrauchtwaren-Suche.
 
 REGELN:
 - Ändere nur, was der Auftrag verlangt. Alles andere bleibt Zeichen für Zeichen gleich.
-- Eine Anforderung, die nur ein Modell betrifft, gehört in "requirements" dieses Modells;
-  eine, die alle betrifft, in die oberste "requirements"-Liste.
-- Eine Generation oder ein Baureihen-Code gehört in den Modellnamen:
+- Eine Bedingung, die nur ein Ziel betrifft, gehört in "conditions" dieses Ziels;
+  eine, die alle betrifft, in die oberste "conditions"-Liste.
+- Eine Generation oder ein Baureihen-Code gehört in den Zielnamen:
   "nur SC59" bei der CBR macht aus "Honda CBR 1000 RR" "Honda CBR 1000 RR SC59".
-- Zahlen: buyer_wants mit "min"/"max" als Zahl, und das Label nennt die Einheit
-  ("Kilometerstand km", "Leistung PS", "Gewicht kg").
-- Etwas soll vorhanden sein: buyer_wants {"present": true}; soll fehlen: {"present": false}.
-- "importance": "high" für ein Muss, "low" für einen Wunsch.
+- Eine Bedingung: {"label": "...", "op": "...", "value": ..., "importance": "must"|"wish"}.
+  op: "min"/"max" mit Zahl (label ohne Einheit: "Kilometerstand"), "eq" mit Wert,
+  "in"/"not_in" mit Liste, "present" (soll vorhanden sein), "absent" (soll fehlen).
+- "must" für ein Muss, "wish" für einen Wunsch.
 - "max_price" in Euro, "radius_km" in Kilometern; null heißt keine Grenze.
 - Gib NUR das vollständige JSON-Dokument zurück, keinen anderen Text.
 
@@ -49,20 +39,33 @@ REGELN:
 """
 
 
-def build_prompt(document, instruction):
-    # replace, not format: the rules quote JSON with braces of their own.
-    return PROMPT.replace(
-        "{document}", json.dumps(document, ensure_ascii=False, indent=2)
-    ).replace("{instruction}", str(instruction).strip())
+def visible(document):
+    """What the model is shown: names, conditions, price, radius."""
+    frame = document.get("frame") or {}
+    return {
+        "name": document.get("name"),
+        "max_price": frame.get("max_price"),
+        "radius_km": frame.get("radius_km"),
+        "targets": [
+            {
+                "name": t.get("name") or t.get("typed"),
+                "conditions": _plain(t.get("conditions")),
+            }
+            for t in document.get("targets") or []
+        ],
+        "conditions": _plain(document.get("conditions")),
+    }
 
 
-def _slug(text):
-    s = re.sub(r"[^a-z0-9äöüß]+", "_", str(text).lower()).strip("_")
-    return s or "anforderung"
+def _plain(conditions):
+    return [
+        {k: c.get(k) for k in ("label", "op", "value", "importance")}
+        for c in conditions or []
+    ]
 
 
 def _number(value):
-    if isinstance(value, bool):
+    if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
         return int(value) if float(value).is_integer() else value
@@ -74,91 +77,70 @@ def _number(value):
         return None
 
 
-def clean_requirement(raw):
-    """A requirement the judge can read, or None."""
-    if not isinstance(raw, dict):
-        return None
-    label = str(raw.get("label") or "").strip()
-    wants = raw.get("buyer_wants")
-    if not label or not isinstance(wants, dict):
-        return None
-    clean_wants = {}
-    for key, value in wants.items():
-        if key not in OPERATORS:
+def _conditions(raw):
+    out = []
+    for c in raw or []:
+        if not isinstance(c, dict):
             continue
-        if key in ("min", "max"):
-            value = _number(value)
-            if value is None:
-                continue
-        clean_wants[key] = value
-    if not clean_wants:
-        return None
-    importance = (
-        raw.get("importance") if raw.get("importance") in IMPORTANCE else "high"
-    )
-    out = {
-        "id": raw.get("id") or f"own_{_slug(label)}",
-        "label": label,
-        "importance": importance,
-        "own": True,
-        "buyer_wants": clean_wants,
-    }
-    keywords = [
-        str(k).strip().lower() for k in raw.get("keywords") or [] if str(k).strip()
-    ]
-    if keywords:
-        out["keywords"] = keywords
-    return out
+        c = {
+            **c,
+            "value": _number(c.get("value"))
+            if c.get("op") in ("min", "max")
+            else c.get("value"),
+        }
+        try:
+            out.append(hunts.clean_condition(c))
+        except hunts.HuntError:
+            continue  # what cannot be judged is dropped, not guessed
+    return [{k: c[k] for k in ("label", "op", "value", "importance")} for c in out]
 
 
-def clean_document(raw, before):
-    """The model's document, reduced to what the edit screen can apply.
-
-    Raises ValueError when there is no usable document at all.
-    """
+def apply(before, raw):
+    """The model's answer as a full hunt document, nodes kept where names did not change."""
     if not isinstance(raw, dict):
         raise ValueError("Die KI hat kein Suchdokument zurückgegeben.")
-    models = []
-    for model in raw.get("models") or []:
-        if not isinstance(model, dict) or not str(model.get("name") or "").strip():
+    old = {(t.get("name") or t.get("typed")): t for t in before.get("targets") or []}
+    targets = []
+    for t in raw.get("targets") or []:
+        name = str((t or {}).get("name") or "").strip()
+        if not name:
             continue
-        requirements = [
-            r for r in map(clean_requirement, model.get("requirements") or []) if r
-        ]
-        models.append(
-            {"name": str(model["name"]).strip(), "requirements": requirements}
+        kept = old.get(name)
+        target = (
+            {"typed": kept.get("typed") or name, "name": name}
+            if kept
+            else {"typed": name, "name": name}
         )
-    if not models and before.get("models"):
-        raise ValueError(
-            "Die KI hat alle Modelle entfernt; das wurde nicht übernommen."
-        )
-    doc = {
+        if kept and kept.get("node_id"):
+            target["node_id"] = kept["node_id"]
+        target["conditions"] = _conditions(t.get("conditions"))
+        targets.append(target)
+    if not targets:
+        raise ValueError("Die KI hat alle Ziele entfernt; das wurde nicht übernommen.")
+    frame = dict(before.get("frame") or {})
+    frame["max_price"] = _number(raw.get("max_price"))
+    frame["radius_km"] = _number(raw.get("radius_km"))
+    return {
+        **before,
         "name": str(raw.get("name") or before.get("name") or "").strip(),
-        "max_price": _number(raw.get("max_price"))
-        if raw.get("max_price") is not None
-        else None,
-        "radius_km": _number(raw.get("radius_km"))
-        if raw.get("radius_km") is not None
-        else None,
-        "models": models,
-        "requirements": [
-            r for r in map(clean_requirement, raw.get("requirements") or []) if r
-        ],
+        "frame": frame,
+        "targets": targets,
+        "conditions": _conditions(raw.get("conditions")),
     }
-    return doc
 
 
-def _want_text(req):
-    w = req["buyer_wants"]
-    parts = []
-    if "min" in w:
-        parts.append(f"ab {w['min']}")
-    if "max" in w:
-        parts.append(f"bis {w['max']}")
-    if w.get("present") is False or w.get("match") is False:
-        parts.append("nicht vorhanden")
-    kind = "Muss" if req.get("importance") == "high" else "Wunsch"
-    return f"{req['label']}{' ' + ' '.join(parts) if parts else ''} ({kind})"
+def _text(c):
+    words = {
+        "min": f"ab {c['value']}",
+        "max": f"bis {c['value']}",
+        "eq": f"= {c['value']}",
+        "in": f"eins von {c['value']}",
+        "not_in": f"nicht {c['value']}",
+        "present": "vorhanden",
+        "absent": "nicht vorhanden",
+    }
+    kind = "Muss" if c["importance"] == "must" else "Wunsch"
+    return f"{c['label']} {words[c['op']]} ({kind})"
 
 
 def changes(before, after):
@@ -166,86 +148,60 @@ def changes(before, after):
     out = []
     if (before.get("name") or "") != after["name"]:
         out.append(f"Name: {after['name']}")
-    if before.get("max_price") != after["max_price"]:
+    old_frame, new_frame = before.get("frame") or {}, after["frame"]
+    if old_frame.get("max_price") != new_frame["max_price"]:
         out.append(
-            f"Höchstpreis: {after['max_price']} €"
-            if after["max_price"]
+            f"Höchstpreis: {new_frame['max_price']} €"
+            if new_frame["max_price"]
             else "Höchstpreis: keiner"
         )
-    if before.get("radius_km") != after["radius_km"]:
+    if old_frame.get("radius_km") != new_frame["radius_km"]:
         out.append(
-            f"Umkreis: {after['radius_km']} km"
-            if after["radius_km"]
+            f"Umkreis: {new_frame['radius_km']} km"
+            if new_frame["radius_km"]
             else "Umkreis: keine Grenze"
         )
 
-    def texts(reqs):
-        return {_want_text(r) for r in reqs}
+    def texts(conditions):
+        return {_text(c) for c in _conditions(conditions)}
 
-    old_models = {m["name"]: m for m in before.get("models") or []}
-    new_models = {m["name"]: m for m in after["models"]}
-    added = sorted(new_models.keys() - old_models.keys())
-    removed = sorted(old_models.keys() - new_models.keys())
-    # "Honda CBR 1000 RR" -> "Honda CBR 1000 RR SC59" is one model narrowed,
+    name = lambda t: t.get("name") or t.get("typed")  # noqa: E731
+    old_targets = {name(t): t for t in before.get("targets") or []}
+    new_targets = {name(t): t for t in after["targets"]}
+    added = sorted(new_targets.keys() - old_targets.keys())
+    removed = sorted(old_targets.keys() - new_targets.keys())
+    # "Honda CBR 1000 RR" -> "Honda CBR 1000 RR SC59" is one target narrowed,
     # not one removed and another added.
     for old in list(removed):
         new = next((n for n in added if n.lower().startswith(old.lower())), None)
         if new:
-            out.append(f"Modell: {old} → {new}")
+            out.append(f"Ziel: {old} → {new}")
             removed.remove(old)
             added.remove(new)
-            old_models[new] = old_models.pop(old)
-    out += [f"Modell: {name}" for name in added]
-    out += [f"Modell entfernt: {name}" for name in removed]
-    for name, model in new_models.items():
-        old = texts(old_models.get(name, {}).get("requirements") or [])
-        new = texts(model["requirements"])
-        out += [f"{name}: {t}" for t in sorted(new - old)]
-        out += [f"{name}: entfernt – {t}" for t in sorted(old - new)]
-    old = texts(before.get("requirements") or [])
-    new = texts(after["requirements"])
+            old_targets[new] = old_targets.pop(old)
+    out += [f"Ziel: {n}" for n in added]
+    out += [f"Ziel entfernt: {n}" for n in removed]
+    for n, target in new_targets.items():
+        old = texts(old_targets.get(n, {}).get("conditions"))
+        new = texts(target["conditions"])
+        out += [f"{n}: {t}" for t in sorted(new - old)]
+        out += [f"{n}: entfernt – {t}" for t in sorted(old - new)]
+    old = texts(before.get("conditions"))
+    new = texts(after["conditions"])
     out += [f"Für alle: {t}" for t in sorted(new - old)]
     out += [f"Für alle: entfernt – {t}" for t in sorted(old - new)]
     return out
 
 
-def _parse(text):
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(text or "").strip())
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        found = re.search(r"\{.*\}", text, re.DOTALL)
-        if not found:
-            raise ValueError("Die KI-Antwort war kein Suchdokument.")
-        return json.loads(found.group(0))
-
-
-def edit(document, instruction, ask=None):
-    """(new document, list of changes). `ask` takes a prompt, returns text."""
+def edit(document, instruction, ask=llm.ask_json):
+    """(new document, list of changes)."""
     if not str(instruction or "").strip():
         raise ValueError("Was soll sich ändern?")
-    if ask is None:
-        ask = _ask
-    reply = ask(build_prompt(document, instruction))
-    if not reply:
-        raise ValueError("Die KI ist gerade nicht erreichbar.")
-    after = clean_document(_parse(reply), document)
+    prompt = PROMPT.replace(
+        "{document}", json.dumps(visible(document), ensure_ascii=False, indent=2)
+    ).replace("{instruction}", str(instruction).strip())
+    after = apply(document, ask(prompt))
     return after, changes(document, after)
-
-
-def _ask(prompt):
-    try:
-        from agent_worker import build_llm_kwargs, client, get_response_text
-    except Exception:  # noqa: BLE001 -- no model configured
-        return None
-    try:
-        kwargs = build_llm_kwargs(
-            [{"role": "user", "content": prompt}], max_tokens=3000, temperature=0.0
-        )
-        return get_response_text(client.chat.completions.create(**kwargs))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Hunt edit call failed: %s", exc)
-        return None
 
 
 def main():
@@ -254,10 +210,15 @@ def main():
         document, found = edit(
             payload.get("document") or {}, payload.get("instruction")
         )
-        print(json.dumps({"document": document, "changes": found}, ensure_ascii=False))
+    except llm.NoModel as error:
+        print(json.dumps({"error": str(error)}, ensure_ascii=False))
+        return 2
     except ValueError as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False))
+        return 1
+    print(json.dumps({"document": document, "changes": found}, ensure_ascii=False))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

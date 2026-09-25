@@ -104,6 +104,15 @@ def process(conn, listing_id, prior=()):
     node_id, confidence, method = resolve.resolve(conn, listing, prior)
     if node_id is None:
         return None
+    # The model placed it once: names that know less do not undo that.
+    asked = conn.execute(
+        "SELECT node_id FROM listing_resolution WHERE listing_id = ? AND method = 'model'",
+        (str(listing_id),),
+    ).fetchone()
+    if asked and len(store.ancestors(conn, asked[0])) >= len(
+        store.ancestors(conn, node_id)
+    ):
+        node_id, confidence, method = asked[0], 0.8, "model"
     attributes = store.effective_attributes(conn, node_id)
     facts = _read(listing, attributes)
     # A model whose generations have years: the listing's year names one.

@@ -232,3 +232,11 @@ def test_a_year_on_the_border_of_two_generations_decides_nothing(bikes):
 
     assert resolve.by_years(conn, model["id"], 2007) is None
     assert store.node(conn, resolve.by_years(conn, model["id"], 2005))["name"] == "RN12"
+
+
+def test_title_keys_glue_words_but_never_across_punctuation():
+    from graph.resolve import title_keys
+
+    assert {"yzfr1", "r1", "cbr1000rr"} <= title_keys("Yamaha YZF-R1 / CBR 1000 RR")
+    assert "r1" not in title_keys("Yamaha Raptor YFM 700 R 1.Hand Lof.Zulassung")
+    assert "r1" not in title_keys("WR 125 R - 1. HAND")

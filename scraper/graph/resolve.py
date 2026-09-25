@@ -32,6 +32,14 @@ def title_keys(title, span=4):
                 runs.append(current)
             current = []
             continue
+        if re.search(r"[.,;:/|+]", clean):
+            # "1.Hand" is a word of its own: gluing it to the run before made
+            # "Raptor 700 R 1.Hand" read as an R1. A hyphen joins ("YZF-R1").
+            if current:
+                runs.append(current)
+            runs.append(parts)
+            current = []
+            continue
         current.extend(parts)
         if clean != chunk:
             runs.append(current)

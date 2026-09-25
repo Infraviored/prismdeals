@@ -167,6 +167,23 @@ def aliases(conn, node_id):
 READER_KINDS = ("details", "number", "keywords", "regex")
 
 
+def options(raw):
+    """Enum options as [{"value", "label"}]: the site filters by value
+    ("drucker_scanner"), its pages and buyers say the label ("Drucker & Scanner")."""
+    out = []
+    for option in raw or []:
+        if isinstance(option, dict) and option.get("value") is not None:
+            out.append(
+                {
+                    "value": str(option["value"]),
+                    "label": str(option.get("label") or option["value"]),
+                }
+            )
+        elif isinstance(option, str) and option.strip():
+            out.append({"value": option.strip(), "label": option.strip()})
+    return out or None
+
+
 def set_attribute(conn, node_id, attr_id, label, type_, readers, source, **fields):
     """An attribute of the node, read by `readers` in order ("details:Kilometerstand",
     "number", "keywords:abs", "regex:\\bcl\\s?(\\d{2})\\b")."""
@@ -189,8 +206,8 @@ def set_attribute(conn, node_id, attr_id, label, type_, readers, source, **field
             label,
             type_,
             fields.get("unit"),
-            json.dumps(fields["options"], ensure_ascii=False)
-            if fields.get("options")
+            json.dumps(options(fields.get("options")), ensure_ascii=False)
+            if options(fields.get("options"))
             else None,
             json.dumps(list(readers), ensure_ascii=False),
             fields.get("site_filter"),

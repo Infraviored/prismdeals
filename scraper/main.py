@@ -746,79 +746,31 @@ def main():
         # leave listings in place without a detour; the next run picks them up.
         annotate_route_detours(conn, args.campaign_id)
 
-    # 2. Processing Mode
+    # 2. Processing: every listing resolved into the graph and its facts read
+    # once; each hunt's listings re-read with its targets, and those still
+    # above the searched model asked about once. Verdicts are computed on
+    # read (backend/db/verdict.js), so nothing here judges.
     if args.mode in ["process", "both"]:
-        # Playbook-backed categories run through the decoupled pipeline first:
-        # it extracts one fact sheet per listing and scores every buyer against
-        # it without further model calls. Listings it handles are marked
-        # processed, so the legacy worker below only picks up the remainder.
-        try:
-            import pipeline
+        from graph import cli as graph_cli
+        from graph import hunts as graph_hunts
+        from graph import llm as graph_llm
 
-            outcomes = pipeline.run(conn, pipeline.default_model_caller())
-            stats = pipeline.summarise(outcomes)
-            if stats["processed"]:
+        logger.info("Graph: %s", graph_cli.process_listings(conn))
+        campaign_ids = [
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT campaign_id FROM hunt_targets"
+                + (" WHERE campaign_id = ?" if args.campaign_id is not None else ""),
+                (args.campaign_id,) if args.campaign_id is not None else (),
+            ).fetchall()
+        ]
+        for campaign_id in campaign_ids:
+            try:
                 logger.info(
-                    "Pipeline: %d listing(s) processed, %d model call(s), "
-                    "%d served from fact-sheet cache, %d identity/identities resolved.",
-                    stats["processed"],
-                    stats["model_calls"],
-                    stats["from_cache"],
-                    stats["identities_resolved"],
+                    "Hunt %s: %s", campaign_id, graph_hunts.refine(conn, campaign_id)
                 )
-            elif stats["listings"]:
-                # Processing nothing while listings are waiting is the state this
-                # pipeline sat in since it was written: 1266 listings stored, 10
-                # ever scored. It was invisible because nothing said so. The
-                # dominant skip reason is the whole diagnosis, so it is named.
-                worst = max(
-                    stats["skip_reasons"].items(),
-                    key=lambda kv: kv[1],
-                    default=("unknown", 0),
-                )
-                logger.warning(
-                    "Pipeline processed NONE of %d reachable listing(s). "
-                    "Most common reason: %s (%d). Scoring is not running.",
-                    stats["listings"],
-                    worst[0],
-                    worst[1],
-                )
-            else:
-                logger.warning(
-                    "Pipeline found no listings at all: every search is disabled, "
-                    "or no listing belongs to one."
-                )
-            for reason, count in stats["skip_reasons"].items():
-                logger.info(
-                    "Pipeline left %d listing(s) to the legacy worker (%s).",
-                    count,
-                    reason,
-                )
-        except Exception as e:
-            logger.error(f"Playbook pipeline failed, falling back entirely: {str(e)}")
-
-        logger.info("Starting processing mode via agent_worker...")
-        conn.close()  # Close connection to prevent sqlite locks during process spawn
-
-        # Run agent_worker process command
-        import subprocess
-
-        try:
-            worker_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "agent_worker.py"
-            )
-            # sys.executable, not a bare "python3": the worker's dependencies
-            # (openai, ...) live in this project's venv, and a bare name resolves
-            # against PATH, which lands on the system interpreter instead.
-            cmd = [sys.executable, worker_path, "process"]
-            if args.listing_id:
-                cmd.append(args.listing_id)
-            if args.campaign_id is not None:
-                cmd.extend(["--campaign-id", str(args.campaign_id)])
-            subprocess.run(cmd, check=True)
-            logger.info("Successfully executed agent_worker processing.")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Error running agent_worker process: {str(e)}")
+            except graph_llm.NoModel as error:
+                logger.warning("Hunt %s not refined: %s", campaign_id, error)
 
     if refused_urls:
         logger.error(
