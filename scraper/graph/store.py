@@ -283,4 +283,16 @@ def merge(conn, from_id, into_id):
         "UPDATE listing_resolution SET node_id = ? WHERE node_id = ?",
         (into_id, from_id),
     )
+    # What hangs at the node moves with it: a hunt aimed at the duplicate is
+    # aimed at the product, and so are its conditions, facts and knowledge.
+    for table in ("hunt_targets", "node_attributes"):
+        conn.execute(
+            f"UPDATE OR IGNORE {table} SET node_id = ? WHERE node_id = ?",
+            (into_id, from_id),
+        )
+        conn.execute(f"DELETE FROM {table} WHERE node_id = ?", (from_id,))
+    for table in ("hunt_conditions", "node_knowledge"):
+        conn.execute(
+            f"UPDATE {table} SET node_id = ? WHERE node_id = ?", (into_id, from_id)
+        )
     conn.execute("UPDATE nodes SET merged_into = ? WHERE id = ?", (into_id, from_id))

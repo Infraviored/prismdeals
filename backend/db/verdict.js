@@ -46,6 +46,8 @@ function yearOf(facts) {
 /** met | violated | open for one condition against the facts. */
 function stateOf(condition, facts) {
   const value = facts[condition.attr_id];
+  // "ohne Defekt": an offer that never mentions a defect has none it states.
+  if ((value === null || value === undefined) && condition.op === 'absent') return 'met';
   if (value === null || value === undefined) return 'open';
   const want = condition.value;
   switch (condition.op) {

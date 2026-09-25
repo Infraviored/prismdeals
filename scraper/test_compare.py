@@ -368,3 +368,13 @@ def test_a_comparison_without_candidates_leaves_an_empty_run(tmp_path):
     run = conn.execute("SELECT id, candidate_count, status FROM judge_runs").fetchone()
     assert run == (result["run_id"], 0, "complete")
     assert conn.execute("SELECT COUNT(*) FROM listing_ranks").fetchone()[0] == 0
+
+
+def test_each_candidate_carries_its_own_usual_price():
+    from compare_prompt import build_compare_prompt
+
+    prompt = build_compare_prompt(
+        [{"id": "1", "title": "R1", "price_eur": 6000, "usual_price": 7400.4}], []
+    )
+    assert "6000 € (usual for this product: 7400 €)" in prompt
+    assert "Median price" not in prompt

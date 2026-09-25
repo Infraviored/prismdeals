@@ -14,6 +14,8 @@
  * the usual price is the median.
  */
 
+const { asNumber } = require('./verdict');
+
 // The median path: the cheapest twentieth, and clearly under the median.
 const DEAL_PERCENTILE = 0.05;
 const DEAL_RATIO = 0.7;
@@ -26,14 +28,6 @@ const MIN_MODEL_SIZE = 20;
 const MIN_COVERAGE = 0.6;
 const MIN_CORRELATION = 0.3;
 const MAX_FACTORS = 2;
-
-function asNumber(value) {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  const m = /\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?/.exec(String(value ?? ''));
-  if (!m) return null;
-  const n = Number(m[0].replace(/\./g, '').replace(',', '.'));
-  return Number.isFinite(n) ? n : null;
-}
 
 function median(values) {
   const valid = values.filter(v => typeof v === 'number' && !Number.isNaN(v)).sort((a, b) => a - b);
@@ -200,13 +194,24 @@ async function nodeMarkets(query, tree, nodeIds) {
       pools.add(n.id);
     }
   }
-  const rows = await query(
-    `SELECT r.listing_id, r.node_id, l.price_eur
-       FROM listing_resolution r
-       JOIN listings l ON l.id = r.listing_id
-       LEFT JOIN listing_facts f ON f.listing_id = r.listing_id AND f.attr_id = 'is_request'
-      WHERE l.price_eur > 0 AND COALESCE(f.value_json, 'false') <> 'true'`
-  );
+  // Only offers resolved below one of the pools: the market of a product,
+  // not a scan of every listing ever seen.
+  const below = [...tree.byId.values()]
+    .filter(n => tree.ancestors(n.id).some(a => pools.has(a.id)))
+    .map(n => n.id);
+  const rows = [];
+  for (let i = 0; i < below.length; i += 500) {
+    const chunk = below.slice(i, i + 500);
+    rows.push(...await query(
+      `SELECT r.listing_id, r.node_id, l.price_eur
+         FROM listing_resolution r
+         JOIN listings l ON l.id = r.listing_id
+         LEFT JOIN listing_facts f ON f.listing_id = r.listing_id AND f.attr_id = 'is_request'
+        WHERE r.node_id IN (${chunk.map(() => '?').join(',')})
+          AND l.price_eur > 0 AND COALESCE(f.value_json, 'false') <> 'true'`,
+      chunk
+    ));
+  }
   const byNode = new Map([...pools].map(id => [id, []]));
   const ids = new Set();
   for (const row of rows) {

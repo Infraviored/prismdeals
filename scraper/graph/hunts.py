@@ -410,11 +410,15 @@ def refine(conn, campaign_id, ask=llm.ask_json):
     for listing_id in ids:
         facts.process(conn, listing_id, prior=targets)
     pending = {}
-    for listing_id, node_id, method in conn.execute(
-        f"""SELECT listing_id, node_id, method FROM listing_resolution
-             WHERE listing_id IN ({",".join("?" for _ in ids)})""",
-        ids,
-    ).fetchall():
+    rows = []
+    for start in range(0, len(ids), 500):
+        chunk = ids[start : start + 500]
+        rows += conn.execute(
+            f"""SELECT listing_id, node_id, method FROM listing_resolution
+                 WHERE listing_id IN ({",".join("?" for _ in chunk)})""",
+            chunk,
+        ).fetchall()
+    for listing_id, node_id, method in rows:
         if node_id in above and method != "model":
             pending.setdefault(node_id, []).append(listing_id)
     asked = 0

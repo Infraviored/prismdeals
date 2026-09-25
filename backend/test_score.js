@@ -62,6 +62,12 @@ assert.strictEqual(stateOf({ attr_id: 'farbe', op: 'in', value: ['Weiß', 'Grau'
 
 assert.strictEqual(stateOf({ attr_id: 'breite', op: 'eq', value: 90 }, { breite: '90 cm' }), 'met');
 
+// "ohne Defekt" is met by an offer that never mentions a defect.
+assert.strictEqual(stateOf({ attr_id: 'defekt', op: 'absent', value: null }, {}), 'met');
+assert.strictEqual(stateOf({ attr_id: 'defekt', op: 'absent', value: null }, { defekt: true }), 'violated');
+assert.strictEqual(require('./db/verdict').asNumber('1.8'), 1.8);
+assert.strictEqual(require('./db/verdict').asNumber('45.000 km'), 45000);
+
 // The verdict on a small tree: brand > model > two generations.
 const nodes = [
   { id: 1, parent_id: null, kind: 'category', name: 'Motorräder' },

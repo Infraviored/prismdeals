@@ -77,11 +77,9 @@ module.exports = (query, get) => {
       .filter(l => l.fit.verdict !== 'no')
       .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
       .slice(0, CANDIDATE_CEILING);
-    const market = listings.find(l => l.market_basis)?.market_basis || {};
     return {
       campaign_id: campaignId,
       conditions: scope.hunt.conditions.map(c => ({ id: c.id, text: conditionText(c), importance: c.importance })),
-      market,
       knowledge: await knowledgeForPrompt(query, scope.tree, scope.hunt.targets.map(t => t.node_id)),
       candidates: listings.map(l => ({
         id: l.id,
@@ -92,6 +90,8 @@ module.exports = (query, get) => {
         detailed_description: (l.detailed_description || '').slice(0, DESCRIPTION_CHARS),
         short_description: l.short_description,
         states: l.fit.states,
+        // What this offer should cost, from its own product's market.
+        usual_price: l.market_median,
       })),
     };
   };

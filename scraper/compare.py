@@ -183,7 +183,6 @@ def partition_tournament_groups(
 def _tournament(
     candidates: list[dict],
     conditions: list[dict],
-    market: dict,
     node_knowledge: str = "",
 ) -> list[dict]:
     """Tournament for > 30 candidates (§9.4).
@@ -202,9 +201,7 @@ def _tournament(
     group_winners = []
     for gi, group in enumerate(groups):
         logger.info("Tournament group %d: %d candidates", gi + 1, len(group))
-        prompt = build_compare_prompt(
-            group, conditions, market, node_knowledge=node_knowledge
-        )
+        prompt = build_compare_prompt(group, conditions, node_knowledge=node_knowledge)
         response_text, _ = _llm_call(prompt, _output_budget(len(group)))
         parsed = parse_compare_response(response_text, group)
         # Take top TOURNAMENT_ADVANCE
@@ -231,7 +228,8 @@ def compare_campaign(
     """Full comparative judging for one hunt.
 
     payload: {campaign_id, candidates:[listing dicts with states], conditions:
-    [{id, text, importance}], market:{median, count}, knowledge: str}.
+    [{id, text, importance}], knowledge: str}; each candidate carries its
+    usual_price.
     Returns {run_id, merged, stability, usage, duration_s}.
     """
     conn = db_schema.connect(db_path or db_schema.default_path())
@@ -240,7 +238,6 @@ def compare_campaign(
     campaign_id = payload["campaign_id"]
     candidates = payload.get("candidates") or []
     conditions = payload.get("conditions") or []
-    market = payload.get("market") or {}
     node_knowledge = payload.get("knowledge") or ""
     candidate_count = len(candidates)
 
@@ -259,9 +256,7 @@ def compare_campaign(
 
     # Tournament if > CANDIDATE_CAP
     if len(candidates) > CANDIDATE_CAP:
-        candidates = _tournament(
-            candidates, conditions, market, node_knowledge=node_knowledge
-        )
+        candidates = _tournament(candidates, conditions, node_knowledge=node_knowledge)
 
     # Run NUM_RUNS shuffled comparisons
     all_runs: list[list[dict]] = []
@@ -278,7 +273,7 @@ def compare_campaign(
     for run_idx in range(num_runs):
         shuffled = shuffle_candidates(candidates, seed=run_idx * 7919)
         prompt = build_compare_prompt(
-            shuffled, conditions, market, node_knowledge=node_knowledge
+            shuffled, conditions, node_knowledge=node_knowledge
         )
         response_text, usage = _llm_call(prompt, _output_budget(len(candidates)))
 

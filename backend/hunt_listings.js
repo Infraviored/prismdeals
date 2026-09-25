@@ -99,7 +99,9 @@ async function huntListings(query, scope, filters = {}) {
     };
   });
   placeListings(listings, family.base_url);
-  annotateMarket(listings, await nodeMarkets(query, tree, hunt.targets.map(t => t.node_id)));
+  // Once per scope: the list, its overview and the comparison share it.
+  if (!scope.markets) scope.markets = await nodeMarkets(query, tree, hunt.targets.map(t => t.node_id));
+  annotateMarket(listings, scope.markets);
   attachScores(listings, hunt.conditions);
   return listings;
 }

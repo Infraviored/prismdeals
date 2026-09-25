@@ -311,3 +311,23 @@ def test_a_class_step_that_is_the_category_is_dropped(conn):
     assert store.node(conn, node)["parent_id"] != moto
     assert "abs" in store.effective_attributes(conn, node)
     assert place.find(conn, "Motorrad", moto) == moto
+
+
+def test_merging_a_targeted_node_moves_the_hunt_with_it(conn):
+    cid = hunts.save(conn, _doc(), ask=_answers)
+    target = hunts.target_ids(conn, cid)[0]
+    twin = store.create_node(
+        conn,
+        store.node(conn, target)["parent_id"],
+        "generation",
+        "SC59 Fireblade",
+        "test",
+    )
+    store.merge(conn, target, twin)
+    assert hunts.target_ids(conn, cid) == [twin]
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM hunt_conditions WHERE node_id = ?", (twin,)
+        ).fetchone()[0]
+        == 1
+    )

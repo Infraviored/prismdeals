@@ -268,9 +268,10 @@ module.exports = (query, get) => {
         const count = (s) => judged.filter(l => l.fit.states[c.id] === s).length;
         return { ...conditionOut(c), node_id: c.node_id, met: count('met'), violated: count('violated'), open: count('open'), total: judged.length };
       });
+      // The market of each target, whether or not this hunt has found one yet.
       const markets = scope.hunt.targets.map(t => {
-        const withTarget = listings.find(l => l.fit.target_id === t.node_id && l.market_basis);
-        return { node_id: t.node_id, name: t.name, ...(withTarget ? withTarget.market_basis : { count: 0, median: null }) };
+        const market = scope.markets.get(t.node_id);
+        return { node_id: t.node_id, name: t.name, count: market ? market.count : 0, median: market ? market.median : null };
       });
       let lastCrawled = null;
       if (scope.searchIds.length) {

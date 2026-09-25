@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 def build_compare_prompt(
     candidates: list[dict],
     conditions: list[dict],
-    market: dict | None = None,
     node_knowledge: str = "",
 ) -> str:
     """Builds the comparative judging prompt.
@@ -58,16 +57,6 @@ def build_compare_prompt(
         parts.append("- No specific requirements stated.")
     parts.append("")
 
-    # --- Soft middle: market context ---
-    if market:
-        median = market.get("median")
-        count = market.get("count")
-        if median:
-            parts.append(f"## Market context\n- Median price: {median} €")
-        if count:
-            parts.append(f"- Total listings on market: {count}")
-        parts.append("")
-
     # --- Soft middle: node knowledge (P7) ---
     if node_knowledge:
         parts.append(f"## Product knowledge\n{node_knowledge}\n")
@@ -98,6 +87,10 @@ def build_compare_prompt(
             desc = desc[:600] + "…"
 
         price_str = f"{price} €" if price is not None else "VB"
+        # Each offer's own usual price: a flagship and an entry model in one
+        # hunt have no common median.
+        if c.get("usual_price"):
+            price_str += f" (usual for this product: {round(c['usual_price'])} €)"
         parts.append(f"### [{lid}] {title}")
         # The page's own attributes (registration, mileage, power ...): without
         # them the comparison asked sellers for a mileage the page states.
