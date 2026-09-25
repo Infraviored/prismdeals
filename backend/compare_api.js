@@ -17,6 +17,12 @@ const router = express.Router();
 // Campaigns with a comparison in flight, and the last failure per campaign.
 const running = new Map();
 const failures = new Map();
+// What must follow a finished comparison (the server re-resolves market nodes:
+// the comparison names products the crawl's own pass could not).
+const afterCompare = [];
+function onCompareDone(fn) {
+  afterCompare.push(fn);
+}
 
 /**
  * Runs the comparison for one campaign in the background, once at a time.
@@ -43,6 +49,9 @@ function startCompare(campaignId) {
       failures.set(campaignId, stderr.slice(-500));
     } else {
       failures.delete(campaignId);
+      for (const fn of afterCompare) {
+        Promise.resolve().then(() => fn(campaignId)).catch(console.error);
+      }
     }
   });
   return true;
@@ -192,3 +201,4 @@ function safeJson(text) {
 
 module.exports.attachRanks = attachRanks;
 module.exports.startCompare = startCompare;
+module.exports.onCompareDone = onCompareDone;

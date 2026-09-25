@@ -109,7 +109,15 @@ def _listings_for_campaign(
                 "fit_stage": r[13],
             }
         )
-    return listings
+    # One candidate per listing. A listing two searches found, or judged in
+    # several runs, came back once per verdict row and was ranked against
+    # itself; the row with a verdict wins.
+    by_id: dict[str, dict] = {}
+    for listing in listings:
+        kept = by_id.get(listing["id"])
+        if kept is None or (not kept["fit_verdict"] and listing["fit_verdict"]):
+            by_id[listing["id"]] = listing
+    return list(by_id.values())
 
 
 def _compute_simple_score(listing: dict, fields: list[dict]) -> float:

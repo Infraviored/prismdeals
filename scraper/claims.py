@@ -418,7 +418,20 @@ def node_for_listing(conn, listing_id):
         return row[0]
 
     # Fall back to identity resolution
-    return _identity_node(conn, listing_id)
+    return _identity_node(conn, listing_id) or _resolved_node(conn, listing_id)
+
+
+def _resolved_node(conn, listing_id):
+    """The node P8 resolved from the listing's own facts, if any."""
+    try:
+        row = conn.execute(
+            "SELECT node_key FROM listing_nodes WHERE listing_id = ? "
+            "AND source IN ('identity', 'playbook', 'rank')",
+            (str(listing_id),),
+        ).fetchone()
+    except sqlite3.OperationalError:  # an older store without P8
+        return None
+    return row[0] if row else None
 
 
 def _identity_node(conn, listing_id):

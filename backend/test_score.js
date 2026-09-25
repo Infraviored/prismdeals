@@ -96,5 +96,13 @@ assert.ok(withAbs.wishes.met.includes('ABS'));
 assert.ok(silent.score > withoutAbs.score, 'an unmentioned wish counts half, a denied one nothing');
 assert.ok(withoutAbs.wishes.missed.includes('ABS'));
 
+// A numeric wish read to a verdict: "mindestens 150 PS" against "98 PS".
+const PS = [...FIELDS, { id: 'own_ps', label: 'PS', importance: 'low', buyer_wants: { min: 150 } }];
+const weak = score({ fit: { facts: { ...FULL, own_ps: false } }, price_eur: 150, market_median: 150 }, PS);
+const strong = score({ fit: { facts: { ...FULL, own_ps: true } }, price_eur: 150, market_median: 150 }, PS);
+assert.ok(weak.wishes.missed.includes('PS'), 'a numeric wish read as false is missed, not met');
+assert.ok(strong.wishes.met.includes('PS'));
+assert.ok(strong.score > weak.score);
+
 console.log('score: all assertions passed');
 

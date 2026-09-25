@@ -29,6 +29,7 @@ const port = Number(process.env.PRISMDEALS_PORT) || 3030;
 const { spawn } = require('child_process');
 const places = require('./places');
 const { placeListings } = require('./listing_geo');
+const { findPython } = require('./python');
 const { listingOrder } = require('./listing_order');
 const sqlite3 = require('sqlite3').verbose();
 const jwt = require('jsonwebtoken');
@@ -311,7 +312,7 @@ async function recalculateItemScores(searchId, scoringModelStr) {
 // Helper to execute Python AI Worker tasks (like drafting)
 function runPythonWorker(args) {
   return new Promise((resolve, reject) => {
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const python = spawn(pythonExecutable, [path.join(__dirname, '..', 'scraper', 'agent_worker.py'), ...args]);
     let stdout = '';
     let stderr = '';
@@ -1006,6 +1007,9 @@ app.use(require('./kept')(query, get, run));
 app.use(require('./requirements_api')(query, get, run));
 app.use(require('./campaign_hunt_api')(query, get, run));
 app.use(require('./fit_api')(query, get));
+require('./compare_api').onCompareDone(() =>
+  require('./migrations/p8_backfill_nodes').backfillP8Nodes(query, run)
+);
 app.use(require('./overview_api')(query, get));
 app.use(require('./intent_api'));
 
@@ -1091,7 +1095,7 @@ app.get('/api/places/suggest', (req, res) => {
 function runPlanner(args, res = null) {
   return new Promise((resolve, reject) => {
     const python = spawn(
-      path.join(__dirname, '..', '.venv', 'bin', 'python3'),
+      findPython(),
       [path.join(__dirname, '..', 'scraper', 'main.py'), ...args],
       { env: { ...process.env } }
     );
@@ -1257,7 +1261,7 @@ app.post('/api/route-searches', (req, res) => {
     });
   }
 
-  const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+  const pythonExecutable = findPython();
   const args = [
     path.join(__dirname, '..', 'scraper', 'main.py'),
     '--mode', 'route-create',
@@ -2079,7 +2083,7 @@ result = {
 print('__RADIUS_PROBE__:' + json.dumps(result))
 `;
 
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const python = spawn(
       pythonExecutable,
       ['-c', pythonScript, JSON.stringify(payload)],
@@ -2159,7 +2163,7 @@ new_base = search_url.with_location(base_url, parts['location'], new_radius)
 print('__RADIUS_BASE_URL__:' + new_base)
 `;
 
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const child = spawn(
       pythonExecutable,
       ['-c', pythonScript, fam.base_url, String(newRadius)],
@@ -2804,7 +2808,7 @@ app.post('/api/searches/preview', (req, res) => {
     return res.status(400).json({ error: 'Invalid search target URL. Only Kleinanzeigen URLs are allowed.' });
   }
 
-  const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+  const pythonExecutable = findPython();
   const scriptPath = path.join(__dirname, '..', 'scraper', 'main.py');
   
   const python = spawn(pythonExecutable, [scriptPath, '--mode', 'preview', '--urls', url]);
@@ -3097,7 +3101,7 @@ app.post('/api/scrape', (req, res) => {
     }
     
     // Spawn scraper execution in 'scrape' mode
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const args = [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'scrape'
@@ -3150,7 +3154,7 @@ app.post('/api/scrape/update-all', (req, res) => {
     }
     
     // Spawn scraper execution in 'update-all' mode
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const args = [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'update-all'
@@ -3200,7 +3204,7 @@ app.post('/api/searches/:search_id/scrape', async (req, res) => {
       try { fs.unlinkSync(progressFile); } catch (e) {}
     }
 
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const python = spawn(pythonExecutable, [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'scrape',
@@ -3246,7 +3250,7 @@ app.post('/api/process', (req, res) => {
       return res.status(409).json({ error: 'Evaluation already running for this listing' });
     }
 
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const args = [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'process'
@@ -3294,7 +3298,7 @@ app.get('/api/session-status', (req, res) => {
 // API: Trigger interactive manual login session
 app.post('/api/login-session', (req, res) => {
   try {
-    const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+    const pythonExecutable = findPython();
     const python = spawn(pythonExecutable, [
       path.join(__dirname, '..', 'scraper', 'main.py'),
       '--mode', 'scrape',
@@ -3413,7 +3417,7 @@ function runScraper() {
   const mode = autoAiEval ? 'both' : 'scrape';
   console.log(`Scheduled scrape running in mode: ${mode}`);
 
-  const pythonExecutable = path.join(__dirname, '..', '.venv', 'bin', 'python3');
+  const pythonExecutable = findPython();
   const python = spawn(pythonExecutable, [
     path.join(__dirname, '..', 'scraper', 'main.py'),
     '--mode', mode

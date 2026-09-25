@@ -76,6 +76,10 @@ function formatRequirementText(field) {
 
 function contradicts(wants, value) {
   if (value === null || value === undefined) return false;
+  // A wish in the buyer's own words is read to a verdict, not a value:
+  // "mindestens 150 PS" against "98 PS" is stored as false. Compared as a
+  // number it contradicted nothing and counted as met.
+  if (typeof value === 'boolean' && !('match' in wants)) return value === false;
   if ('match' in wants) {
     if (typeof value === 'boolean') {
       return value !== Boolean(wants.match);

@@ -339,3 +339,29 @@ def test_judge_runs_use_the_one_requirements_hash():
     import requirements_hash
 
     assert compare_funnel.requirements_hash is requirements_hash.requirements_hash
+
+
+def test_a_listing_two_searches_found_is_one_candidate():
+    import sqlite3
+
+    import compare_funnel
+    import db_schema
+
+    conn = sqlite3.connect(":memory:")
+    db_schema.apply_schema(conn)
+    conn.execute("INSERT INTO campaigns (id, name) VALUES (1, 'Fan')")
+    conn.executemany(
+        "INSERT INTO searches (id, campaign_id, url, enabled) VALUES (?, 1, ?, 1)",
+        [(1, "https://x/1"), (2, "https://x/2")],
+    )
+    conn.execute("INSERT INTO listings (id, title, search_id) VALUES ('a', 'Fan', 1)")
+    conn.executemany(
+        "INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('a', ?, '')",
+        [(1,), (2,)],
+    )
+    conn.executemany(
+        "INSERT INTO listing_fit (listing_id, search_id, verdict, stage, judged_at) VALUES ('a', ?, ?, 'title', '')",
+        [(1, "fit"), (2, "unclear")],
+    )
+    found = compare_funnel._listings_for_campaign(conn, 1, [1, 2])
+    assert [c["id"] for c in found] == ["a"]

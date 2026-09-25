@@ -69,6 +69,13 @@ async function setupDb() {
      VALUES (1, 'L-100', 1, 1, 'motorrad/supersport/yamaha-r1/rn19')`
   );
 
+  // Unranked listings: one with a node from its own facts, one with a hunt name only.
+  await runAsync(
+    `INSERT INTO listing_nodes (listing_id, node_key, source, computed_at) VALUES
+     ('L-200', 'motorrad/yamaha/r1', 'identity', '2026-09-25'),
+     ('L-300', 'ventilator', 'hunt', '2026-09-25')`
+  );
+
   return db;
 }
 
@@ -168,6 +175,13 @@ async function test() {
       listingClaimsData.claims.some(c => c.id === claim1.id),
       'Approved claim should be in inherited listing claims'
     );
+
+    console.log('Test 6b: unranked listings read the resolved node, never a hunt name');
+    const own = await (await fetch(`${base}/api/listings/L-200/claims`)).json();
+    assert.strictEqual(own.node_key, 'motorrad/yamaha/r1');
+    const bare = await (await fetch(`${base}/api/listings/L-300/claims`)).json();
+    assert.strictEqual(bare.node_key, null);
+    assert.deepStrictEqual(bare.claims, []);
 
     console.log(`Test 7: POST /api/claims/${claim1.id}/reject (delete)`);
     const rejectRes = await fetch(`${base}/api/claims/${claim1.id}/reject`, {

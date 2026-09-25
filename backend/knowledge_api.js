@@ -12,24 +12,11 @@
 
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
+const { findPython } = require('./python');
 const { spawn } = require('child_process');
 
 const router = express.Router();
 
-function findPython() {
-  const candidates = [
-    path.join(__dirname, '..', '.venv', 'bin', 'python3'),
-    path.join(__dirname, '..', '.venv', 'bin', 'python'),
-    path.join(__dirname, '..', 'venv', 'bin', 'python3'),
-    '/usr/bin/python3',
-    'python3',
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return 'python3';
-}
 
 function runPythonJson(scriptName, args, stdinInput = null) {
   return new Promise((resolve, reject) => {
@@ -219,21 +206,25 @@ module.exports = (query, get, run) => {
   router.get('/api/listings/:id/claims', async (req, res) => {
     const listingId = String(req.params.id);
     try {
-      // Check latest listing_ranks entry for node_key
-      const rankRow = await get(
-        `SELECT lr.node_key FROM listing_ranks lr
-           JOIN judge_runs jr ON jr.id = lr.run_id
-          WHERE lr.listing_id = ? AND lr.node_key IS NOT NULL AND lr.node_key != ''
-          ORDER BY jr.created_at DESC LIMIT 1`,
-        [listingId]
+      // The comparison's node first (claims are written under its names),
+      // then the node P8 resolved from the listing's own facts. A bare hunt
+      // name carries no knowledge. No Python per listing view: P8 already
+      // holds what the identity lookup would find.
+      const node = await get(
+        `SELECT node_key FROM (
+           SELECT lr.node_key, 0 AS pref, jr.created_at
+             FROM listing_ranks lr JOIN judge_runs jr ON jr.id = lr.run_id
+            WHERE lr.listing_id = ? AND lr.node_key IS NOT NULL AND lr.node_key != ''
+           UNION ALL
+           SELECT node_key, 1 AS pref, computed_at
+             FROM listing_nodes
+            WHERE listing_id = ? AND source IN ('identity', 'playbook', 'rank')
+         ) ORDER BY pref, created_at DESC LIMIT 1`,
+        [listingId, listingId]
       );
-
-      let nodeKey = rankRow ? rankRow.node_key : null;
+      const nodeKey = node ? node.node_key : null;
       if (!nodeKey) {
-        // Fall back to python identity lookup
-        const dbArgs = process.env.PRISMDEALS_DB ? ['--db', process.env.PRISMDEALS_DB] : [];
-        const result = await runPythonJson('knowledge_cli.py', [...dbArgs, 'claims-listing', listingId]);
-        return res.json(result);
+        return res.json({ listing_id: listingId, node_key: null, claims: [] });
       }
 
       // Walk path from leaf to root
