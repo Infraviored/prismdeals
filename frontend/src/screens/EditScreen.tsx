@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { RadiusChoice } from '../components/RadiusChoice';
 import { MaxPriceField } from '../components/MaxPriceField';
 import CategoryFilters from '../components/CategoryFilters';
@@ -11,6 +11,9 @@ import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign, SearchTarget, SearchFamilyTerm } from '../types';
 import { composeSearchUrl, decomposeSearchUrl, slugify } from '../utils/searchUrl';
 import { withoutGeneration, broadenQuery } from '../utils/searchTerms';
+import { applyDocument, buildDocument, resolveScopes, type HuntDocument, type HuntRequirement } from '../utils/huntDocument';
+import { HuntStructure } from './edit/HuntStructure';
+import { HuntAiEdit } from './edit/HuntAiEdit';
 
 export interface EditScreenProps {
   campaign: Campaign | undefined;
@@ -43,6 +46,9 @@ export const EditScreen: React.FC<EditScreenProps> = ({
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [attributes, setAttributes] = useState<string[]>([]);
   const [terms, setTerms] = useState<SearchFamilyTerm[]>([]);
+  // The hunt's requirements, per model or for all; changed here only by the AI.
+  const [requirements, setRequirements] = useState<HuntRequirement[]>([]);
+  const [requirementsChanged, setRequirementsChanged] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [requirementsOpen, setRequirementsOpen] = useState(false);
@@ -86,6 +92,12 @@ export const EditScreen: React.FC<EditScreenProps> = ({
     if (initialisedFor.current === campaign.id) return;
     initialisedFor.current = campaign.id;
     if (campaign.name) setName(campaign.name);
+    fetch(`/api/campaigns/${campaign.id}/requirements`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.requirements)) setRequirements(data.requirements);
+      })
+      .catch(() => {});
 
     if (campaign.family_id) {
       fetch(`/api/search-families/${campaign.family_id}`)
@@ -155,6 +167,39 @@ export const EditScreen: React.FC<EditScreenProps> = ({
       setResolveFailed(true);
     }
   }, []);
+
+  const doc = useMemo(
+    () => buildDocument(name, terms, maxPrice, radius, requirements),
+    [name, terms, maxPrice, radius, requirements]
+  );
+
+  const handleAiApply = (next: HuntDocument) => {
+    const applied = applyDocument(next, terms);
+    setName(applied.name);
+    setTerms(applied.terms);
+    setMaxPrice(applied.maxPrice);
+    setRadius(applied.radius);
+    setRequirements(applied.requirements);
+    setRequirementsChanged(true);
+  };
+
+  /** The requirements with model names turned into the saved terms' ids. */
+  const saveRequirements = async (familyId: number, searchChanged: boolean) => {
+    if (!campaign?.id || !requirementsChanged) return;
+    const family = await fetch(`/api/search-families/${familyId}`).then((r) => (r.ok ? r.json() : null));
+    const saved: SearchFamilyTerm[] = family?.terms || [];
+    const res = await fetch(`/api/campaigns/${campaign.id}/requirements`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requirements: resolveScopes(requirements, saved) }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'requirements');
+    // Same offers, new requirements: judge again. A changed search is judged
+    // after its crawl anyway.
+    if (!searchChanged) {
+      await fetch(`/api/campaigns/${campaign.id}/judge`, { method: 'POST' }).catch(() => {});
+    }
+  };
 
   const handleAddModel = (labelText: string) => {
     const slug = slugify(labelText);
@@ -247,6 +292,14 @@ export const EditScreen: React.FC<EditScreenProps> = ({
         return;
       }
 
+      try {
+        await saveRequirements(Number(isUpdate ? campaign!.family_id : data.id), searchChanged);
+      } catch {
+        setSaveError(t('surface.requirementsSaveFailed'));
+        setSaving(false);
+        return;
+      }
+
       if (isUpdate && campaign?.id && campaign.name !== trimmedName) {
         await fetch('/api/campaigns', {
           method: 'POST',
@@ -306,6 +359,11 @@ export const EditScreen: React.FC<EditScreenProps> = ({
             className="w-full px-3.5 py-2.5 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] placeholder-[#8FA6A1]/40 focus:outline-none focus:border-[#8FA6A1] text-sm transition-colors"
           />
         </div>
+
+        {campaign && <HuntAiEdit doc={doc} onApply={handleAiApply} />}
+        {campaign && (
+          <HuntStructure doc={doc} place={place?.label ?? locationSlug} filters={attributes} />
+        )}
 
         <SearchTermsField
           terms={terms}

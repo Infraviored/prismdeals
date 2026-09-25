@@ -219,6 +219,23 @@ async function main() {
     );
   }
 
+  // Proposed facts for the knowledge sheet: its kind badge and its two
+  // buttons share one row, which is where labels broke over two lines.
+  await run(`CREATE TABLE IF NOT EXISTS claims (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, node_key TEXT NOT NULL, kind TEXT NOT NULL,
+    axis TEXT, statement TEXT NOT NULL, check_path TEXT, weight TEXT,
+    sources TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT,
+    approved INTEGER NOT NULL DEFAULT 0)`);
+  for (const [kind, statement] of [
+    ['seller_question', 'Wurde der Akku getauscht, und wie viele Ladezyklen zeigt das BIOS?'],
+    ['weakness', 'Scharniere der T14s lockern sich bei häufigem Öffnen; Spiel am Deckel prüfen.'],
+  ]) {
+    await run(
+      'INSERT INTO claims (node_key, kind, statement, sources, created_at, approved) VALUES (?, ?, ?, ?, ?, 0)',
+      ['open/laptop-hunt', kind, statement, JSON.stringify(['https://example.org/quelle']), now]
+    );
+  }
+
   db.close();
   console.log(`Fixture database seeded: ${outPath}`);
   console.log(`  User: ${EMAIL} / ${PASSWORD}`);

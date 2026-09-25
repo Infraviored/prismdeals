@@ -43,7 +43,15 @@ export function broadenQuery(wish: string): string {
 export function withoutGeneration(term: string): string {
   const parts = term.trim().split(/([\s-]+)/);
   const words = parts.filter((_, i) => i % 2 === 0);
-  if (words.length >= 3 && /^[A-Za-z]{1,3}\d{1,3}$/.test(words[words.length - 1])) {
+  // As scraper/generation.py decides: the last word is a generation only when
+  // the words before it still name a model with a number ("R1 RN19"); in
+  // "YZF R1" and "ThinkPad T480" it is the model itself.
+  const designation = /[A-Za-z]+\d|\d+[A-Za-z]|\d{2,}/;
+  if (
+    words.length >= 3 &&
+    /^[A-Za-z]{1,3}\d{1,3}$/.test(words[words.length - 1]) &&
+    words.slice(0, -1).some((w) => designation.test(w))
+  ) {
     return parts.slice(0, -2).join('');
   }
   return term.trim();

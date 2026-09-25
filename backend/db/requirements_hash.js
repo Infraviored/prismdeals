@@ -36,7 +36,15 @@ function canonicalStringify(val) {
 function requirementsHash(fields) {
   if (!fields || !Array.isArray(fields) || fields.length === 0) return null;
   const canonical = fields
-    .map(f => ({ id: f.id || '', buyer_wants: f.buyer_wants || {} }))
+    .map(f => {
+      const entry = { id: f.id || '', buyer_wants: f.buyer_wants || {} };
+      // Which models a requirement is for changes what it asks. Only when
+      // set, so every hash from before scoping stays the same.
+      if (Array.isArray(f.applies_to) && f.applies_to.length) {
+        entry.applies_to = [...f.applies_to].sort((a, b) => (String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0));
+      }
+      return entry;
+    })
     // Code-point order, as Python's sorted(); localeCompare puts 'Zustand' after 'akku'.
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const blob = canonicalStringify(canonical);

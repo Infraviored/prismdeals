@@ -31,7 +31,7 @@ export const SearchTermsField: React.FC<SearchTermsFieldProps> = ({ terms, sugge
   const offer = terms.length === 0 && suggestion;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-testid="search-terms">
       <label htmlFor="setup-term" className="block text-xs font-medium text-[#8FA6A1]">
         {t('surface.searchTerms')}
       </label>

@@ -14,6 +14,8 @@ hard frame (code) + soft middle (data/small model) + fixed format at the end.
 import json
 import logging
 
+import citations
+
 logger = logging.getLogger(__name__)
 
 
@@ -154,8 +156,8 @@ def build_search_brief(profile, what_to_know, search_brief_text, model_name=""):
     # Hard frame
     parts.append(
         "Recherchiere gründlich zu folgendem Gebrauchtprodukt. "
-        "Beantworte JEDEN Abschnitt. Nenne zu jeder Aussage mindestens "
-        "eine vollständige URL als Quelle. Keine Preise vom Gebrauchtmarkt."
+        "Beantworte JEDEN Abschnitt. Belege deine Aussagen mit Quellen. "
+        "Keine Preise vom Gebrauchtmarkt."
     )
 
     if model_name:
@@ -177,11 +179,9 @@ def build_search_brief(profile, what_to_know, search_brief_text, model_name=""):
         for h in headings:
             parts.append(f"\n## {h}\n(hier deine Erkenntnisse)")
 
-    # Format at the end
-    parts.append(
-        "\nWICHTIG: Nenne zu jeder Aussage die vollständige URL der Quelle. "
-        "Ohne URL wird die Aussage verworfen."
-    )
+    # How the sources are written is the research AI's business: footnotes,
+    # inline links and a list at the end are all read (citations.py). Asking
+    # for a form of its own only produced debris like "Quellen: [), [)".
 
     return "\n".join(parts)
 
@@ -212,7 +212,10 @@ def build_classify_prompt(pasted_answer, node_key, profile):
         "Recherche-Antwort in einzelne Behauptungen (Claims).\n\n"
         "REGELN:\n"
         "- Jede Behauptung ist ein eigenständiger Fakt.\n"
-        "- Behalte alle URLs als Quellen.\n"
+        "- Behalte alle URLs als Quellen der Behauptung, bei der sie stehen.\n"
+        "- Anmerkungen der Recherche über die Aufgabe selbst (Vorgaben, "
+        "Einordnungen, was sie weggelassen hat) sind keine Behauptungen.\n"
+        "- Kein Markdown im statement: keine Sternchen, keine Links, keine URLs.\n"
         "- Markiere Behauptungen ohne URL als unsourced: true.\n"
         "- Ordne jede Behauptung einer Art zu.\n"
         "- Schreibe auf Deutsch.\n"
@@ -258,6 +261,24 @@ def build_classify_prompt(pasted_answer, node_key, profile):
     return "\n".join(parts)
 
 
+def _whole_objects(text):
+    """The complete JSON objects in a text, in order, nested ones skipped."""
+    decoder = json.JSONDecoder()
+    out, i = [], 0
+    while True:
+        i = text.find("{", i)
+        if i < 0:
+            return out
+        try:
+            obj, end = decoder.raw_decode(text, i)
+        except json.JSONDecodeError:
+            i += 1
+            continue
+        if isinstance(obj, dict):
+            out.append(obj)
+        i = end
+
+
 def parse_classify_response(response_text):
     """Parse the claim-classification response.
 
@@ -274,16 +295,11 @@ def parse_classify_response(response_text):
     try:
         claims = json.loads(text)
     except json.JSONDecodeError:
-        # Try to find a JSON array in the text
-        match = re.search(r"\[.*\]", text, re.DOTALL)
-        if match:
-            try:
-                claims = json.loads(match.group())
-            except json.JSONDecodeError:
-                logger.warning("Could not parse classify response as JSON")
-                return []
-        else:
-            logger.warning("No JSON array found in classify response")
+        # A reply cut off by the token limit is an array without its end:
+        # every object that did arrive whole is still a claim.
+        claims = _whole_objects(text)
+        if not claims:
+            logger.warning("No claims readable in classify response")
             return []
 
     if not isinstance(claims, list):
@@ -322,10 +338,16 @@ def parse_classify_response(response_text):
 
         unsourced = claim.get("unsourced", False) or len(url_sources) == 0
 
+        statement = citations.clean_statement(claim["statement"])
+        if not statement:
+            continue
+        url_sources = url_sources or citations.urls_in(str(claim["statement"]))
+        unsourced = claim.get("unsourced", False) or len(url_sources) == 0
+
         result.append(
             {
                 "kind": kind,
-                "statement": claim["statement"],
+                "statement": statement,
                 "check_path": claim.get("check_path", "text"),
                 "weight": claim.get("weight", "minor"),
                 "sources": url_sources,

@@ -66,6 +66,11 @@ jobs:
       - name: Take screenshots (mobile 480px)
         run: python scripts/ci_ui_shots.py --db /tmp/fixture.db --out /tmp/ui-shots-mobile --width 480 --height 900
 
+      # A small phone: no baseline, only the checks inside the run -- no
+      # button broken over two lines, no page wider than the window.
+      - name: Layout checks (small phone 360px)
+        run: python scripts/ci_ui_shots.py --db /tmp/fixture.db --out /tmp/ui-shots-narrow --width 360 --height 800
+
       # ── Visual regression ─────────────────────────────────────────────
       # No `if:` guard. Conditioning this on baselines existing is what made it
       # green while it had never run: with an empty baseline directory the step

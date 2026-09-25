@@ -199,7 +199,7 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({
                 {/* 3. Recherche-Auftrag kopieren */}
                 {briefData.brief && (
                   <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-xs font-semibold text-[#8FA6A1]">
                         {t('surface.knowledgeBriefIntro')}
                       </span>
@@ -281,8 +281,8 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({
                       key={claim.id}
                       className="p-3 rounded bg-[#00100F] border border-[#C9A227]/40 space-y-2 text-xs"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="px-1.5 py-0.5 rounded text-2xs bg-[#C9A227]/10 text-[#C9A227] border border-[#C9A227]/30">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="badge px-1.5 py-0.5 rounded text-2xs bg-[#C9A227]/10 text-[#C9A227] border border-[#C9A227]/30">
                           {getKindLabel(claim.kind)}
                         </span>
                         <div className="flex items-center gap-1.5">
@@ -345,8 +345,8 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({
                       key={claim.id}
                       className="p-2.5 rounded bg-[#00100F] border border-[#0E4A40] space-y-1.5 text-xs"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="px-1.5 py-0.5 rounded text-2xs bg-[#012828] text-[#8FA6A1] border border-[#0E4A40]">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="badge px-1.5 py-0.5 rounded text-2xs bg-[#012828] text-[#8FA6A1] border border-[#0E4A40]">
                           {getKindLabel(claim.kind)}
                         </span>
                         <button

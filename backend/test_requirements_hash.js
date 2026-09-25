@@ -30,6 +30,13 @@ function run() {
   ];
   assert.strictEqual(requirementsHash(withExtra), '469b044de33efef1');
 
+  // Scoped to models: part of the hash, same as Python's (b29ca27a7e004cba).
+  assert.strictEqual(
+    requirementsHash([{ id: 'own_km', buyer_wants: { max: 5000 }, applies_to: [12, 3] }]),
+    'b29ca27a7e004cba'
+  );
+  assert.strictEqual(requirementsHash([{ id: 'own_km', buyer_wants: { max: 5000 } }]), '4632ad3d2c5a2fe2');
+
   // fitJoinOn SQL clause generation
   const defaultSql = fitJoinOn('l.id', 'lsh.search_id');
   assert(defaultSql.includes('fit.listing_id = l.id'));

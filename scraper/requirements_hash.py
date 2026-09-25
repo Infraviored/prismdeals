@@ -36,12 +36,15 @@ def requirements_hash(fields):
         return None
     canonical = []
     for f in sorted(fields, key=lambda x: x.get("id", "")):
-        canonical.append(
-            {
-                "id": f.get("id", ""),
-                "buyer_wants": _normal(f.get("buyer_wants", {})),
-            }
-        )
+        entry = {
+            "id": f.get("id", ""),
+            "buyer_wants": _normal(f.get("buyer_wants", {})),
+        }
+        # Which models a requirement is for changes what it asks. Only when
+        # set, so every hash from before scoping existed stays the same.
+        if f.get("applies_to"):
+            entry["applies_to"] = sorted(_normal(f["applies_to"]), key=str)
+        canonical.append(entry)
     blob = json.dumps(
         canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
