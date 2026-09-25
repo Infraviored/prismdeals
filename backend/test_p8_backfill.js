@@ -26,6 +26,8 @@ const run = (sql, p = []) => new Promise((ok, no) => db.run(sql, p, e => (e ? no
     'CREATE TABLE search_family_searches (family_id INTEGER, term_id INTEGER, search_id INTEGER)',
     'CREATE TABLE search_family_terms (id INTEGER, family_id INTEGER, term TEXT, label TEXT)',
     'CREATE TABLE search_families (id INTEGER, campaign_id INTEGER)',
+    // From db/schema.sql in the real store; the backfill no longer declares it.
+    'CREATE TABLE listing_nodes (listing_id TEXT PRIMARY KEY, node_key TEXT NOT NULL, source TEXT, computed_at TEXT)',
   ]) await run(sql);
   await run("INSERT INTO campaigns VALUES (7, 'Corsair', 'exact'), (9, 'R1 / CBR', 'shortlist')");
   await run("INSERT INTO searches VALUES (45, 's', 7), (48, 's', 9)");

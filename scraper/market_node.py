@@ -43,19 +43,12 @@ EXCLUSION_RE = re.compile(
     re.IGNORECASE,
 )
 
-DDL = """
-CREATE TABLE IF NOT EXISTS listing_nodes (
-    listing_id TEXT NOT NULL PRIMARY KEY,
-    node_key   TEXT NOT NULL,
-    source     TEXT NOT NULL DEFAULT 'hunt',
-    computed_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_listing_nodes_node ON listing_nodes(node_key);
-"""
-
 
 def ensure_schema(conn):
-    conn.executescript(DDL)
+    """listing_nodes, as db/schema.sql declares it -- the one declaration."""
+    import db_schema
+
+    db_schema.apply_schema(conn)
 
 
 def normalize_part(val):

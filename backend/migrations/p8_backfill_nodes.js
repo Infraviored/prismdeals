@@ -36,25 +36,8 @@ function backfillP8Nodes(query, run) {
 }
 
 async function resolveAllNodes(query, run) {
-  // 1. Ensure table and index
-  await run(`
-    CREATE TABLE IF NOT EXISTS listing_nodes (
-      listing_id TEXT NOT NULL PRIMARY KEY,
-      node_key   TEXT NOT NULL,
-      source     TEXT NOT NULL DEFAULT 'hunt',
-      computed_at TEXT NOT NULL
-    )
-  `);
-  await run(`
-    CREATE INDEX IF NOT EXISTS idx_listing_nodes_node ON listing_nodes(node_key)
-  `);
-
-  // Ensure listing_ranks has node column if possible
-  try {
-    await run(`ALTER TABLE listing_ranks ADD COLUMN node TEXT`);
-  } catch {
-    // Already exists
-  }
+  // listing_nodes and listing_ranks.node_key come from db/schema.sql, applied
+  // before this runs (server start, or the CLI below).
 
   // 2. Fetch listings with facts, rank node, and campaign information.
   // Picked by ROW_NUMBER, not a bare column under GROUP BY: that kept an
@@ -198,7 +181,8 @@ if (require.main === module) {
       });
     });
 
-  backfillP8Nodes(query, run)
+  require('../db/schema').applySchema(db)
+    .then(() => backfillP8Nodes(query, run))
     .then(counts => {
       console.log('P8 backfill completed successfully:');
       console.log(`  Total listings processed: ${counts.total}`);
