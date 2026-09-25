@@ -992,6 +992,7 @@ app.use(require('./overview_api')(query, get));
 app.use(require('./intent_api'));
 
 app.use(require('./compare_api')(query, get));
+app.use(require('./knowledge_api')(query, get, run));
 
 require('./probe_api')(app);
 
