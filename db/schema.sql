@@ -498,3 +498,79 @@ CREATE TABLE IF NOT EXISTS model_generations (
     created_at TEXT NOT NULL,
     PRIMARY KEY (model, generation)
 );
+
+-- ===========================================================================
+-- The product graph (docs/plan-product-graph.md). One shared world of
+-- products: every hunt reads it, every listing is resolved into it once.
+-- ===========================================================================
+
+-- A product at any depth: category, class, brand, family, model, generation,
+-- config. Referenced by id everywhere, `key` is the readable path, derived.
+CREATE TABLE IF NOT EXISTS nodes (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id     INTEGER REFERENCES nodes(id),
+    kind          TEXT NOT NULL,
+    key           TEXT NOT NULL UNIQUE,
+    name          TEXT NOT NULL,
+    category_code TEXT,
+    years_from    INTEGER,
+    years_to      INTEGER,
+    status        TEXT NOT NULL DEFAULT 'proposed',
+    merged_into   INTEGER REFERENCES nodes(id),
+    evidence_json TEXT NOT NULL DEFAULT '{}',
+    source        TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    confirmed_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id);
+
+-- How sellers and searches name a node, folded and glued ("cbr1000rr").
+CREATE TABLE IF NOT EXISTS node_aliases (
+    node_id      INTEGER NOT NULL REFERENCES nodes(id),
+    alias        TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    hits         INTEGER NOT NULL DEFAULT 0,
+    total        INTEGER,
+    likely_share REAL,
+    probed_at    TEXT,
+    source       TEXT NOT NULL,
+    PRIMARY KEY (node_id, alias)
+);
+CREATE INDEX IF NOT EXISTS idx_node_aliases_alias ON node_aliases(alias);
+
+-- Which facts matter for a node, inherited downward (a child overrides).
+CREATE TABLE IF NOT EXISTS node_attributes (
+    node_id      INTEGER NOT NULL REFERENCES nodes(id),
+    attr_id      TEXT NOT NULL,
+    label        TEXT NOT NULL,
+    type         TEXT NOT NULL,
+    unit         TEXT,
+    options_json TEXT,
+    readers_json TEXT NOT NULL,
+    site_filter  TEXT,
+    absent_json  TEXT,
+    source       TEXT NOT NULL,
+    PRIMARY KEY (node_id, attr_id)
+);
+
+-- The node a listing is, decided once.
+CREATE TABLE IF NOT EXISTS listing_resolution (
+    listing_id  TEXT PRIMARY KEY,
+    node_id     INTEGER NOT NULL REFERENCES nodes(id),
+    confidence  REAL NOT NULL,
+    method      TEXT NOT NULL,
+    resolved_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_listing_resolution_node ON listing_resolution(node_id);
+
+-- What a listing states, read once per attribute.
+CREATE TABLE IF NOT EXISTS listing_facts (
+    listing_id   TEXT NOT NULL,
+    attr_id      TEXT NOT NULL,
+    value_json   TEXT NOT NULL,
+    source       TEXT NOT NULL,
+    quote        TEXT,
+    text_hash    TEXT NOT NULL,
+    extracted_at TEXT NOT NULL,
+    PRIMARY KEY (listing_id, attr_id)
+);
