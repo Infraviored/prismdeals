@@ -45,4 +45,32 @@ function run() {
   console.log('requirements_hash: all assertions passed');
 }
 
+// Searches sharing requirements each leave a verdict under the same hash; a
+// listing joined through fitJoinOn is still one row.
+async function oneVerdictPerListing() {
+  const sqlite3 = require('sqlite3');
+  const db = new sqlite3.Database(':memory:');
+  const all = (sql, p = []) => new Promise((ok, no) => db.all(sql, p, (e, r) => (e ? no(e) : ok(r))));
+  for (const sql of [
+    'CREATE TABLE searches (id INTEGER PRIMARY KEY, knowledge_set_id INTEGER)',
+    'CREATE TABLE knowledge_sets (id INTEGER PRIMARY KEY, requirements_hash TEXT)',
+    'CREATE TABLE listing_search_hits (listing_id TEXT, search_id INTEGER)',
+    `CREATE TABLE listing_fit (listing_id TEXT, search_id INTEGER, verdict TEXT,
+       requirements_hash TEXT, judged_at TEXT, PRIMARY KEY (listing_id, search_id))`,
+    "INSERT INTO knowledge_sets VALUES (1, 'h')",
+    'INSERT INTO searches VALUES (1, 1), (2, 1)',
+    "INSERT INTO listing_search_hits VALUES ('a', 1), ('a', 2)",
+    "INSERT INTO listing_fit VALUES ('a', 1, 'fit', 'h', '1'), ('a', 2, 'unclear', 'h', '2')",
+  ]) await all(sql);
+  const rows = await all(
+    `SELECT lsh.search_id, fit.verdict FROM listing_search_hits lsh
+       LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'lsh.search_id')}
+      ORDER BY lsh.search_id`
+  );
+  assert.deepStrictEqual(rows, [{ search_id: 1, verdict: 'fit' }, { search_id: 2, verdict: 'unclear' }]);
+  db.close();
+  console.log('fitJoinOn: one verdict per listing and search');
+}
+
 run();
+oneVerdictPerListing().catch(err => { console.error(err); process.exit(1); });

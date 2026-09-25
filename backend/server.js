@@ -237,7 +237,10 @@ const authenticateToken = async (req, res, next) => {
   }
 
   if (!token) {
-    if (process.env.PRISMDEALS_DEV_AUTH === '1') {
+    // Development only, and only from this machine: set by mistake on the
+    // server it would have logged every visitor in as the first user.
+    const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+    if (process.env.PRISMDEALS_DEV_AUTH === '1' && process.env.NODE_ENV !== 'production' && local) {
       const user = await get("SELECT id, email, role FROM users LIMIT 1");
       if (user) {
         req.user = user;
@@ -981,19 +984,23 @@ app.delete('/api/campaigns/:id', async (req, res) => {
 // API: Delete a campaign's route corridor to return to single location mode
 app.delete('/api/campaigns/:id/route', async (req, res) => {
   try {
-    const campaignId = req.params.id;
-    await run(
-      `DELETE FROM listing_route_geo WHERE route_search_id IN
-         (SELECT id FROM route_searches WHERE campaign_id = ?)`,
-      [campaignId]
-    ).catch(() => {});
-    await run(
-      `DELETE FROM route_search_circles WHERE route_search_id IN
-         (SELECT id FROM route_searches WHERE campaign_id = ?)`,
-      [campaignId]
-    ).catch(() => {});
-    await run('DELETE FROM route_searches WHERE campaign_id = ?', [campaignId])
-      .catch(() => {});
+    const routes = await query(
+      'SELECT id, family_id FROM route_searches WHERE campaign_id = ?',
+      [req.params.id]
+    );
+    // Through the planner, so the circles' searches stop and a hunt's town
+    // searches come back -- deleting the rows here left both crawling.
+    for (const route of routes) {
+      const args = route.family_id
+        ? ['--mode', 'family-route-clear', '--family-id', String(route.family_id)]
+        : ['--mode', 'route-delete', '--route-id', String(route.id)];
+      const result = await runPlanner(args);
+      const refused = readMarker(result.stdout, 'FAMILY_ROUTE_ERROR') || readMarker(result.stdout, 'ROUTE_DELETE_ERROR');
+      if (refused || result.code !== 0) {
+        console.error('Removing a route failed:', refused || result.stderr);
+        return res.status(500).json({ error: 'Failed to delete campaign route' });
+      }
+    }
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting campaign route:', error);
@@ -2567,7 +2574,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
            FROM search_family_searches sfs
            JOIN search_family_terms t ON t.id = sfs.term_id
            JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
-          WHERE sfs.family_id = ? AND sfs.active = 1
+          WHERE sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}
             AND lsh.listing_id IN (${listingIds.map(() => '?').join(',')})
           ORDER BY t.position ASC, t.id ASC`,
         [fam.id, ...listingIds]
@@ -3123,11 +3130,7 @@ app.post('/api/scrape', (req, res) => {
       console.log(`Python scraper exited with code ${code}`);
       activeScraperProcess = null;
       // Fresh offers deserve a fresh comparison (about 0.004 USD a run).
-      if (code === 0) {
-        require('./migrations/p8_backfill_nodes').backfillP8Nodes(query, run).catch(console.error);
-      }
-      // Judge, then compare -- on the server, whether the app is open or not.
-      if (code === 0 && campaignId) require('./fit_api').judgeCampaign(Number(campaignId)).catch(console.error);
+      if (code === 0) afterCrawl(campaignId ? [Number(campaignId)] : null);
     });
     
     res.json({ success: true, message: 'Scraping started' });
@@ -3224,6 +3227,7 @@ app.post('/api/searches/:search_id/scrape', async (req, res) => {
     python.on('close', (code) => {
       console.log(`Python targeted scraper exited with code ${code}`);
       activeScraperProcess = null;
+      if (code === 0 && search.campaign_id) afterCrawl([Number(search.campaign_id)]);
     });
 
     res.json({ success: true, message: 'Targeted scraping started' });
@@ -3434,6 +3438,28 @@ function runScraper() {
   });
   python.stdout.on('data', (data) => console.log(`Python stdout: ${data}`));
   python.stderr.on('data', (data) => console.error(`Python stderr: ${data}`));
+  // The schedule is the crawl that runs while nobody has the app open: its
+  // finds must be judged and ranked by the time someone does.
+  python.on('close', code => {
+    if (code === 0) afterCrawl(null);
+  });
+}
+
+/**
+ * What follows every finished crawl: market nodes, then judge and compare
+ * each campaign it touched (all with enabled searches when not given).
+ * One campaign after the other; each judge starts its own comparison.
+ */
+async function afterCrawl(campaignIds) {
+  try {
+    await require('./migrations/p8_backfill_nodes').backfillP8Nodes(query, run);
+    const ids = campaignIds || (await query(
+      'SELECT DISTINCT campaign_id AS id FROM searches WHERE enabled = 1 AND campaign_id IS NOT NULL'
+    )).map(r => Number(r.id));
+    for (const id of ids) await require('./fit_api').judgeCampaign(id);
+  } catch (error) {
+    console.error('After-crawl judging failed:', error);
+  }
 }
 
 app.listen(port, () => {

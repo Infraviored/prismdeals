@@ -162,4 +162,33 @@ describe('RequirementsSheet', () => {
     expect(sent.find((r: { id: string }) => r.id === 'a2Compatible').importance).toBe('high');
     expect(sent.find((r: { id: string }) => r.id === 'own_koffer').importance).toBe('low');
   });
+
+  it('a removed own wish stays removed after save', async () => {
+    const calls: Array<{ url: string; body: string }> = [];
+    globalThis.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      calls.push({ url, body: String(init?.body || '') });
+      if (init?.method === 'PUT' || url.endsWith('/judge')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            playbook: 'vehicles/motorcycles',
+            fields: MOCK_FIELDS,
+            requirements: [
+              { id: 'own_abs', label: 'ABS', importance: 'low', own: true, buyer_wants: { present: true } },
+            ],
+            searches: 1,
+          }),
+      });
+    });
+    render(<RequirementsSheet isOpen onClose={() => {}} campaignId={9} />);
+    expect(await screen.findByText('ABS')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: /Remove|Entfernen/ })[0]);
+    fireEvent.click(screen.getByText(/Save requirements|Anforderungen speichern/));
+    await vi.waitFor(() => expect(calls.some(c => c.url.endsWith('/requirements') && c.body)).toBe(true));
+    const sent = JSON.parse(calls.find(c => c.url.endsWith('/requirements') && c.body)!.body).requirements;
+    expect(sent.map((r: { id: string }) => r.id)).toEqual([]);
+  });
 });

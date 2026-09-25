@@ -38,7 +38,7 @@ def get_cached_page(conn, url, max_age_seconds=CACHE_TTL_SECONDS):
         if fetched_at.tzinfo is None:
             fetched_at = fetched_at.replace(tzinfo=datetime.timezone.utc)
         age = (now - fetched_at).total_seconds()
-        if age > max_age_seconds:
+        if age > max_age_seconds or int(status) != 200:
             return None
         html_text = gzip.decompress(html_gz).decode("utf-8")
         return int(status), html_text
@@ -48,8 +48,19 @@ def get_cached_page(conn, url, max_age_seconds=CACHE_TTL_SECONDS):
 
 
 def put_cached_page(conn, url, status, html_text):
-    """Store raw HTML in probe_cache compressed with gzip."""
-    if conn is None or not url or html_text is None:
+    """Store raw HTML in probe_cache compressed with gzip -- only a real result.
+
+    A 429 or a block page was kept for six hours: the next probe made no
+    request at all and stopped on the cached refusal, or read the block page
+    as "0 results".
+    """
+    if conn is None or not url or html_text is None or int(status) != 200:
+        return
+    import result_list
+
+    if result_list.total_results(html_text) is None and not result_list.parse(
+        html_text
+    ):
         return
     try:
         html_gz = gzip.compress(html_text.encode("utf-8"))

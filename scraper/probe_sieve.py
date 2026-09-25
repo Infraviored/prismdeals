@@ -64,6 +64,17 @@ def unit_of(label):
     return match.group(1) if match else None
 
 
+def _german_number(raw):
+    """ "45.000" is forty-five thousand, "2,5" two and a half.
+
+    The dot was read as a decimal point: a car with "45.000 km" had 45 km and
+    passed a must of at most 30000.
+    """
+    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?", raw):
+        raw = raw.replace(".", "")
+    return float(raw.replace(",", "."))
+
+
 def read_number(text, label):
     """A number with the label's unit near one of its words, or None.
 
@@ -75,8 +86,10 @@ def read_number(text, label):
     if not unit:
         return None
     hits = [
-        (m.start(), float(m.group(1).replace(",", ".")))
-        for m in re.finditer(rf"(\d+(?:[.,]\d+)?)\s*{unit}\b", text)
+        (m.start(), _german_number(m.group(1)))
+        for m in re.finditer(
+            rf"(\d{{1,3}}(?:\.\d{{3}})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*{unit}\b", text
+        )
     ]
     if not hits:
         return None

@@ -67,9 +67,19 @@ module.exports = (query, get) => {
         JOIN listing_search_hits lsh ON lsh.search_id = sfs.search_id
         JOIN listings l ON l.id = lsh.listing_id
         LEFT JOIN listing_fit fit ON ${fitJoinOn('l.id', 'sfs.search_id')}
+        ${routeId ? 'LEFT JOIN listing_route_geo g ON g.listing_id = l.id AND g.route_search_id = ?' : ''}
       `;
+      if (routeId) whereParams.push(routeId);
       whereConditions.push(`sfs.family_id = ? AND ${SFS_ACTIVE_OR_PENDING_SQL}`);
       whereParams.push(familyId);
+
+      if (routeId && maxDetour !== undefined && maxDetour !== '') {
+        const detourNum = parseFloat(maxDetour);
+        if (!isNaN(detourNum)) {
+          whereConditions.push('g.detour_min IS NOT NULL AND g.detour_min <= ?');
+          whereParams.push(detourNum);
+        }
+      }
 
       if (term !== undefined && term !== '') {
         const termNum = parseInt(term, 10);

@@ -365,3 +365,46 @@ def test_a_listing_two_searches_found_is_one_candidate():
     )
     found = compare_funnel._listings_for_campaign(conn, 1, [1, 2])
     assert [c["id"] for c in found] == ["a"]
+
+
+def test_parse_compare_response_survives_malformed_lines():
+    candidates = [
+        {"id": "1", "title": "Honeywell HT-900 2008", "detailed_description": ""},
+        {"id": "2", "title": "Tischventilator", "detailed_description": ""},
+    ]
+    lines = [
+        {"id": "1", "rank": "1", "facts": [{"x": 1}]},
+        {"id": "2", "rank": 2, "facts": {"year": {"value": 2008, "quote": 2008}}},
+        {"id": "999", "rank": 1},
+        {"id": "1", "rank": 3},
+    ]
+    parsed = parse_compare_response(
+        "\n".join(json.dumps(line) for line in lines), candidates
+    )
+    assert [p["id"] for p in parsed] == ["1", "2"]
+    assert parsed[0]["rank"] == 1 and parsed[0]["facts"] == {}
+    assert parsed[1]["facts"] == {}  # 2008 is not in listing 2's text
+
+
+def test_a_comparison_without_candidates_leaves_an_empty_run(tmp_path):
+    """The screen reads the latest run; old ranks must not outlive new requirements."""
+    import sqlite3
+
+    import compare
+    import db_schema
+
+    path = str(tmp_path / "c.db")
+    conn = sqlite3.connect(path)
+    db_schema.apply_schema(conn)
+    conn.execute("INSERT INTO campaigns (id, name) VALUES (1, 'Fan')")
+    conn.execute(
+        "INSERT INTO searches (id, campaign_id, url, enabled) VALUES (1, 1, 'https://x', 1)"
+    )
+    conn.commit()
+    conn.close()
+
+    result = compare.compare_campaign(1, db_path=path)
+    conn = sqlite3.connect(path)
+    run = conn.execute("SELECT id, candidate_count, status FROM judge_runs").fetchone()
+    assert run == (result["run_id"], 0, "complete")
+    assert conn.execute("SELECT COUNT(*) FROM listing_ranks").fetchone()[0] == 0

@@ -130,13 +130,36 @@ def insert_route(
 
 
 def delete_route(conn, route_search_id):
-    """Removes a route with its circles and detours; searches stay."""
+    """Removes a route with its circles and detours; searches stay, but stop.
+
+    A circle search nothing else owns any more is switched off here:
+    recompute_enabled leaves ownerless searches alone (it reads them as made
+    by hand), so after a corridor was dropped its circles were crawled forever.
+    """
+    import family_store
+
+    circle_sids = [
+        r[0]
+        for r in conn.execute(
+            "SELECT DISTINCT search_id FROM route_search_circles WHERE route_search_id = ?",
+            (route_search_id,),
+        ).fetchall()
+    ]
     for table, column in (
         ("listing_route_geo", "route_search_id"),
         ("route_search_circles", "route_search_id"),
         ("route_searches", "id"),
     ):
         conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (route_search_id,))
+    for sid in circle_sids:
+        owned = conn.execute(
+            "SELECT 1 FROM search_family_searches WHERE search_id = ? "
+            "UNION SELECT 1 FROM route_search_circles WHERE search_id = ? LIMIT 1",
+            (sid, sid),
+        ).fetchone()
+        if not owned:
+            conn.execute("UPDATE searches SET enabled = 0 WHERE id = ?", (sid,))
+    family_store.recompute_enabled(conn, circle_sids)
 
 
 def _register_search(cursor, label, url, campaign_id, knowledge_set_id, display_label):
@@ -347,10 +370,12 @@ def listings_for_route(conn, route_search_id):
     A listing found by two circles appears once: it is one listing, and the
     corridor is one search from the buyer's point of view.
     """
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
+    postal = "l.postal_code" if "postal_code" in columns else "NULL"
     rows = conn.execute(
         # Every circle that found it, not only the first finder: a hunt given
         # a corridor afterwards had found its listings by its town search.
-        "SELECT DISTINCT l.id, l.title, l.price, l.location, l.url "
+        f"SELECT DISTINCT l.id, l.title, l.price, l.location, l.url, {postal} "
         "FROM listings l "
         "JOIN listing_search_hits h ON h.listing_id = l.id "
         "JOIN route_search_circles c ON h.search_id = c.search_id "
@@ -364,6 +389,7 @@ def listings_for_route(conn, route_search_id):
             "price": row[2],
             "location": row[3],
             "url": row[4],
+            "postal_code": row[5],
         }
         for row in rows
     ]
@@ -426,10 +452,19 @@ def pending_geo(conn, route_search_id):
     downtime turns into a permanent gap.
     """
     known = geo_for_route(conn, route_search_id)
+
+    def pending(listing):
+        status = known.get(listing["id"], {}).get("status", FAILED)
+        # "No place" was settled before cards gave a postal code; one that has
+        # one now is worth another try.
+        return status in RETRYABLE or (
+            status == UNPLACEABLE and listing.get("postal_code")
+        )
+
     return [
         listing
         for listing in listings_for_route(conn, route_search_id)
-        if known.get(listing["id"], {}).get("status", FAILED) in RETRYABLE
+        if pending(listing)
     ]
 
 

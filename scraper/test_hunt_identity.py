@@ -44,3 +44,11 @@ def test_a_class_hunt_does_not_make_its_proposals_a_must(tmp_path):
     )
     conn.execute("INSERT INTO searches (id, campaign_id, url) VALUES (55, 10, 'u')")
     assert h.hunt_models(conn, 55) == []
+
+
+def test_a_model_name_ending_in_letters_and_digits_is_not_a_generation():
+    """ "Yamaha YZF R1" is the R1; cutting "R1" matched every YZF."""
+    assert h.model_keys("Yamaha YZF R1") == {"yzfr1"}
+    assert not h.names_a_model("Yamaha YZF R6 2008", ["Yamaha YZF R1"])
+    assert h.model_keys("Lenovo ThinkPad T480") == {"thinkpadt480"}
+    assert h.model_keys("Yamaha R1 RN19") == {"r1"}

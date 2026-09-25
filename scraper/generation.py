@@ -17,10 +17,28 @@ logger = logging.getLogger(__name__)
 _CODE = re.compile(r"^[A-Za-z]{1,3}\d{1,3}$")
 
 
+_DESIGNATION = re.compile(r"[A-Za-z]+\d|\d+[A-Za-z]|\d{2,}")
+
+
+def has_generation(words):
+    """Whether the last word is a generation code, not the model itself.
+
+    Only when the words before it still name a model with a number in it:
+    "Yamaha R1 RN19" is an R1 of generation RN19, but "Yamaha YZF R1",
+    "ThinkPad T480" and "Galaxy S23" are models -- cutting R1 made every YZF
+    count as the model asked for.
+    """
+    return (
+        len(words) >= 3
+        and bool(_CODE.match(words[-1]))
+        and any(_DESIGNATION.search(w) for w in words[:-1])
+    )
+
+
 def split_generation(model):
     """ "Yamaha R1 RN19" -> ("Yamaha R1", "RN19"); no code -> (model, None)."""
     words = str(model).split()
-    if len(words) >= 3 and _CODE.match(words[-1]):
+    if has_generation(words):
         return " ".join(words[:-1]), words[-1].upper()
     return str(model).strip(), None
 

@@ -110,22 +110,44 @@ export function toRequirement(
   label: string;
   importance: 'high' | 'low';
   own: true;
+  keywords?: string[];
   buyer_wants: Record<string, unknown>;
 } | null {
   const want = req.want || {};
   const wants: Record<string, unknown> = {};
+  const words: string[] = [];
   if (typeof want.min === 'number') wants.min = want.min;
   if (typeof want.max === 'number') wants.max = want.max;
-  if (Array.isArray(want.oneOf) && want.oneOf.length) wants.preferred = want.oneOf;
-  if (typeof want.match === 'boolean') wants.match = want.match;
-  if (typeof want.match === 'string' && want.match) wants.preferred = [want.match];
+  // The value is what the listing has to say, not the label: "DDR4" for
+  // "Speichertyp", 3200 for "Geschwindigkeit". Written as the label only,
+  // no perfect kit ever said "Speichertyp", and every offer stayed unclear.
+  const values = [
+    ...(Array.isArray(want.oneOf) ? want.oneOf : []),
+    ...(typeof want.match === 'string' || typeof want.match === 'number' ? [want.match] : []),
+  ];
+  for (const value of values) {
+    const word = String(value).trim().toLowerCase();
+    if (!word) continue;
+    words.push(word);
+    // "2x16 GB" is written "2x16GB" as often as not.
+    if (/\s/.test(word)) words.push(word.replace(/\s+/g, ''));
+  }
+  // A boolean says whether the thing must be there: "Unfallschaden: nein".
+  if (typeof want.match === 'boolean') wants.present = want.match;
   if (want.present === true) wants.present = true;
-  // Typed in as free text ("ABS"): it should be there.
+  // Typed in as free text ("ABS"), or named by value: it should be there.
   if (Object.keys(wants).length === 0) wants.present = true;
   const label = (req.label || req.id || '').trim();
   if (!label) return null;
   const slug = label.toLowerCase().replace(/[^a-z0-9äöüß]+/g, '_').replace(/^_|_$/g, '');
-  return { id: `own_${slug}`, label, importance, own: true, buyer_wants: wants };
+  return {
+    id: `own_${slug}`,
+    label,
+    importance,
+    own: true,
+    ...(words.length ? { keywords: [...new Set(words)] } : {}),
+    buyer_wants: wants,
+  };
 }
 
 /** The brand of each model ("Honeywell HT-900" -> "honeywell"), once. */
@@ -145,8 +167,27 @@ async function postJson(url: string, method: string, body: unknown) {
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `${method} ${url}: ${res.status}`);
+  if (!res.ok) {
+    throw Object.assign(new Error(data.error || `${method} ${url}: ${res.status}`), { status: res.status });
+  }
   return data;
+}
+
+/**
+ * A new hunt under the first free name: "Ventilator", then "Ventilator 2".
+ * Names are unique, and the setup has no name field: a second fan hunt ended
+ * on "already exists" with no way forward.
+ */
+async function createCampaign(name: string, body: Record<string, unknown>) {
+  for (let n = 1; n <= 20; n++) {
+    const candidate = n === 1 ? name : `${name} ${n}`;
+    try {
+      return { ...(await postJson('/api/campaigns', 'POST', { ...body, name: candidate })), name: candidate };
+    } catch (error) {
+      if ((error as { status?: number }).status !== 409) throw error;
+    }
+  }
+  throw new Error('Kein freier Name für diese Suche.');
 }
 
 /**
@@ -192,14 +233,30 @@ export async function executeHuntSave(
     budget: { min: null, max: params.maxPrice },
   };
 
-  const campaign = await postJson('/api/campaigns', 'POST', {
-    name: huntName,
+  const campaign = await createCampaign(huntName, {
     hunt_type: params.huntType,
     intent_json: intentPayload,
   });
   const campaignId = Number(campaign.id);
   if (!campaignId) throw new Error('Die Suche wurde nicht angelegt.');
 
+  try {
+    return await saveSearchesAndWants(campaignId, campaign.name, composedBaseUrl, finalTerms, params);
+  } catch (error) {
+    // Half a hunt is worse than none: a campaign without searches sat on the
+    // start screen, and every retry hit its name.
+    await fetch(`/api/campaigns/${campaignId}`, { method: 'DELETE' }).catch(() => {});
+    throw error;
+  }
+}
+
+async function saveSearchesAndWants(
+  campaignId: number,
+  huntName: string,
+  composedBaseUrl: string,
+  finalTerms: ReturnType<typeof compileHuntTerms>,
+  params: HuntSaveParams
+) {
   const family = await postJson('/api/search-families', 'POST', {
     name: huntName,
     base_url: composedBaseUrl,

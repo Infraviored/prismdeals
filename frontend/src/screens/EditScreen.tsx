@@ -200,6 +200,10 @@ export const EditScreen: React.FC<EditScreenProps> = ({
       maxPrice,
       query: effectiveTerms[0]?.term ? slugify(effectiveTerms[0].term) : undefined,
       category: categoryId,
+      // As the setup writes it: without a place the first path part is
+      // "suchanfrage", not the first term. Composed differently here, a mere
+      // rename changed the URL and started a crawl.
+      categorySlug: 'suchanfrage',
       attributes,
     });
 

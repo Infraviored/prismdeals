@@ -396,6 +396,7 @@ def main():
             "family-delete",
             "family-route",
             "family-route-clear",
+            "route-delete",
             "probe",
         ],
         default="both",
@@ -403,7 +404,7 @@ def main():
             "Operation mode: scrape, process, both, preview, update-all, "
             "route-preview, route-replan, route-create, route-annotate, "
             "family-preview, family-create, family-update, family-delete, "
-            "family-route, family-route-clear, or probe"
+            "family-route, family-route-clear, route-delete, or probe"
         ),
     )
 
@@ -525,6 +526,18 @@ def main():
 
     if args.mode in ("family-route", "family-route-clear"):
         run_family_route_mode(args)
+        return
+
+    if args.mode == "route-delete":
+        import route_store
+
+        conn = get_db_connection()
+        if not args.route_id:
+            print("__ROUTE_DELETE_ERROR__:Missing route id")
+            return
+        route_store.delete_route(conn, args.route_id)
+        conn.commit()
+        print("__ROUTE_DELETED__:" + json.dumps({"route_id": args.route_id}))
         return
 
     if args.mode == "probe":

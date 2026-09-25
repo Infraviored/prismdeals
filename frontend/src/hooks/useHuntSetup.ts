@@ -139,15 +139,21 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
         const intent: HuntParsedIntent = await res.json();
         setParsedIntent(intent);
 
+        // A new text is a new hunt: everything the old one parsed goes. Only
+        // what the new parse said was set, so going back from "Yamaha R1,
+        // min. 170 PS" to "Rennrad 56 cm" kept the 170 PS must, unseen, and
+        // the judge rejected every bike.
         if (intent.hunt_type) setHuntType(intent.hunt_type);
-        if (Array.isArray(intent.musts) && intent.musts.length > 0) setMusts(intent.musts);
-        if (Array.isArray(intent.prefs) && intent.prefs.length > 0) setPrefs(intent.prefs);
-        if (Array.isArray(intent.models) && intent.models.length > 0) setModels(intent.models);
-        if (Array.isArray(intent.sizes) && intent.sizes.length > 0) setSizes(intent.sizes);
-        if (intent.budget?.max) setMaxPrice(intent.budget.max);
+        setMusts(Array.isArray(intent.musts) ? intent.musts : []);
+        setPrefs(Array.isArray(intent.prefs) ? intent.prefs : []);
+        setModels(Array.isArray(intent.models) ? intent.models : []);
+        setProposedModels([]);
+        setSizes(Array.isArray(intent.sizes) ? intent.sizes : []);
+        setMaxPrice(intent.budget?.max ?? null);
+        setAttributes([]);
         // Without a category the probe searched all of Kleinanzeigen: "32"
         // alone found 384 058 offers.
-        if (intent.category_id) setCategoryId((current) => current ?? intent.category_id ?? null);
+        setCategoryId(intent.category_id ?? null);
       }
     } catch (err) {
       console.error('Intent parsing request error:', err);

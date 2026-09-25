@@ -281,3 +281,24 @@ def test_the_class_word_is_kept_even_when_titles_cannot_show_the_musts(tmp_path)
         fetch_fn=lambda url: MockResponse(model if "honeywell" in url else wide),
     )
     assert "ventilator" in result["chosen_terms"]
+
+
+def test_the_probe_cache_keeps_results_not_refusals():
+    """A 429 or a block page must not stand in for the site for six hours."""
+    import sqlite3
+
+    import db_schema
+    import probe_cache
+
+    conn = sqlite3.connect(":memory:")
+    db_schema.apply_schema(conn)
+    probe_cache.put_cached_page(conn, "https://x/429", 429, "Too many requests")
+    probe_cache.put_cached_page(
+        conn, "https://x/block", 200, "<html>Bitte bestätigen</html>"
+    )
+    probe_cache.put_cached_page(
+        conn, "https://x/ok", 200, "<span>1 - 25 von 139</span>"
+    )
+    assert probe_cache.get_cached_page(conn, "https://x/429") is None
+    assert probe_cache.get_cached_page(conn, "https://x/block") is None
+    assert probe_cache.get_cached_page(conn, "https://x/ok") is not None

@@ -16,6 +16,9 @@ export interface FundeEmptyProps {
   onShowUnclear: () => void;
   onWiden: (km: number) => void;
   onConfigure: () => void;
+  /** A model, deals-only or detour filter is on: empty is the filter's doing. */
+  filtered?: boolean;
+  onResetFilters?: () => void;
 }
 
 /** What an empty list says, and what the buyer can do about it.
@@ -36,8 +39,21 @@ export const FundeEmpty: React.FC<FundeEmptyProps> = ({
   onShowUnclear,
   onWiden,
   onConfigure,
+  filtered = false,
+  onResetFilters,
 }) => {
   const { t } = useTranslation();
+
+  // Nothing passes the filters: not "searched, nothing found", and never an
+  // offer to widen the radius and crawl again.
+  if (filtered && potAll === 0) {
+    return (
+      <EmptyLine
+        message={t('surface.noMatchFilters')}
+        actions={onResetFilters ? [<Pill key="reset" label={t('surface.resetFilter')} onClick={onResetFilters} />] : undefined}
+      />
+    );
+  }
 
   // Listings exist, this tab is just empty.
   if (potAll > 0 && tab !== 'all') {

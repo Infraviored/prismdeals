@@ -90,16 +90,33 @@ def from_extracted(conn, listing_id, search_id, playbook, extracted, wanted, tex
         if "absent_means" in field and field["id"] not in facts:
             facts[field["id"]] = field["absent_means"]
 
-    verdict, known, reasons = text_facts.judge_facts(wanted, facts, playbook)
-    stored = {"candidate": "fit", "reject": "no", "unclear": "unclear"}[verdict]
     req_hash = _compute_hash(wanted)
+    playbook_wanted, own = _split_wanted(playbook, wanted)
+    title, details = _title_and_details(conn, listing_id)
+    checks = _listing_checks(
+        conn,
+        title,
+        f"{title}\n{text or ''}",
+        details,
+        hunt_identity.hunt_models(conn, search_id),
+        own,
+        {},
+    )
+    if checks["reject"]:
+        reason, own_facts, _ = checks["reject"]
+        _store(conn, listing_id, search_id, "no", reason, own_facts, "model", req_hash)
+        return "no"
+
+    verdict, known, reasons = text_facts.judge_facts(playbook_wanted, facts, playbook)
+    stored = {"candidate": "fit", "reject": "no", "unclear": "unclear"}[verdict]
+    stored, reasons = _open_for(stored, reasons, checks)
     _store(
         conn,
         listing_id,
         search_id,
         stored,
         "; ".join(reasons[:3]),
-        known,
+        {**known, **checks["own_facts"]},
         "model",
         req_hash,
     )
@@ -194,6 +211,72 @@ def _generation_check(conn, title, details, models, cache):
     return generation.judge_generation(title, details, code, cache[(base, code)])
 
 
+def _listing_checks(conn, title, text, details, models, own, gen_cache):
+    """What rules a listing out before any playbook field is read.
+
+    Shared by the title/description judge and the model's fact sheet: the
+    fact sheet only knows playbook fields, and re-judging from it alone turned
+    "Suche Corsair …" and a wrong generation back into a fit.
+    """
+    # Somebody wanting one is not an offer.
+    if hunt_identity.is_request(title):
+        return {"reject": ("Gesuch, kein Angebot", {}, "title")}
+    # In a model list the model is the first must: named in the title, or
+    # the offer stays open ("Yamaha WR 125 R" came back for "yamaha r1").
+    model_seen = not models or hunt_identity.names_a_model(title, models)
+    # A generation named with the model ("R1 RN19") is a must too: its
+    # build years against the offer's first registration.
+    gen_verdict, gen_reason = _generation_check(conn, title, details, models, gen_cache)
+    if gen_verdict == "no":
+        return {"reject": (gen_reason, {}, "title")}
+    own_facts, own_verdict, own_reasons = _own_words(own, text)
+    if own_verdict == "reject":
+        return {"reject": ("; ".join(own_reasons), own_facts, "description")}
+    return {
+        "reject": None,
+        "model_seen": model_seen,
+        "gen_verdict": gen_verdict,
+        "gen_reason": gen_reason,
+        "own_facts": own_facts,
+        "own_verdict": own_verdict,
+        "own_reasons": own_reasons,
+    }
+
+
+def _details_column(conn):
+    """l.details, or NULL on older stores (and small test schemas)."""
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
+    return "details" if "details" in columns else "NULL"
+
+
+def _title_and_details(conn, listing_id):
+    row = conn.execute(
+        f"SELECT title, {_details_column(conn)} FROM listings WHERE id = ?",
+        (str(listing_id),),
+    ).fetchone()
+    return (row[0] or "", row[1]) if row else ("", None)
+
+
+def _split_wanted(playbook, wanted):
+    """(playbook fields, fields in the buyer's own words)."""
+    known = {f.get("id") for f in (playbook or {}).get("fields", [])}
+    own = [f for f in wanted if f.get("id") not in known and wishes.is_own(f)]
+    return [f for f in wanted if f.get("id") in known], own
+
+
+def _open_for(stored, reasons, checks):
+    """A fit the checks leave open becomes unclear, with the reason first."""
+    if stored != "fit":
+        return stored, reasons
+    if checks["own_verdict"] == "unclear":
+        return "unclear", checks["own_reasons"] + list(reasons)
+    if not checks["model_seen"]:
+        return "unclear", ["Modell im Titel nicht erkennbar"] + list(reasons)
+    if checks["gen_verdict"]:
+        return "unclear", [checks["gen_reason"]] + list(reasons)
+    return stored, reasons
+
+
 def judge_search(conn, search_id, use_descriptions=True):
     """Judges every listing of one search from its own words.
 
@@ -224,9 +307,7 @@ def judge_search(conn, search_id, use_descriptions=True):
         return {"error": "this search has no requirements to judge against"}
     # Fields the category's playbook knows are read with its patterns; the
     # buyer's own words ("ABS") are read as words (wishes.py).
-    known = {f.get("id") for f in (playbook or {}).get("fields", [])}
-    own = [f for f in wanted if f.get("id") not in known and wishes.is_own(f)]
-    wanted = [f for f in wanted if f.get("id") in known]
+    wanted, own = _split_wanted(playbook, wanted)
     if playbook is None and not (own or models):
         return {"error": "no playbook for this search's category"}
 
@@ -235,8 +316,8 @@ def judge_search(conn, search_id, use_descriptions=True):
     # another search had already seen was never judged against this search's
     # requirements -- and "fits only" then hid it, though it matched perfectly.
     # Older stores (and small test schemas) have no details column.
-    columns = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
-    details_col = "l.details" if "details" in columns else "NULL"
+    details_col = _details_column(conn)
+    details_col = "l.details" if details_col == "details" else "NULL"
     rows = conn.execute(
         f"""SELECT DISTINCT l.id, l.title, l.detailed_description, l.short_description, {details_col}
              FROM listings l
@@ -250,57 +331,24 @@ def judge_search(conn, search_id, use_descriptions=True):
     for row in rows:
         listing_id, title, detailed, short, details = row
 
-        # Somebody wanting one is not an offer.
-        if hunt_identity.is_request(title):
-            counts["no"] += 1
-            _store(
-                conn,
-                listing_id,
-                search_id,
-                "no",
-                "Gesuch, kein Angebot",
-                {},
-                "title",
-                req_hash,
-            )
-            continue
-        # In a model list the model is the first must: named in the title, or
-        # the offer stays open ("Yamaha WR 125 R" came back for "yamaha r1").
-        model_seen = not models or hunt_identity.names_a_model(title, models)
-        # A generation named with the model ("R1 RN19") is a must too: its
-        # build years against the offer's first registration.
-        gen_verdict, gen_reason = _generation_check(
-            conn, title, details, models, gen_cache
+        checks = _listing_checks(
+            conn,
+            title,
+            f"{title}\n{detailed or short or ''}",
+            details,
+            models,
+            own,
+            gen_cache,
         )
-        if gen_verdict == "no":
+        if checks["reject"]:
+            reason, facts, stage = checks["reject"]
             counts["no"] += 1
-            _store(conn, listing_id, search_id, "no", gen_reason, {}, "title", req_hash)
+            _store(conn, listing_id, search_id, "no", reason, facts, stage, req_hash)
             continue
-        own_facts, own_verdict, own_reasons = _own_words(
-            own, f"{title}\n{detailed or short or ''}"
-        )
-        if own_verdict == "reject":
-            counts["no"] += 1
-            _store(
-                conn,
-                listing_id,
-                search_id,
-                "no",
-                "; ".join(own_reasons),
-                own_facts,
-                "description",
-                req_hash,
-            )
-            continue
+        own_facts = checks["own_facts"]
         if not wanted:
-            fine = model_seen and not gen_verdict and own_verdict != "unclear"
-            stored = "fit" if fine else "unclear"
+            stored, reasons = _open_for("fit", [], checks)
             counts[stored] += 1
-            reasons = (
-                ([gen_reason] if gen_verdict else [])
-                + ([] if model_seen else ["Modell im Titel nicht erkennbar"])
-                + (own_reasons if own_verdict == "unclear" else [])
-            )
             _store(
                 conn,
                 listing_id,
@@ -335,15 +383,7 @@ def judge_search(conn, search_id, use_descriptions=True):
 
         stored = {"candidate": "fit", "reject": "no", "unclear": "unclear"}[verdict]
         facts = {**facts, **own_facts}
-        if stored == "fit" and own_verdict == "unclear":
-            stored = "unclear"
-            reasons = own_reasons + list(reasons)
-        if stored == "fit" and not model_seen:
-            stored = "unclear"
-            reasons = ["Modell im Titel nicht erkennbar"] + list(reasons)
-        elif stored == "fit" and gen_verdict:
-            stored = "unclear"
-            reasons = [gen_reason] + list(reasons)
+        stored, reasons = _open_for(stored, reasons, checks)
         counts[stored] += 1
         _store(
             conn,

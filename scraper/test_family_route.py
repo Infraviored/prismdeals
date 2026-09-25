@@ -83,3 +83,26 @@ def test_an_unknown_place_changes_nothing(conn):
     with pytest.raises(ValueError):
         family_route.set_route(conn, fid, "00000", "78462", client=FakeOsrm())
     assert _enabled_urls(conn) == town
+
+
+def test_clearing_a_corridor_stops_its_own_circle_searches(conn):
+    """A route planned first and adopted by the hunt owns base circles; they
+    must stop when the corridor goes, not be crawled forever."""
+    import route_pipeline
+
+    conn.execute("INSERT INTO campaigns (id, name) VALUES (1, 'Fan')")
+    route_id, _ = route_pipeline.create(
+        conn,
+        base_url=BASE,
+        origin="86899",
+        destination="78462",
+        campaign_id=1,
+        client=FakeOsrm(),
+        resolver=route_search.LocationResolver(fetch=suggest),
+    )
+    fid, _, _ = family_store.save_family(
+        conn, "Fan", BASE, ["tischventilator"], campaign_id=1, route_search_id=route_id
+    )
+    family_route.clear_route(conn, fid)
+    enabled = _enabled_urls(conn)
+    assert all("tischventilator" in url for url in enabled), enabled

@@ -154,6 +154,22 @@ def _describe_want(wants: dict) -> str:
     return ", ".join(parts) if parts else "any"
 
 
+def _strings(value) -> list[str]:
+    return (
+        [str(v) for v in value if isinstance(v, (str, int, float))]
+        if isinstance(value, list)
+        else []
+    )
+
+
+def _rank(value, fallback: int) -> int:
+    """The rank as a number: "1" and 1.0 are rank 1, anything else the next."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
 def _objects(text: str):
     """The rank objects in a reply: JSON lines, or one indented JSON array.
 
@@ -219,20 +235,29 @@ def parse_compare_response(
         text_by_id[str(c["id"])] = full
 
     results = []
+    seen = set()
     for obj in _objects(text):
         if not isinstance(obj, dict) or "id" not in obj:
             continue
 
         lid = str(obj["id"])
+        # A listing the call was not shown is invented; one named twice keeps
+        # its first place. Either would push real listings down a rank.
+        if lid not in text_by_id or lid in seen:
+            logger.warning("Dropped compare line for unknown or repeated id %s", lid)
+            continue
+        seen.add(lid)
 
         # Validate quotes: every fact quote must appear in listing text
         listing_text = text_by_id.get(lid, "")
-        facts = obj.get("facts") or {}
+        facts = obj.get("facts") if isinstance(obj.get("facts"), dict) else {}
         validated_facts = {}
         for field, entry in facts.items():
             if not isinstance(entry, dict):
                 continue
             quote = entry.get("quote", "")
+            if not isinstance(quote, str):
+                quote = str(quote) if isinstance(quote, (int, float)) else ""
             if quote and quote.lower() in listing_text.lower():
                 validated_facts[field] = entry
             elif quote:
@@ -257,13 +282,19 @@ def parse_compare_response(
             {
                 "id": lid,
                 "node": obj.get("node", ""),
-                "rank": obj.get("rank", len(results) + 1),
+                "rank": _rank(obj.get("rank"), len(results) + 1),
                 "reason": str(obj.get("reason", ""))[:100],
                 "musts": musts,
                 "facts": validated_facts,
-                "checks": obj.get("checks") or [],
-                "seller_questions": obj.get("seller_questions") or [],
-                "same_as": obj.get("same_as") or [],
+                "checks": _strings(obj.get("checks")),
+                "seller_questions": _strings(obj.get("seller_questions")),
+                "same_as": [
+                    str(v)
+                    for v in obj.get("same_as") or []
+                    if isinstance(v, (str, int))
+                ]
+                if isinstance(obj.get("same_as"), list)
+                else [],
             }
         )
 

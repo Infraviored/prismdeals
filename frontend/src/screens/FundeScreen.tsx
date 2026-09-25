@@ -98,6 +98,8 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     radiusDiagnosis,
     diagnosing,
     applyRadius,
+    filtered,
+    resetFilters,
   } = useFundeData({ campaign, isScraping });
 
   const [comparing, setComparing] = useState(false);
@@ -124,7 +126,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     }
   }, [campaignId, comparing, reload]);
 
-  const { selectedListing, openListing } = useLinkedListing(listings, campaign?.id ?? null);
+  const { selectedListing, openListing, openPartial } = useLinkedListing(listings, campaign?.id ?? null);
 
   useEffect(() => {
     if (/[?&]sheet=requirements/.test(window.location.hash)) setRequirementsOpen(true);
@@ -142,10 +144,14 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
 
   const openFromMap = useCallback(
     (id: string) => {
-      const found = listings.find((l) => l.id === id) ?? mapPoints.find((p) => p.id === id);
-      if (found) openListing({ ...found, title: found.title || '', images: found.images || [] } as RowListing);
+      const loaded = listings.find((l) => l.id === id);
+      if (loaded) return openListing(loaded);
+      // A pin past the loaded page carries only what a pin shows; the sheet
+      // needs verdict, score and description, so it is fetched in full.
+      const pin = mapPoints.find((p) => p.id === id);
+      if (pin) openPartial({ ...pin, title: pin.title || '', images: pin.images || [] } as RowListing);
     },
-    [listings, mapPoints, openListing]
+    [listings, mapPoints, openListing, openPartial]
   );
 
   // One corridor button, in the desktop strip and the phone row.
@@ -418,6 +424,8 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
                   if (await applyRadius(km)) onStartScrape?.();
                 }}
                 onConfigure={onConfigure}
+                filtered={filtered}
+                onResetFilters={resetFilters}
               />
             )}
 

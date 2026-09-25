@@ -56,8 +56,26 @@ async function resolveAllNodes(query, run) {
     // Already exists
   }
 
-  // 2. Fetch listings with facts, rank node, and campaign information
+  // 2. Fetch listings with facts, rank node, and campaign information.
+  // Picked by ROW_NUMBER, not a bare column under GROUP BY: that kept an
+  // arbitrary rank row (15 of 57 listings got an older run's node) and an
+  // arbitrary campaign, so the fallback node could change between runs.
   const rows = await query(`
+    WITH latest_rank AS (
+      -- compare.py writes node_key; node is the older column (P7).
+      SELECT lr.listing_id, COALESCE(lr.node_key, lr.node) AS node,
+             ROW_NUMBER() OVER (PARTITION BY lr.listing_id
+                                ORDER BY jr.created_at DESC, lr.run_id DESC) AS rn
+        FROM listing_ranks lr
+        JOIN judge_runs jr ON jr.id = lr.run_id
+       WHERE COALESCE(lr.node_key, lr.node) IS NOT NULL
+    ),
+    first_hit AS (
+      SELECT lsh.listing_id, lsh.search_id,
+             ROW_NUMBER() OVER (PARTITION BY lsh.listing_id
+                                ORDER BY lsh.first_seen_at, lsh.search_id) AS rn
+        FROM listing_search_hits lsh
+    )
     SELECT
       l.id,
       l.url,
@@ -79,21 +97,13 @@ async function resolveAllNodes(query, run) {
          JOIN search_families sf ON sf.id = sfs.family_id
          JOIN campaigns c2 ON c2.id = sf.campaign_id
         WHERE h2.listing_id = l.id AND c2.hunt_type IN ('shortlist', 'class')
-        ORDER BY h2.first_seen_at LIMIT 1) AS model_term
+        ORDER BY h2.first_seen_at, h2.search_id LIMIT 1) AS model_term
     FROM listings l
     LEFT JOIN fact_sheets fs ON fs.listing_id = l.id
-    LEFT JOIN listing_search_hits lsh ON lsh.listing_id = l.id
-    LEFT JOIN searches s ON s.id = lsh.search_id
+    LEFT JOIN first_hit fh ON fh.listing_id = l.id AND fh.rn = 1
+    LEFT JOIN searches s ON s.id = fh.search_id
     LEFT JOIN campaigns c ON c.id = s.campaign_id
-    LEFT JOIN (
-      -- compare.py writes node_key; node is the older column (P7).
-      SELECT lr_inner.listing_id, COALESCE(lr_inner.node_key, lr_inner.node) AS node
-      FROM listing_ranks lr_inner
-      JOIN judge_runs jr ON jr.id = lr_inner.run_id
-      WHERE COALESCE(lr_inner.node_key, lr_inner.node) IS NOT NULL
-      ORDER BY jr.created_at DESC
-    ) lr ON lr.listing_id = l.id
-    GROUP BY l.id
+    LEFT JOIN latest_rank lr ON lr.listing_id = l.id AND lr.rn = 1
   `);
 
   const now = new Date().toISOString();

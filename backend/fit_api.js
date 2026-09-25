@@ -82,21 +82,33 @@ module.exports = (query, get) => {
     });
   }
 
+  // Express 4 does not catch a rejected async handler, and on this Node an
+  // unhandled rejection ends the process: a busy database would take the API.
   router.post('/api/searches/:id/judge', async (req, res) => {
-    const search = await get('SELECT id FROM searches WHERE id = ?', [req.params.id]);
-    if (!search) return res.status(404).json({ error: 'Unknown search' });
-    const result = await judgeOne(req.params.id);
-    if (result.error) return res.status(400).json(result);
-    res.json({ success: true, counts: result });
+    try {
+      const search = await get('SELECT id FROM searches WHERE id = ?', [req.params.id]);
+      if (!search) return res.status(404).json({ error: 'Unknown search' });
+      const result = await judgeOne(req.params.id);
+      if (result.error) return res.status(400).json(result);
+      res.json({ success: true, counts: result });
+    } catch (error) {
+      console.error('Judging a search failed:', error);
+      res.status(500).json({ error: 'Judging failed' });
+    }
   });
 
   // A campaign is what the results screen shows, and it can hold several
   // searches -- a family expands to one per model per place. Judging by
   // campaign is therefore the button the screen can actually offer.
   router.post('/api/campaigns/:id/judge', async (req, res) => {
-    const result = await judgeCampaign(Number(req.params.id));
-    if (result.status) return res.status(result.status).json(result.body);
-    res.json(result.body);
+    try {
+      const result = await judgeCampaign(Number(req.params.id));
+      if (result.status) return res.status(result.status).json(result.body);
+      res.json(result.body);
+    } catch (error) {
+      console.error('Judging a campaign failed:', error);
+      res.status(500).json({ error: 'Judging failed' });
+    }
   });
 
   router.get('/api/searches/:id/fit', async (req, res) => {

@@ -118,3 +118,12 @@ def test_a_bare_number_is_never_a_search_term():
         for r in probe_ladder.build_ladder("features", [], musts, [], [], "c278", {})
     ]
     assert "32" not in terms and "32gb" in terms
+
+
+def test_a_german_thousands_dot_is_not_a_decimal_point():
+    """ "45.000 km" was read as 45 and passed a must of at most 30000."""
+    from probe_sieve import read_number
+
+    assert read_number("kilometerstand 45.000 km", "Kilometerstand km") == 45000
+    assert read_number("gewicht 2,5 kg", "Gewicht kg") == 2.5
+    assert read_number("1.5 kg leicht", "Gewicht kg") == 1.5

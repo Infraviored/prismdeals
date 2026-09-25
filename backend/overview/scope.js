@@ -24,10 +24,12 @@ async function resolveCampaignScope(campaignId, searchIdParam, { query, get }) {
   }
 
   const route = await get(
-    'SELECT id FROM route_searches WHERE campaign_id = ? ORDER BY id DESC LIMIT 1',
+    'SELECT id, family_id FROM route_searches WHERE campaign_id = ? ORDER BY id DESC LIMIT 1',
     [campaignId]
   );
-  if (route) {
+  // A hunt given a corridor is still a family: its list comes from the family
+  // (terms, old town searches until the circles ran), so the counts must too.
+  if (route && !route.family_id) {
     const circles = await query(
       'SELECT DISTINCT search_id FROM route_search_circles WHERE route_search_id = ?',
       [route.id]
@@ -60,6 +62,7 @@ async function resolveCampaignScope(campaignId, searchIdParam, { query, get }) {
       campaign,
       kind: 'family',
       familyId: Number(family.id),
+      routeId: route ? Number(route.id) : null,
       searchIds,
       primarySearchId: searchIds[0] || null,
     };

@@ -39,8 +39,10 @@ const run = (sql, p = []) => new Promise((ok, no) => db.run(sql, p, e => (e ? no
   // The comparison names the product in node_key (compare.py).
   await run("INSERT INTO listings VALUES ('cbr', 'https://www.kleinanzeigen.de/s-anzeige/c/5-305-4', 'CBR', '{}', 9000)");
   await run("INSERT INTO listing_search_hits VALUES ('cbr', 45, '2026-09-25')");
-  await run("INSERT INTO judge_runs VALUES (1, '2026-09-25')");
-  await run("INSERT INTO listing_ranks VALUES ('cbr', NULL, 'motorrad/honda/cbr1000rr', 1)");
+  // Two runs: the newer one's node counts, whatever order the rows come in.
+  await run("INSERT INTO judge_runs VALUES (2, '2026-09-26'), (1, '2026-09-25')");
+  await run("INSERT INTO listing_ranks VALUES ('cbr', NULL, 'motorrad/honda/cbr1000rr', 2)");
+  await run("INSERT INTO listing_ranks VALUES ('cbr', NULL, 'motorcycle/honda/cbr', 1)");
 
   await backfillP8Nodes(query, run);
   const nodes = Object.fromEntries((await query('SELECT listing_id, node_key FROM listing_nodes')).map(r => [r.listing_id, r.node_key]));

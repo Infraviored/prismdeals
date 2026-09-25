@@ -168,6 +168,13 @@ def _coordinates_for(listing, places):
     The stored form is "Bayern - Landsberg (Lech)"; the state is what makes the
     town unambiguous, so it is kept rather than split away.
     """
+    # The card's postal code first: a district ("Sendling") is no town the
+    # gazetteer knows, and a bare "Moosach" is the wrong Moosach.
+    code = listing.get("postal_code")
+    if code:
+        found = geo.centroids().coordinates(code)
+        if found:
+            return found
     text = (listing.get("location") or "").strip()
     if not text:
         return None

@@ -529,3 +529,12 @@ def test_a_listing_a_circle_found_again_counts_for_the_route(conn):
     assert [row["id"] for row in route_store.listings_for_route(conn, route_id)] == [
         "x"
     ]
+
+
+def test_a_district_is_placed_by_its_postal_code():
+    import geo
+
+    found = route_pipeline._coordinates_for(
+        {"location": "Sendling", "postal_code": "81369"}, geo.places()
+    )
+    assert found and 48.0 < found[0] < 48.2 and 11.4 < found[1] < 11.7

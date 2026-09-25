@@ -989,8 +989,13 @@ async function main() {
     console.log('--- TEST 18: overview respects search_family_searches.active = 1 and search endpoint ---');
     const famOverview = await request('/api/campaigns/2/overview');
     assert(famOverview.status === 200, `status ${famOverview.status}`);
-    // Campaign 2 route has 3 listings (search 201). When routed, route rules.
-    assert(famOverview.data.pots.all === 3, `route campaign 2 should show 3 listings, got ${famOverview.data.pots.all}`);
+    // Campaign 2 is a family with a corridor. Its list comes from the family
+    // endpoint, so its counts must too: the route alone said 3 while the list
+    // showed the family's listings.
+    const famList = await request('/api/search-families/2/listings?limit=100');
+    assert(famOverview.data.pots.all === famList.data.total,
+      `a hunt with a corridor counts what its list shows: ${famOverview.data.pots.all} vs ${famList.data.total}`);
+    assert(famOverview.data.pots.all !== 3, 'not the route alone');
 
     // Search overview endpoint
     const searchOverview = await request('/api/searches/401/overview');

@@ -21,6 +21,10 @@ interface StoredRequirement {
   [key: string]: unknown;
 }
 
+function isOwn(id: string, requirement?: StoredRequirement): boolean {
+  return id.startsWith('own_') || Boolean(requirement?.own) || Array.isArray(requirement?.keywords);
+}
+
 /** A must or wish in the buyer's own words ("ABS"), read as words by the judge. */
 function ownRequirement(label: string, importance: 'high' | 'low'): StoredRequirement {
   const clean = label.trim();
@@ -129,8 +133,11 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
         credentials: 'same-origin',
         body: JSON.stringify({
           requirements: [
+            // Own-word requirements come from `own` alone. Filtering only
+            // the ones still listed there sent a removed one back from
+            // `wants`, and "ABS" returned after every save.
             ...Object.entries(wants)
-              .filter(([id]) => !own.some(o => o.id === id))
+              .filter(([id]) => !isOwn(id, stored[id]))
               .map(([id, buyer_wants]) => ({ ...(stored[id] || {}), id, buyer_wants })),
             ...own,
           ],

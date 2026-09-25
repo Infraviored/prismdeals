@@ -9,7 +9,17 @@ decides like any other must.
 
 import re
 
-_NEGATION = re.compile(r"\b(ohne|kein|keine|keinen|nicht|leider kein)\s+$")
+# "ohne ABS", also across a list: "ohne ABS und ESP" denies ESP too.
+# Only "ohne"/"kein" reach across a list; "nicht gefahren, ABS" is no denial.
+_NEGATION = re.compile(
+    r"(?:\b(?:ohne|kein|keine|keinen)\s+(?:[a-zäöüß0-9-]+\s*(?:,|und|oder)\s*){0,3}"
+    r"|\bnicht\s+)$"
+)
+# "ABS nicht vorhanden", "ABS: nein", "Koffer fehlen".
+_DENIED_AFTER = re.compile(
+    r"^\s*[:\-–]?\s*(nicht vorhanden|nicht dabei|nein|fehlt|fehlen)\b"
+)
+_WORD = "a-z0-9äöüß"
 _FILLER = {
     "mit",
     "ohne",
@@ -55,6 +65,21 @@ def keywords(field):
 
 
 def read_wish(field, text):
+    """True when the text meets the wish, False when it goes against it, else None.
+
+    A wish that something be absent ("Unfallschaden", present or match false)
+    is met when the text denies it: "kein Unfallschaden" is a yes.
+    """
+    wants = field.get("buyer_wants") or {}
+    found = _names(field, text)
+    if found is not None and (
+        wants.get("present") is False or wants.get("match") is False
+    ):
+        return not found
+    return found
+
+
+def _names(field, text):
     """True when the text names the wish, False when it denies it, else None.
 
     A number with a unit ("mindestens 150 PS") is read near the label's words
@@ -75,10 +100,24 @@ def read_wish(field, text):
         return low_ok and high_ok
     found = None
     for word in keywords(field):
-        for m in re.finditer(
-            rf"(?<![a-z0-9äöüß]){re.escape(word)}(?![a-z0-9äöüß])", low
-        ):
-            if _NEGATION.search(low[max(0, m.start() - 14) : m.start()]):
+        for m in re.finditer(_pattern(word), low):
+            if _NEGATION.search(low[max(0, m.start() - 48) : m.start()]):
+                return False
+            if _DENIED_AFTER.search(low[m.end() : m.end() + 24]):
                 return False
             found = True
     return found
+
+
+def _pattern(word):
+    """The word on its own, or -- five letters and more -- inside a compound.
+
+    German glues: "Alukoffer", "Seitenkoffern" name "Koffer" and were missed.
+    Short words stay whole, or "abs" would be found in "Absatz".
+    """
+    body = re.escape(word)
+    if word.isdigit():  # "3200" in "DDR4-3200MHz", "16" in "CL16"
+        return rf"(?<!\d){body}(?!\d)"
+    if len(word) >= 5:
+        return rf"{body}(?:e|n|en|er|ern|s)?(?![{_WORD}])"
+    return rf"(?<![{_WORD}]){body}(?![{_WORD}])"

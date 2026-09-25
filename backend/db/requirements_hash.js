@@ -54,13 +54,23 @@ function requirementsHash(fields) {
  */
 function fitJoinOn(listingCol, searchIdCol, alias) {
   const a = alias || 'fit';
-  return `${a}.listing_id = ${listingCol} AND (
-    (${a}.requirements_hash IS NOT NULL AND ${a}.requirements_hash = (
+  const one = `${a}_one`;
+  const matches = (f) => `${f}.listing_id = ${listingCol} AND (
+    (${f}.requirements_hash IS NOT NULL AND ${f}.requirements_hash = (
       SELECT ks_rh.requirements_hash FROM searches s_rh
       JOIN knowledge_sets ks_rh ON ks_rh.id = s_rh.knowledge_set_id
       WHERE s_rh.id = ${searchIdCol}
     ))
-    OR (${a}.requirements_hash IS NULL AND ${a}.search_id = ${searchIdCol})
+    OR (${f}.requirements_hash IS NULL AND ${f}.search_id = ${searchIdCol})
+  )`;
+  // Exactly one verdict per (listing, search). Every search that shares the
+  // requirements left its own row under the same hash, and joining them all
+  // multiplied the listing: a median over 70 rows for 49 listings.
+  // (SQLite allows the outer columns in WHERE here, not in ORDER BY.)
+  return `${matches(a)} AND ${a}.rowid = COALESCE(
+    (SELECT ${one}.rowid FROM listing_fit ${one}
+      WHERE ${matches(one)} AND ${one}.search_id = ${searchIdCol} LIMIT 1),
+    (SELECT MAX(${one}.rowid) FROM listing_fit ${one} WHERE ${matches(one)})
   )`;
 }
 

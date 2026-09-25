@@ -264,8 +264,12 @@ def compare_campaign(
 
     if not candidates:
         logger.info("Campaign %d: no candidates for comparison", campaign_id)
+        # An empty run, stored: the screen shows the latest run's ranks, and
+        # without it the ranks from before a requirements change -- "#1 of 9"
+        # for listings now all rejected -- stayed on the listings for good.
+        run_id = _store_run(conn, campaign_id, req_hash, fields, [], {}, {}, 0.0, "")
         return {
-            "run_id": None,
+            "run_id": run_id,
             "merged": [],
             "stability": {},
             "usage": {},

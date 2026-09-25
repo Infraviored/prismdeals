@@ -242,3 +242,21 @@ describe('the search list reads a filtered URL', () => {
     expect(limited).toBe('https://www.kleinanzeigen.de/s-vilgertshofen/motorrad/k0c305l7074r200');
   });
 });
+
+describe('setup and edit compose the same URL', () => {
+  it('keeps "suchanfrage" as the root of a search without a place', () => {
+    const saved = 'https://www.kleinanzeigen.de/s-suchanfrage/preis::150/corsair-vengeance/k0c225';
+    const d = decomposeSearchUrl(saved)!;
+    const again = composeSearchUrl({
+      locationSlug: d.locationSlug,
+      locationId: d.locationId,
+      radius: null,
+      maxPrice: d.maxPrice,
+      query: 'corsair-vengeance',
+      category: d.category,
+      categorySlug: 'suchanfrage',
+      attributes: d.attributes,
+    });
+    expect(again).toBe(saved);
+  });
+});

@@ -14,6 +14,8 @@ import json
 import re
 import sqlite3
 
+import generation
+
 _BRANDS = {
     "yamaha",
     "honda",
@@ -46,7 +48,6 @@ _BRANDS = {
     "kingston",
 }
 _WANTED = re.compile(r"^\s*(suche|ich suche|gesucht|kaufe)\b", re.IGNORECASE)
-_GENERATION = re.compile(r"^[a-z]{1,3}\d{1,3}$")
 
 
 def _words(text):
@@ -66,10 +67,11 @@ def model_keys(model):
     """What identifies a model in a title: its designation without brand and
     generation, glued ("Honda CBR 1000 RR" -> "cbr1000rr", "Yamaha R1 RN19" -> "r1")."""
     words = _words(model)
+    # The same test the generation check uses: "YZF R1" keeps its R1.
+    if generation.has_generation(str(model).split()):
+        words = words[:-1]
     if words and words[0] in _BRANDS:
         words = words[1:]
-    if len(words) >= 2 and _GENERATION.match(words[-1]):
-        words = words[:-1]
     return {"".join(words)} if words else set()
 
 

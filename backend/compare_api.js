@@ -29,8 +29,16 @@ function onCompareDone(fn) {
  * Called by the button and after every finished crawl, so the ranks follow
  * the market without anyone asking.
  */
+// Asked for while one ran: run once more when it ends, so listings a crawl
+// added meanwhile get ranked instead of waiting for the next crawl.
+const again = new Set();
+
 function startCompare(campaignId) {
-  if (!campaignId || running.has(campaignId)) return false;
+  if (!campaignId) return false;
+  if (running.has(campaignId)) {
+    again.add(campaignId);
+    return false;
+  }
   const child = spawn(findPython(), [path.join(__dirname, '..', 'scraper', 'compare_cli.py'), String(campaignId)], {
     env: { ...process.env },
     cwd: path.join(__dirname, '..', 'scraper'),
@@ -40,10 +48,12 @@ function startCompare(campaignId) {
   child.stderr.on('data', d => { stderr = (stderr + d.toString()).slice(-2000); });
   child.on('error', err => {
     running.delete(campaignId);
+    again.delete(campaignId);
     failures.set(campaignId, String(err.message || err));
   });
   child.on('close', code => {
     running.delete(campaignId);
+    if (again.delete(campaignId)) setImmediate(() => startCompare(campaignId));
     if (code !== 0) {
       console.error('compare_cli.py failed:', stderr);
       failures.set(campaignId, stderr.slice(-500));

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { compileHuntTerms, executeHuntSave } from '../huntSave';
+import { compileHuntTerms, executeHuntSave, toRequirement } from '../huntSave';
 import type { MarketPicture, ProbeRung } from '../../types';
 
 describe('huntSave', () => {
@@ -117,6 +117,54 @@ describe('huntSave', () => {
   });
 
   describe('executeHuntSave', () => {
+    const base = {
+      intentText: 'Ventilator',
+      huntType: 'class' as const,
+      models: [],
+      musts: [],
+      prefs: [],
+      sizes: [],
+      place: null,
+      locationId: '7074',
+      locationSlug: 'vilgertshofen',
+      radius: 50,
+      maxPrice: 25,
+      categoryId: '176',
+      attributes: [],
+      parsedIntent: { hunt_type: 'class', confidence: 1, musts: [], class: 'Ventilator' },
+      probeMarketPicture: null,
+      probeRungs: [],
+    };
+
+    it('a second hunt of the same name gets the next free one', async () => {
+      const names: string[] = [];
+      globalThis.fetch = vi.fn().mockImplementation((url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body || '{}'));
+        if (url === '/api/campaigns') {
+          names.push(body.name);
+          if (body.name === 'Ventilator') {
+            return Promise.resolve({ ok: false, status: 409, json: () => Promise.resolve({ error: 'exists' }) });
+          }
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: 7 }) });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: 3 }) });
+      });
+      await executeHuntSave(base as never);
+      expect(names).toEqual(['Ventilator', 'Ventilator 2']);
+    });
+
+    it('removes the hunt again when its searches cannot be saved', async () => {
+      const calls: string[] = [];
+      globalThis.fetch = vi.fn().mockImplementation((url: string, init: RequestInit) => {
+        calls.push(`${init.method} ${url}`);
+        if (url === '/api/campaigns') return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ id: 7 }) });
+        if (url === '/api/search-families') return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: 'boom' }) });
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+      });
+      await expect(executeHuntSave(base as never)).rejects.toThrow('boom');
+      expect(calls).toContain('DELETE /api/campaigns/7');
+    });
+
     it('creates the hunt first, hangs the terms on it and stores the musts', async () => {
       const calls: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
       globalThis.fetch = vi.fn().mockImplementation((url: string, init: RequestInit) => {
@@ -179,5 +227,27 @@ describe('huntDisplayName', () => {
         parsedIntent: { class: 'ventilator' } as never,
       })
     ).toBe('Ventilator');
+  });
+});
+
+describe('toRequirement', () => {
+  it('writes a must\'s value as the words the listing has to say', () => {
+    const ddr = toRequirement({ id: 'gen', label: 'Speichertyp', want: { match: 'DDR4' } });
+    expect(ddr?.keywords).toEqual(['ddr4']);
+    expect(ddr?.buyer_wants).toEqual({ present: true });
+    const kit = toRequirement({ id: 'kit', label: 'Kit', want: { match: '2x16 GB' } });
+    expect(kit?.keywords).toEqual(['2x16 gb', '2x16gb']);
+    const speed = toRequirement({ id: 'mhz', label: 'Geschwindigkeit', want: { match: 3200 } });
+    expect(speed?.keywords).toEqual(['3200']);
+  });
+
+  it('keeps a wish for absence as one', () => {
+    const accident = toRequirement({ id: 'u', label: 'Unfallschaden', want: { match: false } });
+    expect(accident?.buyer_wants).toEqual({ present: false });
+    expect(accident?.keywords).toBeUndefined();
+  });
+
+  it('keeps a free-text wish as present', () => {
+    expect(toRequirement({ id: 'abs', label: 'ABS' })?.buyer_wants).toEqual({ present: true });
   });
 });
