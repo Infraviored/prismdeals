@@ -92,7 +92,7 @@ Found in the review, before this run every hunt counted **0**:
 - ~~Incremental insertion of new listings against top-10 anchors (§9.5)~~ *dropped for now: a full
   comparison costs about 0.004 USD and a minute, so it simply reruns after each crawl. Revisit if
   candidate sets or crawl frequency grow.*
-- Open: P7 (knowledge nodes, research bridge), P8 (market per node) — in progress.
+- Open: P7 (knowledge nodes, research bridge). P8 (market per node) done.
 - Review findings worth remembering (details in the commits):
   - agents reported success with a broken schema (semicolon in a comment) and a red test;
     "tests pass" from an agent is checked, not trusted.
@@ -130,7 +130,7 @@ flowchart LR
 | P5 | class → model proposals, probed | P2, P4 | P3 |
 | P6 | candidate set + one comparative call | P2 | P3–P5 |
 | P7 | knowledge nodes, research bridge | P6 | P8 |
-| P8 | market per node | P6 | P7 |
+| P8 | ✓ market per node | P6 | P7 |
 | P9 | ✓ verdict survives search edits | — | anytime |
 
 Each package ships on its own and leaves the app usable.
@@ -419,11 +419,42 @@ Replaces the edit screen for **new** hunts; edit screen stays for existing ones,
 - Trigger: research value (product-core §5) above threshold **and** node without fresh claims.
 - Benchmarks for features hunts = claims of kind `benchmark` (model → value → source).
 
-## 11. P8 — market per node
+## 11. P8 — market per node [done]
 
-- Listing → node from P6/P7; median per node, excluding defect/parts/accessory.
-- Value drivers (year, km, age) regression once ≥ 30 listings per node.
-- `score.js` value axis switches from per-search median to per-node median.
+- Listing → node key assignment:
+  - From `listing_ranks.node` when present (written by P7 comparative run).
+  - From `scraper/identity.py` for cars (`auto/{make}/{model}`), motorcycles (`motorrad/{make}/{model}`), laptops (`laptop/{brand}/{model}`), phones (`handy/{brand}/{model}`).
+  - From playbook facts for RAM: generation + module split (`ram/{generation}/{stickCount}x{gbPerStick}gb`).
+  - Fallback to hunt/campaign slug (`hunt` fallback).
+  - Stored in additive table `listing_nodes (listing_id PRIMARY KEY, node_key, source, computed_at)` with index `idx_listing_nodes_node`.
+  - Idempotent backfill migration `backend/migrations/p8_backfill_nodes.js` populates all existing listings.
+  - Python pipeline integration: `scraper/market_node.py` and `scraper/pipeline.py` store node after fact extraction.
+- Clean market:
+  - Excludes listings with detail-page condition `Defekt`.
+  - Excludes defect / parts donor / accessory / wanted keywords in title and description: `defekt`, `teildefekt`, `kaputt`, `bastler`, `bastlerfahrzeug`, `ersatzteil`, `ersatzteile`, `teile`, `schlachtung`, `schlachtfest`, `teilespender`, `ersatzteilspender`, `nicht funktionsfähig`, `nicht funktionstüchtig`, `ohne motor`, `ohne getriebe`, `ohne display`, `ohne akku`, `für bastler`, `an bastler`, `zum ausschlachten`, `suche`, `gesucht`. 100 % precision on 30 hand-checked live copy listings.
+  - Excludes rejected verdicts (`fit.verdict = 'no'`).
+  - Excludes non-positive prices (`price_eur <= 0`).
+- Median per node with fallback chain:
+  - Minimum sample: 5 clean listings.
+  - Hierarchical fallback: exact node → parent node (`nodeChain`) → scope median.
+  - Child listings propagate up to parent nodes so parents reflect pooled category volume.
+  - Returns `median`, `count`, `basis`, `basis_type` (`node`, `parent`, or `scope`).
+- Value drivers:
+  - `valueDrivers` regresses price per year bucket for nodes with ≥ 30 clean listings having year data. Returns null when data is thin (< 30 listings).
+- `score.js` value axis switches to node median:
+  - Score value axis uses `listing.market_median` set to the node median.
+  - `score_parts` preserves `market_basis` with human label, count, and basis.
+  - Frontend `ScoreBreakdown.tsx` renders plain German breakdown with node name and count: e.g. „12 % unter dem üblichen Preis für eine Yamaha R1 (23 Angebote)“ via `translations.ts` (`axisValueBelowNode`, `axisValueAboveNode`, `axisValueAtNode`).
+- Empirical measurement on `/tmp/p8market.db` copy:
+
+| Campaign | Scope Listings | Old Scope Median | Assigned Node | Clean Listings | Node Median | Basis (Type) |
+|---|---|---|---|---|---|---|
+| 1 (Laptops) | 1157 | 150 € (n=1157) | `laptops` | 1011 (146 defects out) | 150 € | `laptops` (node, n=1011) |
+| 7 (Corsair RAM) | 66 | 140 € (n=66) | `ram/ddr4/2x16gb` | 12 (2 defects out) | 150 € | `ram/ddr4/2x16gb` (node, n=12) |
+| 7 (Corsair RAM) | 66 | 140 € (n=66) | `ram/ddr4/4x8gb` | 2 (< 5 min sample) | 150 € | `ram/ddr4` (parent, n=12) |
+| 7 (Corsair RAM) | 66 | 140 € (n=66) | `corsair-vengeance...` | 16 (clean without facts) | 140 € | `corsair-vengeance...` (node, n=16) |
+| 9 (Yamaha R1/CBR) | 0 | N/A | — | 0 | N/A | No listings crawled yet |
+| 8 (Motorrad) | 6 | 2450 € (n=6) | `motorrad` | 6 | 2450 € | `motorrad` (node, n=6) |
 
 ## 12. P9 — verdict per requirements version [done]
 
