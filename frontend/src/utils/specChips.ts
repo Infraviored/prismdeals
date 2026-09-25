@@ -54,3 +54,21 @@ export function getSpecChips(facts?: Record<string, unknown> | null): string[] {
 
   return chips;
 }
+
+/**
+ * The page's own attributes that decide a vehicle: first registration year,
+ * mileage, power. The buyer filters on them ("ab 2005, bis 30 000 km"), so the
+ * row shows them -- a list of motorcycles with only price and town made every
+ * offer look alike.
+ */
+export function getDetailChips(details?: Record<string, unknown> | null): string[] {
+  if (!details || typeof details !== 'object') return [];
+  const chips: string[] = [];
+  const reg = String(details['Erstzulassung'] ?? '').match(/(19|20)\d{2}/);
+  if (reg) chips.push(`EZ ${reg[0]}`);
+  const km = String(details['Kilometerstand'] ?? '').trim();
+  if (km) chips.push(km);
+  const power = String(details['Leistung'] ?? '').trim();
+  if (power) chips.push(power);
+  return chips;
+}

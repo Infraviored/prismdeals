@@ -85,5 +85,15 @@ const current = score({
 });
 assert.strictEqual(current.gate.open.length, 0);
 
+// A wish in the buyer's words lifts the score when the offer brings it.
+const WISH = [...FIELDS, { id: 'own_abs', label: 'ABS', importance: 'low', buyer_wants: { present: true } }];
+const withAbs = score({ fit: { facts: { ...FULL, own_abs: true } }, price_eur: 150, market_median: 150 }, WISH);
+const withoutAbs = score({ fit: { facts: { ...FULL, own_abs: false } }, price_eur: 150, market_median: 150 }, WISH);
+const silent = score({ fit: { facts: FULL }, price_eur: 150, market_median: 150 }, WISH);
+assert.ok(withAbs.score > silent.score, 'a met wish lifts the score');
+assert.ok(withoutAbs.score <= silent.score, '"ohne ABS" does not count as met');
+assert.ok(withAbs.wishes.met.includes('ABS'));
+assert.ok(withoutAbs.wishes.missed.includes('ABS'));
+
 console.log('score: all assertions passed');
 

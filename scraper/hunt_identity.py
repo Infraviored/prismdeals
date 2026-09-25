@@ -129,3 +129,12 @@ def hunt_models(conn, search_id):
     except (ValueError, TypeError, AttributeError):
         return []
     return [m for m in models if isinstance(m, str) and m.strip()]
+
+
+def matching_model(title, models):
+    """The first named model the title shows, or None."""
+    keys = _title_keys(title)
+    for model in models:
+        if any(key in keys for key in model_keys(model)):
+            return model
+    return None

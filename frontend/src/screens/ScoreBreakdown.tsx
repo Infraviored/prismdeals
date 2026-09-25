@@ -55,6 +55,15 @@ export const ScoreBreakdown: React.FC<{ listing: RowListing }> = ({ listing }) =
         {parts.gate.met.map((r) => (
           <li key={`m-${r}`} className="met">✓ {r}</li>
         ))}
+        {(parts.wishes?.met || []).map((w) => (
+          <li key={`wm-${w}`} className="met">✓ {t('surface.wishMet', { wish: w })}</li>
+        ))}
+        {(parts.wishes?.missed || []).map((w) => (
+          <li key={`wx-${w}`} className="open">✗ {t('surface.wishMissed', { wish: w })}</li>
+        ))}
+        {(parts.wishes?.open || []).map((w) => (
+          <li key={`wo-${w}`} className="open">? {t('surface.wishOpen', { wish: w })}</li>
+        ))}
       </ul>
 
       <ul className="breakdown-list quiet">

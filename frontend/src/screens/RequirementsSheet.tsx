@@ -15,6 +15,17 @@ export interface AskableField {
 interface StoredRequirement {
   id: string;
   buyer_wants: Record<string, unknown>;
+  label?: string;
+  importance?: string;
+  own?: boolean;
+  [key: string]: unknown;
+}
+
+/** A must or wish in the buyer's own words ("ABS"), read as words by the judge. */
+export function ownRequirement(label: string, importance: 'high' | 'low'): StoredRequirement {
+  const clean = label.trim();
+  const slug = clean.toLowerCase().replace(/[^a-z0-9äöüß]+/g, '_').replace(/^_|_$/g, '');
+  return { id: `own_${slug}`, label: clean, importance, own: true, buyer_wants: { present: true } };
 }
 
 export interface RequirementsSheetProps {
@@ -50,6 +61,10 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
   const [searchCount, setSearchCount] = useState(0);
   const [showMore, setShowMore] = useState(false);
   const [configuredFieldIds, setConfiguredFieldIds] = useState<Set<string>>(new Set());
+  // Everything stored, so a save keeps importance and labels it does not edit.
+  const [stored, setStored] = useState<Record<string, StoredRequirement>>({});
+  const [own, setOwn] = useState<StoredRequirement[]>([]);
+  const [ownText, setOwnText] = useState('');
 
   useEffect(() => {
     if (!isOpen || !campaignId) return;
@@ -74,6 +89,17 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
         }
         setWants(stored);
         setConfiguredFieldIds(configured);
+        const askable = new Set((data.fields || []).map(f => f.id));
+        const all: Record<string, StoredRequirement> = {};
+        const mine: StoredRequirement[] = [];
+        for (const requirement of data.requirements || []) {
+          all[requirement.id] = requirement;
+          if (requirement.own || requirement.id.startsWith('own_') || !askable.has(requirement.id)) {
+            mine.push(requirement);
+          }
+        }
+        setStored(all);
+        setOwn(mine);
       })
       .catch(() => !cancelled && setError(t('surface.requirementsLoadFailed')))
       .finally(() => !cancelled && setLoading(false));
@@ -102,7 +128,12 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify({
-          requirements: Object.entries(wants).map(([id, buyer_wants]) => ({ id, buyer_wants })),
+          requirements: [
+            ...Object.entries(wants)
+              .filter(([id]) => !own.some(o => o.id === id))
+              .map(([id, buyer_wants]) => ({ ...(stored[id] || {}), id, buyer_wants })),
+            ...own,
+          ],
         }),
       });
       if (!res.ok) {
@@ -119,7 +150,14 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
     } finally {
       setSaving(false);
     }
-  }, [campaignId, wants, onSaved, onClose, t]);
+  }, [campaignId, wants, own, stored, onSaved, onClose, t]);
+
+  const addOwn = (importance: 'high' | 'low') => {
+    if (!ownText.trim()) return;
+    const next = ownRequirement(ownText, importance);
+    setOwn(prev => [...prev.filter(o => o.id !== next.id), next]);
+    setOwnText('');
+  };
 
   const numberInput = (
     field: AskableField,
@@ -240,6 +278,46 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
           </p>
 
           <div className="flex flex-col gap-5">
+            {/* The buyer's own words: "ABS" as a wish lifts the score, as a
+                must it decides. */}
+            <div className="flex flex-col gap-2" data-testid="own-requirements">
+              <div className="text-sm font-medium text-[#F2F5F4]">{t('surface.ownTitle')}</div>
+              {own.map(o => (
+                <div key={o.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 text-[#F2F5F4]">
+                    {o.label || o.id}
+                    <span className="ml-2 text-xs text-[#8FA6A1]">
+                      {o.importance === 'high' || o.hard ? t('surface.ownMust') : t('surface.ownWish')}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setOwn(prev => prev.filter(x => x.id !== o.id))}
+                    className="shrink-0 text-xs text-[#8FA6A1] hover:text-[#F2F5F4] cursor-pointer"
+                  >
+                    {t('surface.ownRemove')}
+                  </button>
+                </div>
+              ))}
+              <input
+                type="text"
+                value={ownText}
+                onChange={e => setOwnText(e.target.value)}
+                placeholder={t('surface.ownPlaceholder')}
+                className="w-full bg-[#00100F] border border-[#0E4A40] rounded px-3 py-2 text-sm text-[#F2F5F4] placeholder-[#8FA6A1]/60 focus:outline-none focus:border-[#8FA6A1]"
+              />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => addOwn('low')} disabled={!ownText.trim()}
+                  className="px-3 py-1.5 rounded border border-[#0E4A40] text-sm text-[#E4D6BE] disabled:opacity-40 cursor-pointer">
+                  {t('surface.ownAddWish')}
+                </button>
+                <button type="button" onClick={() => addOwn('high')} disabled={!ownText.trim()}
+                  className="px-3 py-1.5 rounded border border-[#0E4A40] text-sm text-[#E4D6BE] disabled:opacity-40 cursor-pointer">
+                  {t('surface.ownAddMust')}
+                </button>
+              </div>
+            </div>
+
             {storedFields.length === 0 && (
               <p className="text-sm text-[#8FA6A1]">{t('surface.requirementsEmpty')}</p>
             )}

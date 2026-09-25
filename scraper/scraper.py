@@ -10,6 +10,7 @@ import datetime
 import requests
 from bs4 import BeautifulSoup
 
+import detail_params
 import result_list
 import rate_limiter
 
@@ -173,6 +174,7 @@ def parse_listing_details_requests(url, session=None):
                 images.append(src)
 
         detailed_description = schema_description or html_description
+        details = detail_params.merge_details(details, response.text)
 
         return {
             "detailed_description": detailed_description,

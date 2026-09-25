@@ -128,4 +128,38 @@ describe('RequirementsSheet', () => {
     expect(await screen.findByText(/No requirements yet/)).toBeInTheDocument();
     expect(screen.queryByText('Unterstellung')).not.toBeInTheDocument();
   });
+
+  it('keeps own wishes and importance on save and adds a new wish', async () => {
+    const calls: Array<{ url: string; body: string }> = [];
+    globalThis.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      calls.push({ url, body: String(init?.body || '') });
+      if (init?.method === 'PUT' || url.endsWith('/judge')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            playbook: 'vehicles/motorcycles',
+            fields: MOCK_FIELDS,
+            requirements: [
+              { id: 'a2Compatible', importance: 'high', buyer_wants: { match: true } },
+              { id: 'own_abs', label: 'ABS', importance: 'low', own: true, buyer_wants: { present: true } },
+            ],
+            searches: 2,
+          }),
+      });
+    });
+    render(<RequirementsSheet isOpen onClose={() => {}} campaignId={9} />);
+    expect(await screen.findByText('ABS')).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText(/ABS, cases/), { target: { value: 'Koffer' } });
+    fireEvent.click(screen.getByText('Add as nice to have'));
+    fireEvent.click(screen.getByText(/Save requirements|Anforderungen speichern/));
+    await vi.waitFor(() => expect(calls.some(c => c.url.endsWith('/requirements') && c.body)).toBe(true));
+    const sent = JSON.parse(calls.find(c => c.url.endsWith('/requirements') && c.body)!.body).requirements;
+    const ids = sent.map((r: { id: string }) => r.id).sort();
+    expect(ids).toEqual(['a2Compatible', 'own_abs', 'own_koffer']);
+    expect(sent.find((r: { id: string }) => r.id === 'a2Compatible').importance).toBe('high');
+    expect(sent.find((r: { id: string }) => r.id === 'own_koffer').importance).toBe('low');
+  });
 });

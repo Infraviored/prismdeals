@@ -4,7 +4,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { formatFreshness } from '../../utils/freshness';
 import { formatLocation } from '../../utils/formatLocation';
 import { formatPrice } from '../../utils/formatPrice';
-import { getSpecChips } from '../../utils/specChips';
+import { getSpecChips, getDetailChips } from '../../utils/specChips';
 
 export interface RowListing {
   id: string;
@@ -35,6 +35,7 @@ export interface RowListing {
   score_parts?: {
     score: number | null;
     gate: { met: string[]; violated: string[]; open: string[]; factor: number };
+    wishes?: { met: string[]; missed: string[]; open: string[] };
     axes: Record<string, number | null>;
     market_basis?: {
       median: number;
@@ -84,12 +85,14 @@ export interface RowProps {
   className?: string;
 }
 
-function renderSpecs(facts: Record<string, unknown> = {}): React.ReactNode[] {
+function renderSpecs(
+  facts: Record<string, unknown> = {},
+  details: Record<string, unknown> | null = null
+): React.ReactNode[] {
   // DIMM is what a desktop kit is anyway; in a row it only pushed CL16 off
   // the edge. The sheet still names it, and SODIMM is still shown here.
-  return getSpecChips(facts).filter((c) => c !== 'DIMM').map((c, i) => (
-    <span key={i}>{c}</span>
-  ));
+  const chips = [...getSpecChips(facts).filter((c) => c !== 'DIMM'), ...getDetailChips(details)];
+  return chips.slice(0, 4).map((c, i) => <span key={i}>{c}</span>);
 }
 
 export const Row: React.FC<RowProps> = ({
@@ -114,7 +117,7 @@ export const Row: React.FC<RowProps> = ({
 
   // Details under location
   const facts = listing.fit?.facts || {};
-  const chips = renderSpecs(facts);
+  const chips = renderSpecs(facts, (listing.details as Record<string, unknown>) || null);
 
   return (
     <article

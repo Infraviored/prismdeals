@@ -131,7 +131,7 @@ describe('huntSave', () => {
         huntType: 'shortlist',
         models: ['Yamaha R1 RN19', 'Honda CBR 1000 RR'],
         musts: [{ id: 'powerPs', label: 'mindestens 170 PS', type: 'number', want: { min: 170 } }],
-        prefs: [],
+        prefs: [{ id: 'ABS', label: 'ABS', want: { text: 'ABS' }, type: 'text' }],
         sizes: [],
         place: null,
         locationId: '7074',
@@ -154,7 +154,8 @@ describe('huntSave', () => {
       expect(calls[0].body.name).toBe('Yamaha R1 RN19 / Honda CBR 1000 RR');
       expect(calls[1].body.campaign_id).toBe(101);
       expect(calls[2].body.requirements).toEqual([
-        { id: 'powerPs', label: 'mindestens 170 PS', importance: 'high', buyer_wants: { min: 170 } },
+        { id: 'own_mindestens_170_ps', label: 'mindestens 170 PS', importance: 'high', own: true, buyer_wants: { min: 170 } },
+        { id: 'own_abs', label: 'ABS', importance: 'low', own: true, buyer_wants: { present: true } },
       ]);
     });
   });

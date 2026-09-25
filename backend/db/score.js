@@ -49,7 +49,8 @@ function stateOf(field, facts) {
   const wants = field.buyer_wants || {};
   const value = facts[field.id];
   if (value === null || value === undefined) return 'open';
-  if (wants.present === true) return 'met';
+  // "ohne ABS" is a stated no, not a stated fact that happens to exist.
+  if (wants.present === true) return value === false ? 'violated' : 'met';
   return contradicts(wants, value) ? 'violated' : 'met';
 }
 
@@ -85,6 +86,8 @@ function scoreListing(listing, fields) {
 
   const gate = { met: [], violated: [], open: [] };
   const soft = { met: 0, total: 0 };
+  // Wishes by name, so the sheet can say which ones this offer brings.
+  const wishes = { met: [], missed: [], open: [] };
   const judgedWants = listing.rank_wants || null;
   const states = requirements.map(field => {
     const fromRun = judged?.[field.id];
@@ -102,6 +105,8 @@ function scoreListing(listing, fields) {
     } else {
       soft.total += 1;
       if (states[i] === 'met') soft.met += 1;
+      const label = field.label || formatRequirementText(field);
+      wishes[states[i] === 'met' ? 'met' : states[i] === 'violated' ? 'missed' : 'open'].push(label);
     }
   });
   const gateFactor = gate.violated.length ? 0 : Math.pow(OPEN_CAP, gate.open.length);
@@ -120,8 +125,11 @@ function scoreListing(listing, fields) {
   // of what matters they bothered to state, and how much they show.
   const conditionText = String(listing.details?.Zustand || '').trim().toLowerCase();
   const condition = conditionText in CONDITION ? CONDITION[conditionText] : null;
-  const stated = requirements.length
-    ? states.filter(state => state !== 'open').length / requirements.length
+  // How much of what must be true the seller bothered to state. Wishes stay
+  // out: "ohne ABS" is honest, not a better-documented offer.
+  const hardStates = states.filter((_, i) => isHard(requirements[i]));
+  const stated = hardStates.length
+    ? hardStates.filter(state => state !== 'open').length / hardStates.length
     : null;
   const photoCount = Array.isArray(listing.images) ? listing.images.length : 0;
   const photos = clamp01(photoCount / 4);
@@ -145,6 +153,7 @@ function scoreListing(listing, fields) {
   return {
     score,
     gate: { ...gate, factor: gateFactor },
+    wishes,
     axes: grades,
     market_basis: listing.market_basis || null,
   };

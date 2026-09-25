@@ -208,7 +208,9 @@ export const StepDetails: React.FC<StepDetailsProps> = ({
       )}
 
       {/* Features Hunt Type */}
-      {huntType === 'features' && (
+      {/* Musts and wishes in the buyer's words, for every hunt that has
+          something to judge: "ABS wäre schön" for a model list too. */}
+      {['features', 'shortlist', 'class', 'fit'].includes(huntType) && (
         <DetailsFeatures
           musts={musts}
           onChangeMusts={onChangeMusts}

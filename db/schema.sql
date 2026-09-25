@@ -482,3 +482,15 @@ CREATE INDEX IF NOT EXISTS idx_claims_kind ON claims(kind);
 -- Which knowledge node the comparative call assigned to each listing.
 -- Nullable for runs that predate P7.
 ALTER TABLE listing_ranks ADD COLUMN node_key TEXT;
+
+-- Build years of a model generation ("Yamaha R1" "RN19" -> 2007 to 2008),
+-- asked once from the small model and kept. A model list naming a generation
+-- judges each offer's first registration against it.
+CREATE TABLE IF NOT EXISTS model_generations (
+    model      TEXT NOT NULL,
+    generation TEXT NOT NULL,
+    year_from  INTEGER,
+    year_to    INTEGER,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (model, generation)
+);

@@ -92,11 +92,19 @@ export function huntDisplayName(params: {
   return text.slice(0, 40).replace(/\s+\S*$/, '') + ' …';
 }
 
-/** A must from the intent in the requirement shape the judge and score read. */
-export function toRequirement(req: HuntRequirement): {
+/**
+ * A must or wish from the setup in the requirement shape the judge and score
+ * read. Written in the buyer's words, so it is read as words ("own_" fields,
+ * scraper/wishes.py); a wish only lifts the score, a must decides.
+ */
+export function toRequirement(
+  req: HuntRequirement,
+  importance: 'high' | 'low' = 'high'
+): {
   id: string;
   label: string;
-  importance: 'high';
+  importance: 'high' | 'low';
+  own: true;
   buyer_wants: Record<string, unknown>;
 } | null {
   const want = req.want || {};
@@ -107,8 +115,12 @@ export function toRequirement(req: HuntRequirement): {
   if (typeof want.match === 'boolean') wants.match = want.match;
   if (typeof want.match === 'string' && want.match) wants.preferred = [want.match];
   if (want.present === true) wants.present = true;
-  if (!req.id || Object.keys(wants).length === 0) return null;
-  return { id: req.id, label: req.label || req.id, importance: 'high', buyer_wants: wants };
+  // Typed in as free text ("ABS"): it should be there.
+  if (Object.keys(wants).length === 0) wants.present = true;
+  const label = (req.label || req.id || '').trim();
+  if (!label) return null;
+  const slug = label.toLowerCase().replace(/[^a-z0-9äöüß]+/g, '_').replace(/^_|_$/g, '');
+  return { id: `own_${slug}`, label, importance, own: true, buyer_wants: wants };
 }
 
 async function postJson(url: string, method: string, body: unknown) {
@@ -180,9 +192,10 @@ export async function executeHuntSave(
     terms: finalTerms,
   });
 
-  const requirements = params.musts
-    .map(toRequirement)
-    .filter((r): r is NonNullable<ReturnType<typeof toRequirement>> => r !== null);
+  const requirements = [
+    ...params.musts.map((m) => toRequirement(m, 'high')),
+    ...params.prefs.map((p) => toRequirement(p, 'low')),
+  ].filter((r): r is NonNullable<ReturnType<typeof toRequirement>> => r !== null);
   if (requirements.length > 0) {
     await postJson(`/api/campaigns/${campaignId}/requirements`, 'PUT', { requirements });
   }
