@@ -247,7 +247,9 @@ def run_probe(payload, conn=None, on_rung=None, fetch_fn=None):
             "gain": round(gain, 3),
             "overlap": round(overlap, 3),
             "likely_share": round(likely_share, 3),
-            "kept": not drop,
+            # A term that found nothing is never kept: saved, it became a
+            # search that crawls empty pages forever ("yamaha-r1-rn19").
+            "kept": not drop and sampled > 0,
             "prices": prices,
         }
         rung_records.append(rung_record)

@@ -227,3 +227,28 @@ def test_page_two_goes_where_the_crawler_puts_it():
         "https://www.kleinanzeigen.de/s-oled-laptop/seite:2/preis::800/k0c278"
     )
     assert search_url.with_page(url, 1) == url
+
+
+def test_a_term_that_finds_nothing_is_never_kept(tmp_path):
+    empty = _make_page_html(0, [])
+    full = _make_page_html(
+        40,
+        [
+            _make_card_html(f"60{i}", f"Yamaha R1 {i}", "Top", 5000 + i)
+            for i in range(20)
+        ],
+    )
+    payload = {
+        "category_code": "c305",
+        "hunt_type": "shortlist",
+        "musts": [],
+        "models": ["Yamaha R1 RN19"],
+    }
+    conn = db_schema.connect(str(tmp_path / "zero.db"))
+    result = probe.run_probe(
+        payload,
+        conn=conn,
+        fetch_fn=lambda url: MockResponse(empty if "rn19" in url else full),
+    )
+    assert "Yamaha R1 RN19" not in result["chosen_terms"]
+    assert "Yamaha R1" in result["chosen_terms"]

@@ -104,6 +104,11 @@ def _shortlist_ladder(seed_terms, musts, prefs, models, category_code, filters):
     rungs = []
     for model in models:
         rungs.append(_make_rung(model, f"model: {model}"))
+        # Sellers write "R1", rarely "R1 RN19": the generation code narrows a
+        # model to nothing ("yamaha r1 rn19": 0 offers, "yamaha r1": 115).
+        general = _without_generation(model)
+        if general and general.lower() != model.lower():
+            rungs.append(_make_rung(general, f"model: {general}"))
         # Add common spelling variants (no spaces, with spaces)
         compact = re.sub(r"\s+", "", model)
         if compact.lower() != model.lower():
@@ -113,6 +118,18 @@ def _shortlist_ladder(seed_terms, musts, prefs, models, category_code, filters):
         if not any(term.lower() == m.lower() for m in models):
             rungs.append(_make_rung(term, f"seed: {term}"))
     return rungs
+
+
+def _without_generation(model):
+    """ "Yamaha R1 RN19" -> "Yamaha R1"; "BMW 3er E90" -> "BMW 3er".
+
+    A trailing token of one to three letters and digits after the model is
+    taken for a generation or frame code.
+    """
+    words = model.split()
+    if len(words) >= 3 and re.fullmatch(r"[A-Za-z]{1,3}\d{1,3}", words[-1]):
+        return " ".join(words[:-1])
+    return None
 
 
 def _class_ladder(seed_terms, musts, prefs, models, category_code, filters):

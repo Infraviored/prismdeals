@@ -124,3 +124,17 @@ def test_ladder_caps_at_max_rungs():
         category_code="c88",
     )
     assert len(rungs) == probe_ladder.MAX_RUNGS
+
+
+def test_a_model_list_also_searches_without_the_generation_code():
+    import probe_ladder
+
+    terms = [
+        r["term"]
+        for r in probe_ladder.build_ladder(
+            "shortlist", [], [], [], ["Yamaha R1 RN19", "Honda CBR 1000 RR"], "c305", {}
+        )
+    ]
+    # Sellers write "R1", rarely "R1 RN19" (0 offers vs 115, measured).
+    assert "Yamaha R1" in terms
+    assert "Honda CBR 1000" not in terms  # "RR" is part of the model, not a code

@@ -3,6 +3,7 @@ import {
   applyRelaxToMarketPicture,
   getLikelyCountForBudget,
   calculateRungStats,
+  attributesToFilters,
 } from '../probeAggregation';
 import type { MarketPicture, ProbeRung } from '../../types';
 
@@ -169,5 +170,11 @@ describe('probeAggregation', () => {
       expect(stats.keptRungs).toBe(2);
       expect(stats.totalHits).toBe(178);
     });
+  });
+
+  it('turns URL filter attributes into the probe filter map', () => {
+    expect(
+      attributesToFilters(['motorraeder_roller.km_i:,30000', 'motorraeder_roller.ez_i:2010,', 'broken'])
+    ).toEqual({ 'motorraeder_roller.km_i': ',30000', 'motorraeder_roller.ez_i': '2010,' });
   });
 });

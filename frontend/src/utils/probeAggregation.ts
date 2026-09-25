@@ -112,3 +112,19 @@ export function calculateRungStats(rungs: ProbeRung[]): {
     totalNewLikely,
   };
 }
+
+
+/**
+ * URL filter attributes ("motorraeder_roller.km_i:,30000") as the probe's
+ * filter map. The probe searches with the same filters the saved search will
+ * carry; without them the market picture showed offers the search then never
+ * found (R1 / CBR with first registration from 2010: 2 and 0, not 115 and 56).
+ */
+export function attributesToFilters(attributes: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const attribute of attributes) {
+    const at = attribute.indexOf(':');
+    if (at > 0) out[attribute.slice(0, at)] = attribute.slice(at + 1);
+  }
+  return out;
+}

@@ -9,6 +9,7 @@ import type { Place } from '../components/PlaceInput';
 import { useProbe } from './useProbe';
 import { slugify } from '../utils/searchUrl';
 import { broadenQuery } from '../utils/searchTerms';
+import { attributesToFilters } from '../utils/probeAggregation';
 import { executeHuntSave } from '../utils/huntSave';
 
 export interface UseHuntSetupOptions {
@@ -173,8 +174,13 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
       seedTerms = [broadenQuery(intentText.trim()) || intentText.trim()];
     }
 
+    // The same filters the saved search will carry (km, first registration
+    // ...). Without them the market picture showed offers the search then
+    // never found.
+    const filters = attributesToFilters(attributes);
     const payload = {
       category_code: effectiveCategory,
+      filters,
       location_id: locationId,
       radius_km: radius,
       price: effectivePrice,
@@ -209,6 +215,7 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
     prefs,
     probe,
     parsedIntent,
+    attributes,
   ]);
 
   // Step transitions
