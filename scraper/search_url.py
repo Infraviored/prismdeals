@@ -365,9 +365,10 @@ def for_hunt(
 ):
     """A search URL from a hunt's frame, with the category's own path slug.
 
-    `compose_search_url` needs a slug for the first path part. Without one the
-    query took its place (`/s-oled-laptop/.../k0c278`), a page the site answers
-    with zero results -- every probe and every benchmark counted nothing.
+    The slug is cosmetic (the site answers `/s-oled-laptop/k0c278` and
+    `/s-notebooks/oled-laptop/k0c278` alike, measured). What mattered is the
+    radius: a place without one is that town only (Vilgertshofen: 11 offers
+    instead of 56 257), which made every probe count nothing.
     """
     from intent_taxonomy import find_category
 

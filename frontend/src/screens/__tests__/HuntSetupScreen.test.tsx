@@ -52,11 +52,19 @@ describe('HuntSetupScreen', () => {
           body: stream,
         });
       }
-      if (url === '/api/search-families') {
+      if (url === '/api/campaigns') {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({ id: 55, campaign_id: 202 }),
+          json: () => Promise.resolve({ success: true, id: 202 }),
+        });
+      }
+      if (url === '/api/search-families') {
+        // As the real endpoint answers: the family, no campaign.
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: 55 }),
         });
       }
       if (url.startsWith('/api/campaigns/')) {

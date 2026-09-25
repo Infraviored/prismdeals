@@ -234,4 +234,11 @@ describe('the search list reads a filtered URL', () => {
     expect(filtered).toBe(plain);
     expect(filtered).toContain('30 km');
   });
+
+  it('writes no place without a radius: that would be one town only', () => {
+    const unlimited = composeSearchUrl({ locationSlug: 'vilgertshofen', locationId: '7074', radius: null, query: 'motorrad', category: '305' });
+    expect(unlimited).toBe('https://www.kleinanzeigen.de/s-motorrad/k0c305');
+    const limited = composeSearchUrl({ locationSlug: 'vilgertshofen', locationId: '7074', radius: 200, query: 'motorrad', category: '305' });
+    expect(limited).toBe('https://www.kleinanzeigen.de/s-vilgertshofen/motorrad/k0c305l7074r200');
+  });
 });

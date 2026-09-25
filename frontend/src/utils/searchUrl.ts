@@ -198,7 +198,10 @@ export function composeSearchUrl({
   const cleanQ = query ? slugify(query) : null;
   const cleanCat = categorySlug ? slugify(categorySlug) : null;
 
-  const hasLocation = Boolean(locationId || (cleanLoc && cleanLoc !== 'suchanfrage'));
+  // A place without a radius is that one town only ("Vilgertshofen": 6
+  // motorcycles). No limit means no place in the URL.
+  const hasRadius = radius !== null && radius !== undefined && Number(radius) > 0;
+  const hasLocation = hasRadius && Boolean(locationId || (cleanLoc && cleanLoc !== 'suchanfrage'));
 
   let root: string;
   let queryInPath: string | null;

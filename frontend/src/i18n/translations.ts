@@ -240,6 +240,7 @@ export const translations = {
       comparing: "Comparing…"
     },
     hunt: {
+      filtersApplyToAll: "These filters apply to each search: {{models}}. There is no brand filter, the models already name it.",
       setupTitle: "New Hunt",
       step1Title: "What are you looking for?",
       step1Subtitle: "Describe what you want in your own words",
@@ -559,6 +560,7 @@ export const translations = {
       comparing: "Vergleicht…"
     },
     hunt: {
+      filtersApplyToAll: "Diese Filter gelten für jede Suche: {{models}}. Einen Markenfilter gibt es nicht, die Modelle legen die Marke schon fest.",
       setupTitle: "Neue Suche",
       step1Title: "Was suchst du?",
       step1Subtitle: "Beschreibe in eigenen Worten, wonach du suchst",

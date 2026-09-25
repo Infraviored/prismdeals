@@ -200,15 +200,13 @@ describe('EditScreen', () => {
     )!;
     const saved = JSON.parse(String((init as RequestInit).body));
 
-    // The grammar is /s-<place>/[preis:a:b/]<term>/k0[c<cat>]l<place>r<radius>.
-    expect(saved.base_url).toMatch(
-      /^https:\/\/www\.kleinanzeigen\.de\/s-landsberg-am-lech\//
-    );
+    // No radius was chosen: the search is not limited, so no place is
+    // written. A place without a radius is that one town on Kleinanzeigen
+    // (measured: Vilgertshofen alone 11 motorcycles, with r200 56 257).
+    expect(saved.base_url).not.toContain('landsberg');
+    expect(saved.base_url).not.toMatch(/l7437/);
     expect(saved.base_url).toContain('preis::150');
-    // The first search term, not the hunt's name.
-    expect(saved.base_url).toContain('/brother-hl-l2350dw/');
-    // No radius was chosen, so none is written: the search is not limited.
-    expect(saved.base_url).toMatch(/\/k0(c\d+)?l7437$/);
+    expect(saved.base_url).toContain('brother-hl-l2350dw');
 
     expect(onSavedMock).toHaveBeenCalled();
   });

@@ -67,10 +67,74 @@ export function compileHuntTerms(params: {
   return [{ term: slugify(fallback), label: fallback, enabled: true }];
 }
 
+/**
+ * A name a person recognises on the start screen: the models for a model
+ * list, the class for a class hunt, else the first search term. The whole
+ * sentence ("Supersportmotorrad mit min. 170PS. Yamaha r1 rn19 oder ...")
+ * was the name before.
+ */
+export function huntDisplayName(params: {
+  intentText: string;
+  huntType: HuntType;
+  models: string[];
+  parsedIntent: HuntParsedIntent | null;
+}): string {
+  const { intentText, huntType, models, parsedIntent } = params;
+  const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+  if ((huntType === 'shortlist' || huntType === 'class') && models.length > 0) {
+    return models.slice(0, 3).join(' / ');
+  }
+  if (huntType === 'class' && parsedIntent?.class) return cap(parsedIntent.class);
+  const term = parsedIntent?.search_terms?.[0];
+  if (term) return cap(term);
+  const text = intentText.trim();
+  if (text.length <= 40) return text || 'Neue Suche';
+  return text.slice(0, 40).replace(/\s+\S*$/, '') + ' …';
+}
+
+/** A must from the intent in the requirement shape the judge and score read. */
+export function toRequirement(req: HuntRequirement): {
+  id: string;
+  label: string;
+  importance: 'high';
+  buyer_wants: Record<string, unknown>;
+} | null {
+  const want = req.want || {};
+  const wants: Record<string, unknown> = {};
+  if (typeof want.min === 'number') wants.min = want.min;
+  if (typeof want.max === 'number') wants.max = want.max;
+  if (Array.isArray(want.oneOf) && want.oneOf.length) wants.preferred = want.oneOf;
+  if (typeof want.match === 'boolean') wants.match = want.match;
+  if (typeof want.match === 'string' && want.match) wants.preferred = [want.match];
+  if (want.present === true) wants.present = true;
+  if (!req.id || Object.keys(wants).length === 0) return null;
+  return { id: req.id, label: req.label || req.id, importance: 'high', buyer_wants: wants };
+}
+
+async function postJson(url: string, method: string, body: unknown) {
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `${method} ${url}: ${res.status}`);
+  return data;
+}
+
+/**
+ * Saves a new hunt: the hunt itself (campaign), its search terms (family,
+ * one search per term), and the buyer's musts as requirements.
+ *
+ * The family endpoint does not create a campaign. The first version expected
+ * it to and got back no campaign id: the terms were saved without a hunt, the
+ * start screen never showed it, and the results screen opened another hunt's
+ * list. The crawl is started by the caller (App), not here as well.
+ */
 export async function executeHuntSave(
   params: HuntSaveParams
 ): Promise<{ campaignId: number; familyId: number }> {
-  const huntName = params.intentText.trim().slice(0, 80) || 'Neue Suche';
+  const huntName = huntDisplayName(params);
   const finalTerms = compileHuntTerms({
     intentText: params.intentText,
     models: params.models,
@@ -85,56 +149,43 @@ export async function executeHuntSave(
     maxPrice: params.maxPrice,
     query: finalTerms[0]?.term,
     category: params.categoryId,
+    // Without a place the first path part is free; filled with the first term
+    // it showed up as the hunt's place on the start screen.
+    categorySlug: 'suchanfrage',
     attributes: params.attributes,
   });
 
-  // 1. Create search family and new campaign
-  const familyRes = await fetch('/api/search-families', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: huntName,
-      base_url: composedBaseUrl,
-      terms: finalTerms,
-    }),
+  const intentPayload = {
+    ...(params.parsedIntent || {}),
+    text: params.intentText,
+    musts: params.musts,
+    prefs: params.prefs,
+    models: params.models,
+    sizes: params.sizes,
+    budget: { min: null, max: params.maxPrice },
+  };
+
+  const campaign = await postJson('/api/campaigns', 'POST', {
+    name: huntName,
+    hunt_type: params.huntType,
+    intent_json: intentPayload,
+  });
+  const campaignId = Number(campaign.id);
+  if (!campaignId) throw new Error('Die Suche wurde nicht angelegt.');
+
+  const family = await postJson('/api/search-families', 'POST', {
+    name: huntName,
+    base_url: composedBaseUrl,
+    campaign_id: campaignId,
+    terms: finalTerms,
   });
 
-  const familyData = await familyRes.json();
-  if (!familyRes.ok) {
-    throw new Error(familyData.error || 'Failed to save search family');
+  const requirements = params.musts
+    .map(toRequirement)
+    .filter((r): r is NonNullable<ReturnType<typeof toRequirement>> => r !== null);
+  if (requirements.length > 0) {
+    await postJson(`/api/campaigns/${campaignId}/requirements`, 'PUT', { requirements });
   }
 
-  const campaignId = familyData.campaign_id;
-  const familyId = familyData.id;
-
-  // 2. Persist hunt attributes to campaign
-  if (campaignId) {
-    const intentPayload = {
-      text: params.intentText,
-      musts: params.musts,
-      prefs: params.prefs,
-      models: params.models,
-      sizes: params.sizes,
-      budget: { max: params.maxPrice },
-      ...(params.parsedIntent || {}),
-    };
-
-    await fetch(`/api/campaigns/${campaignId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        hunt_type: params.huntType,
-        intent_json: JSON.stringify(intentPayload),
-      }),
-    }).catch(() => {});
-
-    // 3. Start initial harvest crawl
-    await fetch('/api/scraper/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ campaign_id: campaignId }),
-    }).catch(() => {});
-  }
-
-  return { campaignId, familyId };
+  return { campaignId, familyId: Number(family.id) };
 }

@@ -14,6 +14,8 @@ export interface StepLocationProps {
   categoryId: string | null;
   attributes: string[];
   intentQuery: string;
+  /** Named models: each becomes its own search with the filters below. */
+  models?: string[];
   onPlaceChange: (place: Place | null) => void;
   onRadiusChange: (radius: number | null) => void;
   onMaxPriceChange: (price: number | null) => void;
@@ -31,6 +33,7 @@ export const StepLocation: React.FC<StepLocationProps> = ({
   categoryId,
   attributes,
   intentQuery,
+  models = [],
   onPlaceChange,
   onRadiusChange,
   onMaxPriceChange,
@@ -87,8 +90,15 @@ export const StepLocation: React.FC<StepLocationProps> = ({
           <MaxPriceField value={maxPrice} onChange={onMaxPriceChange} />
         </div>
 
-        {/* Category & Attributes */}
+        {/* Several models: the filters go into every model's search, and a
+            brand filter would empty the search of the other brand. */}
+        {models.length > 1 && (
+          <p data-testid="hunt-filters-apply-to-all" className="text-sm text-[#8FA6A1]">
+            {t('hunt.filtersApplyToAll', { models: models.join(', ') })}
+          </p>
+        )}
         <CategoryFilters
+          hideFilter={models.length > 1 ? key => /\.(marke|brand|model|modell)_s$/.test(key) : undefined}
           categoryId={categoryId}
           attributes={attributes}
           term={intentQuery}

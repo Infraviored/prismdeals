@@ -63,9 +63,12 @@ ruled out, the detail page decides.
 | B8 tools | 2 | 3 | 3 | 1781 | – | 39 |
 
 Found in the review, before this run every hunt counted **0**:
-- ~~probe URLs from `compose_search_url` without a category slug~~ *dropped: the query became the
-  first path part (`/s-oled-laptop/…/k0c278`), a page with no results. `search_url.for_hunt` adds
-  the taxonomy slug; no radius now means nationwide, not "this one town".*
+- ~~probe URLs from `compose_search_url` without a category slug~~ *dropped: first diagnosis was
+  wrong. The query as first path part works (`/s-oled-laptop/k0c278`: 289 offers, same as with the
+  category slug). The zeros came from a place without a radius, which the site reads as that one
+  town (Vilgertshofen: 11 motorcycles, with r200: 56 257). No radius now means no place in the URL,
+  in the probe (`search_url.for_hunt`) and in the frontend (`composeSearchUrl`). The old live
+  "Motorrad" hunt (6 offers) was a town-only search for the same reason.*
 - the site prints "1 - 25 von 139 …" on category searches; `result_list.total_results` read only
   "N Ergebnisse" → totals were None.
 - ~~gain = new "likely" offers~~ *dropped: exact and fit hunts have almost nothing "likely" before the

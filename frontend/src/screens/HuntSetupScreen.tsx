@@ -139,6 +139,13 @@ export const HuntSetupScreen: React.FC<HuntSetupScreenProps> = ({
             categoryId={setup.categoryId}
             attributes={setup.attributes}
             intentQuery={setup.intentText}
+            models={
+              setup.huntType === 'shortlist'
+                ? setup.models
+                : setup.huntType === 'class'
+                ? setup.proposedModels.filter((m) => m.selected !== false).map((m) => m.model)
+                : []
+            }
             onPlaceChange={setup.handlePlaceChange}
             onRadiusChange={setup.setRadius}
             onMaxPriceChange={setup.setMaxPrice}

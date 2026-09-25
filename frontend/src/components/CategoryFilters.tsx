@@ -29,6 +29,8 @@ export interface CategoryFiltersProps {
   term?: string;
   onCategoryChange: (id: string | null) => void;
   onAttributesChange: (attributes: string[]) => void;
+  /** Filters not to offer, e.g. the brand when the hunt names its models. */
+  hideFilter?: (key: string) => boolean;
 }
 
 interface Suggestion {
@@ -54,6 +56,7 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
   term = '',
   onCategoryChange,
   onAttributesChange,
+  hideFilter,
 }) => {
   const { t } = useTranslation();
   const [tree, setTree] = useState<TaxonomyCategory[]>([]);
@@ -198,7 +201,7 @@ export const CategoryFilters: React.FC<CategoryFiltersProps> = ({
         </div>
       )}
 
-      {filters.map(filter => {
+      {filters.filter(filter => !hideFilter?.(filter.key)).map(filter => {
         const current = valueOf(filter.key);
         const id = `filter-${filter.key}`;
 

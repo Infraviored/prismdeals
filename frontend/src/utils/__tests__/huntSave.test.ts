@@ -117,88 +117,45 @@ describe('huntSave', () => {
   });
 
   describe('executeHuntSave', () => {
-    it('creates search family, updates campaign intent, and starts scraper crawl', async () => {
-      globalThis.fetch = vi.fn().mockImplementation((url: string) => {
-        if (url === '/api/search-families') {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            json: () => Promise.resolve({ id: 42, campaign_id: 101 }),
-          });
-        }
-        if (url.startsWith('/api/campaigns/')) {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            json: () => Promise.resolve({ success: true }),
-          });
-        }
-        if (url === '/api/scraper/start') {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            json: () => Promise.resolve({ started: true }),
-          });
-        }
-        return Promise.reject(new Error(`Unexpected url: ${url}`));
+    it('creates the hunt first, hangs the terms on it and stores the musts', async () => {
+      const calls: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
+      globalThis.fetch = vi.fn().mockImplementation((url: string, init: RequestInit) => {
+        calls.push({ url, method: init.method || 'GET', body: JSON.parse(String(init.body || '{}')) });
+        // The real family endpoint answers with the family only: no campaign.
+        const body = url === '/api/campaigns' ? { success: true, id: 101 } : { id: 42 };
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
       });
 
-      const res = await executeHuntSave({
-        intentText: 'ThinkPad OLED 32GB',
-        huntType: 'features',
-        models: [],
-        musts: [{ id: 'ram', label: '32 GB' }],
-        prefs: [{ id: 'screen', label: 'OLED' }],
+      const result = await executeHuntSave({
+        intentText: 'Supersportmotorrad mit min. 170PS. Yamaha r1 rn19 oder Honda CBR 1000 rr',
+        huntType: 'shortlist',
+        models: ['Yamaha R1 RN19', 'Honda CBR 1000 RR'],
+        musts: [{ id: 'powerPs', label: 'mindestens 170 PS', type: 'number', want: { min: 170 } }],
+        prefs: [],
         sizes: [],
-        place: {
-          name: 'Berlin',
-          label: 'Berlin (10115)',
-          qualifier: '',
-          state: 'Berlin',
-          postal_code: '10115',
-          lat: 52.5,
-          lon: 13.4,
-        },
-        locationId: '3331',
-        locationSlug: 'berlin',
-        radius: 30,
-        maxPrice: 800,
-        categoryId: '278',
+        place: null,
+        locationId: '7074',
+        locationSlug: 'vilgertshofen',
+        radius: 200,
+        maxPrice: 7000,
+        categoryId: '305',
         attributes: [],
         parsedIntent: null,
         probeMarketPicture: mockMarketPicture,
         probeRungs: mockRungs,
       });
 
-      expect(res.campaignId).toBe(101);
-      expect(res.familyId).toBe(42);
-
-      // Verify POST /api/search-families call
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        '/api/search-families',
-        expect.objectContaining({
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        })
-      );
-
-      // Verify PATCH /api/campaigns/101 call
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        '/api/campaigns/101',
-        expect.objectContaining({
-          method: 'PATCH',
-          body: expect.stringContaining('"hunt_type":"features"'),
-        })
-      );
-
-      // Verify scraper start call
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        '/api/scraper/start',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ campaign_id: 101 }),
-        })
-      );
+      expect(result).toEqual({ campaignId: 101, familyId: 42 });
+      expect(calls.map(c => `${c.method} ${c.url}`)).toEqual([
+        'POST /api/campaigns',
+        'POST /api/search-families',
+        'PUT /api/campaigns/101/requirements',
+      ]);
+      expect(calls[0].body.name).toBe('Yamaha R1 RN19 / Honda CBR 1000 RR');
+      expect(calls[1].body.campaign_id).toBe(101);
+      expect(calls[2].body.requirements).toEqual([
+        { id: 'powerPs', label: 'mindestens 170 PS', importance: 'high', buyer_wants: { min: 170 } },
+      ]);
     });
   });
 });
