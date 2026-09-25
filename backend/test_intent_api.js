@@ -2,7 +2,35 @@ const express = require('express');
 const assert = require('assert');
 const router = require('./intent_api');
 
+// The model proposals come from a language model, which CI does not have.
+// A proposal cached for the class is what the endpoint answers first, so the
+// test gets its own store with one: deterministic, no network, no key.
+async function storeWithCachedProposals() {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const sqlite3 = require('sqlite3');
+  const { applySchema } = require('./db/schema');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'intent-')), 'store.db');
+  const db = new sqlite3.Database(file);
+  await applySchema(db);
+  const now = new Date().toISOString();
+  const models = ['Honda CBR 1000 RR', 'Yamaha R1', 'Suzuki GSX-R 1000', 'Kawasaki ZX-10R', 'BMW S 1000 RR', 'Aprilia RSV4'];
+  for (const model of models) {
+    await new Promise((ok, no) =>
+      db.run(
+        'INSERT INTO class_models (node_key, model, years, proposed_at) VALUES (?, ?, ?, ?)',
+        ['305:1000cc-supersportler', model, '2008-2012', now],
+        err => (err ? no(err) : ok())
+      )
+    );
+  }
+  await new Promise(ok => db.close(ok));
+  return file;
+}
+
 async function test() {
+  process.env.PRISMDEALS_DB = await storeWithCachedProposals();
   const app = express();
   app.use(express.json());
   app.use(router);
