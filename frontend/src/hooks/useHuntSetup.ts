@@ -226,7 +226,8 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
       } else {
         setStep(3);
         if (huntType === 'class' && proposedModels.length === 0) {
-          fetchClassProposals(intentText, maxPrice, categoryId);
+          // The class, not the whole sentence: it keys the 30-day cache of proposals.
+          fetchClassProposals(parsedIntent?.class || intentText, maxPrice, categoryId);
         }
       }
     } else if (step === 3) {
@@ -244,6 +245,7 @@ export function useHuntSetup({ onSaved }: UseHuntSetupOptions = {}) {
     categoryId,
     fetchClassProposals,
     launchProbe,
+    parsedIntent,
   ]);
 
   const prevStep = useCallback(() => {

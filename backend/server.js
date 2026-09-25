@@ -3062,6 +3062,8 @@ app.post('/api/scrape', (req, res) => {
     python.on('close', (code) => {
       console.log(`Python scraper exited with code ${code}`);
       activeScraperProcess = null;
+      // Fresh offers deserve a fresh comparison (about 0.004 USD a run).
+      if (code === 0 && campaignId) require('./compare_api').startCompare(Number(campaignId));
     });
     
     res.json({ success: true, message: 'Scraping started' });

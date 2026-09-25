@@ -18,6 +18,36 @@ const router = express.Router();
 const running = new Map();
 const failures = new Map();
 
+/**
+ * Runs the comparison for one campaign in the background, once at a time.
+ * Called by the button and after every finished crawl, so the ranks follow
+ * the market without anyone asking.
+ */
+function startCompare(campaignId) {
+  if (!campaignId || running.has(campaignId)) return false;
+  const child = spawn(findPython(), [path.join(__dirname, '..', 'scraper', 'compare_cli.py'), String(campaignId)], {
+    env: { ...process.env },
+    cwd: path.join(__dirname, '..', 'scraper'),
+  });
+  running.set(campaignId, { started_at: new Date().toISOString() });
+  let stderr = '';
+  child.stderr.on('data', d => { stderr = (stderr + d.toString()).slice(-2000); });
+  child.on('error', err => {
+    running.delete(campaignId);
+    failures.set(campaignId, String(err.message || err));
+  });
+  child.on('close', code => {
+    running.delete(campaignId);
+    if (code !== 0) {
+      console.error('compare_cli.py failed:', stderr);
+      failures.set(campaignId, stderr.slice(-500));
+    } else {
+      failures.delete(campaignId);
+    }
+  });
+  return true;
+}
+
 function findPython() {
   const candidates = [
     path.join(__dirname, '..', '.venv', 'bin', 'python3'),
@@ -46,24 +76,7 @@ module.exports = (query, get) => {
     // once, run in the background, and let the ranks endpoint say when done.
     if (running.has(campaignId)) return res.status(202).json({ running: true });
 
-    const python = findPython();
-    const script = path.join(__dirname, '..', 'scraper', 'compare_cli.py');
-    const child = spawn(python, [script, String(campaignId)], {
-      env: { ...process.env },
-      cwd: path.join(__dirname, '..', 'scraper'),
-    });
-    running.set(campaignId, { started_at: new Date().toISOString(), error: null });
-    let stderr = '';
-    child.stderr.on('data', d => { stderr = (stderr + d.toString()).slice(-2000); });
-    child.on('close', code => {
-      running.delete(campaignId);
-      if (code !== 0) {
-        console.error('compare_cli.py failed:', stderr);
-        failures.set(campaignId, stderr.slice(-500));
-      } else {
-        failures.delete(campaignId);
-      }
-    });
+    startCompare(campaignId);
     res.status(202).json({ running: true });
   });
 
@@ -188,3 +201,4 @@ function safeJson(text) {
 }
 
 module.exports.attachRanks = attachRanks;
+module.exports.startCompare = startCompare;

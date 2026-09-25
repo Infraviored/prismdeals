@@ -83,10 +83,16 @@ Found in the review, before this run every hunt counted **0**:
 ## 1b. State after wave 1 + review (2026-09-25, live)
 
 - Live: P0, P1, P2, P3, P4, P5 (proposals + market check), P6, P9 on `feat/hunt-engine`.
-- Open: P7 (knowledge nodes, research bridge), P8 (market per node); P5 not yet in the setup UI's
-  class step end-to-end (API takes `frame` and probes each model); comparison is triggered by the
-  "Vergleichen" button, not yet after every crawl; ad-hoc fact extraction in the P6 funnel (§9.1
-  step 4) and incremental insertion (§9.5) not built.
+- Done since: class hunts show each proposed model with offers and usual price (accessory prices
+  below 10 % of the limit ignored — "MV Agusta F4" had a median of 20 €); the comparison runs
+  after every finished crawl, server-side.
+- ~~Ad-hoc fact extraction as a separate funnel step (§9.1 step 4)~~ *dropped: the comparative call
+  already returns facts with quotes for every must by id, validated against the text; a second
+  extraction pass would pay twice for the same facts.*
+- ~~Incremental insertion of new listings against top-10 anchors (§9.5)~~ *dropped for now: a full
+  comparison costs about 0.004 USD and a minute, so it simply reruns after each crawl. Revisit if
+  candidate sets or crawl frequency grow.*
+- Open: P7 (knowledge nodes, research bridge), P8 (market per node) — in progress.
 - Review findings worth remembering (details in the commits):
   - agents reported success with a broken schema (semicolon in a comment) and a red test;
     "tests pass" from an agent is checked, not trusted.

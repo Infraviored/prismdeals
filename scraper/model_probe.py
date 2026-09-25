@@ -97,7 +97,15 @@ def probe_models(models, base, fetch_fn=None):
         hits = [
             c for c in cards if tokens and title_matches(c.get("title", ""), tokens)
         ]
-        prices = [c["price_eur"] for c in hits if c.get("price_eur")]
+        # A keyring or a manual carries the model's name too: "MV Agusta F4"
+        # had a median of 20 EUR. Prices far below the hunt's limit are
+        # accessories, not the thing.
+        floor = 0.1 * price["max"] if price.get("max") else 0
+        prices = [
+            c["price_eur"]
+            for c in hits
+            if c.get("price_eur") and c["price_eur"] >= floor
+        ]
         results[model] = {
             "total": total if total is not None else len(cards),
             "title_hits": len(hits),
