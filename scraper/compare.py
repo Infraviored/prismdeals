@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 import db_schema
+import claims
 from compare_funnel import build_candidate_set, CANDIDATE_CAP
 from compare_prompt import build_compare_prompt, parse_compare_response
 from compare_stability import (
@@ -150,8 +151,8 @@ def _store_run(
             """INSERT INTO listing_ranks
                    (run_id, listing_id, rank, rank_of, reason,
                     musts_json, facts_json, questions_json,
-                    same_as, uncertain, spread)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    same_as, uncertain, spread, node_key)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 run_id,
                 str(entry["id"]),
@@ -164,6 +165,7 @@ def _store_run(
                 json.dumps(entry.get("same_as", []), ensure_ascii=False),
                 1 if entry.get("uncertain") else 0,
                 entry.get("spread"),
+                entry.get("node") or entry.get("node_key") or None,
             ),
         )
 
@@ -193,7 +195,12 @@ def partition_tournament_groups(
     return groups
 
 
-def _tournament(candidates: list[dict], fields: list[dict], market: dict) -> list[dict]:
+def _tournament(
+    candidates: list[dict],
+    fields: list[dict],
+    market: dict,
+    node_knowledge: str = "",
+) -> list[dict]:
     """Tournament for > 30 candidates (§9.4).
 
     Groups of ≤ 30, top 10 of each into a final group.
@@ -210,7 +217,9 @@ def _tournament(candidates: list[dict], fields: list[dict], market: dict) -> lis
     group_winners = []
     for gi, group in enumerate(groups):
         logger.info("Tournament group %d: %d candidates", gi + 1, len(group))
-        prompt = build_compare_prompt(group, fields, market)
+        prompt = build_compare_prompt(
+            group, fields, market, node_knowledge=node_knowledge
+        )
         response_text, _ = _llm_call(prompt, _output_budget(len(group)))
         parsed = parse_compare_response(response_text, group)
         # Take top TOURNAMENT_ADVANCE
@@ -233,6 +242,7 @@ def compare_campaign(
     campaign_id: int,
     db_path: str | None = None,
     num_runs: int = NUM_RUNS,
+    node_knowledge: str | None = None,
 ) -> dict[str, Any]:
     """Full comparative judging for one campaign.
 
@@ -264,9 +274,24 @@ def compare_campaign(
 
     market = _market_stats(conn, campaign_id)
 
+    # Load inherited node knowledge for candidates (P7)
+    if node_knowledge is None:
+        parts = []
+        seen_nodes = set()
+        for c in candidates:
+            nk = claims.node_for_listing(conn, c["id"])
+            if nk and nk not in seen_nodes:
+                seen_nodes.add(nk)
+                text = claims.claims_for_prompt(conn, nk)
+                if text:
+                    parts.append(f"### {nk}\n{text}")
+        node_knowledge = "\n\n".join(parts)
+
     # Tournament if > CANDIDATE_CAP
     if len(candidates) > CANDIDATE_CAP:
-        candidates = _tournament(candidates, fields, market)
+        candidates = _tournament(
+            candidates, fields, market, node_knowledge=node_knowledge
+        )
 
     # Run NUM_RUNS shuffled comparisons
     all_runs: list[list[dict]] = []
@@ -282,7 +307,9 @@ def compare_campaign(
 
     for run_idx in range(num_runs):
         shuffled = shuffle_candidates(candidates, seed=run_idx * 7919)
-        prompt = build_compare_prompt(shuffled, fields, market)
+        prompt = build_compare_prompt(
+            shuffled, fields, market, node_knowledge=node_knowledge
+        )
         response_text, usage = _llm_call(prompt, _output_budget(len(candidates)))
 
         total_usage["tokens_in"] += usage.get("tokens_in", 0)
@@ -348,7 +375,7 @@ def get_latest_ranks(
     run_id = run[0] if isinstance(run, tuple) else run["id"]
     rows = conn.execute(
         """SELECT listing_id, rank, rank_of, reason, musts_json,
-                  facts_json, questions_json, same_as, uncertain, spread
+                  facts_json, questions_json, same_as, uncertain, spread, node_key
              FROM listing_ranks WHERE run_id = ?""",
         (run_id,),
     ).fetchall()
@@ -368,6 +395,7 @@ def get_latest_ranks(
                     "same_as": _safe_json(r[7]),
                     "uncertain": bool(r[8]),
                     "spread": r[9],
+                    "node_key": r[10],
                 }
             )
         else:
@@ -383,6 +411,7 @@ def get_latest_ranks(
                     "same_as": _safe_json(r["same_as"]),
                     "uncertain": bool(r["uncertain"]),
                     "spread": r["spread"],
+                    "node_key": r["node_key"],
                 }
             )
     return results

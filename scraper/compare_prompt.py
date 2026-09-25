@@ -17,10 +17,11 @@ def build_compare_prompt(
     candidates: list[dict],
     fields: list[dict],
     market: dict | None = None,
+    node_knowledge: str = "",
 ) -> str:
     """Builds the comparative judging prompt.
 
-    Structure: hard frame · soft middle (intent + listings) · output format.
+    Structure: hard frame · soft middle (intent + knowledge + listings) · output format.
     """
     parts = []
 
@@ -70,6 +71,10 @@ def build_compare_prompt(
             parts.append(f"- Total listings on market: {count}")
         parts.append("")
 
+    # --- Soft middle: node knowledge (P7) ---
+    if node_knowledge:
+        parts.append(f"## Product knowledge\n{node_knowledge}\n")
+
     # --- Soft middle: candidate listings ---
     parts.append(f"## Candidates ({len(candidates)} listings)\n")
     for c in candidates:
@@ -108,7 +113,7 @@ def build_compare_prompt(
         "Output one JSON object per line (JSON Lines), one per listing ID.\n"
         "Each object must have exactly these fields:\n"
         "```\n"
-        '{"id": "<listing_id>", "rank": <int>, '
+        '{"id": "<listing_id>", "node": "<product/path/key>", "rank": <int>, '
         '"reason": "<max 20 words>", '
         '"musts": {"<requirement_id>": "met|violated|unstated|retrofittable"}, '
         '"facts": {"<field>": {"value": "<value>", "quote": "<exact quote from text>"}}, '
@@ -221,6 +226,7 @@ def parse_compare_response(
         results.append(
             {
                 "id": lid,
+                "node": obj.get("node", ""),
                 "rank": obj.get("rank", len(results) + 1),
                 "reason": str(obj.get("reason", ""))[:100],
                 "musts": musts,

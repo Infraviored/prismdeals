@@ -86,7 +86,7 @@ module.exports = (query, get) => {
 
       const ranks = await query(
         `SELECT listing_id, rank, rank_of, reason, musts_json,
-                facts_json, questions_json, same_as, uncertain, spread
+                facts_json, questions_json, same_as, uncertain, spread, node_key
            FROM listing_ranks WHERE run_id = ?`,
         [run.id],
       );
@@ -102,6 +102,7 @@ module.exports = (query, get) => {
         same_as: safeJson(r.same_as),
         uncertain: !!r.uncertain,
         spread: r.spread,
+        node_key: r.node_key || null,
       }));
 
       res.json({
@@ -146,7 +147,7 @@ async function attachRanks(query, get, listings, campaignId) {
   const placeholders = ids.map(() => '?').join(',');
 
   const ranks = await query(
-    `SELECT listing_id, rank, rank_of, reason, musts_json, questions_json, uncertain, same_as
+    `SELECT listing_id, rank, rank_of, reason, musts_json, questions_json, uncertain, same_as, node_key
        FROM listing_ranks
       WHERE run_id = ? AND listing_id IN (${placeholders})`,
     [run.id, ...ids],
@@ -176,6 +177,7 @@ async function attachRanks(query, get, listings, campaignId) {
         .filter(rank => typeof rank === 'number' && rank !== r.rank);
       listing.rank_musts = safeJson(r.musts_json);
       listing.rank_wants = judgedWants;
+      listing.node_key = r.node_key || null;
     }
   }
 
