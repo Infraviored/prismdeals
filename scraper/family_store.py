@@ -402,8 +402,13 @@ def attach_terms(
 
         if term_id is not None:
             cursor.execute(
-                "INSERT OR IGNORE INTO search_family_searches (family_id, term_id, search_id) "
-                "VALUES (?, ?, ?)",
+                # Back to a URL this term had before (a filter set and reset,
+                # the first term changed and changed back): the old link row
+                # exists with active = 0, and "OR IGNORE" left it off -- the
+                # search stopped being crawled with nothing on screen saying so.
+                "INSERT INTO search_family_searches (family_id, term_id, search_id, active) "
+                "VALUES (?, ?, ?, 1) "
+                "ON CONFLICT(family_id, term_id, search_id) DO UPDATE SET active = 1",
                 (family_id, term_id, search_id),
             )
 
