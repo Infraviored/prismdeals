@@ -191,3 +191,39 @@ def test_a_complete_listing_is_not_harvested_again(db, monkeypatch):
     scraper.harvest_descriptions()
 
     assert calls == [], "a fetched listing must not be fetched again"
+
+
+def test_a_listing_found_again_by_a_running_search_is_harvested(db, monkeypatch):
+    """Its first search was retired by an edit; a running one still finds it.
+
+    The harvester followed listings.search_id only, so after the owner edited a
+    hunt, 44 live listings never got their images or details.
+    """
+    conn = sqlite3.connect(db)
+    conn.execute("INSERT INTO searches VALUES (2, 1, 'http://old', 0)")
+    conn.commit()
+    conn.close()
+    add_listing(db, search_id=2, full_info_obtained=0)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS listing_search_hits "
+        "(listing_id TEXT, search_id INTEGER, first_seen_at TEXT, PRIMARY KEY (listing_id, search_id))"
+    )
+    conn.execute(
+        "INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('l1', 1, '2026-09-25')"
+    )
+    conn.commit()
+    conn.close()
+    calls = []
+    monkeypatch.setattr(
+        scraper,
+        "parse_listing_details_requests",
+        lambda url, session=None: calls.append(url)
+        or {
+            "detailed_description": "Eiche",
+            "details": {"Zustand": "Gut"},
+            "images": ["i"],
+        },
+    )
+    scraper.harvest_descriptions()
+    assert calls == ["http://x/1"]

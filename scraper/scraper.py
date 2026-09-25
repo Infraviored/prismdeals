@@ -493,21 +493,35 @@ def harvest_descriptions(campaign_id=None):
             cursor.execute(
                 """
                 SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
-                JOIN searches s ON l.search_id = s.id
-                WHERE s.enabled = 1 AND s.campaign_id = ? AND (
-                    l.full_info_obtained = 0 OR l.full_info_obtained IS NULL
-                )
+                WHERE (l.full_info_obtained = 0 OR l.full_info_obtained IS NULL)
+                  AND l.delisted_at IS NULL
+                  -- Any running search that found it, not only the first
+                  -- finder: a listing whose first search was retired by an
+                  -- edit was never harvested again.
+                  AND (
+                      EXISTS (SELECT 1 FROM searches s
+                               WHERE s.id = l.search_id AND s.enabled = 1 AND s.campaign_id = ?)
+                      OR EXISTS (
+                      SELECT 1 FROM listing_search_hits h
+                        JOIN searches s ON s.id = h.search_id
+                       WHERE h.listing_id = l.id AND s.enabled = 1 AND s.campaign_id = ?)
+                  )
             """,
-                (campaign_id,),
+                (campaign_id, campaign_id),
             )
         else:
             cursor.execute(
                 """
                 SELECT l.id, l.url, l.title, l.detailed_description FROM listings l
-                JOIN searches s ON l.search_id = s.id
-                WHERE s.enabled = 1 AND (
-                    l.full_info_obtained = 0 OR l.full_info_obtained IS NULL
-                )
+                WHERE (l.full_info_obtained = 0 OR l.full_info_obtained IS NULL)
+                  AND l.delisted_at IS NULL
+                  AND (
+                      EXISTS (SELECT 1 FROM searches s WHERE s.id = l.search_id AND s.enabled = 1)
+                      OR EXISTS (
+                      SELECT 1 FROM listing_search_hits h
+                        JOIN searches s ON s.id = h.search_id
+                       WHERE h.listing_id = l.id AND s.enabled = 1)
+                  )
             """
             )
         rows = cursor.fetchall()
