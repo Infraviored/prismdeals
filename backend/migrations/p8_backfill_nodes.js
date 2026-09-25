@@ -27,7 +27,15 @@ function playbookFromUrl(url) {
   return match ? PLAYBOOK_BY_CATEGORY[match[1]] || null : null;
 }
 
-async function backfillP8Nodes(query, run) {
+// Startup and every crawl's end both run this; one at a time.
+let queue = Promise.resolve();
+function backfillP8Nodes(query, run) {
+  const next = queue.then(() => resolveAllNodes(query, run));
+  queue = next.catch(() => {});
+  return next;
+}
+
+async function resolveAllNodes(query, run) {
   // 1. Ensure table and index
   await run(`
     CREATE TABLE IF NOT EXISTS listing_nodes (
@@ -78,10 +86,11 @@ async function backfillP8Nodes(query, run) {
     LEFT JOIN searches s ON s.id = lsh.search_id
     LEFT JOIN campaigns c ON c.id = s.campaign_id
     LEFT JOIN (
-      SELECT lr_inner.listing_id, lr_inner.node
+      -- compare.py writes node_key; node is the older column (P7).
+      SELECT lr_inner.listing_id, COALESCE(lr_inner.node_key, lr_inner.node) AS node
       FROM listing_ranks lr_inner
       JOIN judge_runs jr ON jr.id = lr_inner.run_id
-      WHERE lr_inner.node IS NOT NULL
+      WHERE COALESCE(lr_inner.node_key, lr_inner.node) IS NOT NULL
       ORDER BY jr.created_at DESC
     ) lr ON lr.listing_id = l.id
     GROUP BY l.id
@@ -90,11 +99,11 @@ async function backfillP8Nodes(query, run) {
   const now = new Date().toISOString();
   const counts = { total: 0, identity: 0, playbook: 0, rank: 0, hunt: 0 };
 
-  // Use transaction for fast bulk insert
-  await run('BEGIN TRANSACTION');
-
-  try {
-    for (const row of rows) {
+  // No explicit transaction: this shares the server's one connection, and a
+  // BEGIN while another backfill held one failed with "cannot start a
+  // transaction within a transaction". Batched rows are fast enough.
+  const resolved = [];
+  for (const row of rows) {
       let factSheet = null;
       if (row.facts_json) {
         try {
@@ -143,19 +152,19 @@ async function backfillP8Nodes(query, run) {
         huntFallback
       );
 
-      await run(`
-        INSERT OR REPLACE INTO listing_nodes (listing_id, node_key, source, computed_at)
-        VALUES (?, ?, ?, ?)
-      `, [String(row.id), node_key, source, now]);
-
+      resolved.push([String(row.id), node_key, source, now]);
       counts.total++;
       counts[source] = (counts[source] || 0) + 1;
-    }
+  }
 
-    await run('COMMIT');
-  } catch (err) {
-    await run('ROLLBACK');
-    throw err;
+  const BATCH = 200; // 4 values each, under SQLite's 999 variables
+  for (let i = 0; i < resolved.length; i += BATCH) {
+    const batch = resolved.slice(i, i + BATCH);
+    await run(
+      `INSERT OR REPLACE INTO listing_nodes (listing_id, node_key, source, computed_at)
+       VALUES ${batch.map(() => '(?, ?, ?, ?)').join(', ')}`,
+      batch.flat()
+    );
   }
 
   return counts;

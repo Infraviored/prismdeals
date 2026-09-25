@@ -154,6 +154,40 @@ def _describe_want(wants: dict) -> str:
     return ", ".join(parts) if parts else "any"
 
 
+def _objects(text: str):
+    """The rank objects in a reply: JSON lines, or one indented JSON array.
+
+    Asked for JSON lines, a model now and then answers with a pretty-printed
+    array; read line by line, every line failed and every listing fell to the
+    bottom with no reason.
+    """
+    try:
+        whole = json.loads(text)
+    except json.JSONDecodeError:
+        whole = None
+    if isinstance(whole, list):
+        return whole
+    if isinstance(whole, dict):
+        if "id" in whole:  # one listing, one line
+            return [whole]
+        # {"rankings": [...]}: the array under whatever name the model chose
+        return next((v for v in whole.values() if isinstance(v, list)), [])
+
+    objects = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("//") or line.startswith("#"):
+            continue
+        # Remove trailing comma (common model mistake)
+        if line.endswith(","):
+            line = line[:-1]
+        try:
+            objects.append(json.loads(line))
+        except json.JSONDecodeError:
+            logger.warning("Skipping unparseable compare line: %.100s", line)
+    return objects
+
+
 def parse_compare_response(
     response_text: str,
     candidates: list[dict],
@@ -185,19 +219,7 @@ def parse_compare_response(
         text_by_id[str(c["id"])] = full
 
     results = []
-    for line in text.split("\n"):
-        line = line.strip()
-        if not line or line.startswith("//") or line.startswith("#"):
-            continue
-        # Remove trailing comma (common model mistake)
-        if line.endswith(","):
-            line = line[:-1]
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            logger.warning("Skipping unparseable compare line: %.100s", line)
-            continue
-
+    for obj in _objects(text):
         if not isinstance(obj, dict) or "id" not in obj:
             continue
 

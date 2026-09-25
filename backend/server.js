@@ -56,20 +56,22 @@ const { applySchema } = require('./db/schema');
 // five places, and the campaign dashboard returned 500 on every fresh install
 // because this file queried route_searches while only Python created it.
 applySchema(db)
-  .then(() => {
+  .then(async () => {
     seedDefaultUser();
-    require('./migrations/p1_backfill').backfillHuntTypes(query, run).catch(console.error);
-    // Idempotent: hashes knowledge sets and old verdicts so verdicts found
-    // under unchanged requirements survive a search edit (P9).
-    require('./migrations/p9_backfill')
-      .backfillP9Verdicts(query, run)
-      .then(stats => console.log('P9 backfill:', JSON.stringify(stats)))
-      .catch(console.error);
-    // Which product each listing is (P8): nothing else assigns it yet.
-    require('./migrations/p8_backfill_nodes')
-      .backfillP8Nodes(query, run)
-      .then(stats => console.log('P8 nodes:', JSON.stringify(stats)))
-      .catch(console.error);
+    // One after the other: they share this one connection, and each step
+    // reads what the one before wrote.
+    try {
+      await require('./migrations/p1_backfill').backfillHuntTypes(query, run);
+      // Idempotent: hashes knowledge sets and old verdicts so verdicts found
+      // under unchanged requirements survive a search edit (P9).
+      const p9 = await require('./migrations/p9_backfill').backfillP9Verdicts(query, run);
+      console.log('P9 backfill:', JSON.stringify(p9));
+      // Which product each listing is (P8): nothing else assigns it yet.
+      const p8 = await require('./migrations/p8_backfill_nodes').backfillP8Nodes(query, run);
+      console.log('P8 nodes:', JSON.stringify(p8));
+    } catch (error) {
+      console.error('Startup backfill failed:', error);
+    }
   })
   .catch(err => {
     console.error('Could not bring the database up to db/schema.sql:', err.message);

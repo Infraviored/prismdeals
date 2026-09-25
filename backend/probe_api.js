@@ -10,6 +10,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const { findPython } = require('./python');
 const readline = require('readline');
 
 function setupProbeApi(app) {
@@ -31,10 +32,9 @@ function setupProbeApi(app) {
       '--payload-json', JSON.stringify(payload),
     ];
 
-    const pythonBin = path.join(__dirname, '..', '.venv', 'bin', 'python3');
     const scriptPath = path.join(__dirname, '..', 'scraper', 'main.py');
 
-    const python = spawn(pythonBin, [scriptPath, ...args], {
+    const python = spawn(findPython(), [scriptPath, ...args], {
       env: { ...process.env },
     });
 

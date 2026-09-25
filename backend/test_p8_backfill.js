@@ -20,7 +20,7 @@ const run = (sql, p = []) => new Promise((ok, no) => db.run(sql, p, e => (e ? no
     'CREATE TABLE listing_search_hits (listing_id TEXT, search_id INTEGER, first_seen_at TEXT)',
     'CREATE TABLE searches (id INTEGER, name TEXT, campaign_id INTEGER)',
     'CREATE TABLE campaigns (id INTEGER, name TEXT, hunt_type TEXT)',
-    'CREATE TABLE listing_ranks (listing_id TEXT, node TEXT, run_id INTEGER)',
+    'CREATE TABLE listing_ranks (listing_id TEXT, node TEXT, node_key TEXT, run_id INTEGER)',
     'CREATE TABLE judge_runs (id INTEGER, created_at TEXT)',
     'CREATE TABLE listing_fit (listing_id TEXT, facts_json TEXT, judged_at TEXT)',
     'CREATE TABLE search_family_searches (family_id INTEGER, term_id INTEGER, search_id INTEGER)',
@@ -36,10 +36,20 @@ const run = (sql, p = []) => new Promise((ok, no) => db.run(sql, p, e => (e ? no
   await run("INSERT INTO search_families VALUES (6, 9)");
   await run("INSERT INTO search_family_terms VALUES (1, 6, 'yamaha-r1', 'Yamaha R1')");
   await run("INSERT INTO search_family_searches VALUES (6, 1, 48)");
+  // The comparison names the product in node_key (compare.py).
+  await run("INSERT INTO listings VALUES ('cbr', 'https://www.kleinanzeigen.de/s-anzeige/c/5-305-4', 'CBR', '{}', 9000)");
+  await run("INSERT INTO listing_search_hits VALUES ('cbr', 45, '2026-09-25')");
+  await run("INSERT INTO judge_runs VALUES (1, '2026-09-25')");
+  await run("INSERT INTO listing_ranks VALUES ('cbr', NULL, 'motorrad/honda/cbr1000rr', 1)");
 
   await backfillP8Nodes(query, run);
   const nodes = Object.fromEntries((await query('SELECT listing_id, node_key FROM listing_nodes')).map(r => [r.listing_id, r.node_key]));
   assert.strictEqual(nodes.ram, 'ram/ddr4/2x16gb', 'the verdict facts name the kit');
   assert.strictEqual(nodes.r1, 'modell/yamaha-r1', 'the model list term names the motorcycle');
+  assert.strictEqual(nodes.cbr, 'motorrad/honda/cbr1000rr', 'the comparison names the product where only the hunt name would');
+
+  // Two runs at once (startup and a crawl's end) wait for each other.
+  const both = await Promise.all([backfillP8Nodes(query, run), backfillP8Nodes(query, run)]);
+  assert.strictEqual(both[0].total, both[1].total);
   console.log('p8 backfill: all assertions passed');
 })().catch(err => { console.error(err); process.exit(1); });

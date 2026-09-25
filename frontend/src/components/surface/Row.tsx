@@ -21,7 +21,8 @@ export interface RowListing {
   first_seen_at?: string | null;
   last_seen_at?: string | null;
   is_deal?: boolean;
-  status?: string | null;
+  /** Where a corridor placed it (routed, too_far, …); null in a town hunt. */
+  route_status?: string | null;
   url?: string;
   matched_terms?: Array<{ id: number; label: string }>;
   lat?: number | null;
@@ -210,7 +211,7 @@ export const Row: React.FC<RowProps> = ({
           <span className="ml-3">{t('surface.kmDistance', { km: Math.round(listing.offroute_km) })}</span>
         )}
         {/* km from the hunt's town; a corridor's listings carry a route status and speak in detours. */}
-        {typeof listing.distance_km === 'number' && !listing.status && (
+        {typeof listing.distance_km === 'number' && !listing.route_status && (
           <span className="ml-3">{t('surface.kmDistance', { km: Math.round(listing.distance_km) })}</span>
         )}
       </p>

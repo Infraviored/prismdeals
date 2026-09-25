@@ -109,6 +109,17 @@ async function runTests() {
     ),
     { node_key: 'laptop/lenovo/thinkpad-x1-carbon-gen-9', source: 'rank' }
   );
+  // A comparison node in other words than the model term is not used:
+  // "motorcycle/..." left the CBR market for every motorcycle's.
+  assert.deepStrictEqual(
+    resolveNode({}, null, null, 'motorcycle/honda/cbr1000rr', 'modell/honda-cbr-1000-rr'),
+    { node_key: 'modell/honda-cbr-1000-rr', source: 'hunt' }
+  );
+  // It stands in for a bare hunt name.
+  assert.deepStrictEqual(
+    resolveNode({}, null, null, 'ventilator/honeywell', 'ventilator-hunt'),
+    { node_key: 'ventilator/honeywell', source: 'rank' }
+  );
   // Hunt fallback
   assert.deepStrictEqual(
     resolveNode({}, null, null, null, 'laptops-muc'),

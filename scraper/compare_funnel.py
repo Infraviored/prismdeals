@@ -6,7 +6,6 @@ extraction for musts without regex patterns.  The output is a list of at most
 30 candidate listings, ordered by score descending.
 """
 
-import hashlib
 import json
 import logging
 import sqlite3
@@ -14,6 +13,7 @@ from typing import Any
 
 import fit
 import text_facts
+from requirements_hash import requirements_hash
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +21,6 @@ CANDIDATE_CAP = 30
 # Beyond this even a tournament gets expensive; the lowest scores are cut.
 TOURNAMENT_CEILING = 90
 STALE_DAYS = 7
-
-
-def requirements_hash(fields: list[dict]) -> str:
-    """Stable hash of the buyer's requirements for cache invalidation."""
-    payload = json.dumps(fields, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
 def _campaign_searches(conn: sqlite3.Connection, campaign_id: int) -> list[int]:

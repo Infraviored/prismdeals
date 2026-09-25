@@ -182,11 +182,26 @@ function normalizeNodePart(entry) {
   return cleaned || null;
 }
 
+/**
+ * The product node of a listing.
+ *
+ * The comparison's node (rank) only refines what the listing's own facts, the
+ * playbook or the model term already say, or stands in for a bare hunt name.
+ * It used to win outright, and its vocabulary is the model's: a CBR ranked as
+ * "motorcycle/honda/cbr1000rr" left the model's own market for the median of
+ * every motorcycle, and one fan hunt split into two markets.
+ */
 function resolveNode(listing, factSheet, playbookKey, rankNode, huntFallback) {
-  if (rankNode) {
+  const base = ownNode(factSheet, playbookKey, huntFallback);
+  // A hunt's name says nothing about the product; a model term does.
+  const generic = !base || (base.source === 'hunt' && !base.node_key.startsWith('modell/'));
+  if (rankNode && (generic || rankNode.startsWith(base.node_key))) {
     return { node_key: rankNode, source: 'rank' };
   }
+  return base || { node_key: 'unknown', source: 'hunt' };
+}
 
+function ownNode(factSheet, playbookKey, huntFallback) {
   const criteria = factSheet?.criteria || {};
   if (playbookKey === 'vehicles/cars' || playbookKey === 'vehicles/motorcycles') {
     const make = normalizeNodePart(criteria.make);
@@ -221,8 +236,7 @@ function resolveNode(listing, factSheet, playbookKey, rankNode, huntFallback) {
   if (huntFallback) {
     return { node_key: huntFallback, source: 'hunt' };
   }
-
-  return { node_key: 'unknown', source: 'hunt' };
+  return null;
 }
 
 function humanNodeLabel(basis) {
@@ -307,25 +321,6 @@ async function annotateNodeMarket(query, listings, scopeSearchIds = []) {
   const ids = listings.map(l => String(l.id));
   const placeholders = ids.map(() => '?').join(',');
 
-  let rankNodes = new Map();
-  try {
-    const rankRows = await query(`
-      SELECT lr.listing_id, lr.node
-        FROM listing_ranks lr
-        JOIN judge_runs jr ON jr.id = lr.run_id
-       WHERE lr.listing_id IN (${placeholders})
-         AND lr.node IS NOT NULL
-       ORDER BY jr.created_at DESC
-    `, ids);
-    for (const row of rankRows) {
-      if (!rankNodes.has(String(row.listing_id))) {
-        rankNodes.set(String(row.listing_id), row.node);
-      }
-    }
-  } catch {
-    // listing_ranks.node column may not exist yet
-  }
-
   const nodeRows = await query(`
     SELECT listing_id, node_key FROM listing_nodes
      WHERE listing_id IN (${placeholders})
@@ -338,9 +333,8 @@ async function annotateNodeMarket(query, listings, scopeSearchIds = []) {
   const effectiveNodes = new Map();
   for (const listing of listings) {
     const id = String(listing.id);
-    const rankNode = rankNodes.get(id);
-    const storedNode = storedNodes.get(id);
-    effectiveNodes.set(id, rankNode || storedNode || null);
+    // listing_nodes holds the resolved node, the comparison's included.
+    effectiveNodes.set(id, storedNodes.get(id) || null);
   }
 
   const uniqueNodes = [...new Set([...effectiveNodes.values()].filter(Boolean))];

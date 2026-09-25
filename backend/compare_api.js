@@ -10,7 +10,7 @@
 
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
+const { findPython } = require('./python');
 const { spawn } = require('child_process');
 
 const router = express.Router();
@@ -48,18 +48,6 @@ function startCompare(campaignId) {
   return true;
 }
 
-function findPython() {
-  const candidates = [
-    path.join(__dirname, '..', '.venv', 'bin', 'python3'),
-    path.join(__dirname, '..', 'venv', 'bin', 'python3'),
-    '/usr/bin/python3',
-    'python3',
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return 'python3';
-}
 
 module.exports = (query, get) => {
   /**

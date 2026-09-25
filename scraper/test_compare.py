@@ -309,3 +309,33 @@ def test_the_prompt_carries_the_page_attributes():
     )
     assert "Kilometerstand: 21.000 km" in prompt
     assert "Never ask the seller for something the listing already states" in prompt
+
+
+def test_parse_compare_response_reads_a_pretty_printed_array():
+    """Asked for JSON lines, a model sometimes answers with an indented array."""
+    candidates = [
+        {"id": "301", "title": "Honeywell HT-900", "detailed_description": ""},
+        {"id": "302", "title": "Tischventilator", "detailed_description": ""},
+    ]
+    response_text = """[
+  {
+    "id": "302",
+    "rank": 1,
+    "reason": "Bekannte Marke fehlt, aber günstig"
+  },
+  {
+    "id": "301",
+    "rank": 2,
+    "reason": "Marke"
+  }
+]"""
+    parsed = parse_compare_response(response_text, candidates)
+    assert [p["id"] for p in parsed] == ["302", "301"]
+    assert parsed[0]["reason"].startswith("Bekannte")
+
+
+def test_judge_runs_use_the_one_requirements_hash():
+    import compare_funnel
+    import requirements_hash
+
+    assert compare_funnel.requirements_hash is requirements_hash.requirements_hash
