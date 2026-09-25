@@ -120,6 +120,18 @@ Four kinds of needs; the kind decides where a need flows:
 | preference | rather black, ideally with cases | ranking, never exclusion |
 | use | two-up on country roads, tows 1.5 t, video editing | research **and** judging |
 
+- Wishes and musts **in the buyer's own words** ("ABS", "Koffer", "mindestens 150 PS") are
+  first-class: read from title and description as words (negation: "ohne ABS" = no) or numbers
+  with units. A wish lifts the score (met 1, unmentioned ½, denied 0) and never changes the
+  verdict; a must decides like a playbook must. Entered in setup ("Wäre schön") or later in the
+  requirements sheet. Code: `scraper/wishes.py`, `fit._own_words`.
+- In a model list the **model is a must** (named in the title, word-aware), a **generation code**
+  ("RN19") is a must on build years (asked once per code, cached, ±1 year), and a **request**
+  ("Suche …") is not an offer. Code: `scraper/hunt_identity.py`, `scraper/generation.py`.
+- Search terms never carry a generation code ("yamaha r1 rn19" finds 0, "yamaha r1" 115).
+- **Asking vs judging is separated:** a change to terms, place, radius, price or filters crawls,
+  then judges and compares (server-side); a change to requirements only judges and compares; a
+  rename does nothing.
 - Rule: **the buyer decides which questions are asked; the answers belong to the tree.**
   No model call depends on a single buyer, except the interview and the judging.
 - A must can trigger research: "must have towbar" → is it retrofittable, at what cost?
