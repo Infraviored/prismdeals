@@ -428,3 +428,27 @@ CREATE INDEX IF NOT EXISTS idx_listing_fit_reqhash ON listing_fit(requirements_h
 -- Cached hash on the knowledge set itself, so readers can resolve it
 -- without re-parsing item_json at query time.
 ALTER TABLE knowledge_sets ADD COLUMN requirements_hash TEXT;
+
+-- P8: market node per listing
+--
+-- A listing's market node is the product identity that decides what "the usual
+-- price" means. A search for "Motorrad bis 7000 EUR" mixes 125cc and 1000cc
+-- bikes that live in different markets. A node like "motorrad/yamaha-r1"
+-- groups only R1 listings so the median is meaningful.
+--
+-- source tracks where the node came from: 'identity' (scraper/identity.py
+-- from fact_sheets), 'rank' (comparative judge run via listing_ranks.node),
+-- 'playbook' (playbook-specific node from RAM generation+capacity), or
+-- 'hunt' (fallback = the search/campaign itself)
+CREATE TABLE IF NOT EXISTS listing_nodes (
+    listing_id TEXT NOT NULL PRIMARY KEY,
+    node_key   TEXT NOT NULL,
+    source     TEXT NOT NULL DEFAULT 'hunt',
+    computed_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_listing_nodes_node ON listing_nodes(node_key);
+
+-- P7 may write a node into listing_ranks from the comparative call.
+-- If present at read time, P8 prefers it over its own assignment.
+ALTER TABLE listing_ranks ADD COLUMN node TEXT;

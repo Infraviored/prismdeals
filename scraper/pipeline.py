@@ -193,6 +193,16 @@ def process_listing(
     if key and playbook.get("dossier_relevant") and dossier_lookup:
         dossier_payload = dossier_lookup(key)
 
+    import market_node
+
+    node_key, source = market_node.resolve_node(
+        listing,
+        facts=result.facts,
+        playbook_key=playbook.get("key"),
+        hunt_fallback=listing.get("campaign_name") or listing.get("search_title"),
+    )
+    market_node.put_node(conn, listing_id, node_key, source=source)
+
     if not intent.get("fields"):
         # Reached only with require_intent=False: the fact sheet is built, which
         # is the expensive half, but there is no intent to score it against yet.
@@ -274,6 +284,9 @@ def run(conn, call_model, dossier_lookup=None, limit=None, require_intent=True):
     """
     fact_sheets.ensure_schema(conn)
     dossiers.ensure_schema(conn)
+    import market_node
+
+    market_node.ensure_schema(conn)
 
     conn.row_factory = __import__("sqlite3").Row
     query = LISTING_QUERY + (" LIMIT %d" % int(limit) if limit else "")
