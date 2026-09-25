@@ -9,6 +9,7 @@ import type { RowListing } from '../components/surface/Row';
 import { formatFreshness } from '../utils/freshness';
 import { Bookmark, ExternalLink, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
 import ScoreBreakdown from './ScoreBreakdown';
+import { KnowledgeChecklist } from '../components/KnowledgeChecklist';
 
 export interface FundeDetailSheetProps {
   listing: RowListing | null;
@@ -261,6 +262,9 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
               ))}
             </div>
           )}
+
+          {/* Knowledge checklist for this listing's node (P7) */}
+          <KnowledgeChecklist listingId={listing.id} nodeKey={listing.node_key} />
           {/* Price history */}
           {listing.price_history && listing.price_history.length > 1 && (
             <div className="pt-2 border-t border-[#0E4A40] space-y-2">

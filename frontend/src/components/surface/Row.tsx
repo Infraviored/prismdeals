@@ -55,6 +55,8 @@ export interface RowListing {
   uncertain?: boolean;
   /** Ranks of listings the run found to be the same item. */
   same_as?: number[] | null;
+  /** Knowledge node key assigned by judging or identity (P7). */
+  node_key?: string | null;
 }
 
 export interface RowProps {
