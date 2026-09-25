@@ -19,7 +19,24 @@ export const ScoreBreakdown: React.FC<{ listing: RowListing }> = ({ listing }) =
     typeof listing.price_eur === 'number' && listing.market_median
       ? Math.round(((listing.market_median - listing.price_eur) / listing.market_median) * 100)
       : null;
-  const condition = listing.details?.Zustand;
+  const condition = (listing.details?.Zustand || listing.details?.zustand) as string | undefined;
+  const market = listing.market_basis || parts.market_basis || null;
+  const renderValueAxis = () => {
+    if (delta === null) return null;
+    if (market?.label && market.count) {
+      if (delta > 0) return t('surface.axisValueBelowNode', { pct: delta, node: market.label, count: market.count });
+      if (delta < 0) return t('surface.axisValueAboveNode', { pct: -delta, node: market.label, count: market.count });
+      return t('surface.axisValueAtNode', { node: market.label, count: market.count });
+    }
+    if (market?.count) {
+      if (delta > 0) return t('surface.axisValueBelowCount', { pct: delta, count: market.count });
+      if (delta < 0) return t('surface.axisValueAboveCount', { pct: -delta, count: market.count });
+      return t('surface.axisValueAtCount', { count: market.count });
+    }
+    if (delta > 0) return t('surface.axisValueBelow', { pct: delta });
+    if (delta < 0) return t('surface.axisValueAbove', { pct: -delta });
+    return t('surface.axisValueAt');
+  };
 
   return (
     <section className="breakdown" data-testid="score-breakdown">
@@ -42,13 +59,7 @@ export const ScoreBreakdown: React.FC<{ listing: RowListing }> = ({ listing }) =
 
       <ul className="breakdown-list quiet">
         {delta !== null && (
-          <li>
-            {delta > 0
-              ? t('surface.axisValueBelow', { pct: delta })
-              : delta < 0
-              ? t('surface.axisValueAbove', { pct: -delta })
-              : t('surface.axisValueAt')}
-          </li>
+          <li>{renderValueAxis()}</li>
         )}
         {typeof condition === 'string' && condition && <li>{t('surface.axisCondition', { condition })}</li>}
         {typeof listing.detour_min === 'number' && (

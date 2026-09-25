@@ -36,8 +36,24 @@ export interface RowListing {
     score: number | null;
     gate: { met: string[]; violated: string[]; open: string[]; factor: number };
     axes: Record<string, number | null>;
+    market_basis?: {
+      median: number;
+      count: number;
+      basis: string;
+      basis_type: string;
+      label?: string;
+      text?: string;
+    } | null;
   } | null;
   market_median?: number | null;
+  market_basis?: {
+    median: number;
+    count: number;
+    basis: string;
+    basis_type: string;
+    label?: string;
+    text?: string;
+  } | null;
   /** Attributes from the detail page, e.g. { Zustand: 'Sehr Gut' }. */
   details?: Record<string, unknown> | null;
   reference_comparison?: { closer_to: 'good' | 'bad' | 'mixed'; reasoning: string } | null;
