@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Row, type RowListing } from '../components/surface';
-import RouteCorridorMap, { type RouteCircle, type RouteListingGeo } from '../components/RouteCorridorMap';
+import RouteCorridorMap, { type RouteListingGeo } from '../components/RouteCorridorMap';
 import { FundeDetailSheet } from './FundeDetailSheet';
 import { FundeModelsSheet } from './FundeModelsSheet';
 import { FundeFilterSheet } from './FundeFilterSheet';
@@ -92,7 +92,6 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     setTermId,
     familyTerms,
     routeData,
-    centre,
     mapPoints,
     sort,
     setSort,
@@ -129,21 +128,6 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   useEffect(() => {
     if (/[?&]sheet=requirements/.test(window.location.hash)) setRequirementsOpen(true);
   }, []);
-
-  // The corridor's circles, or the hunt's own town and radius.
-  // A hunt runs every term in every circle: one ring per place, not per term.
-  const mapCircles: RouteCircle[] = routeData?.route?.circles?.length
-    ? routeData.route.circles
-        .filter((c, i, all) => all.findIndex((o) => o.lat === c.lat && o.lon === c.lon && o.radius_km === c.radius_km) === i)
-        .map((c) => ({
-          lat: c.lat,
-          lon: c.lon,
-          radius_km: c.radius_km,
-          label: c.label || '',
-        }))
-    : centre
-      ? [{ lat: centre.lat, lon: centre.lon, radius_km: centre.radius_km, label: centre.label || '' }]
-      : [];
 
   // Every listing of the tab when the family sends its pins; otherwise what
   // is loaded.
@@ -504,9 +488,11 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
                 )}
               </p>
               <div className="map-frame">
+                {/* No search circles: where the hunt looks is known, and a
+                    50 km ring over a street map only got in the way. */}
                 <RouteCorridorMap
                   polyline={routeData?.route?.polyline || []}
-                  circles={mapCircles}
+                  circles={[]}
                   listings={mapListings}
                   selectedListingId={selectedListing?.id || null}
                   onSelectListing={openFromMap}

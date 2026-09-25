@@ -96,11 +96,11 @@ function ListingClusterMarkers({
     const handleMoveOrZoom = () => {
       setCurrentZoom(map.getZoom());
     };
+    // Clusters depend on the zoom only. Recomputing on every pan made a
+    // zoomed-in map stutter.
     map.on('zoomend', handleMoveOrZoom);
-    map.on('moveend', handleMoveOrZoom);
     return () => {
       map.off('zoomend', handleMoveOrZoom);
-      map.off('moveend', handleMoveOrZoom);
     };
   }, [map]);
 
@@ -180,6 +180,8 @@ function ListingClusterMarkers({
           );
         }
 
+        // A number opens the offers it stands for. Zooming never split two
+        // listings from the same postal code: they share one point.
         return (
           <Marker
             key={cluster.key}
@@ -187,15 +189,33 @@ function ListingClusterMarkers({
             icon={createClusterIcon(cluster.items.length)}
             zIndexOffset={500}
             eventHandlers={{
-              click: () => {
-                map.setView(
-                  [cluster.centerLat, cluster.centerLon],
-                  Math.min(map.getZoom() + 2, 15)
-                );
-                onSelectCluster?.(cluster.items.map((i) => i.id));
-              },
+              click: () => onSelectCluster?.(cluster.items.map((i) => i.id)),
             }}
-          />
+          >
+            <Popup className="prism-cluster-popup" maxWidth={280} minWidth={220}>
+              <ul className="cluster-list" data-testid="cluster-list">
+                {cluster.items.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        map.closePopup();
+                        onSelectListing(item.id);
+                      }}
+                    >
+                      {item.images && item.images[0] ? (
+                        <img src={item.images[0]} alt="" loading="lazy" />
+                      ) : (
+                        <span className="cluster-noimg" />
+                      )}
+                      <span className="cluster-title">{item.title}</span>
+                      <span className="cluster-price num">{item.price}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </Popup>
+          </Marker>
         );
       })}
     </>
@@ -251,7 +271,7 @@ export default function RouteCorridorMap({
   return (
     <div
       data-testid="route-corridor-map-container"
-      className={`w-full h-full min-h-[300px] relative bg-[#011F1F] overflow-hidden ${className}`}
+      className={`w-full h-full min-h-[300px] relative isolate bg-[#011F1F] overflow-hidden ${className}`}
     >
       <MapContainer
         center={defaultCenter}
@@ -348,14 +368,18 @@ export default function RouteCorridorMap({
 
       {/* Map Legend Overlay */}
       <div className="absolute bottom-3 left-3 z-[400] bg-[#06322C]/90 backdrop-blur-md border border-[#0E4A40] rounded px-3 py-1.5 flex items-center gap-3 text-2xs font-semibold text-[#8FA6A1] pointer-events-none shadow-md">
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-1 bg-[#4E8C6A] rounded-full" />
-          <span>{t('routeResults.legendRoute')}</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full border border-dashed border-[#4E8C6A]/60 bg-[#4E8C6A]/10" />
-          <span>{t('routeResults.legendSearchArea')}</span>
-        </div>
+        {polyline.length > 1 && (
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-1 bg-[#4E8C6A] rounded-full" />
+            <span>{t('routeResults.legendRoute')}</span>
+          </div>
+        )}
+        {circles.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full border border-dashed border-[#4E8C6A]/60 bg-[#4E8C6A]/10" />
+            <span>{t('routeResults.legendSearchArea')}</span>
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-[#4E8C6A] ring-1 ring-[#011F1F]" />
           <span>{t('routeResults.legendListing')}</span>
