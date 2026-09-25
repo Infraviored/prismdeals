@@ -342,6 +342,11 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
     wasScraping.current = isScraping;
   }, [isScraping, fetchPage, fetchOverview]);
 
+  const reload = useCallback(() => {
+    fetchPage(0, false);
+    fetchOverview();
+  }, [fetchPage, fetchOverview]);
+
   const loadMore = useCallback(() => {
     if (loading || loadingMore) return;
     if (listings.length < total) {
@@ -372,7 +377,7 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
     error,
     hasMore: listings.length < total,
     loadMore,
-    reload: () => { fetchPage(0, false); fetchOverview(); },
+    reload,
     // Tab control
     tab,
     setTab,

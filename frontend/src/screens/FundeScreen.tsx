@@ -102,17 +102,18 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
 
   const [comparing, setComparing] = useState(false);
 
+  const campaignId = campaign?.id;
   const handleCompare = useCallback(async () => {
-    if (!campaign?.id || comparing) return;
+    if (!campaignId || comparing) return;
     setComparing(true);
     try {
-      const res = await fetch(`/api/campaigns/${campaign.id}/compare`, { method: 'POST' });
+      const res = await fetch(`/api/campaigns/${campaignId}/compare`, { method: 'POST' });
       if (!res.ok) return;
       // The comparison runs in the background for a minute or two; ask until
       // it is done, then show the ranks.
       for (let i = 0; i < 100; i++) {
         await new Promise(resolve => setTimeout(resolve, 3000));
-        const status = await fetch(`/api/campaigns/${campaign.id}/ranks`).then(r => r.json());
+        const status = await fetch(`/api/campaigns/${campaignId}/ranks`).then(r => r.json());
         if (!status.running) break;
       }
       reload();
@@ -121,7 +122,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     } finally {
       setComparing(false);
     }
-  }, [campaign?.id, comparing, reload]);
+  }, [campaignId, comparing, reload]);
 
   const { selectedListing, openListing } = useLinkedListing(listings, campaign?.id ?? null);
 
