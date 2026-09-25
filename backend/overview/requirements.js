@@ -17,7 +17,9 @@ const FIELD_INFO = {
 function formatRequirementText(field) {
   const fid = field.id;
   const wants = field.buyer_wants || {};
-  const info = FIELD_INFO[fid] || { label: fid, unit: '' };
+  // A requirement in the buyer's own words has no playbook entry: its label
+  // is the words ("own_innenraum" stood in the aside).
+  const info = FIELD_INFO[fid] || { label: field.label || fid, unit: '' };
   // An exact wish is either a match or a range that collapses to one value.
   const exact = wants.match ?? (wants.min !== undefined && wants.min === wants.max ? wants.min : undefined);
 
@@ -134,7 +136,7 @@ function computeRequirementStats(factsList, requirementFields) {
   return requirementFields.map(f => {
     const fid = f.id;
     const wants = f.buyer_wants || {};
-    const info = FIELD_INFO[fid] || { label: fid, unit: '' };
+    const info = FIELD_INFO[fid] || { label: f.label || fid, unit: '' };
 
     let passed = 0;
     let contradictedCount = 0;

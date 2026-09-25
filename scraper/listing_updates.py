@@ -13,6 +13,7 @@ which is what makes watching a search affordable.
 import datetime
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +75,16 @@ def apply(conn, listing):
         params.append(json.dumps(merged, ensure_ascii=False))
 
     # A town the card now names where none was stored: cards whose alt text
-    # named the district came in without one ("Ohne Ort" on the row).
-    if not old_location and listing.get("location"):
+    # named the district came in without one ("Ohne Ort" on the row). A bare
+    # district ("Sendling") gains its postal code the same way -- without one
+    # the map cannot place it, the name alone is not unique.
+    new_location = listing.get("location") or ""
+    placeable = re.match(r"\d{5}\b", old_location or "") or " - " in (
+        old_location or ""
+    )
+    if new_location and (
+        not old_location or (not placeable and re.match(r"\d{5}\b", new_location))
+    ):
         changed["location"] = (old_location, listing["location"])
         sets.append("location = ?")
         params.append(listing["location"])

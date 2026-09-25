@@ -198,10 +198,11 @@ def parse(page_html):
         else:
             # Some cards name the district, not the state, in the alt text
             # ("Kr. Dachau - Petershausen"): the card's own "85238 Petershausen"
-            # still names the town. Without this the row said "Ohne Ort".
+            # still names the town. Without this the row said "Ohne Ort". The
+            # postal code stays: it is what places the listing on the map.
             plz = PLZ_TOWN_RE.search(segment)
             if plz:
-                location = clean_text(plz.group(2))
+                location = f"{plz.group(1)} {clean_text(plz.group(2))}"
 
         image = None
         image_match = CARD_IMAGE_RE.search(segment)

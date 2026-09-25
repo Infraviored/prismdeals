@@ -335,6 +335,16 @@ Four kinds of needs; the kind decides where a need flows:
   - large furniture: total cost = price + detour + transport.
   - hygiene: warning signs present.
   - taste, fashion: photo grid instead of list.
+- Order: cheapest · nearest · best rated. Server-side over the whole hunt, not the loaded page.
+  - Nearest = detour on a corridor, km from the hunt's town otherwise.
+- Map closes the list: every find of the tab, the search circle or the corridor.
+  - ~~Map as a toggle, corridor hunts only~~ — plain hunts had no map at all.
+- Position from the printed place, no geocoding service:
+  - postal code → centroid; "State - Town" → gazetteer; a bare name only near the search.
+  - Cards whose alt text names a district keep "PLZ Town"; a bare district gains its PLZ on refresh.
+- Corridor after the fact: the hunt keeps terms, requirements, verdicts.
+  - Every term runs in every circle; town searches rest (links inactive, finds stay).
+  - Removing the corridor brings the town searches back.
 
 ---
 

@@ -74,6 +74,19 @@ describe('FundeScreen', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      // A hunt's listings come from its family, corridor or not.
+      if (url.includes('/api/search-families/5/listings?view=map')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ total: 3, centre: null, points: mockRouteData.listings.map(l => ({ ...l, lat: 48, lon: 11 })) }),
+        });
+      }
+      if (url.includes('/api/search-families/5/listings')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ total: 3, listings: mockRouteData.listings }),
+        });
+      }
       if (url.includes('/api/search-families/5')) {
         return Promise.resolve({
           ok: true,
@@ -240,13 +253,35 @@ describe('FundeScreen', () => {
     expect(screen.queryByText(/within \d+ km/)).not.toBeInTheDocument();
   });
 
-  it('toggles map view when clicking Map pill', async () => {
+  it('closes the list with a map of every find, without a toggle', async () => {
     render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
 
-    const mapPills = await screen.findAllByText('Map');
-    fireEvent.click(mapPills[0]);
-
     expect(await screen.findByTestId('mock-route-corridor-map')).toBeInTheDocument();
+    const asked = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+      .map(c => String(c[0]));
+    expect(asked.some(u => u.includes('/api/search-families/5/listings?view=map'))).toBe(true);
+  });
+
+  it('orders by distance or score on the server, over the whole hunt', async () => {
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('Nearest'));
+    fireEvent.click(screen.getByText('Best rated'));
+    await waitFor(() => {
+      const asked = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+        .map(c => String(c[0]));
+      expect(asked.some(u => u.includes('/listings?') && u.includes('sort=near'))).toBe(true);
+      expect(asked.some(u => u.includes('/listings?') && u.includes('sort=score'))).toBe(true);
+    });
+  });
+
+  it('offers a corridor for a hunt that already runs', async () => {
+    render(<FundeScreen campaign={mockCampaign} onBack={vi.fn()} onConfigure={vi.fn()} />);
+
+    fireEvent.click((await screen.findAllByText('Corridor'))[0]);
+    expect(await screen.findByText('Search along a route')).toBeInTheDocument();
+    expect(screen.getByTestId('corridor-save')).toBeDisabled();
+    expect(await screen.findByTestId('corridor-current')).toHaveTextContent('Landsberg → Konstanz');
   });
 
   it('a shared link opens the find even when it is not in the loaded list', async () => {

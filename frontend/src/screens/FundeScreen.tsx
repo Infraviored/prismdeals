@@ -8,7 +8,8 @@ import { RequirementsSheet } from './RequirementsSheet';
 import { FundeAside } from './FundeAside';
 import { FundeBestHero } from './FundeBestHero';
 import { KnowledgeSheet } from './KnowledgeSheet';
-import { useFundeData, type FundeTabKey } from '../hooks/useFundeData';
+import { FundeCorridorSheet } from './FundeCorridorSheet';
+import { useFundeData, type FundeTabKey, type FundeSort } from '../hooks/useFundeData';
 import { useKept } from '../hooks/useKept';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign } from '../types';
@@ -22,6 +23,8 @@ export interface FundeScreenProps {
   onConfigure: () => void;
   onStartScrape?: () => void;
   isScraping?: boolean;
+  /** The campaign itself changed (a corridor added): reload the list of them. */
+  onCampaignChanged?: () => void;
 }
 
 /** The usual price of the listing's own product (P8), when known. */
@@ -36,6 +39,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   onConfigure,
   onStartScrape,
   isScraping = false,
+  onCampaignChanged,
 }) => {
   const { t } = useTranslation();
   const { kept, toggle } = useKept();
@@ -45,7 +49,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   const [filterOpen, setFilterOpen] = useState(false);
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [researchRecommended, setResearchRecommended] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [corridorOpen, setCorridorOpen] = useState(false);
 
   useEffect(() => {
     if (!campaign?.id) return;
@@ -88,6 +92,10 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     setTermId,
     familyTerms,
     routeData,
+    centre,
+    mapPoints,
+    sort,
+    setSort,
     radiusDiagnosis,
     diagnosing,
     applyRadius,
@@ -122,17 +130,25 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     if (/[?&]sheet=requirements/.test(window.location.hash)) setRequirementsOpen(true);
   }, []);
 
-  const isCorridor = Boolean(campaign?.route_id);
+  // The corridor's circles, or the hunt's own town and radius.
+  // A hunt runs every term in every circle: one ring per place, not per term.
+  const mapCircles: RouteCircle[] = routeData?.route?.circles?.length
+    ? routeData.route.circles
+        .filter((c, i, all) => all.findIndex((o) => o.lat === c.lat && o.lon === c.lon && o.radius_km === c.radius_km) === i)
+        .map((c) => ({
+          lat: c.lat,
+          lon: c.lon,
+          radius_km: c.radius_km,
+          label: c.label || '',
+        }))
+    : centre
+      ? [{ lat: centre.lat, lon: centre.lon, radius_km: centre.radius_km, label: centre.label || '' }]
+      : [];
 
-  const mapCircles: RouteCircle[] = (routeData?.route?.circles || []).map((c) => ({
-    lat: c.lat,
-    lon: c.lon,
-    radius_km: c.radius_km,
-    label: c.label || '',
-  }));
-
-  const mapListings: RouteListingGeo[] = (routeData?.listings && routeData.listings.length > 0)
-    ? routeData.listings
+  // Every listing of the tab when the family sends its pins; otherwise what
+  // is loaded.
+  const mapListings: RouteListingGeo[] = mapPoints.length > 0
+    ? mapPoints
     : listings
         .filter((l) => typeof l.lat === 'number' && typeof l.lon === 'number')
         .map((l) => ({
@@ -145,10 +161,28 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
           url: l.url || '',
           detour_min: l.detour_min ?? null,
           offroute_km: l.offroute_km ?? null,
-          niceness_score: l.niceness_score ?? null,
           images: l.images || [],
-          matched_terms: l.matched_terms,
         }));
+
+  const openFromMap = (id: string) => {
+    const loaded = listings.find((l) => l.id === id);
+    if (loaded) return openListing(loaded);
+    const pin = mapPoints.find((p) => p.id === id);
+    if (pin) openListing({ ...pin, title: pin.title || '', images: pin.images || [] } as RowListing);
+  };
+
+  const sorts: Array<{ key: FundeSort; label: string }> = [
+    { key: 'price_asc', label: t('surface.sortCheap') },
+    { key: 'near', label: t('surface.sortNear') },
+    { key: 'score', label: t('surface.sortBest') },
+  ];
+  const corridorNow = routeData?.route
+    ? {
+        origin: routeData.route.origin || '',
+        destination: routeData.route.destination || '',
+        half_width_km: routeData.route.half_width_km || 0,
+      }
+    : null;
 
   // A hunt without requirements has nothing to judge, so nothing is
   // "missing": every offer sat under "Unklar" behind an empty "Passend" tab
@@ -184,15 +218,9 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     if (heroShown && heroListing) {
       list = list.filter((l) => l.id !== heroListing.id);
     }
-    return [...list].sort((a, b) => {
-      const pa = typeof a.price_eur === 'number' ? a.price_eur : 999999;
-      const pb = typeof b.price_eur === 'number' ? b.price_eur : 999999;
-      if (pa !== pb) return pa - pb;
-      // Same price: the better listing first, unscored last.
-      const sa = typeof a.score === 'number' ? a.score : -1;
-      const sb = typeof b.score === 'number' ? b.score : -1;
-      return sb - sa;
-    });
+    // The server orders: by price, distance or score over the whole hunt,
+    // not over the fifty rows that happen to be loaded.
+    return list;
   }, [listings, heroShown, heroListing]);
 
   // Weak market banner (§9.7): best candidate is above median or misses a must
@@ -257,9 +285,9 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         </button>
         <span data-testid="surface-bar-count" className="sr-only">{total}</span>
         <span className="spacer" />
-        {isCorridor && (
-          <button type="button" className="edit cursor-pointer hidden sm:inline-flex" onClick={() => setViewMode(viewMode === 'map' ? 'list' : 'map')}>
-            {viewMode === 'map' ? t('surface.list') : t('surface.map')}
+        {campaign?.family_id && (
+          <button type="button" className="edit cursor-pointer hidden sm:inline-flex" onClick={() => setCorridorOpen(true)} data-testid="corridor-btn">
+            {t('surface.corridorSet')}
           </button>
         )}
         {familyTerms.length > 0 && (
@@ -301,21 +329,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         </button>
       </nav>
 
-      {viewMode === 'map' && isCorridor ? (
-        <div className="w-full h-[calc(100vh-44px)] relative">
-          <RouteCorridorMap
-            polyline={routeData?.route?.polyline || []}
-            circles={mapCircles}
-            listings={mapListings}
-            selectedListingId={selectedListing?.id || null}
-            onSelectListing={(id) => {
-              const found = listings.find((l) => l.id === id);
-              if (found) openListing(found);
-            }}
-          />
-        </div>
-      ) : (
-        <>
+      <>
           {/* 2. Masthead */}
           <header className="masthead">
             <h1>{campaign?.name || '—'}</h1>
@@ -338,9 +352,9 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
             ))}
           </div>
           <div className="sm:hidden flex items-center gap-2 px-4 py-2 overflow-x-auto border-b border-[var(--kante)] bg-[var(--grube)] text-xs text-[var(--kalk)]">
-            {isCorridor && (
-              <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setViewMode(viewMode === 'map' ? 'list' : 'map')}>
-                {viewMode === 'map' ? t('surface.list') : t('surface.map')}
+            {campaign?.family_id && (
+              <button type="button" className="edit cursor-pointer whitespace-nowrap" onClick={() => setCorridorOpen(true)}>
+                {t('surface.corridorSet')}
               </button>
             )}
             {familyTerms.length > 0 && (
@@ -401,9 +415,22 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
 
               {/* List Head */}
               {displayListings.length > 0 && (
-                <p className="list-head" id="list-head">
-                  {listHeadText}
-                </p>
+                <div className="list-head flex flex-wrap items-center justify-between gap-2" id="list-head">
+                  <span>{listHeadText}</span>
+                  <span className="flex gap-1" role="group" aria-label={t('surface.sortBy')} data-testid="sort-pills">
+                    {sorts.map((s) => (
+                      <button
+                        key={s.key}
+                        type="button"
+                        className={`sort-pill ${sort === s.key ? 'is-on' : ''}`}
+                        aria-pressed={sort === s.key}
+                        onClick={() => setSort(s.key)}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </span>
+                </div>
               )}
 
               {/* Rows */}
@@ -466,13 +493,35 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
               </button>
             )}
           </div>
+
+          {/* The map closes the list: every find of this tab, not only the page. */}
+          {mapListings.length > 0 && (
+            <section className="map-block" aria-label={t('surface.mapAll')} data-testid="funde-map">
+              <p className="list-head">
+                {t('surface.mapAll')}
+                {potAll > mapListings.length && tab === 'all' && (
+                  <span className="quiet ml-3">{t('surface.mapUnplaced', { count: potAll - mapListings.length })}</span>
+                )}
+              </p>
+              <div className="map-frame">
+                <RouteCorridorMap
+                  polyline={routeData?.route?.polyline || []}
+                  circles={mapCircles}
+                  listings={mapListings}
+                  selectedListingId={selectedListing?.id || null}
+                  onSelectListing={openFromMap}
+                  originName={routeData?.route?.origin}
+                  destinationName={routeData?.route?.destination}
+                />
+              </div>
+            </section>
+          )}
         </main>
 
         {/* 400px Seitenspalte */}
         <FundeAside overview={overview} bestListing={bestListing} />
       </div>
-        </>
-      )}
+      </>
 
       {/* Sheets */}
       <FundeDetailSheet
@@ -505,6 +554,18 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         isCorridor={Boolean(campaign?.route_id)}
         maxDetour={maxDetour}
         setMaxDetour={setMaxDetour}
+      />
+
+      <FundeCorridorSheet
+        isOpen={corridorOpen}
+        onClose={() => setCorridorOpen(false)}
+        familyId={campaign?.family_id ?? null}
+        current={corridorNow}
+        onChanged={() => {
+          onCampaignChanged?.();
+          reload();
+          onStartScrape?.();
+        }}
       />
 
       {campaign?.id && (

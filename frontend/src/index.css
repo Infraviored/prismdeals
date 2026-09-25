@@ -368,3 +368,13 @@ input[type='range']:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .breakdown-list .open { color: var(--messing); }
 .breakdown-list .violated { color: var(--asche); text-decoration: line-through; }
 .breakdown-list.quiet { color: var(--asche); font-size: 13px; }
+
+/* ---------- Order + map under the list ---------- */
+.sort-pill {
+  border: 1px solid var(--kante); border-radius: 3px; padding: 3px 8px;
+  color: var(--asche); background: none; cursor: pointer; font-size: 12px; font-weight: 500;
+}
+.sort-pill.is-on { color: var(--lampe); border-color: var(--lampe); }
+.map-block { padding: 8px 0 32px; }
+.map-frame { height: 380px; margin: 0 16px; border: 1px solid var(--kante); border-radius: 3px; overflow: hidden; }
+@container (min-width: 900px) { .map-frame { margin: 0 32px; height: 460px; } }

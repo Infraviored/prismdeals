@@ -200,6 +200,38 @@ def run_route_mode(args):
     )
 
 
+def run_family_route_mode(args):
+    """Gives a hunt a corridor after the fact, or takes it away."""
+    import family_route
+
+    if not args.family_id:
+        print("__FAMILY_ROUTE_ERROR__:Missing family id")
+        return
+    conn = get_db_connection()
+    try:
+        if args.mode == "family-route-clear":
+            family_route.clear_route(conn, args.family_id)
+            print("__FAMILY_ROUTE__:" + json.dumps({"route_id": None}))
+            return
+        if not args.origin or not args.destination:
+            print("__FAMILY_ROUTE_ERROR__:Missing start or destination")
+            return
+        route_id, plan = family_route.set_route(
+            conn,
+            args.family_id,
+            args.origin,
+            args.destination,
+            radius_km=args.radius_km,
+            half_width_km=args.corridor_km,
+        )
+        print(
+            "__FAMILY_ROUTE__:"
+            + json.dumps({"route_id": route_id, "circles": len(plan.circles)})
+        )
+    except ValueError as error:
+        print(f"__FAMILY_ROUTE_ERROR__:{error}")
+
+
 def run_family_mode(args):
     """Handles search family preview, creation, updates, and deletion."""
     import family_store
@@ -362,13 +394,16 @@ def main():
             "family-create",
             "family-update",
             "family-delete",
+            "family-route",
+            "family-route-clear",
             "probe",
         ],
         default="both",
         help=(
             "Operation mode: scrape, process, both, preview, update-all, "
             "route-preview, route-replan, route-create, route-annotate, "
-            "family-preview, family-create, family-update, family-delete, or probe"
+            "family-preview, family-create, family-update, family-delete, "
+            "family-route, family-route-clear, or probe"
         ),
     )
 
@@ -486,6 +521,10 @@ def main():
         "family-delete",
     ):
         run_family_mode(args)
+        return
+
+    if args.mode in ("family-route", "family-route-clear"):
+        run_family_route_mode(args)
         return
 
     if args.mode == "probe":

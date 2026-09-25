@@ -229,9 +229,17 @@ export default function RouteCorridorMap({
       }
     });
 
+    // Without a route the pins are the shape: a town search has one circle
+    // and its finds, some of them outside it.
+    if (!polyline || polyline.length === 0) {
+      (listings || []).forEach((l) => {
+        if (typeof l.lat === 'number' && typeof l.lon === 'number') latLngs.push([l.lat, l.lon]);
+      });
+    }
+
     if (latLngs.length === 0) return null;
     return L.latLngBounds(latLngs);
-  }, [polyline, circles]);
+  }, [polyline, circles, listings]);
 
   const defaultCenter: [number, number] = polyline.length > 0
     ? polyline[Math.floor(polyline.length / 2)]

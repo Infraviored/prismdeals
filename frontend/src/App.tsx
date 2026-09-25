@@ -125,6 +125,7 @@ export default function App() {
           onConfigure={configureCurrentCampaign}
           onStartScrape={() => scraper.handleStartScrape(currentCampaignId)}
           isScraping={scraper.isScraping}
+          onCampaignChanged={() => appData.refreshAll()}
         />
       </div>
     );

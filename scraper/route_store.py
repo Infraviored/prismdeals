@@ -318,8 +318,16 @@ def listings_for_route(conn, route_search_id):
         "SELECT DISTINCT l.id, l.title, l.price, l.location, l.url "
         "FROM listings l "
         "JOIN route_search_circles c ON l.search_id = c.search_id "
+        "WHERE c.route_search_id = ? "
+        # Found again by a circle, first by something else: a hunt given a
+        # corridor afterwards had found every listing by its town search.
+        "UNION "
+        "SELECT l.id, l.title, l.price, l.location, l.url "
+        "FROM listings l "
+        "JOIN listing_search_hits h ON h.listing_id = l.id "
+        "JOIN route_search_circles c ON h.search_id = c.search_id "
         "WHERE c.route_search_id = ?",
-        (route_search_id,),
+        (route_search_id, route_search_id),
     ).fetchall()
     return [
         {

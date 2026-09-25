@@ -13,6 +13,7 @@ interface ApiListing {
   images?: string[] | null;
   detour_min?: number | null;
   offroute_km?: number | null;
+  distance_km?: number | null;
   lat?: number | null;
   lon?: number | null;
   geo_status?: string | null;
@@ -46,6 +47,21 @@ interface ApiListing {
 }
 
 export type FundeTabKey = 'fit' | 'unclear' | 'no' | 'all';
+export type FundeSort = 'price_asc' | 'near' | 'score';
+
+/** Where a plain hunt searches: its town and radius, for the map. */
+export interface SearchCentre {
+  lat: number;
+  lon: number;
+  radius_km: number;
+  label?: string;
+}
+
+/** One pin: every listing of the tab, not only the loaded page. */
+export interface MapPoint extends RouteListingGeo {
+  distance_km?: number | null;
+  verdict?: string | null;
+}
 
 export interface UseFundeDataOptions {
   campaign: Campaign | undefined;
@@ -74,7 +90,7 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
     }
     return initialTab;
   });
-  const [sort, setSort] = useState<string>('price_asc');
+  const [sort, setSort] = useState<FundeSort>('price_asc');
   const [maxDetour, setMaxDetour] = useState<number | null>(null);
   const [radius, setRadius] = useState<number>(30);
   const [termId, setTermId] = useState<number | null>(null);
@@ -87,6 +103,8 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
   const [routeData, setRouteData] = useState<RouteCorridorData | null>(null);
   const [familyTerms, setFamilyTerms] = useState<SearchFamilyTerm[]>([]);
   const [radiusDiagnosis, setRadiusDiagnosis] = useState<RadiusDiagnosis | null>(null);
+  const [centre, setCentre] = useState<SearchCentre | null>(null);
+  const [mapPoints, setMapPoints] = useState<MapPoint[]>([]);
   const [diagnosing, setDiagnosing] = useState(false);
 
   const campaignId = campaign?.id ?? null;
@@ -209,7 +227,7 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
           limit: String(limit),
           offset: String(targetOffset),
         });
-        if (sort && sort !== 'default') queryParams.set('sort', sort);
+        queryParams.set('sort', sort);
         if (maxDetour !== null) queryParams.set('maxDetour', String(maxDetour));
         if (termId !== null) queryParams.set('term', String(termId));
         if (searchQuery.trim()) queryParams.set('q', searchQuery.trim());
@@ -222,11 +240,14 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
           queryParams.set('fitOnly', '1');
         }
 
+        // The family endpoint first, corridor or not: it knows the terms,
+        // the distance and every order. The corridor's own endpoint is for
+        // routes planned without a hunt.
         let url = '';
-        if (routeId) {
-          url = `/api/campaigns/${campaignId}/route?${queryParams.toString()}`;
-        } else if (familyId) {
+        if (familyId) {
           url = `/api/search-families/${familyId}/listings?${queryParams.toString()}`;
+        } else if (routeId) {
+          url = `/api/campaigns/${campaignId}/route?${queryParams.toString()}`;
         } else {
           queryParams.set('campaign_id', String(campaignId));
           url = `/api/listings?${queryParams.toString()}`;
@@ -246,6 +267,7 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
           rawListings = data.listings as RouteListingGeo[];
           fetchedTotal = typeof data.total === 'number' ? data.total : (data.counts?.total ?? rawListings.length);
           if (data.route) setRouteData(data as RouteCorridorData);
+          setCentre(data.centre || null);
         }
 
         const mapped: RowListing[] = rawListings.map((l: ApiListing) => ({
@@ -258,6 +280,7 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
           image_url: Array.isArray(l.images) && l.images.length > 0 ? l.images[0] : null,
           detour_min: typeof l.detour_min === 'number' ? l.detour_min : null,
           offroute_km: typeof l.offroute_km === 'number' ? l.offroute_km : null,
+          distance_km: typeof l.distance_km === 'number' ? l.distance_km : null,
           first_seen_at: l.first_seen_at || l.last_seen_at || null,
           last_seen_at: l.last_seen_at || null,
           is_deal: !!l.is_deal,
@@ -307,14 +330,57 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
     fetchPage(0, false);
   }, [fetchPage]);
 
+  // The corridor's shape, for the map, when the listings come from the family.
+  useEffect(() => {
+    if (!routeId || !familyId || !campaignId) {
+      if (familyId) setRouteData(null);
+      return;
+    }
+    fetch(`/api/campaigns/${campaignId}/route?limit=1`, { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setRouteData(data && data.route ? data : null))
+      .catch(() => {});
+  }, [routeId, familyId, campaignId]);
+
+  // Every pin of the tab at once; the list pages, the map does not.
+  const fetchMap = useCallback(async () => {
+    if (!familyId) {
+      setMapPoints([]);
+      return;
+    }
+    const qp = new URLSearchParams({ view: 'map' });
+    if (tab && tab !== 'all') qp.set('verdict', tab);
+    if (termId !== null) qp.set('term', String(termId));
+    if (dealsOnly) qp.set('dealsOnly', '1');
+    if (maxDetour !== null) qp.set('maxDetour', String(maxDetour));
+    try {
+      const res = await fetch(`/api/search-families/${familyId}/listings?${qp.toString()}`, {
+        credentials: 'same-origin',
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setMapPoints(
+        (data.points || []).map((p: MapPoint & { id: string | number }) => ({ ...p, id: String(p.id) }))
+      );
+      if (data.centre !== undefined) setCentre(data.centre || null);
+    } catch {
+      // the map is an addition to the list, never a reason for it to fail
+    }
+  }, [familyId, tab, termId, dealsOnly, maxDetour]);
+
+  useEffect(() => {
+    fetchMap();
+  }, [fetchMap]);
+
   const wasScraping = useRef(isScraping);
   useEffect(() => {
     if (wasScraping.current && !isScraping) {
       fetchPage(0, false);
       fetchOverview();
+      fetchMap();
     }
     wasScraping.current = isScraping;
-  }, [isScraping, fetchPage, fetchOverview]);
+  }, [isScraping, fetchPage, fetchOverview, fetchMap]);
 
   const loadMore = useCallback(() => {
     if (loading || loadingMore) return;
@@ -346,8 +412,8 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
     error,
     hasMore: listings.length < total,
     loadMore,
-    reload: () => { fetchPage(0, false); fetchOverview(); },
-    refetch: () => { fetchPage(0, false); fetchOverview(); },
+    reload: () => { fetchPage(0, false); fetchOverview(); fetchMap(); },
+    refetch: () => { fetchPage(0, false); fetchOverview(); fetchMap(); },
     // Tab control
     tab,
     setTab,
@@ -370,6 +436,8 @@ export function useFundeData({ campaign, isScraping, initialTab = 'fit' }: UseFu
     setFitOnly,
     // Corridor / Family
     routeData,
+    centre,
+    mapPoints,
     familyTerms,
     radiusDiagnosis,
     diagnosing,

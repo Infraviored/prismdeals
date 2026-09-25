@@ -173,6 +173,21 @@ def test_the_opening_price_is_written_once_and_never_again(conn):
     ]
 
 
+def test_a_bare_district_gains_its_postal_code_but_a_placed_town_stays(conn):
+    conn.execute("UPDATE listings SET location = 'Sendling' WHERE id = 'a'")
+    changed = listing_updates.apply(
+        conn, {"id": "a", "price_eur": 130, "location": "81369 Sendling"}
+    )
+    assert changed["location"] == ("Sendling", "81369 Sendling")
+    listing_updates.apply(
+        conn, {"id": "a", "price_eur": 130, "location": "81371 Anderswo"}
+    )
+    assert (
+        conn.execute("SELECT location FROM listings WHERE id='a'").fetchone()[0]
+        == "81369 Sendling"
+    )
+
+
 def test_a_missing_town_is_filled_from_the_card_but_never_overwritten(conn):
     changed = listing_updates.apply(
         conn, {"id": "a", "price_eur": 130, "location": "Bayern - Petershausen"}

@@ -28,6 +28,7 @@ const app = express();
 const port = Number(process.env.PRISMDEALS_PORT) || 3030;
 const { spawn } = require('child_process');
 const places = require('./places');
+const { placeListings } = require('./listing_geo');
 const sqlite3 = require('sqlite3').verbose();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
@@ -2212,6 +2213,52 @@ print('__RADIUS_BASE_URL__:' + new_base)
   }
 });
 
+// API: Give a hunt a corridor after it was made, or take it away.
+//
+// The hunt keeps its terms, requirements and verdicts; only where it looks
+// changes. The caller starts a crawl afterwards, which also works out the
+// detours.
+app.put('/api/search-families/:id/route', async (req, res) => {
+  const { origin, destination, radius_km, corridor_km } = req.body || {};
+  if (!origin || !destination) {
+    return res.status(400).json({ error: 'Missing origin or destination' });
+  }
+  const args = ['--mode', 'family-route', '--family-id', String(req.params.id),
+    '--from', String(origin), '--to', String(destination)];
+  if (radius_km) args.push('--radius-km', String(radius_km));
+  if (corridor_km) args.push('--corridor-km', String(corridor_km));
+  try {
+    // No `res`: a buyer who closes the tab must not stop a half-written change.
+    const result = await runPlanner(args);
+    const refused = readMarker(result.stdout, 'FAMILY_ROUTE_ERROR');
+    if (refused) return res.status(400).json({ error: refused });
+    const done = readMarker(result.stdout, 'FAMILY_ROUTE');
+    if (!done) {
+      console.error('Family route produced nothing:', result.stdout, result.stderr);
+      const reason = (result.stderr.match(/ValueError: (.+)/) || [])[1];
+      return res.status(500).json({ error: reason || 'Could not plan this corridor.' });
+    }
+    res.json(JSON.parse(done));
+  } catch (error) {
+    console.error('Could not set the family route:', error);
+    res.status(500).json({ error: 'Could not plan this corridor.' });
+  }
+});
+
+app.delete('/api/search-families/:id/route', async (req, res) => {
+  try {
+    const result = await runPlanner(
+      ['--mode', 'family-route-clear', '--family-id', String(req.params.id)]
+    );
+    const refused = readMarker(result.stdout, 'FAMILY_ROUTE_ERROR');
+    if (refused) return res.status(400).json({ error: refused });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Could not clear the family route:', error);
+    res.status(500).json({ error: 'Could not remove the corridor.' });
+  }
+});
+
 // API: Update search family name, enabled state, or terms list.
 //
 // Dropped terms do not delete listings; their searches rows simply lose this
@@ -2319,7 +2366,7 @@ app.delete('/api/search-families/:id', async (req, res) => {
 // every item so the frontend can display which model(s) hit and support filtering.
 app.get('/api/search-families/:id/listings', async (req, res) => {
   try {
-    const fam = await get('SELECT id, campaign_id FROM search_families WHERE id = ?', [req.params.id]);
+    const fam = await get('SELECT id, campaign_id, base_url FROM search_families WHERE id = ?', [req.params.id]);
     if (!fam) {
       return res.status(404).json({ error: 'Search family not found' });
     }
@@ -2457,9 +2504,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
       orderBy = '(l.price_eur IS NULL) ASC, l.price_eur DESC, (l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
     } else if (sort === 'newest' || sort === 'freshness') {
       orderBy = 'first_seen_at DESC, l.id DESC';
-    } else if (sort === 'score') {
-      orderBy = '(l.niceness_score IS NULL) ASC, l.niceness_score DESC, l.id DESC';
-    } else if (sort === 'detour' || sort === 'route') {
+    } else if (sort === 'detour' || sort === 'route' || (sort === 'near' && routeId)) {
       orderBy = '(g.detour_min IS NULL) ASC, g.detour_min ASC, l.niceness_score DESC, l.id DESC';
     } else if (routeId) {
       orderBy =
@@ -2469,9 +2514,16 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
       orderBy = FIT_FIRST + 'l.niceness_score DESC, l.id DESC';
     }
 
+    // The distance from the search's town and the score are worked out here,
+    // not in SQL, so ordering by them means reading the whole hunt and cutting
+    // the page afterwards. A hunt is tens of listings, not thousands.
+    const sortInJs = sort === 'score' || (sort === 'near' && !routeId);
+    const mapView = req.query.view === 'map';
+
     // Pagination (default limit 50, offset 0)
     const limit = Math.max(1, parseInt(req.query.limit, 10) || 50);
     const offset = req.query.offset ? Math.max(0, parseInt(req.query.offset, 10) || 0) : 0;
+    const readAll = sortInJs || mapView;
 
     const listingsSql = `
       ${cteSql}
@@ -2496,9 +2548,12 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
        LIMIT ? OFFSET ?
     `;
 
-    const rows = await query(listingsSql, [fam.id, ...termParams, routeId, ...whereParams, limit, offset]);
+    const rows = await query(listingsSql, [
+      fam.id, ...termParams, routeId, ...whereParams,
+      readAll ? -1 : limit, readAll ? 0 : offset,
+    ]);
 
-    const listings = rows.map(r => ({
+    let listings = rows.map(r => ({
       ...r,
       llm_processed: !!r.llm_processed,
       full_info_obtained: !!r.full_info_obtained,
@@ -2542,13 +2597,40 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
       }
     }
 
+    const centre = placeListings(listings, fam.base_url, { measure: !routeId });
+
+    if (mapView) {
+      // Every pin at once, and only what a pin shows.
+      return res.json({
+        total,
+        centre: routeId ? null : centre,
+        points: listings
+          .filter(l => typeof l.lat === 'number' && typeof l.lon === 'number')
+          .map(l => ({
+            id: l.id, title: l.title, price: l.price, location: l.location, url: l.url,
+            lat: l.lat, lon: l.lon, detour_min: l.detour_min, offroute_km: l.offroute_km,
+            distance_km: l.distance_km, images: l.images.slice(0, 1),
+            verdict: l.fit ? l.fit.verdict : null,
+          })),
+      });
+    }
+
     await annotateDeals(query, listings, familySearchIds);
     await annotateNodeMarket(query, listings, familySearchIds);
     await attachRanks(query, get, listings, fam.campaign_id || null);
     await attachScores(query, listings, familySearchIds);
+
+    if (sortInJs) {
+      const key = sort === 'score'
+        ? l => (typeof l.score === 'number' ? -l.score : Infinity)
+        : l => (typeof l.distance_km === 'number' ? l.distance_km : Infinity);
+      const price = l => (typeof l.price_eur === 'number' ? l.price_eur : Infinity);
+      listings.sort((a, b) => key(a) - key(b) || price(a) - price(b));
+      listings = listings.slice(offset, offset + limit);
+    }
     await attachPriceHistory(query, listings);
 
-    res.json({ total, offset, limit, listings });
+    res.json({ total, offset, limit, centre: routeId ? null : centre, listings });
   } catch (error) {
     console.error('Error fetching family listings:', error);
     res.status(500).json({ error: 'Failed to fetch family listings' });

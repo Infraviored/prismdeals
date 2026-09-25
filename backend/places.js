@@ -166,6 +166,26 @@ function suggest(query, limit = 8) {
   return scored.slice(0, limit).map(row => row[3]);
 }
 
+/**
+ * Places whose name is exactly this one, in this state when given.
+ *
+ * For reading a printed place back ("Bayern - Germering", "Landsberg (Lech)"),
+ * not for typing: a near-miss would put a listing in the wrong town.
+ */
+function byName(name, state = null) {
+  const bare = String(name || '').replace(/\(.*?\)/g, ' ');
+  const full = String(name || '').replace(/[()]/g, ' ');
+  const keys = new Set([spelled(bare), spelled(full), plain(bare), plain(full)]);
+  keys.delete('');
+  if (!keys.size) return [];
+  const matches = places.filter(p =>
+    keys.has(p._name) || keys.has(p._full) || keys.has(p._namePlain) || keys.has(p._fullPlain)
+  );
+  if (!state) return matches;
+  const inState = matches.filter(p => p.state === state);
+  return inState.length ? inState : matches;
+}
+
 load();
 
-module.exports = { suggest, reload: load, count: () => places.length };
+module.exports = { suggest, byName, reload: load, count: () => places.length };

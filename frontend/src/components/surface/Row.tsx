@@ -16,6 +16,8 @@ export interface RowListing {
   image_url?: string | null;
   detour_min?: number | null;
   offroute_km?: number | null;
+  /** Straight-line km from the hunt's town; plain hunts only. */
+  distance_km?: number | null;
   first_seen_at?: string | null;
   last_seen_at?: string | null;
   is_deal?: boolean;
@@ -206,6 +208,9 @@ export const Row: React.FC<RowProps> = ({
         )}
         {typeof listing.offroute_km === 'number' && listing.offroute_km > 0 && !listing.detour_min && (
           <span className="ml-3">{t('surface.kmDistance', { km: Math.round(listing.offroute_km) })}</span>
+        )}
+        {typeof listing.distance_km === 'number' && typeof listing.detour_min !== 'number' && typeof listing.offroute_km !== 'number' && (
+          <span className="ml-3">{t('surface.kmDistance', { km: Math.round(listing.distance_km) })}</span>
         )}
       </p>
 
