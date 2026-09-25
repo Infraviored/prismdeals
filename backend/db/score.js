@@ -146,6 +146,7 @@ function scoreListing(listing, fields) {
     score,
     gate: { ...gate, factor: gateFactor },
     axes: grades,
+    market_basis: listing.market_basis || null,
   };
 }
 

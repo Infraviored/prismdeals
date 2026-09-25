@@ -12,6 +12,7 @@
 
 const express = require('express');
 const { annotateDeals } = require('./db/reference_price');
+const { annotateNodeMarket } = require('./db/market_node');
 const { BEST_FIT_ORDER_SQL, fitOf, fitJoinOn } = require('./db/fit');
 
 const router = express.Router();
@@ -117,6 +118,7 @@ module.exports = (query, get, run) => {
       }));
 
       await annotateDeals(query, listings);
+      await annotateNodeMarket(query, listings);
       res.json({ total: listings.length, kept: listings.map(l => ({ listing_id: l.id })), listings });
     } catch (error) {
       console.error('Error reading kept listings:', error);

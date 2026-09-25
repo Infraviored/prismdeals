@@ -1,5 +1,6 @@
 const express = require('express');
 const { annotateDeals, dealListingIds } = require('./db/reference_price');
+const { annotateNodeMarket } = require('./db/market_node');
 const { attachScores } = require('./db/score');
 const { attachRanks } = require('./compare_api');
 const { resolveCampaignScope } = require('./overview/scope');
@@ -487,6 +488,7 @@ app.get('/api/listings/:id', async (req, res) => {
       fit: fitOf(row),
     };
     await annotateDeals(query, [listing], [Number(row.hit_search_id)]);
+    await annotateNodeMarket(query, [listing], [Number(row.hit_search_id)]);
     await attachRanks(query, get, [listing], req.query.campaign_id ? Number(req.query.campaign_id) : null);
     await attachScores(query, [listing], [Number(row.hit_search_id)]);
     const [withHistory] = await attachPriceHistory(query, [listing]);
@@ -772,6 +774,7 @@ app.get('/api/listings', async (req, res) => {
     }));
 
     await annotateDeals(query, listings, scopeSearchIds);
+    await annotateNodeMarket(query, listings, scopeSearchIds);
     await attachRanks(query, get, listings, campaign_id ? Number(campaign_id) : null);
     await attachScores(query, listings, scopeSearchIds);
     await attachPriceHistory(query, listings);
@@ -1599,7 +1602,11 @@ async function getRouteCorridorPayload(route, options = {}) {
         await attachRanks(
           query,
           get,
-          await annotateDeals(query, parsedListings, circleSearchIds),
+          await annotateNodeMarket(
+            query,
+            await annotateDeals(query, parsedListings, circleSearchIds),
+            circleSearchIds
+          ),
           route.campaign_id || null
         ),
         circleSearchIds
@@ -2530,6 +2537,7 @@ app.get('/api/search-families/:id/listings', async (req, res) => {
     }
 
     await annotateDeals(query, listings, familySearchIds);
+    await annotateNodeMarket(query, listings, familySearchIds);
     await attachRanks(query, get, listings, fam.campaign_id || null);
     await attachScores(query, listings, familySearchIds);
     await attachPriceHistory(query, listings);
