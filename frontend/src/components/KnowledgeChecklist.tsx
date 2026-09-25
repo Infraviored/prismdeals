@@ -119,7 +119,7 @@ export const KnowledgeChecklist: React.FC<KnowledgeChecklistProps> = ({ listingI
                 )}
                 {claim.weight === 'dealbreaker' && (
                   <span className="px-1.5 py-0.5 rounded text-2xs text-[#E87967] bg-[#E87967]/10 border border-[#E87967]/40">
-                    Dealbreaker
+                    {t('surface.claimDealbreaker')}
                   </span>
                 )}
               </div>
@@ -128,7 +128,7 @@ export const KnowledgeChecklist: React.FC<KnowledgeChecklistProps> = ({ listingI
 
               {firstSource && (
                 <div className="pt-0.5 flex items-center gap-1 text-2xs text-[#8FA6A1]">
-                  <span>Quelle:</span>
+                  <span>{t('surface.claimSource')}</span>
                   <a
                     href={firstSource}
                     target="_blank"

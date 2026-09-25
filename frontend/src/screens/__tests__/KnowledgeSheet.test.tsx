@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { KnowledgeSheet } from '../KnowledgeSheet';
@@ -18,7 +19,7 @@ describe('KnowledgeSheet', () => {
   });
 
   it('loads and renders brief with what to know and search brief', async () => {
-    (fetch as any).mockResolvedValueOnce({
+    (fetch as unknown as Mock).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
         decision: 'lohnt sich',
@@ -46,7 +47,7 @@ describe('KnowledgeSheet', () => {
   });
 
   it('classifies pasted answer and allows approving a claim', async () => {
-    (fetch as any).mockResolvedValueOnce({
+    (fetch as unknown as Mock).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
         decision: 'lohnt sich',
@@ -70,7 +71,7 @@ describe('KnowledgeSheet', () => {
     fireEvent.change(textarea, { target: { value: '## Bekannte Schwächen\n- Lima Rotor Defekt https://motorrad.de' } });
 
     // Mock classify POST
-    (fetch as any).mockResolvedValueOnce({
+    (fetch as unknown as Mock).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
         claims: [
@@ -95,7 +96,7 @@ describe('KnowledgeSheet', () => {
     expect(screen.getByTestId('approve-claim-42')).toBeInTheDocument();
 
     // Mock approve POST
-    (fetch as any).mockResolvedValueOnce({
+    (fetch as unknown as Mock).mockResolvedValueOnce({
       ok: true,
       json: async () => ({ success: true, id: 42 }),
     });

@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { KnowledgeChecklist } from '../KnowledgeChecklist';
@@ -12,7 +13,7 @@ describe('KnowledgeChecklist', () => {
   });
 
   it('renders nothing when claims list is empty', async () => {
-    (fetch as any).mockResolvedValueOnce({
+    (fetch as unknown as Mock).mockResolvedValueOnce({
       ok: true,
       json: async () => ({ listing_id: '123', node_key: 'motorrad/r1', claims: [] }),
     });
@@ -24,7 +25,7 @@ describe('KnowledgeChecklist', () => {
   });
 
   it('renders claims with kind badges and source links', async () => {
-    (fetch as any).mockResolvedValueOnce({
+    (fetch as unknown as Mock).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
         listing_id: '123',

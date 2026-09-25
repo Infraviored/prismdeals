@@ -47,7 +47,7 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({
       setBriefData(data);
       setApprovedClaims(data.existing_claims || []);
       setProposedClaims(data.pending_claims || []);
-    } catch (err: unknown) {
+    } catch {
       setError(t('surface.knowledgeLoadFailed'));
     } finally {
       setLoading(false);
@@ -85,7 +85,7 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({
       const newClaims: KnowledgeClaim[] = data.claims || [];
       setProposedClaims((prev) => [...prev, ...newClaims]);
       setAnswerText('');
-    } catch (err: unknown) {
+    } catch {
       setError(t('surface.knowledgeClassifyFailed'));
     } finally {
       setClassifying(false);
@@ -165,7 +165,7 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="text-xs uppercase tracking-wider text-[#8FA6A1]">
-                  Knoten
+                  {t('surface.knowledgeNode')}
                 </span>
                 <span className="text-xs font-medium text-[#4E8C6A] bg-[#0E4A40]/40 px-2 py-0.5 rounded border border-[#0E4A40]">
                   {briefData.node_key}
@@ -309,7 +309,7 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({
 
                       {claim.sources && claim.sources.length > 0 ? (
                         <div className="flex items-center gap-1 text-2xs text-[#8FA6A1] truncate">
-                          <span>Quelle:</span>
+                          <span>{t('surface.claimSource')}</span>
                           <a
                             href={claim.sources[0]}
                             target="_blank"

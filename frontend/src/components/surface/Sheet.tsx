@@ -32,7 +32,9 @@ export const Sheet: React.FC<SheetProps> = ({
   // bar, over and over. Read it through a ref; open and close are the only
   // moments focus should move.
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return;

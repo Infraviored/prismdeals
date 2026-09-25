@@ -22,7 +22,7 @@ interface StoredRequirement {
 }
 
 /** A must or wish in the buyer's own words ("ABS"), read as words by the judge. */
-export function ownRequirement(label: string, importance: 'high' | 'low'): StoredRequirement {
+function ownRequirement(label: string, importance: 'high' | 'low'): StoredRequirement {
   const clean = label.trim();
   const slug = clean.toLowerCase().replace(/[^a-z0-9äöüß]+/g, '_').replace(/^_|_$/g, '');
   return { id: `own_${slug}`, label: clean, importance, own: true, buyer_wants: { present: true } };
