@@ -7,7 +7,7 @@ import type {
 } from '../types';
 import type { Place } from '../components/PlaceInput';
 import { composeSearchUrl, slugify } from './searchUrl';
-import { broadenQuery } from './searchTerms';
+import { broadenQuery, withoutGeneration } from './searchTerms';
 
 export interface HuntSaveParams {
   intentText: string;
@@ -39,7 +39,7 @@ export function compileHuntTerms(params: {
 
   if (probeMarketPicture?.chosen_terms && probeMarketPicture.chosen_terms.length > 0) {
     return probeMarketPicture.chosen_terms.map((t) => ({
-      term: slugify(t),
+      term: slugify(withoutGeneration(t)),
       label: t,
       enabled: true,
     }));
@@ -57,7 +57,7 @@ export function compileHuntTerms(params: {
 
   if (models.length > 0) {
     return models.map((m) => ({
-      term: slugify(m),
+      term: slugify(withoutGeneration(m)),
       label: m,
       enabled: true,
     }));

@@ -147,7 +147,7 @@ export default function App() {
             if (configured) navigate('dashboard', currentCampaignId, null);
             else navigate('landing', null, null);
           }}
-          onSaved={(savedFamily) => {
+          onSaved={(savedFamily, change) => {
             if (currentCampaignId) {
               appData.setCampaigns(prev => prev.map(c => c.id === currentCampaignId ? { ...c, family_id: savedFamily.id } : c));
             }
@@ -156,7 +156,9 @@ export default function App() {
             // A changed search is a new question to Kleinanzeigen. Ask it now:
             // waiting for the schedule (which is usually off) left the buyer
             // looking at a list that could not change.
-            scraper.handleStartScrape(currentCampaignId);
+            // Only when something about the search changed; a new name is not
+            // worth a crawl.
+            if (change?.searchChanged !== false) scraper.handleStartScrape(currentCampaignId);
           }}
           onDelete={(camp) => {
             campaignEdit.handleDeleteCampaign(camp);

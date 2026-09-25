@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { broadenQuery } from '../searchTerms';
+import { withoutGeneration } from '../searchTerms';
 
 describe('broadenQuery', () => {
   it('keeps what sellers write and drops what they leave out', () => {
@@ -13,5 +14,15 @@ describe('broadenQuery', () => {
   it('leaves a term alone that is already broad', () => {
     expect(broadenQuery('Yamaha R1')).toBe('yamaha r1');
     expect(broadenQuery('Matratze 140x200')).toBe('matratze');
+  });
+});
+
+describe('withoutGeneration', () => {
+  it('drops a trailing generation code, keeps short model names whole', () => {
+    expect(withoutGeneration('yamaha-r1-rn19')).toBe('yamaha-r1');
+    expect(withoutGeneration('BMW 3er E90')).toBe('BMW 3er');
+    expect(withoutGeneration('honda-cbr-1000-rr')).toBe('honda-cbr-1000-rr');
+    expect(withoutGeneration('golf 7')).toBe('golf 7');
+    expect(withoutGeneration('corsair-vengeance-32gb')).toBe('corsair-vengeance-32gb');
   });
 });

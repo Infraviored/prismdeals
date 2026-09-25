@@ -30,3 +30,21 @@ export function broadenQuery(wish: string): string {
     .filter(Boolean)
     .join(' ');
 }
+
+/**
+ * A search term without a trailing generation or frame code:
+ * "yamaha-r1-rn19" -> "yamaha-r1", "BMW 3er E90" -> "BMW 3er".
+ *
+ * Sellers write "R1", rarely "R1 RN19": measured, "yamaha r1 rn19" finds 0
+ * offers and "yamaha r1" 115. The code belongs in the requirements (judged
+ * from the listing), not in the search (which would never see those offers).
+ * Needs at least two words before the code, so "Golf 7" or "S7" stay whole.
+ */
+export function withoutGeneration(term: string): string {
+  const parts = term.trim().split(/([\s-]+)/);
+  const words = parts.filter((_, i) => i % 2 === 0);
+  if (words.length >= 3 && /^[A-Za-z]{1,3}\d{1,3}$/.test(words[words.length - 1])) {
+    return parts.slice(0, -2).join('');
+  }
+  return term.trim();
+}

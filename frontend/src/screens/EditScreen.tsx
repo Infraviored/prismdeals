@@ -10,13 +10,16 @@ import { EditProbeSheet } from './EditProbeSheet';
 import { useTranslation } from '../hooks/useTranslation';
 import type { Campaign, SearchTarget, SearchFamilyTerm } from '../types';
 import { composeSearchUrl, decomposeSearchUrl, slugify } from '../utils/searchUrl';
-import { broadenQuery } from '../utils/searchTerms';
+import { withoutGeneration, broadenQuery } from '../utils/searchTerms';
 
 export interface EditScreenProps {
   campaign: Campaign | undefined;
   searches?: SearchTarget[];
   onBack: () => void;
-  onSaved?: (savedFamily: { id: number; searches?: number; conflicts?: unknown[] }) => void;
+  onSaved?: (
+    savedFamily: { id: number; searches?: number; conflicts?: unknown[] },
+    change?: { searchChanged: boolean }
+  ) => void;
   onDelete?: (campaign: Campaign) => void;
 }
 
@@ -175,8 +178,20 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
     const fallback = broadenQuery(trimmedName) || trimmedName;
     const effectiveTerms = terms.length > 0
-      ? terms.map((t) => ({ ...(t.id ? { id: t.id } : {}), term: t.term, label: t.label || t.term, enabled: true }))
+      ? terms.map((t) => ({
+          ...(t.id ? { id: t.id } : {}),
+          term: withoutGeneration(t.term),
+          label: t.label || t.term,
+          enabled: true,
+        }))
       : [{ term: slugify(fallback), label: fallback, enabled: true }];
+
+    // One search per term: "yamaha-r1-rn19" and "yamaha-r1" become the same.
+    const seenTerms = new Set<string>();
+    for (let i = effectiveTerms.length - 1; i >= 0; i--) {
+      if (seenTerms.has(effectiveTerms[i].term)) effectiveTerms.splice(i, 1);
+      else seenTerms.add(effectiveTerms[i].term);
+    }
 
     const composedBaseUrl = composeSearchUrl({
       locationSlug: place ? slugify(place.name) : locationSlug,
@@ -190,6 +205,23 @@ export const EditScreen: React.FC<EditScreenProps> = ({
 
     try {
       const isUpdate = Boolean(campaign?.family_id);
+      // Only what goes into the URL is a new question to Kleinanzeigen: the
+      // terms, place, radius, price and filters. A renamed hunt is not.
+      let searchChanged = true;
+      if (isUpdate) {
+        const before = await fetch(`/api/search-families/${campaign!.family_id}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        if (before) {
+          const oldTerms = (before.terms || [])
+            .filter((t: { enabled?: number | boolean }) => t.enabled !== 0 && t.enabled !== false)
+            .map((t: { term: string }) => t.term)
+            .sort()
+            .join('|');
+          const newTerms = effectiveTerms.map((t) => t.term).sort().join('|');
+          searchChanged = before.base_url !== composedBaseUrl || oldTerms !== newTerms;
+        }
+      }
       const endpoint = isUpdate ? `/api/search-families/${campaign!.family_id}` : '/api/search-families';
       const method = isUpdate ? 'PUT' : 'POST';
       const payload: Record<string, unknown> = {
@@ -219,7 +251,7 @@ export const EditScreen: React.FC<EditScreenProps> = ({
         }).catch(() => {});
       }
 
-      if (onSaved) onSaved(data);
+      if (onSaved) onSaved(data, { searchChanged });
       else onBack();
     } catch {
       setSaveError(t('common.connectionIssueFailed'));

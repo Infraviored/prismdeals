@@ -51,13 +51,15 @@ export function useScraperControl({
           setIsScraping(false);
           setScrapingProgress(null);
           setScrapingStatus('Scraping completed!');
-          const judged = crawlingCampaignRef.current;
           crawlingCampaignRef.current = null;
-          if (judged) {
-            await fetch(`/api/campaigns/${judged}/judge`, { method: 'POST' }).catch(() => {});
-          }
+          // The server judges and compares after the crawl, whether this page
+          // is open or not; look again once its verdicts are in.
           refreshAllRef.current();
           onScrapeCompletedRef.current?.();
+          setTimeout(() => {
+            refreshAllRef.current();
+            onScrapeCompletedRef.current?.();
+          }, 8000);
         }
       } catch {
         // silent

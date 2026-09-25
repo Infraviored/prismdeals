@@ -29,6 +29,39 @@ function findPython() {
   return 'python3';
 }
 
+/**
+ * Judges every search of a campaign with the free stages, then starts the
+ * comparison. The one path after anything that changes what a hunt sees or
+ * wants: a finished crawl (server-side, app open or not) and saved
+ * requirements (no crawl -- Kleinanzeigen is not asked again for that).
+ */
+async function judgeCampaignWith(query, judgeOne, campaignId) {
+  const searches = await query('SELECT id FROM searches WHERE campaign_id = ? AND enabled = 1', [campaignId]);
+  if (searches.length === 0) {
+    return { status: 404, body: { error: 'No searches in this campaign' } };
+  }
+  const totals = { fit: 0, unclear: 0, no: 0 };
+  const problems = [];
+  for (const search of searches) {
+    const result = await judgeOne(search.id);
+    if (result.error) {
+      problems.push({ search_id: search.id, error: result.error });
+      continue;
+    }
+    for (const key of Object.keys(totals)) totals[key] += result[key] || 0;
+  }
+  // The comparison reads the verdicts, so it starts after them.
+  require('./compare_api').startCompare(campaignId);
+  // A campaign whose searches have no requirements yet is not a failure to
+  // hide: it is the one thing the buyer has to do.
+  if (problems.length === searches.length) {
+    return { status: 400, body: { error: problems[0].error, problems } };
+  }
+  return { body: { success: true, counts: totals, problems } };
+}
+
+let judgeCampaign = async () => ({ status: 503, body: { error: 'not ready' } });
+
 module.exports = (query, get) => {
   // What the free stages make of every listing in a search. No model is called
   // here: on the Corsair search this settles 43 of 50 from the listings' own
@@ -75,26 +108,9 @@ module.exports = (query, get) => {
   // searches -- a family expands to one per model per place. Judging by
   // campaign is therefore the button the screen can actually offer.
   router.post('/api/campaigns/:id/judge', async (req, res) => {
-    const searches = await query('SELECT id FROM searches WHERE campaign_id = ?', [req.params.id]);
-    if (searches.length === 0) return res.status(404).json({ error: 'No searches in this campaign' });
-
-    const totals = { fit: 0, unclear: 0, no: 0 };
-    const problems = [];
-    for (const search of searches) {
-      const result = await judgeOne(search.id);
-      if (result.error) {
-        problems.push({ search_id: search.id, error: result.error });
-        continue;
-      }
-      for (const key of Object.keys(totals)) totals[key] += result[key] || 0;
-    }
-
-    // A campaign whose searches have no requirements yet is not a failure to
-    // hide: it is the one thing the buyer has to do.
-    if (problems.length === searches.length) {
-      return res.status(400).json({ error: problems[0].error, problems });
-    }
-    res.json({ success: true, counts: totals, problems });
+    const result = await judgeCampaign(Number(req.params.id));
+    if (result.status) return res.status(result.status).json(result.body);
+    res.json(result.body);
   });
 
   router.get('/api/searches/:id/fit', async (req, res) => {
@@ -132,5 +148,8 @@ module.exports = (query, get) => {
     }
   });
 
+  judgeCampaign = campaignId => judgeCampaignWith(query, judgeOne, campaignId);
   return router;
 };
+
+module.exports.judgeCampaign = campaignId => judgeCampaign(campaignId);

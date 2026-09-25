@@ -109,6 +109,9 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({
         const body = await res.json().catch(() => null);
         throw new Error((body && body.error) || String(res.status));
       }
+      // New wants, same offers: judge again (and compare), but do not ask
+      // Kleinanzeigen again -- nothing about the search changed.
+      await fetch(`/api/campaigns/${campaignId}/judge`, { method: 'POST' }).catch(() => {});
       onSaved?.();
       onClose();
     } catch (err) {

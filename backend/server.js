@@ -3080,7 +3080,8 @@ app.post('/api/scrape', (req, res) => {
       if (code === 0) {
         require('./migrations/p8_backfill_nodes').backfillP8Nodes(query, run).catch(console.error);
       }
-      if (code === 0 && campaignId) require('./compare_api').startCompare(Number(campaignId));
+      // Judge, then compare -- on the server, whether the app is open or not.
+      if (code === 0 && campaignId) require('./fit_api').judgeCampaign(Number(campaignId)).catch(console.error);
     });
     
     res.json({ success: true, message: 'Scraping started' });
