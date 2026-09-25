@@ -21,7 +21,7 @@ import listing_updates  # noqa: E402
 SCHEMA = """
 CREATE TABLE listings (
     id TEXT PRIMARY KEY, title TEXT, price TEXT, price_eur INTEGER,
-    images TEXT, last_seen_at TEXT
+    images TEXT, last_seen_at TEXT, location TEXT
 );
 CREATE TABLE listing_price_history (
     listing_id TEXT NOT NULL, price_eur INTEGER, seen_at TEXT NOT NULL
@@ -171,3 +171,17 @@ def test_the_opening_price_is_written_once_and_never_again(conn):
         120,
         100,
     ]
+
+
+def test_a_missing_town_is_filled_from_the_card_but_never_overwritten(conn):
+    changed = listing_updates.apply(
+        conn, {"id": "a", "price_eur": 130, "location": "Bayern - Petershausen"}
+    )
+    assert changed["location"] == (None, "Bayern - Petershausen")
+    listing_updates.apply(
+        conn, {"id": "a", "price_eur": 130, "location": "Bayern - Anderswo"}
+    )
+    assert (
+        conn.execute("SELECT location FROM listings WHERE id='a'").fetchone()[0]
+        == "Bayern - Petershausen"
+    )

@@ -29,12 +29,13 @@ def apply(conn, listing):
     its own reason to be paid.
     """
     row = conn.execute(
-        "SELECT price_eur, price, images FROM listings WHERE id = ?", (listing["id"],)
+        "SELECT price_eur, price, images, location FROM listings WHERE id = ?",
+        (listing["id"],),
     ).fetchone()
     if row is None:
         return None
 
-    old_price, old_price_text, old_images = row
+    old_price, old_price_text, old_images, old_location = row
     changed = {}
     sets = []
     params = []
@@ -71,6 +72,13 @@ def apply(conn, listing):
         changed["images"] = (len(stored), len(merged))
         sets.append("images = ?")
         params.append(json.dumps(merged, ensure_ascii=False))
+
+    # A town the card now names where none was stored: cards whose alt text
+    # named the district came in without one ("Ohne Ort" on the row).
+    if not old_location and listing.get("location"):
+        changed["location"] = (old_location, listing["location"])
+        sets.append("location = ?")
+        params.append(listing["location"])
 
     sets.append("last_seen_at = ?")
     params.append(_now())
