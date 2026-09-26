@@ -19,6 +19,7 @@ import { useLinkedListing } from '../hooks/useLinkedListing';
 import { conditionsById } from '../utils/huntDoc';
 import type { Signal } from '../types/hunt';
 import FundeEmpty from './FundeEmpty';
+import { KaReminders } from '../components/KaReminders';
 import Freshness from './Freshness';
 
 export interface FundeScreenProps {
@@ -206,6 +207,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
           scheduleMinutes={overview?.schedule_interval ?? 0}
         />
       </header>
+      <div className="mx-4 sm:mx-8"><KaReminders /></div>
 
       <div className="tabs" role="tablist" id="tabs">
         {tabs.map((item) => (
@@ -337,6 +339,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         isKept={selectedListing ? kept.has(selectedListing.id) : false}
         onToggleKeep={toggle}
         conditions={conditions}
+        huntId={huntId}
       />
 
       <RequirementsSheet

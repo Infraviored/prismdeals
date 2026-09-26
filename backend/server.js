@@ -311,7 +311,10 @@ app.use(require('./hunts_api')(query, get));
 
 app.use(require('./compare_api')(query, get));
 app.use(require('./knowledge_api')(query));
-app.use(require('./ka_api')());
+const kaApi = require('./ka_api')(query, run);
+app.use(kaApi);
+// Only the live service polls: a second backend would open the same Chrome profile.
+if (process.env.PRISMDEALS_KA_POLL === '1') kaApi.messages.start();
 
 
 // API: Place suggestions for the route corridor's From/To fields.

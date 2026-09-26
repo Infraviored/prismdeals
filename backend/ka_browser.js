@@ -123,6 +123,7 @@ function touch() {
 /** Opens the login page and starts streaming it. */
 async function startLogin() {
   await stop();
+  await closeApi();
   const { browser, page } = await launch();
   const cdp = await page.createCDPSession();
   session = { browser, page, cdp, frame: null, seq: 0, timer: null, idle: null, done: false };
@@ -189,9 +190,77 @@ async function replay(page, event) {
   }
 }
 
+// The API session: the same profile, no picture, kept open a few minutes
+// between calls. Kleinanzeigen's own messagebox API is called from inside the
+// logged-in page, so every call looks like the site's own.
+const API_IDLE_MS = 5 * 60 * 1000;
+let api = null; // { browser, page, token, exp, userId, idle }
+let apiQueue = Promise.resolve();
+
+async function apiSession() {
+  if (session) throw new Error('Login ist gerade offen.');
+  if (!api) {
+    const { browser, page } = await launch();
+    await page.goto('https://www.kleinanzeigen.de/m-nachrichten.html', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    api = { browser, page, token: null, exp: 0, userId: null, idle: null };
+  }
+  clearTimeout(api.idle);
+  api.idle = setTimeout(closeApi, API_IDLE_MS);
+  if (!api.token || api.exp - 60 < Date.now() / 1000) {
+    const got = await api.page.evaluate(async () => {
+      const res = await fetch('/m-access-token.json', { credentials: 'include' });
+      return { status: res.status, auth: res.headers.get('authorization') };
+    });
+    if (!got.auth) {
+      writeState({ connected: false });
+      throw new Error('Nicht mehr bei Kleinanzeigen angemeldet.');
+    }
+    const claims = JSON.parse(Buffer.from(got.auth.split(' ')[1].split('.')[1], 'base64url').toString());
+    api.token = got.auth;
+    api.exp = claims.exp;
+    api.userId = claims['https://www.kleinanzeigen.de/user_id'];
+  }
+  return api;
+}
+
+async function closeApi() {
+  const a = api;
+  api = null;
+  if (a) await a.browser.close().catch(() => {});
+}
+
+/** One call to Kleinanzeigen's gateway, as the logged-in page makes it; calls
+ * run one after the other. `path` may use {user} for the account's id. */
+function call(method, path, body) {
+  const run = async () => {
+    const a = await apiSession();
+    const url = `https://gateway.kleinanzeigen.de${path.replace('{user}', a.userId)}`;
+    const out = await a.page.evaluate(async (url, method, token, body) => {
+      const res = await fetch(url, {
+        method,
+        credentials: 'include',
+        headers: {
+          Authorization: token,
+          Accept: 'application/json',
+          'X-ECG-USER-AGENT': 'messagebox-1',
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const text = await res.text();
+      return { status: res.status, text };
+    }, url, method, a.token, body || null);
+    if (out.status >= 400) throw new Error(`Kleinanzeigen antwortete ${out.status}`);
+    return out.text ? JSON.parse(out.text) : {};
+  };
+  apiQueue = apiQueue.then(run, run);
+  return apiQueue;
+}
+
 /** Forgets the session: the profile goes, and with it every cookie. */
 async function logout() {
   await stop();
+  await closeApi();
   fs.rmSync(PROFILE, { recursive: true, force: true });
   writeState({ connected: false });
 }
@@ -201,4 +270,4 @@ function status() {
   return { connected: Boolean(state.connected), since: state.since || null, login_open: Boolean(session && !session.done) };
 }
 
-module.exports = { startLogin, frame, input, stop, logout, status, loggedIn, launch, PROFILE, HOME };
+module.exports = { startLogin, frame, input, stop, logout, status, loggedIn, launch, call, closeApi, PROFILE, HOME };

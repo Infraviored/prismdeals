@@ -34,6 +34,23 @@ export const en = {
     originPin: "Start: {{place}}",
     destinationPin: "Destination: {{place}}"
   },
+  chat: {
+    title: "Chat",
+    write: "Write a message",
+    drafting: "Writing …",
+    again: "Suggest again",
+    send: "Send",
+    sending: "Sending …",
+    sent: "Sent",
+    open: "Open chat",
+    message: "Message to the seller",
+    answer: "Answer",
+    failed: "That did not work.",
+    newAnswers: "New answers ({{count}})",
+    tone: "How I write",
+    toneHint: "Every suggested message follows this.",
+    toneSaved: "Saved",
+  },
   ka: {
     title: "Log in to Kleinanzeigen",
     hint: "This is a browser on the server. Tap the picture and type. Your password goes to Kleinanzeigen only.",

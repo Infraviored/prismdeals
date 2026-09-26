@@ -11,6 +11,7 @@ import { Bookmark, ExternalLink, ChevronLeft, ChevronRight, Image as ImageIcon }
 import ScoreBreakdown from './ScoreBreakdown';
 import { KnowledgeChecklist } from '../components/KnowledgeChecklist';
 import type { Condition } from '../types/hunt';
+import { MessageDraft } from '../components/MessageDraft';
 
 export interface FundeDetailSheetProps {
   listing: RowListing | null;
@@ -19,9 +20,11 @@ export interface FundeDetailSheetProps {
   onToggleKeep?: (id: string) => void;
   /** The hunt's conditions by id, to name the states of `fit.states`. */
   conditions?: Map<string, Condition>;
+  /** The hunt it is shown in: the seller can be written to. */
+  huntId?: number | null;
 }
 
-export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onClose, isKept = false, onToggleKeep, conditions }) => {
+export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onClose, isKept = false, onToggleKeep, conditions, huntId }) => {
   const { t } = useTranslation();
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
 
@@ -225,6 +228,8 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
 
           {/* 4. Why this score: the gate and the graded axes */}
           <ScoreBreakdown listing={listing} conditions={conditions} />
+
+          {typeof huntId === 'number' && <MessageDraft key={listing.id} huntId={huntId} listingId={listing.id} />}
 
           {/* Comparative rank from judge run */}
           {typeof listing.rank === 'number' && typeof listing.rank_of === 'number' && (
