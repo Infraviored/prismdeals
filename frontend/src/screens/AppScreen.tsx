@@ -139,7 +139,7 @@ export const AppScreen: React.FC<AppScreenProps> = ({
             value={tone}
             onChange={e => setTone(e.target.value)}
             onBlur={saveTone}
-            rows={5}
+            rows={7}
             aria-label={t('chat.tone')}
             className="w-full px-3.5 py-3 rounded bg-[#06322C] border border-[#0E4A40] text-sm text-[#F2F5F4] leading-relaxed focus:outline-none focus:border-[#8FA6A1]"
           />
