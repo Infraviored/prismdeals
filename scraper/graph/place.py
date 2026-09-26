@@ -1,15 +1,20 @@
 """Placing a target in the graph (plan §3): "Honda CBR 1000 RR SC59" -> node id.
 
+Facts are not invented here: an attribute comes into being when a hunt asks
+about it (`define_attributes`), and its readers are checked on real titles.
+
 Names first: a target whose folded text is already an alias in its category
 is that node, free. Otherwise one model call returns where it belongs under
-the category -- brand, model, generation with years, the names sellers use --
-and which facts matter for this kind of product beyond what the site filters.
+the category -- brand, model, generation with years, the names sellers use.
 New nodes are `proposed` until the market names them (evidence.py).
 """
 
+import logging
 import re
 
 from . import llm, store
+
+logger = logging.getLogger(__name__)
 
 KINDS = ("class", "brand", "family", "model", "generation", "config")
 TYPES = ("number", "boolean", "enum", "text")
@@ -17,7 +22,6 @@ TYPES = ("number", "boolean", "enum", "text")
 PROMPT = """Du ordnest ein Produkt in einen Produktbaum für Gebrauchtware ein.
 
 Kategorie: {category} (Kleinanzeigen-Kategorie {code})
-Vorhandene Merkmale der Kategorie: {attributes}
 Produkt: {text}
 
 Gib den Pfad UNTER der Kategorie zurück, vom Allgemeinen zum Genauen, so tief wie das
@@ -32,20 +36,9 @@ Produkt gemeint ist:
   gesuchten), je {{"name", "years", "aliases"}} -- damit ein Angebot einer anderen Generation
   als solche erkannt wird.
 
-Dazu 0 bis 6 Merkmale, die für GENAU diese Art Produkt beim Gebrauchtkauf zählen und
-NICHT schon unter den vorhandenen Merkmalen sind. Je Merkmal:
-- id (snake_case), label (deutsch), type ("number" | "boolean" | "enum" | "text"),
-  unit (bei Zahlen), options (bei enum),
-- readers: Liste, wie es aus Titel/Beschreibung gelesen wird:
-  "number" (Zahl mit Einheit beim Label), "keywords:wort1|wort2" (genannt oder verneint),
-  "regex:<Python-Regex mit genau einer Gruppe>" (z. B. "regex:\\\\bCL\\\\s?(\\\\d{{2}})\\\\b"),
-- at: Index im Pfad, ab dem es gilt (0 = oberster Pfad-Knoten).
-
 Antworte NUR mit JSON:
 {{"path": [{{"name": "...", "kind": "...", "aliases": ["..."], "years": [2008, 2011],
-             "generations": [{{"name": "...", "years": [2004, 2007], "aliases": ["..."]}}]}}],
-  "attributes": [{{"id": "...", "label": "...", "type": "...", "unit": "...",
-                   "readers": ["..."], "at": 0}}]}}
+             "generations": [{{"name": "...", "years": [2004, 2007], "aliases": ["..."]}}]}}]}}
 """
 
 
@@ -229,20 +222,12 @@ def place(conn, text, category_code, ask=llm.ask_json):
         store.add_alias(conn, category["id"], text, "name", "user")
         conn.commit()
         return category["id"]
-    existing = store.effective_attributes(conn, category["id"])
     raw = ask(
         PROMPT.format(
-            category=category["name"],
-            code=category["category_code"],
-            attributes=", ".join(
-                f"{a['label']} ({i})" for i, a in sorted(existing.items())
-            )
-            or "keine",
-            text=text,
+            category=category["name"], code=category["category_code"], text=text
         )
     )
     path = _clean_path(raw)
-    depth = len(path)
     # A class step that is the category itself ("Motorräder & Motorroller"
     # before "Yamaha") is not a node of its own: its names are the category's.
     while (
@@ -252,21 +237,10 @@ def place(conn, text, category_code, ask=llm.ask_json):
     ):
         for alias in path.pop(0)["aliases"]:
             store.add_alias(conn, category["id"], alias, "name", "model")
-    dropped = depth - len(path)
     if not path:
         store.add_alias(conn, category["id"], text, "name", "user")
         conn.commit()
         return category["id"]
-    # A fact the category already has under another id is not a new one
-    # ("kilometerstand" beside the site's "km" labelled "Kilometerstand").
-    taken = {store.fold(a["label"]) for a in existing.values()} | {
-        store.fold(i) for i in existing
-    }
-    attributes = [
-        a
-        for a in _clean_attributes(raw, depth)
-        if store.fold(a["label"]) not in taken and store.fold(a["id"]) not in taken
-    ]
     parent_id, names, ids = category["id"], [], []
     for step in path:
         node_id = store.create_node(
@@ -297,18 +271,6 @@ def place(conn, text, category_code, ask=llm.ask_json):
         names.append(step["name"])
         ids.append(node_id)
         parent_id = node_id
-    for attr in attributes:
-        store.set_attribute(
-            conn,
-            ids[max(attr["at"] - dropped, 0)],
-            attr["id"],
-            attr["label"],
-            attr["type"],
-            attr["readers"],
-            "model",
-            unit=attr["unit"],
-            options=attr["options"],
-        )
     # The typed text names the target too ("Honda CBR 1000 RR SC59").
     store.add_alias(conn, ids[-1], text, "name", "user")
     conn.commit()
@@ -362,13 +324,93 @@ Ist es nur ein anderer Name für ein vorhandenes Merkmal ("Laufleistung" für
   (genannt oder verneint, für ja/nein), "regex:<Python-Regex mit genau einer Gruppe>" (z. B.
   "regex:\\\\b(\\\\d{{1,2}})\\\\s?x\\\\s?\\\\d{{1,3}}\\\\s?GB" für die Anzahl Riegel).
 
+Echte Anzeigentitel dieser Art (Nummer: Titel):
+{samples}
+Gib je Merkmal in "examples" an, was es aus jedem dieser Titel lesen muss (Nummer -> Wert,
+null wenn der Titel es nicht nennt). Deine readers werden damit geprüft.
+{failures}
 Antworte NUR mit JSON:
 {{"attributes": [{{"label": "...", "id": "snake_case", "type": "...", "unit": null,
-                  "options": null, "readers": ["..."]}}]}}
+                  "options": null, "readers": ["..."], "examples": {{"0": null}}}}]}}
 """
 
+# Titles a new reader is checked against before it reads the market, and how
+# often the model may correct readers that misread them.
+SAMPLES = 12
+ATTEMPTS = 3
 
-def define_attributes(conn, node_id, labels, ask=llm.ask_json):
+
+def _samples(conn, node_id):
+    """Titles of offers resolved below the node; too few, those of its category."""
+    category = next(
+        n["id"]
+        for n in reversed(store.ancestors(conn, node_id))
+        if n["kind"] == "category"
+    )
+    rows = []
+    for scope in dict.fromkeys((node_id, category)):
+        ids = store.subtree_ids(conn, scope)
+        rows = conn.execute(
+            f"""SELECT l.title FROM listing_resolution r JOIN listings l ON l.id = r.listing_id
+                 WHERE r.node_id IN ({",".join("?" for _ in ids)}) AND l.title IS NOT NULL
+                 ORDER BY l.id DESC LIMIT ?""",
+            (*ids, SAMPLES),
+        ).fetchall()
+        if len(rows) >= SAMPLES // 2:
+            break
+    return [r[0] for r in rows]
+
+
+def _same(read, expected):
+    if read is None or expected is None:
+        return read is None and expected is None
+    if isinstance(expected, bool) or isinstance(read, bool):
+        return read is expected
+    from .numbers import leading_number
+
+    a, b = leading_number(read), leading_number(expected)
+    if a is not None and b is not None and not isinstance(read, str):
+        return abs(a - b) < 1e-9
+    return store.fold(read) == store.fold(expected)
+
+
+def _failures(attr, samples, examples):
+    """What the attribute's readers read wrong on the titles the model labelled.
+
+    A wrong value where the title states one always counts. A value read where
+    the model saw none counts only past a quarter of the titles: reading a
+    little beyond is tolerable, contradicting what a seller wrote is not."""
+    from . import readers
+
+    wrong, beyond = [], []
+    reading = {**attr, "options": store.options(attr["options"]), "absent": None}
+    for index, title in enumerate(samples):
+        if str(index) not in examples:
+            continue
+        found = readers.read(
+            reading, {"title": title, "description": "", "details": {}}
+        )
+        value = found[0] if found else None
+        expected = examples[str(index)]
+        if not _same(value, expected):
+            line = f'"{attr["label"]}" liest aus "{title}" {value!r}, erwartet {expected!r}'
+            (beyond if expected is None else wrong).append(line)
+    return wrong + (beyond if len(beyond) > len(samples) // 4 else [])
+
+
+def _all_failures(raw, samples):
+    examples = {
+        store.fold(a.get("label")): a.get("examples")
+        for a in raw.get("attributes") or []
+        if isinstance(a, dict) and isinstance(a.get("examples"), dict)
+    }
+    out = []
+    for attr in _clean_attributes(raw, 1):
+        out += _failures(attr, samples, examples.get(store.fold(attr["label"])) or {})
+    return out
+
+
+def define_attributes(conn, node_id, labels, ask=llm.ask_json, hints=None):
     """{label: attr_id} for facts a hunt asks about and the graph cannot read
     yet, set at `node_id` so every later hunt below it reads them too. One model
     call; an attribute it cannot say how to read is not invented.
@@ -381,19 +423,54 @@ def define_attributes(conn, node_id, labels, ask=llm.ask_json):
         n for n in reversed(store.ancestors(conn, node_id)) if n["kind"] == "category"
     )
     existing = store.effective_attributes(conn, node_id)
-    raw = ask(
-        DEFINE_PROMPT.format(
-            product=describe(conn, node_id)["name"],
-            category=category["name"],
-            wanted="\n".join(f"- {label}" for label in labels),
-            existing="\n".join(
-                f"{i}: {a['label']}" for i, a in sorted(existing.items())
+    samples = _samples(conn, node_id)
+
+    def asked(failures):
+        raw = ask(
+            DEFINE_PROMPT.format(
+                product=describe(conn, node_id)["name"],
+                category=category["name"],
+                wanted="\n".join(
+                    f"- {label}"
+                    + (
+                        f" (der Käufer will: {hints[label]})"
+                        if hints and label in hints
+                        else ""
+                    )
+                    for label in labels
+                ),
+                existing="\n".join(
+                    f"{i}: {a['label']}" for i, a in sorted(existing.items())
+                )
+                or "keine",
+                samples="\n".join(f"{i}: {t}" for i, t in enumerate(samples))
+                or "keine",
+                failures=(
+                    "Deine letzten readers lasen falsch -- korrigiere sie:\n"
+                    + "\n".join(f"- {f}" for f in failures)
+                    + "\n"
+                )
+                if failures
+                else "",
             )
-            or "keine",
         )
-    )
-    if not isinstance(raw, dict):
-        raise llm.NoModel(f"Die KI-Antwort ist unbrauchbar: {raw!r}")
+        if not isinstance(raw, dict):
+            raise llm.NoModel(f"Die KI-Antwort ist unbrauchbar: {raw!r}")
+        return raw
+
+    # Readers are checked on real titles before they read the market: asked
+    # once more with what they read wrong, and a reader still wrong is not used.
+    raw = asked(None)
+    failures = _all_failures(raw, samples)
+    for _ in range(ATTEMPTS - 1):
+        if not failures:
+            break
+        logger.info("Readers misread, asking again: %s", failures)
+        raw = asked(failures)
+        failures = _all_failures(raw, samples)
+    if failures:
+        logger.warning("Readers still misread, not used: %s", failures)
+    wrong = {store.fold(f.split('"')[1]) for f in failures}
     taken = {store.fold(i): i for i in existing} | {
         store.fold(a["label"]): i for i, a in existing.items()
     }
@@ -411,7 +488,7 @@ def define_attributes(conn, node_id, labels, ask=llm.ask_json):
             defined[label] = same
     for attr in _clean_attributes(raw, 1):
         label = wanted.get(store.fold(attr["label"]))
-        if not label or label in defined:
+        if not label or label in defined or store.fold(attr["label"]) in wrong:
             continue
         if store.fold(attr["id"]) in taken:  # defined a moment ago for another label
             defined[label] = taken[store.fold(attr["id"])]

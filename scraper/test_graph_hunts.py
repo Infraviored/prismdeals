@@ -22,9 +22,9 @@ def _answers(prompt):
     """The placing answer, or readers for whatever facts the prompt asks about."""
     if "Er verlangt diese Merkmale" in prompt:
         labels = [
-            line[2:]
+            line[2:].split(" (der Käufer will")[0]
             for line in prompt.splitlines()
-            if line.startswith("- ") and ":" not in line
+            if line.startswith("- ") and (":" not in line or "(der Käufer will" in line)
         ]
         return {
             "attributes": [
@@ -309,7 +309,6 @@ def test_a_class_step_that_is_the_category_is_dropped(conn):
     moto = taxonomy.category_node_id(conn, "305")
     assert [n["kind"] for n in store.ancestors(conn, node)][-2:] == ["brand", "model"]
     assert store.node(conn, node)["parent_id"] != moto
-    assert "abs" in store.effective_attributes(conn, node)
     assert place.find(conn, "Motorrad", moto) == moto
 
 
@@ -598,3 +597,57 @@ def test_refine_asks_again_about_what_the_answer_left_out(conn):
     )
     assert methods == {"y0": "rejected", "y1": "alias"}
     assert hunts.refine(conn, cid, ask=lambda p: [{"i": 0, "key": None}])["asked"] == 1
+
+
+def test_a_reader_that_misreads_real_titles_is_asked_again_then_dropped(conn):
+    from graph import place
+
+    moto = taxonomy.category_node_id(conn, "305")
+    for n, title in enumerate(["Kit 2x8GB DDR4", "RAM 2x16GB", "4x4GB Kit", "2x32GB"]):
+        conn.execute("INSERT INTO listings (id, title) VALUES (?, ?)", (f"s{n}", title))
+        conn.execute(
+            "INSERT INTO listing_resolution (listing_id, node_id, confidence, method, resolved_at) VALUES (?, ?, 1, 'alias', '')",
+            (f"s{n}", moto),
+        )
+    wrong = r"regex:(\d+)\s?x"  # reads the module count, not the size
+    right = r"regex:\d+\s?x\s?(\d+)\s?GB"
+    asked = []
+
+    def answer(prompt):
+        asked.append(prompt)
+        reader = wrong if len(asked) == 1 else right
+        return {
+            "attributes": [
+                {
+                    "label": "Modulgröße",
+                    "id": "modulgroesse",
+                    "type": "number",
+                    "readers": [reader],
+                    "examples": {"0": 32, "1": 4, "2": 16, "3": 8},
+                }
+            ]
+        }
+
+    defined = place.define_attributes(conn, moto, ["Modulgröße"], ask=answer)
+    assert len(asked) == 2 and "liest aus" in asked[1]  # right on the second try
+    assert defined == {"Modulgröße": "modulgroesse"}
+    assert store.effective_attributes(conn, moto)["modulgroesse"]["readers"] == [right]
+
+    asked.clear()
+    stuck = place.define_attributes(
+        conn,
+        moto,
+        ["Anzahl"],
+        ask=lambda p: {
+            "attributes": [
+                {
+                    "label": "Anzahl",
+                    "id": "anzahl",
+                    "type": "number",
+                    "readers": [wrong.replace("(\\d+)\\s?x", "x(\\d+)")],
+                    "examples": {"0": 2},
+                }
+            ]
+        },
+    )
+    assert stuck == {}

@@ -79,9 +79,8 @@ def test_placing_builds_the_path_and_names_it(seeded):
     model = store.node(seeded, node["parent_id"])
     assert "cbr1000rr" in store.aliases(seeded, model["id"])
     attrs = store.effective_attributes(seeded, sc59)
-    assert attrs["abs"]["readers"] == ["keywords:abs"]  # inherited from the model
-    assert "bad" not in attrs  # a pattern that does not compile is dropped
-    assert "km" in attrs  # the category's, inherited
+    # Placing invents no facts: only the category's, inherited.
+    assert "abs" not in attrs and "km" in attrs
 
 
 def test_a_known_name_costs_no_model_call(seeded):
@@ -429,7 +428,6 @@ def test_a_malformed_placing_answer_is_no_answer():
         {"path": ["Yamaha"]},
         {"path": [{"name": "R1", "kind": "model", "years": [2004, "heute"]}]},
         {"path": [{"name": "R1", "kind": "model", "generations": ["RN19"]}]},
-        {"path": [{"name": "R1", "kind": "model"}], "attributes": ["abs"]},
     ):
         with pytest.raises(llm.NoModel):
             place.place(conn, "Yamaha R1", "305", ask=lambda p: answer)
