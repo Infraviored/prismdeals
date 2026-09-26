@@ -36,7 +36,7 @@ the product graph (docs/plan-product-graph.md): attributes, facts, conditions, v
 - `hunt_targets.weight` INTEGER 0…3: preference among targets (★). 0 for all = no preference.
 - `node_signals` — proposals per node, shared by all hunts:
   `node_id, attr_id, polarity (plus|minus|value), default_weight, found, total, proposed_at`.
-  Refreshed when the node's offers doubled or after 30 days.
+  Refreshed when the node's offers doubled or after 30 days. A yes/no stated by ≥ 90 % of the offers is dropped: it sets none apart.
 
 ## 4. Proposals (after a hunt's first crawl)
 - Trigger: `refine` of a hunt with ≥ 20 offers and no fresh `node_signals` at its node.

@@ -17,7 +17,7 @@ def conn():
     return c
 
 
-def _hunt(conn, n_offers):
+def _hunt(conn, n_offers, every=3):
     moto = taxonomy.category_node_id(conn, "305")
     honda = store.create_node(conn, moto, "brand", "Honda", "test")
     store.add_alias(conn, honda, "Honda", "name", "test")
@@ -37,7 +37,7 @@ def _hunt(conn, n_offers):
         "SELECT id FROM searches WHERE campaign_id = ?", (cid,)
     ).fetchone()
     for n in range(n_offers):
-        title = f"Honda CBR1000RR {'Rennstrecke ' if n % 3 == 0 else ''}Nr {n}"
+        title = f"Honda CBR1000RR {'Rennstrecke ' if n % every == 0 else ''}Nr {n}"
         conn.execute(
             "INSERT INTO listings (id, title, url, details, detailed_description) VALUES (?, ?, ?, '{}', ?)",
             (
@@ -109,6 +109,12 @@ def test_signals_are_proposed_once_with_their_frequency_and_read_on_the_offers(c
     before = len(calls)
     hunts.refine(conn, cid, ask=_answer(calls))
     assert len(calls) == before
+
+
+def test_a_yesno_every_offer_states_is_no_signal(conn):
+    cid, _ = _hunt(conn, 24, every=1)
+    assert hunts.refine(conn, cid, ask=_answer([]))["signals"] == 0
+    assert not conn.execute("SELECT 1 FROM node_signals").fetchall()
 
 
 def test_too_few_offers_propose_nothing(conn):
