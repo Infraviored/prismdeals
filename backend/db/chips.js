@@ -39,10 +39,13 @@ function detailText(listing, attribute) {
   return prefix ? String(prefix[1]) : null;
 }
 
-/** A value says what it is: "21.800 km" by its unit, "April 2009" only with
- * its label in front ("Erstzulas… April 2009" -> first word, shortened). */
+/** A value says what it is: "21.800 km" by its unit, "1" or "April 2009"
+ * with its label in front -- whole when it fits ("Anzahl Controller 1"),
+ * else its first word, shortened ("Erstzulas. April 2009"). */
 function labelled(attribute, text) {
   if (/\d\s*[a-zA-Z€%"″]/.test(text)) return text;
+  const whole = `${attribute.label} ${text}`;
+  if (whole.length <= MAX_TEXT) return whole;
   const word = String(attribute.label).split(/[\s/(]/)[0];
   const label = word.length > MAX_LABEL ? `${word.slice(0, MAX_LABEL - 1)}.` : word;
   return `${label} ${text}`;

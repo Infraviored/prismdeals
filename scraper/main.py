@@ -263,7 +263,11 @@ def main():
             # Demand order: what most hunts want and has waited longest first.
             for unit in crawlplan.plan(conn, args.campaign_id):
                 search_targets.append(
-                    {"url": unit["url"], "search_id": unit["search_id"]}
+                    {
+                        "url": unit["url"],
+                        "search_id": unit["search_id"],
+                        "pages": unit["pages"],
+                    }
                 )
             logger.info("Crawl plan: %d search(es)", len(search_targets))
 
@@ -286,6 +290,7 @@ def main():
                     [url],
                     temp_output_file,
                     max_listings=args.max_listings,
+                    pages=target.get("pages"),
                 )
 
                 # Import scraped items into SQLite

@@ -186,21 +186,22 @@ def parse_listing_details_requests(url, session=None):
         return None
 
 
-def scrape_listings(urls, output_file, max_listings=None):
+def scrape_listings(urls, output_file, max_listings=None, pages=None):
     """Main function to scrape listings. Routes to Selenium if interactive login is requested."""
     is_interactive = os.environ.get("INTERACTIVE_LOGIN") == "1"
     if is_interactive:
         logger.info("INTERACTIVE_LOGIN requested. Routing to legacy Selenium scraper.")
-        return scrape_listings_selenium(urls, output_file, max_listings)
+        return scrape_listings_selenium(urls, output_file, max_listings, pages)
     else:
         logger.info("Executing optimized fast requests-based scraper.")
-        return scrape_listings_requests(urls, output_file, max_listings)
+        return scrape_listings_requests(urls, output_file, max_listings, pages)
 
 
-def scrape_listings_requests(urls, output_file, max_listings=None):
+def scrape_listings_requests(urls, output_file, max_listings=None, pages=None):
     """Main function to scrape listings from multiple URLs using fast requests GET"""
+    page_count = pages or PAGES_TO_SCRAPE
     all_scraped_listings = []
-    total_pages = len(urls) * PAGES_TO_SCRAPE
+    total_pages = len(urls) * page_count
     current_page_idx = 0
 
     # The database is what "already known" means, not a JSON file that may not
@@ -217,13 +218,13 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
     refusals = 0
 
     for base_url in urls:
-        for page in range(1, PAGES_TO_SCRAPE + 1):
+        for page in range(1, page_count + 1):
             current_page_idx += 1
             update_progress(
                 "discovery",
                 current_page_idx - 1,
                 total_pages,
-                f"Discovering listings on page {page} of {PAGES_TO_SCRAPE}...",
+                f"Discovering listings on page {page} of {page_count}...",
             )
 
             # Insert pagination parameter into URL if page > 1
@@ -246,7 +247,7 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                     else:
                         current_url = base_url
 
-            logger.info(f"Scraping page {page} of {PAGES_TO_SCRAPE}: {current_url}")
+            logger.info(f"Scraping page {page} of {page_count}: {current_url}")
 
             # Check if we've reached the maximum listings limit
             if max_listings is not None and len(all_scraped_listings) >= max_listings:
@@ -264,8 +265,10 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                     continue
 
                 scraped_count = 0
+                cards = 0
 
                 for parsed in result_list.parse(response.text):
+                    cards += 1
                     # Check limit inside loop too
                     if (
                         max_listings is not None
@@ -313,11 +316,13 @@ def scrape_listings_requests(urls, output_file, max_listings=None):
                 logger.info(
                     f"Scraped {scraped_count} discovered listings from {current_url}"
                 )
+                if not cards:
+                    break  # past the last page: the rest would be empty too
 
             except Exception as e:
                 logger.error(f"Error scraping page {current_url}: {str(e)}")
 
-            if page < PAGES_TO_SCRAPE:
+            if page < page_count:
                 time.sleep(DELAY_BETWEEN_PAGES)
 
     if total_pages > 0:
@@ -929,8 +934,9 @@ def manual_login(driver, cookies_path):
     )
 
 
-def scrape_listings_selenium(urls, output_file, max_listings=None):
+def scrape_listings_selenium(urls, output_file, max_listings=None, pages=None):
     """Fallback interactive login / Selenium-based scraper. Preserved intentionally."""
+    page_count = pages or PAGES_TO_SCRAPE
     data_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
     )
@@ -977,17 +983,17 @@ def scrape_listings_selenium(urls, output_file, max_listings=None):
 
         # Otherwise perform Selenium index scraping:
         all_scraped_listings = []
-        total_pages = len(urls) * PAGES_TO_SCRAPE
+        total_pages = len(urls) * page_count
         current_page_idx = 0
 
         for base_url in urls:
-            for page in range(1, PAGES_TO_SCRAPE + 1):
+            for page in range(1, page_count + 1):
                 current_page_idx += 1
                 update_progress(
                     "discovery",
                     current_page_idx - 1,
                     total_pages,
-                    f"Discovering listings on page {page} of {PAGES_TO_SCRAPE}...",
+                    f"Discovering listings on page {page} of {page_count}...",
                 )
                 if page == 1:
                     current_url = base_url
@@ -1006,7 +1012,7 @@ def scrape_listings_selenium(urls, output_file, max_listings=None):
                         )
 
                 logger.info(
-                    f"[Selenium] Scraping page {page} of {PAGES_TO_SCRAPE}: {current_url}"
+                    f"[Selenium] Scraping page {page} of {page_count}: {current_url}"
                 )
                 driver.get(current_url)
 
@@ -1057,7 +1063,7 @@ def scrape_listings_selenium(urls, output_file, max_listings=None):
                 logger.info(
                     f"[Selenium] Scraped {scraped_count} listings from {current_url}"
                 )
-                if page < PAGES_TO_SCRAPE:
+                if page < page_count:
                     time.sleep(DELAY_BETWEEN_PAGES)
 
         return all_scraped_listings

@@ -11,6 +11,27 @@ import datetime
 
 # A unit never fetched counts as this many hours stale.
 NEVER = 10_000.0
+# Result pages per search: the default, and the most a search gets when its
+# results are mostly accessories or requests ("PlayStation 5" is controllers).
+BASE_PAGES = 2
+MAX_PAGES = 6
+
+
+def pages(conn, search_id):
+    """As many pages as it takes to find what the default would find if every
+    result were an offer of the thing: 2 at full yield, up to 6."""
+    total, off = conn.execute(
+        """SELECT COUNT(*), SUM(r.method = 'rejected' OR f.value_json = 'true')
+             FROM listing_search_hits h
+             LEFT JOIN listing_resolution r ON r.listing_id = h.listing_id
+             LEFT JOIN listing_facts f ON f.listing_id = h.listing_id AND f.attr_id = 'is_request'
+            WHERE h.search_id = ?""",
+        (search_id,),
+    ).fetchone()
+    if not total:
+        return BASE_PAGES
+    useful = max(1, total - (off or 0))
+    return min(MAX_PAGES, max(BASE_PAGES, round(BASE_PAGES * total / useful)))
 
 
 def _hours_since(stamp, now):
@@ -44,6 +65,7 @@ def plan(conn, campaign_id=None, now=None):
             "url": url,
             "hunts": hunts,
             "demand": hunts * _hours_since(last, now),
+            "pages": pages(conn, sid),
         }
         for sid, url, last, hunts in rows
     ]
