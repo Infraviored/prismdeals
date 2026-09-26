@@ -74,6 +74,21 @@ def test_a_cover_named_like_the_product_is_rejected_once(conn):
     assert _methods(conn)["1"] == "rejected"
 
 
+def test_a_listing_without_a_title_is_never_asked(conn):
+    cid = _hunt(conn)
+    conn.execute("UPDATE listings SET title = '' WHERE id = '1'")
+    calls = []
+    hunts.refine(
+        conn,
+        cid,
+        ask=lambda p, **_: calls.append(p)
+        or [{"i": 0, "is": "self"}, {"i": 1, "is": "self"}],
+    )
+    hunts.refine(conn, cid, ask=_ask([]))  # asks nothing more: would fail
+    assert len(calls) == 1 and "0: Matratze 90x200" in calls[0]
+    assert "\n2:" not in calls[0]
+
+
 def test_an_answer_that_is_no_list_of_self_or_part_is_no_answer(conn):
     cid = _hunt(conn)
     with pytest.raises(llm.NoModel):
