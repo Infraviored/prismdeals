@@ -249,3 +249,193 @@ def test_title_keys_glue_words_but_never_across_punctuation():
     assert {"yzfr1", "r1", "cbr1000rr"} <= title_keys("Yamaha YZF-R1 / CBR 1000 RR")
     assert "r1" not in title_keys("Yamaha Raptor YFM 700 R 1.Hand Lof.Zulassung")
     assert "r1" not in title_keys("WR 125 R - 1. HAND")
+
+
+def _laptops():
+    conn = sqlite3.connect(":memory:")
+    db_schema.apply_schema(conn)
+    taxonomy.seed(conn)
+    x1 = {
+        "path": [
+            {"name": "Lenovo", "kind": "brand", "aliases": ["Lenovo"]},
+            {
+                "name": "ThinkPad X1 Carbon",
+                "kind": "model",
+                "aliases": ["X1 Carbon"],
+                "generations": [
+                    {"name": "Gen 9", "years": [2021, 2021], "aliases": ["Gen 9"]},
+                    {"name": "Gen 10", "years": [2022, None], "aliases": ["Gen 10"]},
+                ],
+            },
+        ],
+        "attributes": [],
+    }
+    t14 = {
+        "path": [
+            {"name": "Lenovo", "kind": "brand"},
+            {"name": "ThinkPad T14", "kind": "model", "aliases": ["T14"]},
+        ],
+        "attributes": [],
+    }
+    place.place(conn, "Lenovo ThinkPad X1 Carbon", "278", ask=lambda p: x1)
+    place.place(conn, "Lenovo ThinkPad T14", "278", ask=lambda p: t14)
+    return conn
+
+
+def _resolved(conn, title, prior=()):
+    from graph import resolve
+
+    node_id, _, _ = resolve.resolve(
+        conn,
+        {"title": title, "url": "https://www.kleinanzeigen.de/s-anzeige/x/1-278-1"},
+        prior,
+    )
+    return store.node(conn, node_id)["key"].split("notebooks/")[-1]
+
+
+def test_a_generation_counts_only_next_to_its_model():
+    """ "Gen 9" is the X1 Carbon's only where the X1 Carbon is named or searched."""
+    conn = _laptops()
+    assert _resolved(conn, "Lenovo ThinkPad T14 Gen 9 i7") == "lenovo/thinkpad-t14"
+    assert _resolved(conn, "Lenovo Thinkpad L13 gen 10") == "lenovo"
+    assert (
+        _resolved(conn, "Lenovo ThinkPad X1 Carbon Gen 9")
+        == "lenovo/thinkpad-x1-carbon/gen-9"
+    )
+    x1 = place.find(conn, "X1 Carbon", taxonomy.category_node_id(conn, "278"))
+    assert _resolved(conn, "Lenovo Gen 9 wie neu", prior=[x1]) == (
+        "lenovo/thinkpad-x1-carbon/gen-9"
+    )
+
+
+def test_a_current_generation_has_no_last_year():
+    from graph import resolve
+
+    conn = _laptops()
+    x1 = place.find(conn, "X1 Carbon", taxonomy.category_node_id(conn, "278"))
+    gen10 = next(c for c in store.children(conn, x1) if c["name"] == "Gen 10")
+    assert (gen10["years_from"], gen10["years_to"]) == (2022, None)
+    name = lambda y: store.node(conn, resolve.by_years(conn, x1, y))["name"]  # noqa: E731
+    assert name(2021) == "Gen 9"  # exact first: not a late Gen 9 +1
+    assert name(2022) == "Gen 10"
+    assert name(2025) == "Gen 10"
+
+
+def test_a_learned_alias_must_be_in_the_title_and_not_the_brand():
+    from graph import resolve
+
+    conn = sqlite3.connect(":memory:")
+    db_schema.apply_schema(conn)
+    taxonomy.seed(conn)
+    cbr = place.place(
+        conn,
+        "Honda CBR 1000 RR",
+        "305",
+        ask=lambda p: {
+            "path": [
+                {"name": "Honda", "kind": "brand", "aliases": ["Honda"]},
+                {"name": "CBR 1000 RR", "kind": "model", "aliases": ["CBR1000RR"]},
+            ]
+        },
+    )
+    honda = store.node(conn, cbr)["parent_id"]
+    key = store.node(conn, cbr)["key"]
+    listings = [
+        {"id": "1", "title": "Honda Fireblade 2009"},
+        {"id": "2", "title": "Honda Blade Rot"},
+        {"id": "3", "title": "Honda SuperFB"},
+    ]
+    out = resolve.resolve_with_model(
+        conn,
+        listings,
+        honda,
+        ask=lambda p: [
+            {"i": 0, "key": key, "alias": "Honda"},  # the brand: every Honda a CBR
+            {"i": 1, "key": key, "alias": "Fireblade"},  # not in this title
+            {"i": 2, "key": key, "alias": "FB"},  # too short
+        ],
+    )
+    assert out == {"1": cbr, "2": cbr, "3": cbr}
+    assert set(store.aliases(conn, cbr)) == {"cbr1000rr", "hondacbr1000rr"}
+    assert (
+        _key(
+            conn,
+            resolve.resolve(
+                conn,
+                {
+                    "title": "Honda CB 500 F",
+                    "url": "https://www.kleinanzeigen.de/s-anzeige/x/1-305-1",
+                },
+            )[0],
+        )
+        == "honda"
+    )
+    # A new path: its aliases, too, only as the title writes them.
+    out = resolve.resolve_with_model(
+        conn,
+        [{"id": "4", "title": "Honda Hornet 600 PC41"}],
+        honda,
+        ask=lambda p: [
+            {
+                "i": 0,
+                "path": [
+                    {"name": "Honda", "kind": "brand", "aliases": ["Honda"]},
+                    {
+                        "name": "CB 600 F",
+                        "kind": "model",
+                        "aliases": ["Hornet", "Honda", "CB600"],
+                    },
+                ],
+            }
+        ],
+    )
+    hornet = out["4"]
+    assert _key(conn, hornet) == "honda/cb-600-f"
+    assert set(store.aliases(conn, hornet)) == {"cb600f", "hornet"}
+
+
+def test_an_unusable_batch_answer_is_no_answer_and_writes_nothing():
+    from graph import llm, resolve
+
+    conn = sqlite3.connect(":memory:")
+    db_schema.apply_schema(conn)
+    taxonomy.seed(conn)
+    moto = taxonomy.category_node_id(conn, "305")
+    before = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()
+    for answer in (
+        [{"i": 0, "path": ["CB 500"]}],
+        [{"i": 0, "path": [{"name": "Honda", "kind": "brand"}]}, "x"],
+        [{"i": 0, "path": [{"name": "X", "kind": "category"}]}],
+        [{"i": 0, "key": "no/such/node"}],
+        [{"i": 0}],
+        {"i": 0},
+    ):
+        with pytest.raises(llm.NoModel):
+            resolve.resolve_with_model(
+                conn, [{"id": "1", "title": "Honda CB 500"}], moto, ask=lambda p: answer
+            )
+    assert conn.execute("SELECT COUNT(*) FROM nodes").fetchone() == before
+
+
+def test_a_malformed_placing_answer_is_no_answer():
+    from graph import llm
+
+    conn = sqlite3.connect(":memory:")
+    db_schema.apply_schema(conn)
+    taxonomy.seed(conn)
+    for answer in (
+        [{"path": []}],
+        {"path": "Yamaha"},
+        {"path": ["Yamaha"]},
+        {"path": [{"name": "R1", "kind": "model", "years": [2004, "heute"]}]},
+        {"path": [{"name": "R1", "kind": "model", "generations": ["RN19"]}]},
+        {"path": [{"name": "R1", "kind": "model"}], "attributes": ["abs"]},
+    ):
+        with pytest.raises(llm.NoModel):
+            place.place(conn, "Yamaha R1", "305", ask=lambda p: answer)
+
+
+def test_a_denial_stands_before_the_whole_word():
+    assert readers._keywords(["koffer"], "Mit Topcase, ohne Alukoffer")[0] is False
+    assert readers._keywords(["koffer"], "Mit Alukoffer")[0] is True
+    assert readers._keywords(["abs"], "ABS: nein")[0] is False

@@ -85,7 +85,9 @@ def with_location(url, location_id, radius_km):
 
     radius = max(1, int(round(radius_km)))
     attrs = "".join(f"+{a}" for a in parts["attributes"])
-    tail = f"{parts['keyword']}{parts['category'] or ''}{location}r{radius}{attrs}"
+    tail = (
+        f"{parts['keyword'] or ''}{parts['category'] or ''}{location}r{radius}{attrs}"
+    )
 
     split = urllib.parse.urlsplit(url)
     path = split.path.rstrip("/")

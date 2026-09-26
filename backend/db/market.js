@@ -142,7 +142,9 @@ function marketOf(observations) {
   if (attrs.length) {
     const usable = observations.filter(o => attrs.every(a => o.facts[a] !== null));
     const coef = usable.length >= MIN_MODEL_SIZE ? fitModel(usable, attrs) : null;
-    if (coef) market.model = { attrs, coef, count: usable.length };
+    // The range each fact was seen in: the line is not extended past it.
+    const range = attrs.map(a => [Math.min(...usable.map(o => o.facts[a])), Math.max(...usable.map(o => o.facts[a]))]);
+    if (coef) market.model = { attrs, coef, range, count: usable.length };
   }
   return market;
 }
@@ -150,7 +152,10 @@ function marketOf(observations) {
 /** The price this offer should have, and on what it is based. */
 function expected(listing, market) {
   if (market.model) {
-    const values = market.model.attrs.map(a => asNumber(listing.facts?.[a]));
+    const raw = market.model.attrs.map(a => asNumber(listing.facts?.[a]));
+    // A build year of 2030 or a mileage of 1 km is priced as the edge of what
+    // the market showed, not by a line drawn into nowhere.
+    const values = raw.map((v, i) => (v === null ? null : Math.min(Math.max(v, market.model.range[i][0]), market.model.range[i][1])));
     if (values.every(v => v !== null)) {
       const log = market.model.coef[0] + values.reduce((s, v, i) => s + v * market.model.coef[i + 1], 0);
       return {
@@ -259,10 +264,15 @@ async function nodeMarkets(query, tree, nodeIds) {
   return out;
 }
 
-/** is_deal, price_delta_eur, market_median, market_basis from each listing's target market. */
+/**
+ * is_deal, price_delta_eur, market_median, market_basis from each listing's
+ * own product: an SC57 found by a CBR hunt is priced against SC57s, and
+ * against the target's market only where its own has too few offers.
+ */
 function annotateMarket(listings, markets) {
   for (const listing of listings) {
-    const market = listing.fit?.target_id ? markets.get(listing.fit.target_id) : null;
+    const own = listing.fit?.target_id ? markets.get(listing.node_id) : null;
+    const market = own && own.count >= MIN_GROUP_SIZE ? own : listing.fit?.target_id ? markets.get(listing.fit.target_id) : null;
     const { isDeal, delta, usual } = judge(listing, market);
     listing.is_deal = isDeal;
     listing.price_delta_eur = delta;

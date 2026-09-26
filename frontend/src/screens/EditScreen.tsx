@@ -9,27 +9,23 @@ import { HuntAiEdit } from './edit/HuntAiEdit';
 export interface EditScreenProps {
   huntId: number | null;
   onBack: () => void;
-  /** Stored; `searchChanged` when Kleinanzeigen has to be asked again. */
-  onSaved?: (stored: HuntDocument, searchChanged: boolean) => void;
+  /** Stored; `crawlChanged` when Kleinanzeigen has to be asked again (the server says). */
+  onSaved?: (stored: HuntDocument, crawlChanged: boolean) => void;
   onDelete?: (huntId: number) => void;
-}
-
-/** What goes into the crawl: targets and frame. A new name or condition does not. */
-function searchKey(doc: HuntDocument): string {
-  return JSON.stringify([doc.targets.map((t) => t.node_id ?? t.typed), doc.frame]);
 }
 
 /** The hunt as stored, changed by hand or in words, saved with PUT. */
 export const EditScreen: React.FC<EditScreenProps> = ({ huntId, onBack, onSaved, onDelete }) => {
   const { t } = useTranslation();
   const { doc, setDoc, error, save, saving, saveError } = useHuntDocument(huntId);
-  const [loadedKey, setLoadedKey] = React.useState<string | null>(null);
-  if (doc && loadedKey === null) setLoadedKey(searchKey(doc));
 
   const store = async (next?: HuntDocument) => {
-    const stored = await save(next);
-    if (stored) onSaved?.(stored, searchKey(stored) !== loadedKey);
-    return Boolean(stored);
+    const saved = await save(next);
+    if (saved) {
+      const { crawl_changed, ...stored } = saved;
+      onSaved?.(stored, crawl_changed);
+    }
+    return Boolean(saved);
   };
 
   const handleDelete = () => {

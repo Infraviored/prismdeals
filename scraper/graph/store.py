@@ -255,6 +255,17 @@ def effective_attributes(conn, node_id):
     return out
 
 
+def art_attr_id(attributes):
+    """The id of the site's own "Art" filter among `attributes` (as
+    effective_attributes returns them), or None. Named by its label, not its
+    id: most categories file it as "art_s", Motorräder and Motorradteile as
+    "type_s" -- and Baby- & Kinderkleidung has an "art_s" that is not the Art."""
+    for attr_id, attribute in attributes.items():
+        if attribute.get("site_filter") and fold(attribute["label"]) == "art":
+            return attr_id
+    return None
+
+
 def confirm(conn, node_id, evidence):
     """The market names this node: it is real now."""
     current = node(conn, node_id)

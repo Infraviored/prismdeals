@@ -49,6 +49,8 @@ async function knowledgeForPrompt(query, tree, targetIds) {
 
 module.exports = (query) => {
   const router = express.Router();
+  // Every :id is a number; anything else is no such thing, not a model outage.
+  router.param('id', (req, res, next, id) => (/^\d+$/.test(id) ? next() : res.status(404).json({ error: 'Nicht gefunden' })));
 
   async function targetsOf(campaignId) {
     return (await query('SELECT node_id FROM hunt_targets WHERE campaign_id = ?', [campaignId])).map(r => r.node_id);

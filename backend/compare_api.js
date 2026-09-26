@@ -44,7 +44,11 @@ function startCompare(campaignId) {
     return false;
   }
   running.set(campaignId, { started_at: new Date().toISOString() });
+  let finished = false;
+  // 'error' and 'close' both fire for a child that never started: count the first.
   const finish = (error) => {
+    if (finished) return;
+    finished = true;
     running.delete(campaignId);
     if (error) {
       console.error('Comparison of hunt %s failed: %s', campaignId, error);
@@ -64,6 +68,7 @@ function startCompare(campaignId) {
     child.stderr.on('data', d => { stderr = (stderr + d.toString()).slice(-2000); });
     child.on('error', err => finish(err.message || err));
     child.on('close', code => finish(code === 0 ? null : stderr));
+    child.stdin.on('error', () => {});
     child.stdin.end(JSON.stringify(payload));
   }).catch(err => finish(err.message || err));
   return true;

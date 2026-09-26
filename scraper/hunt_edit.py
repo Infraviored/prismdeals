@@ -15,7 +15,7 @@ import json
 import sys
 
 from graph import hunts, llm
-from graph.numbers import german_number
+from graph.numbers import leading_number
 
 PROMPT = """Du bearbeitest eine gespeicherte Gebrauchtwaren-Suche.
 
@@ -66,42 +66,45 @@ def _plain(conditions):
 
 
 def _number(value):
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return int(value) if float(value).is_integer() else value
-    try:
-        return _number(german_number(str(value).strip()))  # "5.000", "2,5"
-    except ValueError:
-        return None
+    """ "5000", "5.000 km", "2,5" as the number; None for none or no number."""
+    return leading_number(value)
 
 
-def _conditions(raw):
+def _conditions(raw, dropped=None):
+    """The conditions that can be judged. One that cannot is left out, and
+    named in `dropped` so the buyer is told -- never silently."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError("Die KI hat unbrauchbare Bedingungen geliefert.")
     out = []
-    for c in raw or []:
+    for c in raw:
         if not isinstance(c, dict):
+            if dropped is not None:
+                dropped.append(str(c))
             continue
-        c = {
-            **c,
-            "value": _number(c.get("value"))
-            if c.get("op") in ("min", "max")
-            else c.get("value"),
-        }
         try:
             out.append(hunts.clean_condition(c))
         except hunts.HuntError:
-            continue  # what cannot be judged is dropped, not guessed
+            if dropped is not None:
+                dropped.append(str(c.get("label") or c))
     return [{k: c[k] for k in ("label", "op", "value", "importance")} for c in out]
 
 
-def apply(before, raw):
-    """The model's answer as a full hunt document, nodes kept where names did not change."""
+def apply(before, raw, dropped=None):
+    """The model's answer as a full hunt document, nodes kept where names did not
+    change. Conditions it gave that cannot be judged are named in `dropped`."""
     if not isinstance(raw, dict):
+        raise ValueError("Die KI hat kein Suchdokument zurückgegeben.")
+    raw_targets = raw.get("targets")
+    if not isinstance(raw_targets, list):
         raise ValueError("Die KI hat kein Suchdokument zurückgegeben.")
     old = {(t.get("name") or t.get("typed")): t for t in before.get("targets") or []}
     targets = []
-    for t in raw.get("targets") or []:
-        name = str((t or {}).get("name") or "").strip()
+    for t in raw_targets:
+        if not isinstance(t, dict):
+            raise ValueError(f"Die KI hat ein unbrauchbares Ziel geliefert: {t!r}")
+        name = str(t.get("name") or "").strip()
         if not name:
             continue
         kept = old.get(name)
@@ -112,19 +115,24 @@ def apply(before, raw):
         )
         if kept and kept.get("node_id"):
             target["node_id"] = kept["node_id"]
-        target["conditions"] = _conditions(t.get("conditions"))
+        target["conditions"] = _conditions(t.get("conditions"), dropped)
         targets.append(target)
     if not targets:
         raise ValueError("Die KI hat alle Ziele entfernt; das wurde nicht übernommen.")
     frame = dict(before.get("frame") or {})
-    frame["max_price"] = _number(raw.get("max_price"))
-    frame["radius_km"] = _number(raw.get("radius_km"))
+    for key in ("max_price", "radius_km"):
+        value = raw.get(key)
+        frame[key] = _number(value)
+        if value not in (None, "") and frame[key] is None:
+            raise ValueError(
+                f"Die KI hat einen unbrauchbaren Wert für {key} geliefert: {value!r}"
+            )
     return {
         **before,
         "name": str(raw.get("name") or before.get("name") or "").strip(),
         "frame": frame,
         "targets": targets,
-        "conditions": _conditions(raw.get("conditions")),
+        "conditions": _conditions(raw.get("conditions"), dropped),
     }
 
 
@@ -199,8 +207,11 @@ def edit(document, instruction, ask=llm.ask_json):
     prompt = PROMPT.replace(
         "{document}", json.dumps(visible(document), ensure_ascii=False, indent=2)
     ).replace("{instruction}", str(instruction).strip())
-    after = apply(document, ask(prompt))
-    return after, changes(document, after)
+    dropped = []
+    after = apply(document, ask(prompt), dropped)
+    return after, changes(document, after) + [
+        f"nicht übernommen: {label}" for label in dropped
+    ]
 
 
 def main():

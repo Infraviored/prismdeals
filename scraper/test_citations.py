@@ -49,6 +49,8 @@ def test_a_classified_statement_is_clean_and_keeps_its_sources():
         {
             "kind": "weakness",
             "statement": "**Lichtmaschine** schwach. Quellen: [), [).",
+            "check_path": "ask",
+            "weight": "costly",
             "sources": ["https://a.example/x"],
         }
     )

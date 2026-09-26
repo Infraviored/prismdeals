@@ -49,6 +49,9 @@ function runJson(args, input) {
       }
       resolve({ status: 200, body });
     });
+    // A child that dies before reading its input breaks the pipe; 'close'
+    // reports that failure, an unhandled EPIPE would end the server.
+    child.stdin.on('error', () => {});
     if (input !== null) child.stdin.end(input);
   });
 }

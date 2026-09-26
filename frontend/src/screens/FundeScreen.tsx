@@ -81,13 +81,16 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     }
   }, [huntId, comparing, reload]);
 
-  // A wider radius is a change of the hunt's frame, then a new crawl.
+  // A wider radius is a change of the hunt's frame, then a new crawl when the
+  // server says its URLs changed. Saving gives the conditions new ids: read
+  // the offers again, or their states point at ids that are gone.
   const widen = async (km: number) => {
-    if (!doc) return;
-    if (await hunt.save({ ...doc, frame: { ...doc.frame, radius_km: km } })) {
-      data.clearRadiusDiagnosis();
-      onStartScrape?.();
-    }
+    if (!doc || hunt.saving) return;
+    const saved = await hunt.save({ ...doc, frame: { ...doc.frame, radius_km: km } });
+    if (!saved) return;
+    data.clearRadiusDiagnosis();
+    reload();
+    if (saved.crawl_changed) onStartScrape?.();
   };
 
   const { selectedListing, openListing, openPartial } = useLinkedListing(listings, huntId);
@@ -203,6 +206,12 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         </div>
       )}
 
+      {(hunt.error || hunt.saveError) && (
+        <p className="mx-4 sm:mx-8 mt-3 text-xs text-[var(--glut)]" role="alert" data-testid="hunt-error">
+          {hunt.saveError || hunt.error}
+        </p>
+      )}
+
       {aboveMedian && (
         <div
           data-testid="weak-market-banner"
@@ -256,6 +265,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
               diagnosing={data.diagnosing}
               onShowUnclear={() => setTab('unclear')}
               onWiden={widen}
+              widening={hunt.saving}
               onConfigure={onConfigure}
               filtered={data.filtered}
               onResetFilters={data.resetFilters}
@@ -316,9 +326,10 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
         isOpen={requirementsOpen}
         onClose={() => setRequirementsOpen(false)}
         huntId={huntId}
-        onSaved={() => {
+        onSaved={(crawlChanged) => {
           hunt.reload();
           reload();
+          if (crawlChanged) onStartScrape?.();
         }}
       />
 

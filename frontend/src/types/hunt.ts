@@ -71,6 +71,12 @@ export interface HuntDocument {
   crawl?: CrawlTerm[];
 }
 
+/** What POST and PUT /api/hunts answer: the stored hunt, and whether its
+ * crawl URLs changed (new target, place, radius or a must the site filters). */
+export interface SavedHunt extends HuntDocument {
+  crawl_changed: boolean;
+}
+
 export interface VerdictCounts {
   all: number;
   fit: number;

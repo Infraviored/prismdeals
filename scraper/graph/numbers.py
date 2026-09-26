@@ -64,6 +64,24 @@ def german_number(raw):
     return float(raw.replace(",", "."))
 
 
+_LEADING = re.compile(r"\s*(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)(?![\d.,])")
+
+
+def leading_number(value):
+    """A number as a buyer or a model writes one: 5000, "5000", "5.000 km",
+    "2,5" -- an int where it is whole. None when it does not start with one."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        number = value
+    else:
+        found = _LEADING.match(str(value))
+        if not found:
+            return None
+        number = german_number(found.group(1))
+    return int(number) if float(number).is_integer() else number
+
+
 def read_number(text, label):
     """A number with the label's unit near one of its words, or None.
 

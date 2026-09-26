@@ -113,27 +113,38 @@ def process(conn, listing_id, prior=()):
     node_id, confidence, method = resolve.resolve(conn, listing, prior)
     if node_id is None:
         return None
-    # The model placed it once: names that know less do not undo that.
+    # The model placed it once, or said it is no product of this kind (an
+    # accessory, a spare part): names that know less do not undo that.
     asked = conn.execute(
-        "SELECT node_id FROM listing_resolution WHERE listing_id = ? AND method = 'model'",
+        """SELECT node_id, method FROM listing_resolution
+            WHERE listing_id = ? AND method IN ('model', 'rejected')""",
         (str(listing_id),),
     ).fetchone()
-    if asked and len(store.ancestors(conn, asked[0])) >= len(
-        store.ancestors(conn, node_id)
+    if asked and (
+        asked[1] == "rejected"
+        or len(store.ancestors(conn, asked[0])) >= len(store.ancestors(conn, node_id))
     ):
-        node_id, confidence, method = asked[0], 0.8, "model"
+        node_id, confidence, method = asked[0], 0.8, asked[1]
     attributes = store.effective_attributes(conn, node_id)
     facts = _read(listing, attributes)
     # The page's own "Art" names a kind of goods the category holds: a
     # listing filed under "Matratzen" is a Matratze, whatever its title says.
-    if store.node(conn, node_id)["kind"] == "category" and facts.get("art"):
-        kind = _class_named(conn, node_id, facts["art"][0])
+    # Neither moves a listing the model said is no product of this kind.
+    rejected = method == "rejected"
+    art = store.art_attr_id(attributes)
+    if (
+        not rejected
+        and store.node(conn, node_id)["kind"] == "category"
+        and art
+        and facts.get(art)
+    ):
+        kind = _class_named(conn, node_id, facts[art][0])
         if kind:
             node_id, confidence, method = kind, 0.8, "art"
             attributes = store.effective_attributes(conn, node_id)
             facts = _read(listing, attributes)
     # A model whose generations have years: the listing's year names one.
-    deeper = resolve.by_years(
+    deeper = not rejected and resolve.by_years(
         conn, node_id, resolve.year_of({k: v[0] for k, v in facts.items()})
     )
     if deeper:

@@ -8,8 +8,9 @@ export interface RequirementsSheetProps {
   isOpen: boolean;
   onClose: () => void;
   huntId: number | null;
-  /** Called once a save lands; the verdicts change on the next read. */
-  onSaved?: () => void;
+  /** Called once a save lands; the verdicts change on the next read.
+   * `crawlChanged`: a must the site filters changed, so crawl again. */
+  onSaved?: (crawlChanged: boolean) => void;
 }
 
 /** What the buyer wants of each target and of all: the conditions alone. */
@@ -18,8 +19,9 @@ export const RequirementsSheet: React.FC<RequirementsSheetProps> = ({ isOpen, on
   const { doc, setDoc, error, save, saving, saveError } = useHuntDocument(isOpen ? huntId : null);
 
   const submit = async () => {
-    if (await save()) {
-      onSaved?.();
+    const saved = await save();
+    if (saved) {
+      onSaved?.(saved.crawl_changed);
       onClose();
     }
   };

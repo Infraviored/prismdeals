@@ -94,7 +94,12 @@ def _keywords(words, text):
     for word in words:
         for m in re.finditer(_keyword_pattern(word.lower()), low):
             quote = text[max(0, m.start() - 20) : m.end() + 20].strip()
-            if _DENIED_BEFORE.search(low[max(0, m.start() - 48) : m.start()]):
+            # The denial stands before the whole word: "ohne Alukoffer" denies
+            # the "koffer" inside it.
+            start = m.start()
+            while start > 0 and re.match(f"[{_WORD}]", low[start - 1]):
+                start -= 1
+            if _DENIED_BEFORE.search(low[max(0, start - 48) : start]):
                 return False, quote
             if _DENIED_AFTER.search(low[m.end() : m.end() + 24]):
                 return False, quote

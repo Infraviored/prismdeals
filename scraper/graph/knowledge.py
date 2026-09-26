@@ -256,11 +256,9 @@ def brief(conn, campaign_id, ask=llm.ask_json):
         ),
         max_tokens=1000,
     )
-    what = [
-        str(w).strip()
-        for w in (answer or {}).get("what_to_know") or []
-        if str(w).strip()
-    ][:6]
+    if not isinstance(answer, dict) or not isinstance(answer.get("what_to_know"), list):
+        raise llm.NoModel("Die KI hat nicht gesagt, was zu wissen ist.")
+    what = [str(w).strip() for w in answer["what_to_know"] if str(w).strip()][:6]
     if not what:
         raise llm.NoModel("Die KI hat nicht gesagt, was zu wissen ist.")
     text = RESEARCH_PROMPT.format(
@@ -325,7 +323,7 @@ def classify(conn, campaign_id, answer_text, ask=llm.ask_json, url_checker=None)
     ids = []
     for item in raw:
         claim = _clean(item)
-        node = nodes.get(str((item or {}).get("node") or ""))
+        node = nodes.get(str(item.get("node") or "")) if claim else None
         if not claim or not node:
             continue  # a statement about no node of this hunt is not filed
         alive = [u for u in claim["sources"] if checker(u) is not False]
@@ -349,24 +347,30 @@ def classify(conn, campaign_id, answer_text, ask=llm.ask_json, url_checker=None)
 
 
 def _clean(item):
+    """The claim as filed, or None: a statement without a known kind, weight or
+    way to check it is dropped, not filed under a default."""
     if not isinstance(item, dict):
         return None
     statement = citations.clean_statement(str(item.get("statement") or ""))
-    if not statement:
+    if (
+        not statement
+        or item.get("kind") not in KINDS
+        or item.get("check_path") not in CHECK_PATHS
+        or item.get("weight") not in WEIGHTS
+    ):
         return None
+    raw_sources = item.get("sources")
     sources = [
         s
-        for s in item.get("sources") or []
+        for s in (raw_sources if isinstance(raw_sources, list) else [])
         if isinstance(s, str) and s.startswith("http")
     ]
     sources = sources or citations.urls_in(str(item.get("statement") or ""))
     return {
-        "kind": item.get("kind") if item.get("kind") in KINDS else "check",
+        "kind": item["kind"],
         "statement": statement,
-        "check_path": item.get("check_path")
-        if item.get("check_path") in CHECK_PATHS
-        else "text",
-        "weight": item.get("weight") if item.get("weight") in WEIGHTS else "minor",
+        "check_path": item["check_path"],
+        "weight": item["weight"],
         "sources": sources,
     }
 

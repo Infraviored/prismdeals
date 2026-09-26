@@ -95,7 +95,9 @@ assert.strictEqual(verdict(p, { node_id: 5, facts: { km: 21000 } }).verdict, 'no
 assert.strictEqual(verdict(p, { node_id: 5, facts: {} }).verdict, 'unclear');
 assert.match(verdict(p, { node_id: 4, facts: {} }).reason, /Anderes Modell: Honda CBR 1000 RR SC57/);
 assert.strictEqual(verdict(p, { node_id: 3, facts: {} }).reason, 'Modell nicht erkannt');
-assert.match(verdict(p, { node_id: 5, facts: { km: 100, erstzulassung: 2015 } }).reason, /Baujahr 2015/);
+assert.strictEqual(verdict(p, { node_id: 3, method: 'rejected', facts: {} }).verdict, 'no');
+assert.strictEqual(verdict(p, { node_id: 3, method: 'model', facts: {} }).verdict, 'unclear');
+assert.match(verdict(p, { node_id: 5, facts: { km: 100, erstzulassung: 2015 } }).reason, /Baujahr passt nicht zu SC59 \(2008–2011\): 2015/);
 assert.strictEqual(verdict(p, { node_id: 5, facts: { km: 100, is_request: true } }).verdict, 'no');
 assert.strictEqual(verdict(p, undefined).reason, 'Noch nicht gelesen');
 

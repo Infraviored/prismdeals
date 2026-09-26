@@ -91,24 +91,43 @@ def find(conn, text, category_id):
     return max(found, key=lambda i: len(store.ancestors(conn, i)))
 
 
+def _list(value, what):
+    """A list the model gave, or none; anything else is not an answer."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise llm.NoModel(f"Die KI-Antwort ist unbrauchbar ({what}: {value!r}).")
+    return value
+
+
+def _names(value):
+    """Aliases as the model gave them: a list of names, or one name."""
+    if isinstance(value, str):
+        value = [value]
+    return [str(a) for a in _list(value, "aliases") if str(a).strip()]
+
+
 def _clean_path(raw):
+    if not isinstance(raw, dict):
+        raise llm.NoModel(f"Die KI-Antwort ist unbrauchbar: {raw!r}")
     path = []
-    for step in raw.get("path") or []:
+    for step in _list(raw.get("path"), "path"):
+        if not isinstance(step, dict):
+            raise llm.NoModel(f"Ungültiger Pfad-Schritt: {step!r}")
         name = str(step.get("name") or "").strip()
         kind = step.get("kind")
         if not name or kind not in KINDS:
             raise PlaceError(f"Ungültiger Pfad-Schritt: {step!r}")
-        aliases = [str(a) for a in step.get("aliases") or [] if str(a).strip()]
-        generations = [
-            g for g in map(_clean_generation, step.get("generations") or []) if g
-        ]
         path.append(
             {
                 "name": name,
                 "kind": kind,
-                "aliases": aliases,
+                "aliases": _names(step.get("aliases")),
                 "years": _years(step.get("years")),
-                "generations": generations,
+                "generations": [
+                    _clean_generation(g)
+                    for g in _list(step.get("generations"), "generations")
+                ],
             }
         )
     if not path:
@@ -117,34 +136,49 @@ def _clean_path(raw):
 
 
 def _years(value):
+    """[from, to] -- `to` null for what is still built (the current generation)
+    -- or None when the model gives no years."""
+    if value is None:
+        return None
     if (
         isinstance(value, list)
         and len(value) == 2
-        and all(isinstance(y, int) for y in value)
+        and isinstance(value[0], int)
+        and not isinstance(value[0], bool)
+        and (
+            value[1] is None
+            or (
+                isinstance(value[1], int)
+                and not isinstance(value[1], bool)
+                and value[1] >= value[0]
+            )
+        )
     ):
         return value
-    return None
+    raise llm.NoModel(f"Die KI hat unbrauchbare Jahre geliefert: {value!r}")
 
 
 def _clean_generation(raw):
     if not isinstance(raw, dict) or not str(raw.get("name") or "").strip():
-        return None
+        raise llm.NoModel(f"Ungültige Generation: {raw!r}")
     return {
         "name": str(raw["name"]).strip(),
         "years": _years(raw.get("years")),
-        "aliases": [str(a) for a in raw.get("aliases") or [] if str(a).strip()],
+        "aliases": _names(raw.get("aliases")),
     }
 
 
 def _clean_attributes(raw, depth):
     out = []
-    for attr in raw.get("attributes") or []:
+    for attr in _list(raw.get("attributes"), "attributes"):
+        if not isinstance(attr, dict):
+            raise llm.NoModel(f"Ungültiges Merkmal: {attr!r}")
         attr_id = store.slug(attr.get("id") or attr.get("label") or "").replace(
             "-", "_"
         )
         type_ = attr.get("type")
         readers = []
-        for reader in attr.get("readers") or []:
+        for reader in _list(attr.get("readers"), "readers"):
             kind = str(reader).split(":", 1)[0]
             if kind not in ("details", "number", "keywords", "regex"):
                 continue
@@ -316,7 +350,12 @@ Er verlangt diese Merkmale, die wir aus Kleinanzeigen-Anzeigen (Titel, Beschreib
 Detailangaben) lesen müssen:
 {wanted}
 
-Gib für JEDES Merkmal an, wie es gelesen wird -- mit genau dem label von oben:
+Schon vorhandene Merkmale (id: label):
+{existing}
+
+Gib für JEDES verlangte Merkmal an, wie es gelesen wird -- mit genau dem label von oben.
+Ist es nur ein anderer Name für ein vorhandenes Merkmal ("Laufleistung" für
+"Kilometerstand"), gib dessen id zurück; sonst eine neue id und:
 - type: "number" | "boolean" | "enum" | "text", unit bei Zahlen, options bei enum,
 - readers: in Reihenfolge, wie es gelesen wird: "details:<Name der Detailangabe>" (wenn die
   Seite es als Detail führt), "number" (Zahl mit Einheit beim Label), "keywords:wort1|wort2"
@@ -330,25 +369,52 @@ Antworte NUR mit JSON:
 
 
 def define_attributes(conn, node_id, labels, ask=llm.ask_json):
-    """Attributes for facts a hunt asks about and the graph cannot read yet,
-    set at `node_id` so every later hunt below it reads them too. One model
-    call; an attribute it cannot say how to read is not invented."""
+    """{label: attr_id} for facts a hunt asks about and the graph cannot read
+    yet, set at `node_id` so every later hunt below it reads them too. One model
+    call; an attribute it cannot say how to read is not invented.
+
+    A label the model names as an attribute the node already has ("Laufleistung"
+    as the site's "km") maps to that one: it is never redefined, which would
+    shadow the site's detail reader and filter below this node."""
     node = store.node(conn, node_id)
     category = next(
         n for n in reversed(store.ancestors(conn, node_id)) if n["kind"] == "category"
     )
+    existing = store.effective_attributes(conn, node_id)
     raw = ask(
         DEFINE_PROMPT.format(
             product=describe(conn, node_id)["name"],
             category=category["name"],
             wanted="\n".join(f"- {label}" for label in labels),
+            existing="\n".join(
+                f"{i}: {a['label']}" for i, a in sorted(existing.items())
+            )
+            or "keine",
         )
     )
+    if not isinstance(raw, dict):
+        raise llm.NoModel(f"Die KI-Antwort ist unbrauchbar: {raw!r}")
+    taken = {store.fold(i): i for i in existing} | {
+        store.fold(a["label"]): i for i, a in existing.items()
+    }
     wanted = {store.fold(label): label for label in labels}
     defined = {}
-    for attr in _clean_attributes(raw if isinstance(raw, dict) else {}, 1):
+    for attr in (
+        raw.get("attributes") if isinstance(raw.get("attributes"), list) else []
+    ):
+        # Naming a present attribute needs no readers: map it first.
+        if not isinstance(attr, dict):
+            continue
+        label = wanted.get(store.fold(attr.get("label")))
+        same = taken.get(store.fold(attr.get("id"))) if attr.get("id") else None
+        if label and same:
+            defined[label] = same
+    for attr in _clean_attributes(raw, 1):
         label = wanted.get(store.fold(attr["label"]))
-        if not label:
+        if not label or label in defined:
+            continue
+        if store.fold(attr["id"]) in taken:  # defined a moment ago for another label
+            defined[label] = taken[store.fold(attr["id"])]
             continue
         store.set_attribute(
             conn,
@@ -361,5 +427,7 @@ def define_attributes(conn, node_id, labels, ask=llm.ask_json):
             unit=attr["unit"],
             options=attr["options"],
         )
+        taken[store.fold(attr["id"])] = attr["id"]
+        taken[store.fold(label)] = attr["id"]
         defined[label] = attr["id"]
     return defined

@@ -116,6 +116,7 @@ async function main() {
     };
     const saved = await request(`/api/hunts/${id}`, { method: 'PUT', body: JSON.stringify(changed) });
     assert.strictEqual(saved.status, 200, JSON.stringify(saved.data));
+    assert.strictEqual(saved.data.crawl_changed, false, 'a scoped condition is not in the crawl URL');
     const after = (await request(`/api/hunts/${id}/listings?verdict=fit`)).data;
     assert.deepStrictEqual(after.listings.map(l => l.id), ['4']);
 

@@ -11,29 +11,33 @@ export interface HuntAiEditProps {
 
 /**
  * The hunt changed in the buyer's words: "Bei der CBR nur SC59, unter 5000 km".
- * The answer is shown as a list of changes first; taking it saves it.
+ * The answer is shown as a list of changes first; taking it saves it. A
+ * proposal belongs to the hunt it was made from: changed by hand since, it is
+ * dropped (taking it would overwrite those changes) and the buyer asks again.
  */
 export const HuntAiEdit: React.FC<HuntAiEditProps> = ({ doc, onApply }) => {
   const { t } = useTranslation();
   const [instruction, setInstruction] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [proposal, setProposal] = useState<{ document: HuntDocument; changes: string[] } | null>(null);
+  const [asked, setAsked] = useState<{ base: HuntDocument; document: HuntDocument; changes: string[] } | null>(null);
+  const proposal = asked && asked.base === doc ? asked : null;
+  const stale = Boolean(asked) && !proposal;
   const [applied, setApplied] = useState(false);
 
   const ask = async () => {
     if (!instruction.trim() || busy) return;
     setBusy(true);
     setError(null);
-    setProposal(null);
+    setAsked(null);
     setApplied(false);
+    const base = doc;
     try {
-      setProposal(
-        await api<{ document: HuntDocument; changes: string[] }>('/api/hunts/edit', {
-          method: 'POST',
-          body: { document: doc, instruction },
-        })
-      );
+      const answer = await api<{ document: HuntDocument; changes: string[] }>('/api/hunts/edit', {
+        method: 'POST',
+        body: { document: base, instruction },
+      });
+      setAsked({ base, ...answer });
     } catch (e) {
       setError((e as Error).message || t('surface.editAiFailed'));
     } finally {
@@ -48,7 +52,7 @@ export const HuntAiEdit: React.FC<HuntAiEditProps> = ({ doc, onApply }) => {
     setBusy(false);
     if (ok) {
       setApplied(true);
-      setProposal(null);
+      setAsked(null);
       setInstruction('');
     }
   };
@@ -101,13 +105,18 @@ export const HuntAiEdit: React.FC<HuntAiEditProps> = ({ doc, onApply }) => {
             )}
             <button
               type="button"
-              onClick={() => setProposal(null)}
+              onClick={() => setAsked(null)}
               className="px-3 py-1.5 rounded text-sm border border-[#0E4A40] text-[#8FA6A1] cursor-pointer"
             >
               {t('surface.editAiDiscard')}
             </button>
           </div>
         </div>
+      )}
+      {stale && (
+        <p className="text-sm text-[#8FA6A1]" data-testid="hunt-ai-stale">
+          {t('surface.editAiStale')}
+        </p>
       )}
       {applied && <p className="text-sm text-[#4E8C6A]">{t('surface.editAiApplied')}</p>}
     </section>

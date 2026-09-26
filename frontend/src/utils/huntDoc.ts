@@ -13,12 +13,14 @@ export function removeTarget(doc: HuntDocument, index: number): HuntDocument {
   return { ...doc, targets: doc.targets.filter((_, i) => i !== index) };
 }
 
-/** A renamed target is a new place in the graph: the server places it again. */
+/** A renamed target is a new place in the graph: the server places it again
+ * (no node_id). Its attributes stay until then, so its conditions can still
+ * be changed. */
 export function renameTarget(doc: HuntDocument, index: number, typed: string): HuntDocument {
   return {
     ...doc,
     targets: doc.targets.map((t, i) =>
-      i === index ? { typed, conditions: t.conditions } : t
+      i === index ? { typed, conditions: t.conditions, ...(t.attributes ? { attributes: t.attributes } : {}) } : t
     ),
   };
 }

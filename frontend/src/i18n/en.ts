@@ -69,6 +69,7 @@ export const en = {
     editAiNoChange: "No change found in that.",
     editAiApplied: "Changed and saved.",
     editAiFailed: "The change could not be worked out.",
+    editAiStale: "The hunt changed since – proposal dropped. Ask again.",
     claimDealbreaker: "Dealbreaker",
     claimSource: "Source:",
     knowledgeNode: "Node",
@@ -209,6 +210,7 @@ export const en = {
     wishMissed: "{{wish}} (nice to have): no",
     wishOpen: "{{wish}} (nice to have): not stated",
     knowledgeLoadFailed: "The research brief could not be loaded.",
+    knowledgeListFailed: "The knowledge could not be loaded.",
     knowledgeClassifyFailed: "The answer could not be read. Paste it again or try later.",
     researchNotNeeded: "At this price and for this kind of thing, background research does not pay off.",
     knowledgeTitle: "What to know",
@@ -237,7 +239,9 @@ export const en = {
     kindWarningSign: "Warning sign",
     kindSellerQuestion: "Seller question",
     kindRetrofit: "Retrofit",
-    kindBenchmark: "Benchmark"
+    kindBenchmark: "Benchmark",
+    kindRecognition: "Recognition mark",
+    kindGoodTerms: "Good search terms"
   },
   hunt: {
     setupTitle: "New Hunt",

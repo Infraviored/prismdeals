@@ -317,3 +317,14 @@ def test_a_search_without_words_carries_no_keyword_marker():
     )
     assert url.endswith("/c278l7091r66")
     assert search_url.with_query(url, "thinkpad").endswith("/thinkpad/k0c278l7091r66")
+
+
+def test_a_search_without_words_is_re_aimed_without_a_none():
+    url = search_url.with_location(
+        "https://www.kleinanzeigen.de/s-schlafzimmer/c81l6358r26+schlafzimmer.art_s:matratzen",
+        6411,
+        50,
+    )
+    assert url == (
+        "https://www.kleinanzeigen.de/s-schlafzimmer/c81l6411r50+schlafzimmer.art_s:matratzen"
+    )

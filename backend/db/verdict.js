@@ -69,10 +69,12 @@ function stateOf(condition, facts) {
       return want.some(w => fold(w) === fold(value)) ? 'met' : 'violated';
     case 'not_in':
       return want.some(w => fold(w) === fold(value)) ? 'violated' : 'met';
+    // Only a read yes or no decides: "Nicht vorhanden" kept as raw text is
+    // not an ABS that is there.
     case 'present':
-      return value === false ? 'violated' : 'met';
+      return typeof value !== 'boolean' ? 'open' : value ? 'met' : 'violated';
     case 'absent':
-      return value === false ? 'met' : 'violated';
+      return typeof value !== 'boolean' ? 'open' : value ? 'violated' : 'met';
     default:
       return 'open';
   }
@@ -123,6 +125,11 @@ function verdict(prepared, reading) {
   // The deepest target the listing's node lies in.
   const target = [...chain].reverse().find(n => targetIds.has(n.id));
   if (!target) {
+    // Above the target: names did not say which product. Asked, the model
+    // said it is none of them (an exhaust, a spare part) -- that is a no.
+    if (above.has(reading.node_id) && reading.method === 'rejected') {
+      return { verdict: 'no', reason: 'Kein gesuchtes Produkt', states, target_id: null };
+    }
     return above.has(reading.node_id)
       ? { verdict: 'unclear', reason: 'Modell nicht erkannt', states, target_id: null }
       : { verdict: 'no', reason: `Anderes Modell: ${describe(tree, reading.node_id)}`, states, target_id: null };
@@ -134,9 +141,10 @@ function verdict(prepared, reading) {
   // A generation holds the listing to its years: a CBR "SC59" from 2015 is not one.
   if (target.kind === 'generation' && target.years_from) {
     const year = yearOf(facts);
-    const to = (target.years_to || target.years_from) + SLACK_AFTER;
+    // An open range (the generation still built) has no end to be past.
+    const to = target.years_to === null || target.years_to === undefined ? Infinity : target.years_to + SLACK_AFTER;
     if (year !== null && (year < target.years_from || year > to)) {
-      violated.push(`Baujahr ${year} passt nicht zu ${target.name} (${target.years_from}–${target.years_to || target.years_from})`);
+      violated.push(`Baujahr passt nicht zu ${target.name} (${target.years_from}–${target.years_to ?? 'heute'}): ${year}`);
     }
   }
   for (const c of hunt.conditions) {

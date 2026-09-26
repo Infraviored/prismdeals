@@ -13,30 +13,39 @@ export interface KnowledgeSheetProps {
 }
 
 /** What to know about the hunt's targets: the research brief to copy, the
- * pasted answer filed as proposed knowledge, and what is approved. */
+ * pasted answer filed as proposed knowledge, and what is proposed or approved.
+ * The list is read on its own: a brief the AI cannot write still shows it. */
 export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({ isOpen, onClose, huntId }) => {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [brief, setBrief] = useState<HuntBrief | null>(null);
-  const [knowledge, setKnowledge] = useState<Knowledge[]>([]);
+  const [knowledge, setKnowledge] = useState<Knowledge[] | null>(null);
   const [answer, setAnswer] = useState('');
   const [filing, setFiling] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [briefError, setBriefError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /** Everything known at the targets, their parents and children. */
+  const loadKnowledge = useCallback(async () => {
+    try {
+      const data = await api<{ knowledge: Knowledge[] }>(`/api/hunts/${huntId}/knowledge`);
+      setKnowledge(data.knowledge || []);
+    } catch (e) {
+      setError((e as Error).message || t('surface.knowledgeListFailed'));
+    }
+  }, [huntId, t]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const data = await api<HuntBrief>(`/api/hunts/${huntId}/brief`);
-      setBrief(data);
-      setKnowledge(data.knowledge || []);
-    } catch (e) {
-      setError((e as Error).message || t('surface.knowledgeLoadFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }, [huntId, t]);
+    setBriefError(null);
+    const readBrief = api<HuntBrief>(`/api/hunts/${huntId}/brief`)
+      .then(setBrief)
+      .catch((e: Error) => setBriefError(e.message || t('surface.knowledgeLoadFailed')));
+    await Promise.all([readBrief, loadKnowledge()]);
+    setLoading(false);
+  }, [huntId, t, loadKnowledge]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -55,9 +64,9 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({ isOpen, onClose,
     setFiling(true);
     setError(null);
     try {
-      const filed = await api<Knowledge[]>(`/api/hunts/${huntId}/knowledge`, { method: 'POST', body: { text: answer } });
-      setKnowledge((prev) => [...prev, ...filed]);
+      await api(`/api/hunts/${huntId}/knowledge`, { method: 'POST', body: { text: answer } });
       setAnswer('');
+      await loadKnowledge();
     } catch (e) {
       setError((e as Error).message || t('surface.knowledgeClassifyFailed'));
     } finally {
@@ -68,21 +77,35 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({ isOpen, onClose,
   const decide = async (id: number, approve: boolean) => {
     try {
       await api(`/api/knowledge/${id}/${approve ? 'approve' : 'reject'}`, { method: 'POST' });
-      setKnowledge((prev) => (approve ? prev.map((k) => (k.id === id ? { ...k, approved: true } : k)) : prev.filter((k) => k.id !== id)));
     } catch (e) {
       setError((e as Error).message);
     }
+    await loadKnowledge();
   };
 
-  const proposed = knowledge.filter((k) => !k.approved);
-  const approved = knowledge.filter((k) => k.approved);
+  const decideAll = async (ids: number[]) => {
+    for (const id of ids) {
+      try {
+        await api(`/api/knowledge/${id}/approve`, { method: 'POST' });
+      } catch (e) {
+        setError((e as Error).message);
+        break;
+      }
+    }
+    await loadKnowledge();
+  };
+
+  const proposed = (knowledge || []).filter((k) => !k.approved);
+  const approved = (knowledge || []).filter((k) => k.approved);
   const small = 'px-2 py-0.5 rounded text-2xs font-medium border cursor-pointer';
 
   return (
     <Sheet isOpen={isOpen} onClose={onClose} title={t('surface.knowledge')}>
       <div className="p-4 space-y-6 text-[#F2F5F4] text-sm">
         {loading && <div className="py-12 text-center text-[#8FA6A1]">{t('common.loading')}</div>}
-        {error && <div className="p-3 rounded bg-[#E87967]/10 border border-[#E87967]/40 text-xs text-[#E87967]" role="alert">{error}</div>}
+        {[briefError, error].filter(Boolean).map((msg) => (
+          <div key={msg} className="p-3 rounded bg-[#E87967]/10 border border-[#E87967]/40 text-xs text-[#E87967]" role="alert">{msg}</div>
+        ))}
 
         {brief && !loading && (
           <>
@@ -143,7 +166,11 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({ isOpen, onClose,
                 </div>
               </>
             )}
+          </>
+        )}
 
+        {knowledge && !loading && (
+          <>
             {proposed.length > 0 && (
               <div className="space-y-3 pt-3 border-t border-[#0E4A40]" data-testid="proposed-claims-section">
                 <div className="flex items-center justify-between">
@@ -151,7 +178,7 @@ export const KnowledgeSheet: React.FC<KnowledgeSheetProps> = ({ isOpen, onClose,
                     <AlertTriangle className="w-3.5 h-3.5" />
                     {t('surface.proposedClaims')} ({proposed.length})
                   </span>
-                  <button type="button" onClick={async () => { for (const k of proposed) await decide(k.id, true); }} className="text-2xs font-semibold text-[#4E8C6A] hover:underline cursor-pointer">
+                  <button type="button" onClick={() => decideAll(proposed.map((k) => k.id))} className="text-2xs font-semibold text-[#4E8C6A] hover:underline cursor-pointer">
                     {t('surface.approveAll')}
                   </button>
                 </div>

@@ -84,4 +84,37 @@ describe('FundeScreen', () => {
     screenFor();
     expect(await screen.findByText('Nothing matches for certain yet.')).toBeInTheDocument();
   });
+
+  describe('widening the radius of a search that found nothing', () => {
+    const empty = (put: unknown) =>
+      mockApi({
+        'GET /api/hunts/11': huntDoc(),
+        'GET /api/hunts/11/overview': { ...overview(), pots: { all: 0, fit: 0, unclear: 0, no: 0 } },
+        'GET /api/hunts/11/listings': page([], { all: 0, fit: 0, unclear: 0, no: 0 }),
+        'GET /api/kept': { ids: [] },
+        'POST /api/search-families/8/diagnose-radius': { current_radius: 200, measured_at: '', options: [{ radius: 300, count: 5 }], terms: [] },
+        'PUT /api/hunts/11': put,
+      });
+
+    it('saves once however often it is clicked, and says why it failed', async () => {
+      const { calls } = empty({ status: 400, body: { error: 'Ort unbekannt' } });
+      screenFor();
+      const pill = await screen.findByRole('button', { name: /Search 300 km/ });
+      fireEvent.click(pill);
+      fireEvent.click(pill);
+      expect(await screen.findByTestId('hunt-error')).toHaveTextContent('Ort unbekannt');
+      expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(1);
+    });
+
+    it('reads the offers again, their conditions have new ids, and crawls when the server says so', async () => {
+      const onStartScrape = vi.fn();
+      const { calls } = empty((b: unknown) => ({ ...(b as object), crawl_changed: true }));
+      render(<FundeScreen huntId={11} onBack={vi.fn()} onConfigure={vi.fn()} onStartScrape={onStartScrape} />);
+      fireEvent.click(await screen.findByRole('button', { name: /Search 300 km/ }));
+      const reads = calls.filter((c) => c.url.startsWith('/api/hunts/11/listings')).length;
+      await waitFor(() => expect(onStartScrape).toHaveBeenCalledTimes(1));
+      expect((calls.find((c) => c.method === 'PUT')!.body as { frame: { radius_km: number } }).frame.radius_km).toBe(300);
+      await waitFor(() => expect(calls.filter((c) => c.url.startsWith('/api/hunts/11/listings')).length).toBeGreaterThan(reads));
+    });
+  });
 });

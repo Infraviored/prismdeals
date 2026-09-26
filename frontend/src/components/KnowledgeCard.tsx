@@ -18,6 +18,8 @@ const KIND_KEY = {
   seller_question: 'kindSellerQuestion',
   retrofit: 'kindRetrofit',
   benchmark: 'kindBenchmark',
+  recognition: 'kindRecognition',
+  good_terms: 'kindGoodTerms',
 } as const;
 const PATH_KEY = { text: 'checkPathText', photo: 'checkPathPhoto', ask: 'checkPathAsk', on_site: 'checkPathOnSite' } as const;
 

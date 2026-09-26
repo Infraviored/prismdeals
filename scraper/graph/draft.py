@@ -8,10 +8,9 @@ category's attributes where it has them, so "Kilometerstand" reads the site's
 own filter.
 """
 
-import json
-
 from . import llm, store
 from .hunts import HuntError, clean_condition
+from .numbers import leading_number
 
 PROMPT = """Du richtest eine Suche nach Gebrauchtware auf Kleinanzeigen ein.
 
@@ -64,26 +63,51 @@ def _categories(conn):
         "SELECT id, category_code FROM nodes WHERE kind = 'category' ORDER BY key"
     ).fetchall():
         path = " > ".join(n["name"] for n in store.ancestors(conn, node_id))
-        row = conn.execute(
-            "SELECT options_json FROM node_attributes WHERE node_id = ? AND attr_id = 'art'",
-            (node_id,),
-        ).fetchone()
-        kinds = [o["label"] for o in json.loads(row[0] or "[]")] if row else []
+        # Its own filters: a parent category's "Art" sorts other goods.
+        attributes = {
+            i: a
+            for i, a in store.effective_attributes(conn, node_id).items()
+            if a["node_id"] == node_id
+        }
+        art = store.art_attr_id(attributes)
+        kinds = [o["label"] for o in attributes[art]["options"] or []] if art else []
         out.append((code, path, f" (Art: {', '.join(kinds)})" if kinds else ""))
     return out
 
 
 def _conditions(raw):
+    """The model's conditions, each checked; one that cannot be used is an
+    unusable answer, not a condition quietly left out."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise llm.NoModel(f"Die KI hat unbrauchbare Bedingungen geliefert: {raw!r}")
     out = []
-    for c in raw or []:
+    for c in raw:
         if not isinstance(c, dict):
-            continue
+            raise llm.NoModel(
+                f"Die KI hat eine unbrauchbare Bedingung geliefert: {c!r}"
+            )
         try:
             clean = clean_condition(c)
-        except HuntError:
-            continue  # what cannot be judged is dropped, not guessed
+        except HuntError as error:
+            raise llm.NoModel(
+                f"Die KI hat eine unbrauchbare Bedingung geliefert: {error}"
+            ) from error
         out.append({k: clean[k] for k in ("label", "op", "value", "importance")})
     return out
+
+
+def _price(raw):
+    """The buyer's maximum price, or None when they named none."""
+    if raw is None:
+        return None
+    price = leading_number(raw)
+    if price is None or price <= 0:
+        raise llm.NoModel(
+            f"Die KI hat einen unbrauchbaren Höchstpreis geliefert: {raw!r}"
+        )
+    return price
 
 
 def draft(conn, text, ask=llm.ask_json):
@@ -95,7 +119,9 @@ def draft(conn, text, ask=llm.ask_json):
     listed = "\n".join(f"{code}: {path}{kinds}" for code, path, kinds in categories)
     # Two calls: the category first, so the second knows its attributes.
     first = ask(CATEGORY_PROMPT.format(text=text, categories=listed))
-    code = str((first or {}).get("category_code") or "").strip().lstrip("c")
+    if not isinstance(first, dict):
+        raise llm.NoModel("Die KI hat keine Kategorie gewählt.")
+    code = str(first.get("category_code") or "").strip().lstrip("c")
     names = {code: path for code, path, _ in categories}
     if code not in names:
         raise llm.NoModel("Die KI hat keine Kategorie gewählt.")
@@ -116,27 +142,27 @@ def draft(conn, text, ask=llm.ask_json):
     )
     if not isinstance(raw, dict):
         raise llm.NoModel("Die KI hat keinen Entwurf geliefert.")
-    targets = [
-        {
-            "typed": str(t["typed"]).strip(),
-            "conditions": _conditions(t.get("conditions")),
-        }
-        for t in raw.get("targets") or []
-        if isinstance(t, dict) and str(t.get("typed") or "").strip()
-    ]
+    raw_targets = raw.get("targets")
+    if not isinstance(raw_targets, list):
+        raise llm.NoModel("Die KI hat kein Ziel erkannt.")
+    targets = []
+    for t in raw_targets:
+        if not isinstance(t, dict) or not str(t.get("typed") or "").strip():
+            raise llm.NoModel(f"Die KI hat ein unbrauchbares Ziel geliefert: {t!r}")
+        targets.append(
+            {
+                "typed": str(t["typed"]).strip(),
+                "conditions": _conditions(t.get("conditions")),
+            }
+        )
     if not targets:
         raise llm.NoModel("Die KI hat kein Ziel erkannt.")
-    price = raw.get("max_price")
     return {
         "name": str(raw.get("name") or text[:40]).strip(),
         "text": text,
         "category_code": code,
         "category_name": names[code],
-        "frame": {
-            "max_price": price
-            if isinstance(price, (int, float)) and price > 0
-            else None
-        },
+        "frame": {"max_price": _price(raw.get("max_price"))},
         "targets": targets,
         "conditions": _conditions(raw.get("conditions")),
     }

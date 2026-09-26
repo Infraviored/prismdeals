@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { HuntDocument } from '../types/hunt';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { HuntDocument, SavedHunt } from '../types/hunt';
 import { api } from '../utils/api';
 
 /** One stored hunt: read once per id, changed locally, saved with PUT. */
@@ -8,6 +8,8 @@ export function useHuntDocument(huntId: number | null) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // A second save while one is on its way would send the hunt twice.
+  const inFlight = useRef(false);
 
   const load = useCallback(() => {
     if (!huntId) return Promise.resolve(null);
@@ -26,24 +28,29 @@ export function useHuntDocument(huntId: number | null) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDoc(null);
+    setSaveError(null);
     load();
   }, [load]);
 
-  /** Stores `next` (or the current document); returns the stored one. */
+  /** Stores `next` (or the current document); returns the stored one and
+   * whether its crawl changed. Null when it failed or a save already runs. */
   const save = useCallback(
-    async (next?: HuntDocument): Promise<HuntDocument | null> => {
+    async (next?: HuntDocument): Promise<SavedHunt | null> => {
       const body = next || doc;
-      if (!huntId || !body) return null;
+      if (!huntId || !body || inFlight.current) return null;
+      inFlight.current = true;
       setSaving(true);
       setSaveError(null);
       try {
-        const stored = await api<HuntDocument>(`/api/hunts/${huntId}`, { method: 'PUT', body });
+        const saved = await api<SavedHunt>(`/api/hunts/${huntId}`, { method: 'PUT', body });
+        const { crawl_changed, ...stored } = saved;
         setDoc(stored);
-        return stored;
+        return { ...stored, crawl_changed: Boolean(crawl_changed) };
       } catch (e) {
         setSaveError((e as Error).message);
         return null;
       } finally {
+        inFlight.current = false;
         setSaving(false);
       }
     },

@@ -87,9 +87,10 @@ export const ConditionAdder: React.FC<ConditionAdderProps> = ({ attributes, onAd
       )}
       {needsValue && list && attribute?.options && (
         <div className="flex flex-wrap gap-1.5">
+          {/* The label is what is stored, as the readers store it ("Sehr Gut", not like_new). */}
           {attribute.options.map((o) => (
-            <button key={o.value} type="button" className={choice(picked.includes(o.value))}
-              onClick={() => setPicked((p) => (p.includes(o.value) ? p.filter((x) => x !== o.value) : [...p, o.value]))}>
+            <button key={o.value} type="button" className={choice(picked.includes(o.label))}
+              onClick={() => setPicked((p) => (p.includes(o.label) ? p.filter((x) => x !== o.label) : [...p, o.label]))}>
               {o.label}
             </button>
           ))}

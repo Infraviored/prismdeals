@@ -50,10 +50,11 @@ async function huntScope(query, get, campaignId) {
  */
 async function huntListings(query, scope, filters = {}) {
   const { tree, hunt, family, route, searchIds } = scope;
-  // Once per scope: the list, its overview and the comparison share it, and a
-  // hunt that has found nothing yet still has a market.
-  if (!scope.markets) scope.markets = await nodeMarkets(query, tree, hunt.targets.map(t => t.node_id));
-  if (!family || !searchIds.length) return [];
+  if (!family || !searchIds.length) {
+    // A hunt that has found nothing yet still has a market.
+    if (!scope.markets) scope.markets = await nodeMarkets(query, tree, hunt.targets.map(t => t.node_id));
+    return [];
+  }
   const where = [];
   const params = [];
   if (filters.q) {
@@ -102,6 +103,13 @@ async function huntListings(query, scope, filters = {}) {
     };
   });
   placeListings(listings, family.base_url);
+  // Once per scope, for the targets and every product the offers resolved to
+  // below them: the list, its overview and the comparison share it.
+  if (!scope.markets) {
+    const nodes = new Set(hunt.targets.map(t => t.node_id));
+    for (const l of listings) if (l.fit.target_id && l.node_id) nodes.add(l.node_id);
+    scope.markets = await nodeMarkets(query, tree, [...nodes]);
+  }
   annotateMarket(listings, scope.markets);
   attachScores(listings, hunt.conditions);
   return listings;

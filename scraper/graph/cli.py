@@ -85,7 +85,16 @@ def main(argv=None):
         elif args.command == "process":
             out = process_listings(conn, args.listing_ids or None)
         elif args.command == "hunt-save":
-            out = {"id": hunts.save(conn, json.load(sys.stdin), args.campaign_id)}
+            before = (
+                hunts.search_urls(conn, args.campaign_id) if args.campaign_id else set()
+            )
+            campaign_id = hunts.save(conn, json.load(sys.stdin), args.campaign_id)
+            # Whether the crawl itself changed: a new target, place, radius or a
+            # must the site filters -- the screen starts a crawl only then.
+            out = {
+                "id": campaign_id,
+                "crawl_changed": hunts.search_urls(conn, campaign_id) != before,
+            }
         elif args.command == "hunt-delete":
             out = hunts.delete(conn, args.campaign_id)
         elif args.command == "draft":

@@ -69,6 +69,7 @@ export const de = {
     editAiNoChange: "Darin ist keine Änderung zu erkennen.",
     editAiApplied: "Geändert und gespeichert.",
     editAiFailed: "Die Änderung ließ sich nicht berechnen.",
+    editAiStale: "Die Suche wurde seitdem geändert – Vorschlag verworfen. Bitte neu vorschlagen lassen.",
     claimDealbreaker: "Dealbreaker",
     claimSource: "Quelle:",
     knowledgeNode: "Knoten",
@@ -209,6 +210,7 @@ export const de = {
     wishMissed: "{{wish}} (Wunsch): nein",
     wishOpen: "{{wish}} (Wunsch): nicht angegeben",
     knowledgeLoadFailed: "Der Rechercheauftrag ließ sich nicht laden.",
+    knowledgeListFailed: "Das Wissen ließ sich nicht laden.",
     knowledgeClassifyFailed: "Die Antwort ließ sich nicht auswerten. Füge sie erneut ein oder versuch es später.",
     researchNotNeeded: "Bei diesem Preis und dieser Art von Ware lohnt sich keine Hintergrundrecherche.",
     knowledgeTitle: "Was zu wissen ist",
@@ -237,7 +239,9 @@ export const de = {
     kindWarningSign: "Warnzeichen",
     kindSellerQuestion: "Frage an den Verkäufer",
     kindRetrofit: "Nachrüstung",
-    kindBenchmark: "Richtwert"
+    kindBenchmark: "Richtwert",
+    kindRecognition: "Erkennungsmerkmal",
+    kindGoodTerms: "Gute Suchbegriffe"
   },
   hunt: {
     setupTitle: "Neue Suche",

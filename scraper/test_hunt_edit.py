@@ -78,3 +78,43 @@ def test_what_cannot_be_judged_is_dropped():
 def test_a_reply_without_targets_is_refused():
     with pytest.raises(ValueError):
         hunt_edit.edit(BEFORE, "alles weg", ask=lambda p: {"targets": []})
+
+
+def test_numbers_with_units_are_read_and_what_is_dropped_is_said():
+    answer = {
+        "name": "Supersportler",
+        "max_price": "9.500 €",
+        "radius_km": "150 km",
+        "targets": [
+            {
+                "name": "Honda CBR 1000 RR",
+                "conditions": [
+                    {
+                        "label": "Kilometerstand",
+                        "op": "max",
+                        "value": "5000 km",
+                        "importance": "must",
+                    },
+                    {"label": "Farbe", "op": "schön", "importance": "must"},
+                ],
+            },
+            {"name": "Yamaha R1", "conditions": []},
+        ],
+        "conditions": [],
+    }
+    after, changes = hunt_edit.edit(BEFORE, "unter 5000 km", ask=lambda p: answer)
+    assert after["frame"]["max_price"] == 9500 and after["frame"]["radius_km"] == 150
+    assert after["targets"][0]["conditions"] == [
+        {"label": "Kilometerstand", "op": "max", "value": 5000, "importance": "must"}
+    ]
+    assert "nicht übernommen: Farbe" in changes
+
+
+def test_a_malformed_reply_is_refused_not_a_crash():
+    for answer in (
+        {"targets": ["Yamaha R1"]},
+        {"targets": "Yamaha R1"},
+        {"targets": [{"name": "Yamaha R1"}], "max_price": "viel"},
+    ):
+        with pytest.raises(ValueError):
+            hunt_edit.edit(BEFORE, "x", ask=lambda p: answer)

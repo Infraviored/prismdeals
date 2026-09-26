@@ -91,17 +91,28 @@ def _matches(conn, title, within):
     return found & within if within is not None else found
 
 
+_BELOW_MODEL = ("generation", "config")
+
+
 def _consistent(conn, node_id, matched, prior):
     """A match counts when the brand above it is named too, or is the searching
     target's own chain: "r1" is Yamaha's only next to "Yamaha", while a series
-    between brand and model need not be written ("Honda CBR1000RR")."""
-    for above in store.ancestors(conn, node_id)[:-1]:
-        if (
-            above["kind"] == "brand"
-            and above["id"] not in matched
-            and above["id"] not in prior
-        ):
+    between brand and model need not be written ("Honda CBR1000RR").
+
+    A generation or configuration names nothing on its own: "Gen 9" is the X1
+    Carbon's only next to "X1 Carbon" (or when the X1 Carbon is searched) --
+    "ThinkPad T14 Gen 9" is no X1 Carbon. Its model or family must be there."""
+    chain = store.ancestors(conn, node_id)
+    known = matched | prior
+    for above in chain[:-1]:
+        if above["kind"] == "brand" and above["id"] not in known:
             return False
+    if chain[-1]["kind"] in _BELOW_MODEL:
+        for above in reversed(chain[:-1]):
+            if above["id"] in known:
+                break
+            if above["kind"] not in _BELOW_MODEL:
+                return False
     return True
 
 
@@ -122,7 +133,8 @@ def by_years(conn, node_id, year):
 
     The generation whose own years hold it wins; only when none does, a first
     registration one year after the last build year counts (a late SC57 in
-    2008 is still an SC57 when no SC59 was built that year).
+    2008 is still an SC57 when no SC59 was built that year). A generation
+    without a last year is the current one: open to the end.
     """
     if year is None:
         return None
@@ -132,10 +144,13 @@ def by_years(conn, node_id, year):
         if c["kind"] == "generation" and c["years_from"]
     ]
     for slack in (0, 1):
+        # No last year: the generation is still built.
         fits = [
             c["id"]
             for c in generations
-            if c["years_from"] <= year <= (c["years_to"] or c["years_from"]) + slack
+            if c["years_from"]
+            <= year
+            <= (9999 if c["years_to"] is None else c["years_to"] + slack)
         ]
         if fits:
             return fits[0] if len(fits) == 1 else None
@@ -197,9 +212,89 @@ Antworte NUR mit JSON: [{{"i": 0, "key": "...", "alias": "..."}} | {{"i": 1, "pa
 """
 
 
+_PATH_KINDS = ("class", "brand", "family", "model", "generation", "config")
+
+
+def _named_above(conn, node_id, folded):
+    """Whether `folded` is already a name of something above `node_id`."""
+    above = [n["id"] for n in store.ancestors(conn, node_id)[:-1]]
+    return bool(
+        above
+        and conn.execute(
+            f"""SELECT 1 FROM node_aliases WHERE alias = ?
+                  AND node_id IN ({",".join("?" for _ in above)}) LIMIT 1""",
+            (folded, *above),
+        ).fetchone()
+    )
+
+
+def _learnable(conn, node_id, alias, title):
+    """Whether `alias` may name `node_id` from now on: only what the title
+    really says, long enough not to be an accident, and not a name of
+    something above the node -- "Honda" learned for the CBR would make every
+    Honda a CBR."""
+    folded = store.fold(alias)
+    return (
+        len(folded) >= 3
+        and folded in title_keys(title)
+        and not _named_above(conn, node_id, folded)
+    )
+
+
+def _checked_answer(answer, listings, known_ids, conn):
+    """The model's batch answer as [(listing, node_id | None, alias | None, path | None)];
+    raises NoModel on anything it cannot use -- nothing is written then."""
+    if not isinstance(answer, list):
+        raise llm.NoModel("Die KI hat keine Liste geliefert.")
+    out = []
+    for item in answer:
+        if not isinstance(item, dict) or not isinstance(item.get("i"), int):
+            raise llm.NoModel(f"Unbrauchbare KI-Antwort: {item!r}")
+        if not 0 <= item["i"] < len(listings):
+            continue  # names no title of the batch: says nothing about any
+        listing = listings[item["i"]]
+        if item.get("key"):
+            found = store.by_key(conn, str(item["key"]))
+            if not found or found["id"] not in known_ids:
+                raise llm.NoModel(f"Die KI nennt einen unbekannten Knoten: {item!r}")
+            alias = item.get("alias")
+            out.append(
+                (listing, found["id"], alias if isinstance(alias, str) else None, None)
+            )
+        elif "path" in item:
+            if not isinstance(item["path"], list) or not item["path"]:
+                raise llm.NoModel(f"Unbrauchbarer Pfad: {item!r}")
+            path = []
+            for step in item["path"]:
+                if not isinstance(step, dict):
+                    raise llm.NoModel(f"Unbrauchbarer Pfad-Schritt: {step!r}")
+                name = str(step.get("name") or "").strip()
+                aliases = step.get("aliases") or []
+                if (
+                    not name
+                    or step.get("kind") not in _PATH_KINDS
+                    or not isinstance(aliases, list)
+                ):
+                    raise llm.NoModel(f"Unbrauchbarer Pfad-Schritt: {step!r}")
+                path.append(
+                    {
+                        "name": name,
+                        "kind": step["kind"],
+                        "aliases": [str(a) for a in aliases],
+                    }
+                )
+            out.append((listing, None, None, path))
+        elif "key" in item:
+            out.append((listing, None, None, None))  # not a product of this kind
+        else:
+            raise llm.NoModel(f"Unbrauchbare KI-Antwort: {item!r}")
+    return out
+
+
 def resolve_with_model(conn, listings, parent_id, ask=llm.ask_json):
     """Asks once for listings that names could not place below `parent_id`.
-    Learns an alias from each answer. Returns {listing_id: node_id|None}."""
+    Learns an alias from each answer. Returns {listing_id: node_id|None} for
+    the listings the answer speaks about; None means not a product of this kind."""
     if not listings:
         return {}
     parent = store.node(conn, parent_id)
@@ -213,33 +308,30 @@ def resolve_with_model(conn, listings, parent_id, ask=llm.ask_json):
             ),
         )
     )
-    if not isinstance(answer, list):
-        raise llm.NoModel("Die KI hat keine Liste geliefert.")
+    checked = _checked_answer(answer, listings, {n["id"] for n in known}, conn)
     out = {}
-    for item in answer:
-        if not isinstance(item, dict) or not isinstance(item.get("i"), int):
-            continue
-        if not 0 <= item["i"] < len(listings):
-            continue
-        listing = listings[item["i"]]
-        node_id = None
-        if item.get("key"):
-            found = store.by_key(conn, item["key"])
-            if found and found["id"] in {n["id"] for n in known}:
-                node_id = found["id"]
-                # How this title names it: the next such title resolves by name.
-                if item.get("alias"):
-                    store.add_alias(conn, node_id, item["alias"], "name", "learned")
-        elif isinstance(item.get("path"), list):
+    for listing, node_id, alias, path in checked:
+        title = listing["title"]
+        if node_id is not None and alias:
+            # How this title names it: the next such title resolves by name.
+            if _learnable(conn, node_id, alias, title):
+                store.add_alias(conn, node_id, alias, "name", "learned")
+        if path is not None:
             node_id = parent_id
-            for step in item["path"]:
-                name = str(step.get("name") or "").strip()
-                kind = step.get("kind") if step.get("kind") in store.KINDS else "model"
-                if not name:
-                    break
-                node_id = store.create_node(conn, node_id, kind, name, "model")
-                for alias in [name, *(step.get("aliases") or [])]:
-                    store.add_alias(conn, node_id, alias, "name", "model")
+            for step in path:
+                folded = store.fold(step["name"])
+                if folded in store.aliases(conn, node_id) or _named_above(
+                    conn, node_id, folded
+                ):
+                    continue  # the node it sits under, named again
+                node_id = store.create_node(
+                    conn, node_id, step["kind"], step["name"], "model"
+                )
+                # The name is the model's word for it; aliases must be the title's.
+                store.add_alias(conn, node_id, step["name"], "name", "model")
+                for a in step["aliases"]:
+                    if _learnable(conn, node_id, a, title):
+                        store.add_alias(conn, node_id, a, "name", "model")
         out[listing["id"]] = node_id
     conn.commit()
     return out

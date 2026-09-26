@@ -22,6 +22,24 @@ export interface HuntEditorProps {
 export const HuntEditor: React.FC<HuntEditorProps> = ({ doc, onChange, conditionsOnly = false }) => {
   const { t } = useTranslation();
   const [newTarget, setNewTarget] = useState('');
+  // One key per target that survives renaming it (a rename drops node_id):
+  // a key from node_id remounted the row and lost the focus on each keystroke.
+  const [keys, setKeys] = useState<{ ids: number[]; next: number }>(() => ({
+    ids: doc.targets.map((_, i) => i),
+    next: doc.targets.length,
+  }));
+  if (keys.ids.length !== doc.targets.length) {
+    // Added at the end, or the document replaced: keep the keys by position.
+    const ids = keys.ids.slice(0, doc.targets.length);
+    let next = keys.next;
+    while (ids.length < doc.targets.length) ids.push(next++);
+    setKeys({ ids, next });
+  }
+
+  const remove = (index: number) => {
+    setKeys((k) => ({ ...k, ids: k.ids.filter((_, i) => i !== index) }));
+    onChange(removeTarget(doc, index));
+  };
 
   const add = () => {
     onChange(addTarget(doc, newTarget));
@@ -41,7 +59,7 @@ export const HuntEditor: React.FC<HuntEditorProps> = ({ doc, onChange, condition
       <section className="space-y-3" aria-label={t('huntEdit.targets')}>
         <h2 className={label}>{t('huntEdit.targets')}</h2>
         {doc.targets.map((target, i) => (
-          <div key={`${target.node_id ?? 'new'}-${i}`} className="rounded border border-[#0E4A40] p-3 space-y-3" data-testid="hunt-target">
+          <div key={keys.ids[i] ?? `pending-${i}`} className="rounded border border-[#0E4A40] p-3 space-y-3" data-testid="hunt-target">
             <div className="flex items-center gap-2">
               {conditionsOnly ? (
                 <h3 className="flex-1 text-sm font-semibold text-[#E4D6BE]">{target.name || target.typed}</h3>
@@ -60,7 +78,7 @@ export const HuntEditor: React.FC<HuntEditorProps> = ({ doc, onChange, condition
                 </span>
               )}
               {!conditionsOnly && doc.targets.length > 1 && (
-                <button type="button" onClick={() => onChange(removeTarget(doc, i))} className="shrink-0 text-xs text-[#8FA6A1] hover:text-[#E87967] cursor-pointer">
+                <button type="button" onClick={() => remove(i)} className="shrink-0 text-xs text-[#8FA6A1] hover:text-[#E87967] cursor-pointer">
                   {t('huntEdit.remove')}
                 </button>
               )}

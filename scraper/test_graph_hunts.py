@@ -157,7 +157,7 @@ def test_refine_asks_once_about_listings_above_the_target(conn):
     methods = dict(
         conn.execute("SELECT listing_id, method FROM listing_resolution").fetchall()
     )
-    assert methods == {"x0": "alias", "x1": "model"}
+    assert methods == {"x0": "alias", "x1": "rejected"}
 
 
 def test_deleting_a_hunt_keeps_what_it_found(conn):
@@ -350,3 +350,251 @@ def test_an_in_condition_on_a_site_filter_narrows_the_crawl(conn):
         "SELECT url FROM searches WHERE campaign_id = ?", (cid,)
     ).fetchall()
     assert "+motorraeder_roller.shift_s:manuell" in url
+
+
+def test_deleting_a_hunt_keeps_the_searches_another_hunt_owns(conn):
+    """Two hunts derive the same URL row; deleting one must not switch it off."""
+    from graph import crawlplan
+
+    a = hunts.save(conn, _doc(name="A"), ask=_answers)
+    b = hunts.save(
+        conn, _doc(name="B", targets=[{"typed": "Honda CBR 1000 RR"}]), ask=_answers
+    )
+    ((sid, enabled),) = conn.execute("SELECT id, enabled FROM searches").fetchall()
+    assert enabled == 1
+    hunts.delete(conn, a)
+    assert conn.execute(
+        "SELECT enabled, campaign_id FROM searches WHERE id = ?", (sid,)
+    ).fetchone() == (1, None)
+    assert [u["search_id"] for u in crawlplan.plan(conn)] == [sid]
+    # The last owner gone: nothing wants it, it stops.
+    hunts.delete(conn, b)
+    assert conn.execute(
+        "SELECT enabled FROM searches WHERE id = ?", (sid,)
+    ).fetchone() == (0,)
+
+
+def test_a_named_existing_attribute_is_used_not_redefined(conn):
+    """ "Laufleistung" the model names as the site's "km": no second "km" at the
+    model node shadowing the site's detail reader and filter."""
+    from graph import facts
+
+    def ask(prompt):
+        if "Er verlangt" in prompt:
+            assert "km: Kilometerstand" in prompt
+            return {
+                "attributes": [
+                    {
+                        "label": "Laufleistung",
+                        "id": "km",
+                        "type": "number",
+                        "unit": "km",
+                        "readers": ["number"],
+                    }
+                ]
+            }
+        return _answers(prompt)
+
+    doc = _doc(
+        targets=[
+            {
+                "typed": "Honda CBR 1000 RR SC59",
+                "conditions": [
+                    {
+                        "label": "Laufleistung",
+                        "op": "max",
+                        "value": 5000,
+                        "importance": "must",
+                    }
+                ],
+            }
+        ],
+        conditions=[],
+    )
+    cid = hunts.save(conn, doc, ask=ask)
+    target = hunts.target_ids(conn, cid)[0]
+    km = store.effective_attributes(conn, target)["km"]
+    assert km["site_filter"] == "motorraeder_roller.km_i"
+    assert km["readers"] == ["details:Kilometerstand"]
+    assert conn.execute("SELECT attr_id, label FROM hunt_conditions").fetchall() == [
+        ("km", "Laufleistung")
+    ]
+    conn.execute(
+        "INSERT INTO listings (id, title, url, details) VALUES ('1', 'Honda CBR 1000 RR',"
+        " 'https://www.kleinanzeigen.de/s-anzeige/x/1-305-1', ?)",
+        (json.dumps({"Kilometerstand": "45.000 km"}),),
+    )
+    facts.process(conn, "1")
+    assert facts.facts_of(conn, "1")["km"] == 45000
+
+
+def test_an_option_is_stored_as_its_label_whichever_the_screen_sent(conn):
+    doc = _doc(
+        targets=[{"typed": "Honda CBR 1000 RR SC59"}],
+        conditions=[
+            {"label": "Art", "op": "eq", "value": "motorrad", "importance": "must"},
+            {
+                "label": "Getriebe",
+                "op": "in",
+                "value": ["Manuell", "automatik"],
+                "importance": "wish",
+            },
+        ],
+    )
+    cid = hunts.save(conn, doc, ask=_answers)
+    rows = conn.execute(
+        "SELECT attr_id, value_json FROM hunt_conditions WHERE campaign_id = ? ORDER BY id",
+        (cid,),
+    ).fetchall()
+    assert rows == [("type", '"Motorräder"'), ("shift", '["Manuell", "Automatik"]')]
+    ((url,),) = conn.execute("SELECT url FROM searches").fetchall()
+    assert "+motorraeder_roller.type_s:motorrad" in url
+    bad = _doc(
+        name="Andere",
+        conditions=[
+            {"label": "Art", "op": "eq", "value": "Cruiser", "importance": "must"}
+        ],
+    )
+    with pytest.raises(hunts.HuntError, match="Cruiser"):
+        hunts.save(conn, bad, ask=_answers)
+
+
+def test_a_range_on_a_choice_is_refused(conn):
+    doc = {
+        "name": "Laptop",
+        "category_code": "278",
+        "frame": {},
+        "targets": [{"typed": "Lenovo ThinkPad T14"}],
+        "conditions": [
+            {
+                "label": "Speicher (GB)",
+                "op": "min",
+                "value": 512,
+                "importance": "must",
+            }
+        ],
+    }
+    ask = lambda p: {  # noqa: E731
+        "path": [
+            {"name": "Lenovo", "kind": "brand"},
+            {"name": "ThinkPad T14", "kind": "model"},
+        ]
+    }
+    with pytest.raises(hunts.HuntError, match="Auswahl"):
+        hunts.save(conn, doc, ask=ask)
+
+
+def test_the_art_filter_is_found_by_its_label_not_its_id(conn):
+    """Baby- & Kinderkleidung: "Art" is type_s, and art_s is "Mädchen & Jungen"."""
+    from graph import facts
+
+    cid = hunts.save(
+        conn,
+        {
+            "name": "Hosen",
+            "category_code": "22",
+            "frame": {"location_id": 6358, "radius_km": 26},
+            "targets": [{"typed": "Hosen"}],
+            "conditions": [
+                {
+                    "label": "Art",
+                    "op": "eq",
+                    "value": "hosen_jeans",
+                    "importance": "must",
+                }
+            ],
+        },
+        ask=lambda p: {"path": [{"name": "Hosen", "kind": "class"}]},
+    )
+    ((url,),) = conn.execute(
+        "SELECT url FROM searches WHERE campaign_id = ?", (cid,)
+    ).fetchall()
+    assert "type_s:hosen_jeans" in url and "/hosen/" not in url
+    target = hunts.target_ids(conn, cid)[0]
+    conn.execute(
+        "INSERT INTO listings (id, title, url, details) VALUES ('k', 'Paket Kinder 110',"
+        " 'https://www.kleinanzeigen.de/s-anzeige/x/1-22-1', ?)",
+        (json.dumps({"Art": "Hosen & Jeans", "Mädchen & Jungen": "Jungen"}),),
+    )
+    assert facts.process(conn, "k") == target
+
+
+def test_a_site_filter_needs_the_attribute_at_every_target(conn):
+    """A must only one target can read does not narrow the shared crawl."""
+    conditions = [
+        {
+            "node_id": None,
+            "attr_id": "abs",
+            "op": "eq",
+            "value": "ja",
+            "importance": "must",
+        }
+    ]
+    cbr = hunts.save(conn, _doc(), ask=_answers)
+    target = hunts.target_ids(conn, cbr)[0]
+    store.set_attribute(
+        conn,
+        target,
+        "abs",
+        "ABS",
+        "enum",
+        ["keywords:abs"],
+        "test",
+        options=["ja"],
+        site_filter="motorraeder_roller.abs_s",
+    )
+    other = taxonomy.category_node_id(conn, "305")  # reads no ABS at all
+    assert hunts._site_filters(conn, conditions, [target]) == [
+        "motorraeder_roller.abs_s:ja"
+    ]
+    assert hunts._site_filters(conn, conditions, [target, other]) == []
+
+
+def test_a_listing_the_model_calls_no_product_is_rejected_for_good(conn):
+    """{"key": null}: an accessory. Stored as "rejected" where it was, and no
+    name learned later moves it."""
+    from graph import facts
+
+    cid = hunts.save(conn, _doc(), ask=_answers)
+    (sid,) = conn.execute("SELECT id FROM searches").fetchone()
+    conn.execute(
+        "INSERT INTO listings (id, title, url, details) VALUES ('t', 'Honda Superblade Tankpad',"
+        " 'https://www.kleinanzeigen.de/s-anzeige/x/1-305-1', '{}')"
+    )
+    conn.execute(
+        "INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('t', ?, 0)",
+        (sid,),
+    )
+    hunts.refine(conn, cid, ask=lambda p: [{"i": 0, "key": None}])
+    honda = conn.execute("SELECT node_id FROM listing_resolution").fetchone()[0]
+    assert store.node(conn, honda)["kind"] == "brand"
+    assert conn.execute("SELECT method FROM listing_resolution").fetchone() == (
+        "rejected",
+    )
+    # A name learned later for the CBR does not undo the answer.
+    cbr = store.node(conn, hunts.target_ids(conn, cid)[0])["parent_id"]
+    store.add_alias(conn, cbr, "Superblade", "name", "learned")
+    facts.process(conn, "t", prior=hunts.target_ids(conn, cid))
+    assert conn.execute(
+        "SELECT node_id, method FROM listing_resolution"
+    ).fetchone() == (honda, "rejected")
+
+
+def test_refine_asks_again_about_what_the_answer_left_out(conn):
+    cid = hunts.save(conn, _doc(), ask=_answers)
+    (sid,) = conn.execute("SELECT id FROM searches").fetchone()
+    for n, title in enumerate(["Honda Superblade Tank", "Honda Irgendwas"]):
+        conn.execute(
+            "INSERT INTO listings (id, title, url, details) VALUES (?, ?, ?, '{}')",
+            (f"y{n}", title, f"https://www.kleinanzeigen.de/s-anzeige/x/{n}-305-1"),
+        )
+        conn.execute(
+            "INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES (?, ?, 0)",
+            (f"y{n}", sid),
+        )
+    hunts.refine(conn, cid, ask=lambda p: [{"i": 0, "key": None}])
+    methods = dict(
+        conn.execute("SELECT listing_id, method FROM listing_resolution").fetchall()
+    )
+    assert methods == {"y0": "rejected", "y1": "alias"}
+    assert hunts.refine(conn, cid, ask=lambda p: [{"i": 0, "key": None}])["asked"] == 1

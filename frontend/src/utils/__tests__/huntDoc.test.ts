@@ -10,9 +10,9 @@ const t = ((path: string, params: Record<string, string | number> = {}) => {
 }) as Parameters<typeof conditionText>[1];
 
 describe('huntDoc', () => {
-  it('a renamed target loses its node, so the server places it again; conditions stay', () => {
+  it('a renamed target loses its node, so the server places it again; conditions and attributes stay', () => {
     const doc = renameTarget(huntDoc(), 0, 'Honda CBR 1000 RR SC57');
-    expect(doc.targets[0]).toEqual({ typed: 'Honda CBR 1000 RR SC57', conditions: huntDoc().targets[0].conditions });
+    expect(doc.targets[0]).toEqual({ typed: 'Honda CBR 1000 RR SC57', conditions: huntDoc().targets[0].conditions, attributes: [numberAttr] });
     expect(doc.targets[1].node_id).toBe(168);
   });
 
@@ -40,6 +40,8 @@ describe('huntDoc', () => {
     expect(conditionText({ label: 'ABS', op: 'absent', value: null, importance: 'must' }, t)).toBe('ohne ABS');
     const marke = { id: 'marke', label: 'Marke', type: 'enum' as const, unit: null, site_filter: null, options: [{ value: 'yamaha', label: 'Yamaha' }] };
     expect(conditionText({ label: 'Marke', op: 'in', value: ['yamaha'], importance: 'must' }, t, marke)).toBe('Marke: Yamaha');
+    // Stored as the label (what the adder and the readers write): shown as is.
+    expect(conditionText({ label: 'Marke', op: 'in', value: ['Yamaha'], importance: 'must' }, t, marke)).toBe('Marke: Yamaha');
     expect(opsFor('boolean')).toEqual(['present', 'absent']);
   });
 

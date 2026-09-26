@@ -104,12 +104,12 @@ export default function App() {
           key={huntId ?? 0}
           huntId={huntId}
           onBack={() => navigate('dashboard', huntId, null)}
-          onSaved={(_stored, searchChanged) => {
+          onSaved={(_stored, crawlChanged) => {
             appData.refreshAll();
             navigate('dashboard', huntId, null);
-            // A changed search is a new question to Kleinanzeigen: ask it now.
-            // A new name or condition is not; the verdicts change on read.
-            if (searchChanged) scraper.handleStartScrape(huntId);
+            // Changed crawl URLs are a new question to Kleinanzeigen: ask it
+            // now. A new name or a wish is not; the verdicts change on read.
+            if (crawlChanged) scraper.handleStartScrape(huntId);
           }}
           onDelete={deleteHunt}
         />

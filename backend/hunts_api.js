@@ -62,6 +62,8 @@ const num = (v) => (v === undefined || v === '' || v === null || isNaN(Number(v)
 
 module.exports = (query, get) => {
   const router = express.Router();
+  // Every :id is a number; anything else is no such thing, not a model outage.
+  router.param('id', (req, res, next, id) => (/^\d+$/.test(id) ? next() : res.status(404).json({ error: 'Nicht gefunden' })));
 
   async function documentOf(campaignId) {
     const scope = await huntScope(query, get, campaignId);
@@ -104,7 +106,7 @@ module.exports = (query, get) => {
     const result = await graph(args, JSON.stringify(req.body || {}));
     if (result.status !== 200) return res.status(result.status).json(result.body);
     refine(result.body.id);
-    res.json(await documentOf(result.body.id));
+    res.json({ ...(await documentOf(result.body.id)), crawl_changed: result.body.crawl_changed });
   }
 
   router.get('/api/hunts', async (req, res) => {

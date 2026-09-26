@@ -25,6 +25,7 @@ import family_store
 import search_url
 
 from . import llm, place, store
+from .numbers import leading_number
 
 OPS = ("min", "max", "eq", "in", "not_in", "present", "absent")
 IMPORTANCE = ("must", "wish")
@@ -44,8 +45,11 @@ def clean_condition(raw):
     if op not in OPS or importance not in IMPORTANCE or not label:
         raise HuntError(f"Ungültige Bedingung: {raw!r}")
     value = raw.get("value")
-    if op in ("min", "max") and not isinstance(value, (int, float)):
-        raise HuntError(f"„{label}“ braucht eine Zahl.")
+    if op in ("min", "max"):
+        # "5000", "5.000 km": the number the words say.
+        value = leading_number(value)
+        if value is None:
+            raise HuntError(f"„{label}“ braucht eine Zahl.")
     if op in ("in", "not_in") and not (isinstance(value, list) and value):
         raise HuntError(f"„{label}“ braucht eine Liste.")
     if op == "eq" and value in (None, ""):
@@ -60,12 +64,18 @@ def clean_condition(raw):
 
 
 def _existing(conn, node_id, condition):
-    """The attr_id at `node_id` (or above) the condition names, or None."""
-    wanted = {store.fold(condition["label"])}
-    if condition["attr_id"]:
-        wanted.add(store.fold(condition["attr_id"]))
-    for attr_id, attribute in store.effective_attributes(conn, node_id).items():
-        if store.fold(attr_id) in wanted or store.fold(attribute["label"]) in wanted:
+    """The attr_id at `node_id` (or above) the condition names, or None: the
+    id it carries, else the attribute of that label, else of that id -- "Art"
+    in Baby- & Kinderkleidung is type_s, while its art_s is "Mädchen & Jungen"."""
+    attributes = store.effective_attributes(conn, node_id)
+    if condition["attr_id"] in attributes:
+        return condition["attr_id"]
+    wanted = store.fold(condition["label"])
+    for attr_id, attribute in attributes.items():
+        if store.fold(attribute["label"]) == wanted:
+            return attr_id
+    for attr_id in attributes:
+        if store.fold(attr_id) == wanted:
             return attr_id
     return None
 
@@ -77,15 +87,58 @@ def _attributes(conn, pairs, ask):
     for node_id, c in pairs:
         if _existing(conn, node_id, c) is None:
             missing.setdefault(node_id, {})[store.fold(c["label"])] = c["label"]
+    # A label the model names as a present attribute ("Laufleistung" as the
+    # site's "km") is that attribute; it is not found by name alone.
+    named = {}
     for node_id, labels in missing.items():
-        place.define_attributes(conn, node_id, list(labels.values()), ask=ask)
+        for label, attr_id in place.define_attributes(
+            conn, node_id, list(labels.values()), ask=ask
+        ).items():
+            named[(node_id, store.fold(label))] = attr_id
     out = []
     for node_id, c in pairs:
-        attr_id = _existing(conn, node_id, c)
+        attr_id = _existing(conn, node_id, c) or named.get(
+            (node_id, store.fold(c["label"]))
+        )
         if attr_id is None:
             raise HuntError(f"„{c['label']}“ lässt sich aus Anzeigen nicht lesen.")
         out.append(attr_id)
     return out
+
+
+def _fitted(conn, node_id, condition, attr_id):
+    """The condition in its attribute's terms. A range needs a number; an
+    option is stored as the label the readers store ("Sehr Gut"), whether the
+    buyer's screen sent that or the site's value ("like_new")."""
+    attribute = store.effective_attributes(conn, node_id)[attr_id]
+    label = condition["label"]
+    if condition["op"] in ("min", "max") and attribute["type"] != "number":
+        raise HuntError(
+            f"„{label}“ ist keine Zahl, sondern eine Auswahl: "
+            "bitte eine oder mehrere Optionen wählen statt einer Grenze."
+            if attribute["options"]
+            else f"„{label}“ ist keine Zahl: eine Grenze passt nicht."
+        )
+    if condition["op"] not in ("eq", "in", "not_in") or not attribute["options"]:
+        return condition
+    wanted = condition["value"] if condition["op"] != "eq" else [condition["value"]]
+    labels = []
+    for value in wanted:
+        option = next(
+            (
+                o
+                for o in attribute["options"]
+                if store.fold(value) in (store.fold(o["label"]), store.fold(o["value"]))
+            ),
+            None,
+        )
+        if option is None or not store.fold(value):
+            raise HuntError(
+                f"„{value}“ ist keine Option von „{label}“ "
+                f"({', '.join(o['label'] for o in attribute['options'])})."
+            )
+        labels.append(option["label"])
+    return {**condition, "value": labels[0] if condition["op"] == "eq" else labels}
 
 
 def _common_ancestor(conn, node_ids):
@@ -126,11 +179,17 @@ def _site_filters(conn, conditions, target_ids):
         attrs = [
             store.effective_attributes(conn, t).get(c["attr_id"]) for t in target_ids
         ]
-        keys = {a.get("site_filter") for a in attrs if a}
-        if len(keys) != 1 or None in keys or len(attrs) != len(target_ids):
+        # Every target must read it, and by the same filter: a filter one
+        # target lacks would drop that target's offers.
+        if not attrs or any(a is None for a in attrs):
+            continue
+        keys = {a.get("site_filter") for a in attrs}
+        if len(keys) != 1 or None in keys:
             continue
         key = keys.pop()
         if c["op"] in ("min", "max"):
+            if any(a["type"] != "number" for a in attrs):
+                continue  # a range filters numbers only
             low = c["value"] if c["op"] == "min" else ""
             high = c["value"] if c["op"] == "max" else ""
             out.append(f"{key}:{_num(low)},{_num(high)}")
@@ -222,7 +281,11 @@ def save(conn, doc, campaign_id=None, ask=llm.ask_json):
     scoped = [(t["node_id"], c) for t in targets for c in t["conditions"]]
     pairs = scoped + [(shared, c) for c in doc["conditions"]]
     conditions = [
-        {**c, "attr_id": attr_id, "node_id": node_id if i < len(scoped) else None}
+        {
+            **_fitted(conn, node_id, c, attr_id),
+            "attr_id": attr_id,
+            "node_id": node_id if i < len(scoped) else None,
+        }
         for i, ((node_id, c), attr_id) in enumerate(
             zip(pairs, _attributes(conn, pairs, ask))
         )
@@ -300,9 +363,11 @@ def _art_of(conn, node_id, conditions):
     parent = store.node(conn, node["parent_id"]) if node["parent_id"] else None
     if node["kind"] != "class" or not parent or parent["kind"] != "category":
         return None
+    art = store.art_attr_id(store.effective_attributes(conn, node_id))
     for c in conditions:
         if (
-            c["attr_id"] == "art"
+            art
+            and c["attr_id"] == art
             and c["importance"] == "must"
             and c["node_id"] in (None, node_id)
             and _single(c) is not None
@@ -374,6 +439,20 @@ def _crawl(conn, campaign_id, doc, target_ids, conditions):
     )
 
 
+def search_urls(conn, campaign_id):
+    """The URLs the hunt crawls now: what a save compares to know whether to crawl."""
+    return {
+        r[0]
+        for r in conn.execute(
+            """SELECT s.url FROM search_families f
+                 JOIN search_family_searches sfs ON sfs.family_id = f.id AND sfs.active = 1
+                 JOIN searches s ON s.id = sfs.search_id
+                WHERE f.campaign_id = ?""",
+            (campaign_id,),
+        ).fetchall()
+    }
+
+
 def listing_ids(conn, campaign_id):
     """Every listing the hunt's searches ever found."""
     return [
@@ -430,7 +509,7 @@ def refine(conn, campaign_id, ask=llm.ask_json):
             chunk,
         ).fetchall()
     for listing_id, node_id, method in rows:
-        if node_id in above and method != "model":
+        if node_id in above and method not in ("model", "rejected"):
             pending.setdefault(node_id, []).append(listing_id)
     asked = 0
     for parent_id, group in pending.items():
@@ -448,21 +527,19 @@ def refine(conn, campaign_id, ask=llm.ask_json):
             answers = resolve.resolve_with_model(conn, batch, parent_id, ask=ask)
             asked += len(batch)
             for item in batch:
+                if item["id"] not in answers:
+                    continue  # the answer left it out: asked again next time
+                node_id = answers[item["id"]]
+                if node_id is None:
+                    # Not a product of this kind (an accessory, a spare part):
+                    # it stays where names put it, and says so.
+                    resolve.store_resolution(
+                        conn, item["id"], parent_id, 0.8, "rejected"
+                    )
+                else:
+                    resolve.store_resolution(conn, item["id"], node_id, 0.8, "model")
+                # Read again where the answer put it (and by any alias it taught).
                 facts.process(conn, item["id"], prior=targets)
-                node_id = answers.get(item["id"])
-                resolved = conn.execute(
-                    "SELECT node_id FROM listing_resolution WHERE listing_id = ?",
-                    (str(item["id"]),),
-                ).fetchone()
-                # Named by the answer's alias now, or not a product of this kind:
-                # either way the model has spoken for this listing.
-                resolve.store_resolution(
-                    conn,
-                    item["id"],
-                    resolved[0] if node_id is None else node_id,
-                    0.8,
-                    "model",
-                )
     conn.commit()
     return {"listings": len(ids), "asked": asked}
 
@@ -470,8 +547,26 @@ def refine(conn, campaign_id, ask=llm.ask_json):
 def delete(conn, campaign_id):
     """Removes a hunt and its crawl plan. What it found stays: listings are raw
     market data other hunts share, and the graph has read them. Its searches
-    are detached and switched off, not deleted -- deleting one cascaded to
-    every listing it had found first, whichever hunt still wanted it."""
+    are detached, not deleted -- deleting one cascaded to every listing it had
+    found first, whichever hunt still wanted it. A search is switched off only
+    when no other hunt still owns it: one URL row serves every hunt that
+    derives it."""
+    affected = {
+        r[0]
+        for r in conn.execute(
+            """SELECT sfs.search_id FROM search_family_searches sfs
+                 JOIN search_families f ON f.id = sfs.family_id
+                WHERE f.campaign_id = ?
+               UNION
+               SELECT rsc.search_id FROM route_search_circles rsc
+                 JOIN route_searches r ON r.id = rsc.route_search_id
+                 JOIN search_families f ON f.id = r.family_id
+                WHERE f.campaign_id = ?
+               UNION
+               SELECT id FROM searches WHERE campaign_id = ?""",
+            (campaign_id, campaign_id, campaign_id),
+        ).fetchall()
+    }
     families = [
         r[0]
         for r in conn.execute(
@@ -502,9 +597,17 @@ def delete(conn, campaign_id):
         )
         conn.execute("DELETE FROM search_families WHERE id = ?", (family_id,))
     conn.execute(
-        "UPDATE searches SET campaign_id = NULL, enabled = 0 WHERE campaign_id = ?",
-        (campaign_id,),
+        "UPDATE searches SET campaign_id = NULL WHERE campaign_id = ?", (campaign_id,)
     )
+    # Owned by another hunt: on or off as its owners say. Owned by nobody now:
+    # this hunt was its last owner, so it stops being crawled.
+    still_owned = family_store.recompute_enabled(conn, affected)
+    orphaned = sorted(affected - set(still_owned))
+    if orphaned:
+        conn.execute(
+            f"UPDATE searches SET enabled = 0 WHERE id IN ({','.join('?' for _ in orphaned)})",
+            orphaned,
+        )
     conn.execute(
         "DELETE FROM listing_ranks WHERE run_id IN (SELECT id FROM judge_runs WHERE campaign_id = ?)",
         (campaign_id,),
