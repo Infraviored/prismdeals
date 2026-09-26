@@ -62,15 +62,22 @@ export const ScoreBreakdown: React.FC<{ listing: RowListing; conditions?: Map<st
         {states.map(([id, state]) => {
           const c = conditions.get(id)!;
           const text = c.text || c.label;
-          const mark = state === 'met' ? '✓' : state === 'violated' ? '✗' : '?';
+          // A minus wish ("stört", weight < 0) is good when the offer does not have it.
+          const minus = c.importance === 'wish' && (c.weight ?? 0) < 0;
+          const good = minus ? state === 'violated' : state === 'met';
+          const mark = state === 'open' ? '?' : good ? '✓' : '✗';
           const line =
             c.importance === 'must'
               ? state === 'open' ? t('surface.reqOpen', { req: text }) : text
+              : minus
+                ? state === 'met' ? t('surface.wishBothers', { wish: text })
+                : state === 'violated' ? t('surface.wishBothersNot', { wish: text })
+                : t('surface.wishBothersOpen', { wish: text })
               : state === 'met' ? t('surface.wishMet', { wish: text })
               : state === 'violated' ? t('surface.wishMissed', { wish: text })
               : t('surface.wishOpen', { wish: text });
           return (
-            <li key={id} className={state === 'met' ? 'met' : c.importance === 'must' && state === 'violated' ? 'violated' : 'open'}>
+            <li key={id} className={state === 'open' ? 'open' : good ? 'met' : 'violated'}>
               {mark} {line}
             </li>
           );

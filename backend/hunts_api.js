@@ -8,6 +8,7 @@
  *   DELETE /api/hunts/:id         the hunt and its crawl plan; what it found stays
  *   GET  /api/hunts/:id/listings  offers with computed verdicts, filtered, sorted, paged
  *   GET  /api/hunts/:id/overview  counts, rejection reasons, markets, conditions
+ *   GET  /api/hunts/:id/signals   what varies between its offers, with how often, not yet in the hunt
  *   GET  /api/listings/:id        one listing, with its hunt's verdict when ?campaign_id=
  *   POST /api/hunts/draft         {text} -> a document drafted from the buyer's words, not saved
  *   POST /api/hunts/edit          the document changed in words, not saved
@@ -21,7 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const { graph, runJson } = require('./python');
 const { huntScope, huntListings, routeShape } = require('./hunt_listings');
-const { effectiveAttributes } = require('./db/graph');
+const { effectiveAttributes, commonNode, describe } = require('./db/graph');
 const { conditionText } = require('./db/verdict');
 const { listingOrder } = require('./listing_order');
 const { attachPriceHistory } = require('./listing_extras');
@@ -54,6 +55,7 @@ function conditionOut(c) {
     op: c.op,
     value: c.value,
     importance: c.importance,
+    weight: c.weight,
     text: conditionText(c),
   };
 }
@@ -235,6 +237,43 @@ module.exports = (query, get) => {
     } catch (error) {
       console.error('GET /api/listings/:id failed:', error);
       res.status(500).json({ error: 'Could not load listing' });
+    }
+  });
+
+  // What the offers of the hunt's product differ in (graph/signals.py), with
+  // how often it is stated, minus what the hunt already asks about.
+  router.get('/api/hunts/:id/signals', async (req, res) => {
+    try {
+      const scope = await huntScope(query, get, Number(req.params.id));
+      if (!scope) return res.status(404).json({ error: 'Keine Suche mit dieser Nummer' });
+      const { tree, hunt } = scope;
+      const node = commonNode(tree, hunt.targets.map(t => t.node_id));
+      if (node === null) return res.json({ node: null, signals: [] });
+      const attrs = new Map((await effectiveAttributes(query, tree, node)).map(a => [a.id, a]));
+      const asked = new Set(hunt.conditions.map(c => c.attr_id));
+      const rows = await query(
+        `SELECT attr_id, polarity, default_weight, found, total, proposed_at
+           FROM node_signals WHERE node_id = ? ORDER BY found DESC`,
+        [node]
+      );
+      res.json({
+        node: { id: node, name: describe(tree, node) || tree.byId.get(node).name },
+        signals: rows
+          .filter(r => attrs.has(r.attr_id))
+          .map(r => ({
+            attr_id: r.attr_id,
+            label: attrs.get(r.attr_id).label,
+            type: attrs.get(r.attr_id).type,
+            polarity: r.polarity,
+            default_weight: r.default_weight,
+            found: r.found,
+            total: r.total,
+            in_hunt: asked.has(r.attr_id),
+          })),
+      });
+    } catch (error) {
+      console.error('Hunt signals failed:', error);
+      res.status(500).json({ error: 'Die Merkmale konnten nicht gelesen werden.' });
     }
   });
 

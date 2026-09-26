@@ -20,9 +20,21 @@ export function renameTarget(doc: HuntDocument, index: number, typed: string): H
   return {
     ...doc,
     targets: doc.targets.map((t, i) =>
-      i === index ? { typed, conditions: t.conditions, ...(t.attributes ? { attributes: t.attributes } : {}) } : t
+      i === index
+        ? {
+            typed,
+            conditions: t.conditions,
+            ...(t.attributes ? { attributes: t.attributes } : {}),
+            ...(t.weight !== undefined ? { weight: t.weight } : {}),
+          }
+        : t
     ),
   };
+}
+
+/** How much the buyer prefers this target over the others, 0..3 (★). */
+export function setTargetWeight(doc: HuntDocument, index: number, weight: number): HuntDocument {
+  return { ...doc, targets: doc.targets.map((t, i) => (i === index ? { ...t, weight } : t)) };
 }
 
 /** `index` null: the conditions for all targets. */

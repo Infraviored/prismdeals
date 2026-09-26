@@ -12,6 +12,7 @@ export interface FundeStripProps {
   onCompare?: () => void;
   comparing: boolean;
   onKnowledge?: () => void;
+  onSignals?: () => void;
 }
 
 /** The results screen's actions: a strip on the desktop, a row under the tabs on the phone. */
@@ -33,6 +34,8 @@ export function useFundeActions(p: FundeStripProps) {
       // No compare button on the phone: the comparison runs after every crawl on its own.
       !phone && p.onCompare &&
         button('compare', p.comparing ? t('surface.comparing') : t('surface.compare'), p.onCompare, placement, p.comparing, 'compare-btn'),
+      p.onSignals &&
+        button('signals', t('surface.signals'), p.onSignals, placement, false, phone ? 'signals-btn-mobile' : 'signals-btn'),
       p.onKnowledge &&
         button('knowledge', t('surface.knowledge'), p.onKnowledge, `${placement} text-[#4E8C6A] border-[#4E8C6A]/50`, false, phone ? 'knowledge-btn-mobile' : 'knowledge-btn'),
     ].filter(Boolean);

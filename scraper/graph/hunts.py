@@ -20,12 +20,15 @@ condition applies to every target.
 """
 
 import json
+import logging
 
 import family_store
 import search_url
 
 from . import llm, place, store
 from .numbers import leading_number
+
+logger = logging.getLogger(__name__)
 
 OPS = ("min", "max", "eq", "in", "not_in", "present", "absent")
 IMPORTANCE = ("must", "wish")
@@ -54,13 +57,27 @@ def clean_condition(raw):
         raise HuntError(f"„{label}“ braucht eine Liste.")
     if op == "eq" and value in (None, ""):
         raise HuntError(f"„{label}“ braucht einen Wert.")
+    # A wish weighs -3..+3 (minus .. plus, 0 shown only); a must is a gate.
+    weight = raw.get("weight")
+    if weight is None:
+        weight = 2 if importance == "wish" else 0
+    if not isinstance(weight, int) or isinstance(weight, bool) or not -3 <= weight <= 3:
+        raise HuntError(f"„{label}“: Gewicht {weight!r} liegt nicht zwischen -3 und 3.")
     return {
         "attr_id": raw.get("attr_id"),
         "label": label,
         "op": op,
         "value": value if op not in ("present", "absent") else None,
         "importance": importance,
+        "weight": weight if importance == "wish" else 0,
     }
+
+
+def _target_weight(raw):
+    weight = raw.get("weight") or 0
+    if not isinstance(weight, int) or isinstance(weight, bool) or not 0 <= weight <= 3:
+        raise HuntError(f"Ziel-Vorliebe {weight!r} liegt nicht zwischen 0 und 3.")
+    return weight
 
 
 def _existing(conn, node_id, condition):
@@ -248,6 +265,7 @@ def _clean(doc):
             {
                 "typed": str(t.get("typed") or "").strip(),
                 "node_id": t.get("node_id"),
+                "weight": _target_weight(t),
                 "conditions": [clean_condition(c) for c in t.get("conditions") or []],
             }
             for t in targets
@@ -315,7 +333,8 @@ def save(conn, doc, campaign_id=None, ask=llm.ask_json):
         )
     conn.execute("DELETE FROM hunt_targets WHERE campaign_id = ?", (campaign_id,))
     conn.executemany(
-        "INSERT INTO hunt_targets (campaign_id, node_id, position, typed, name) VALUES (?, ?, ?, ?, ?)",
+        """INSERT INTO hunt_targets (campaign_id, node_id, position, typed, name, weight)
+           VALUES (?, ?, ?, ?, ?, ?)""",
         [
             (
                 campaign_id,
@@ -324,6 +343,7 @@ def save(conn, doc, campaign_id=None, ask=llm.ask_json):
                 next(t["typed"] for t in targets if t["node_id"] == node_id)
                 or place.describe(conn, node_id)["name"],
                 place.describe(conn, node_id)["name"],
+                max(t["weight"] for t in targets if t["node_id"] == node_id),
             )
             for pos, node_id in enumerate(target_ids)
         ],
@@ -331,8 +351,8 @@ def save(conn, doc, campaign_id=None, ask=llm.ask_json):
     conn.execute("DELETE FROM hunt_conditions WHERE campaign_id = ?", (campaign_id,))
     conn.executemany(
         """INSERT INTO hunt_conditions (campaign_id, node_id, attr_id, op, value_json,
-                                        importance, label)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                                        importance, label, weight)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (
                 campaign_id,
@@ -342,6 +362,7 @@ def save(conn, doc, campaign_id=None, ask=llm.ask_json):
                 json.dumps(c["value"], ensure_ascii=False),
                 c["importance"],
                 c["label"],
+                c["weight"],
             )
             for c in conditions
         ],
@@ -545,7 +566,22 @@ def refine(conn, campaign_id, ask=llm.ask_json):
                 # Read again where the answer put it (and by any alias it taught).
                 facts.process(conn, item["id"], prior=targets)
     conn.commit()
-    return {"listings": len(ids), "asked": asked}
+    # What varies between the offers, once there are enough of them. A model
+    # that cannot be asked leaves the resolution above as it is.
+    from . import signals
+
+    try:
+        found, asked_now = signals.propose(conn, campaign_id, ask=ask)
+    except llm.NoModel as error:
+        logger.warning("Signals for hunt %s not proposed: %s", campaign_id, error)
+        found, asked_now = [], False
+    proposed = len(found)
+    # New attributes are read on the hunt's offers at once, not at the next crawl.
+    if asked_now:
+        for listing_id in ids:
+            facts.process(conn, listing_id, prior=targets)
+        conn.commit()
+    return {"listings": len(ids), "asked": asked, "signals": proposed}
 
 
 def delete(conn, campaign_id):

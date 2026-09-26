@@ -457,3 +457,32 @@ DROP TABLE IF EXISTS node_terms;
 DROP TABLE IF EXISTS probe_cache;
 -- knowledge_sets stays in databases created before the graph: their searches
 -- table names it in a foreign key, and SQLite checks that on every write.
+
+-- Signals (docs/plan-signals.md). A wish weighs -3..+3: positive a plus, negative
+-- a minus (present costs), 0 shown only. A target weighs 0..3: preference among
+-- the hunt's targets.
+ALTER TABLE hunt_conditions ADD COLUMN weight INTEGER NOT NULL DEFAULT 2;
+-- A must is a gate, not a weight: rows from before the column say so too.
+UPDATE hunt_conditions SET weight = 0 WHERE importance = 'must' AND weight != 0;
+ALTER TABLE hunt_targets ADD COLUMN weight INTEGER NOT NULL DEFAULT 0;
+
+-- What varies between the offers of a node and matters to a buyer, proposed once
+-- from the offers found and shared by every hunt below that node.
+CREATE TABLE IF NOT EXISTS node_signals (
+    node_id        INTEGER NOT NULL REFERENCES nodes(id),
+    attr_id        TEXT NOT NULL,
+    polarity       TEXT NOT NULL,
+    default_weight INTEGER NOT NULL,
+    found          INTEGER NOT NULL,
+    total          INTEGER NOT NULL,
+    proposed_at    TEXT NOT NULL,
+    PRIMARY KEY (node_id, attr_id)
+);
+
+-- When a node's signals were last asked for and over how many offers: also
+-- when nothing came of it, so an empty answer is not asked again every crawl.
+CREATE TABLE IF NOT EXISTS node_signal_runs (
+    node_id     INTEGER PRIMARY KEY REFERENCES nodes(id),
+    proposed_at TEXT NOT NULL,
+    total       INTEGER NOT NULL
+);

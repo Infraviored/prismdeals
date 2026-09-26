@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import type { Attribute, Condition, Importance, Op } from '../../types/hunt';
 import { opsFor } from '../../utils/huntDoc';
-import { choice } from './choice';
+import { choice, DEFAULT_WISH_WEIGHT } from './choice';
+import { WeightControl } from './WeightControl';
 
 const OWN = '__own';
 const OWN_OPS: Op[] = ['present', 'absent', 'max', 'min', 'eq'];
@@ -27,6 +28,7 @@ export const ConditionAdder: React.FC<ConditionAdderProps> = ({ attributes, onAd
   const [value, setValue] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
   const [importance, setImportance] = useState<Importance>('must');
+  const [weight, setWeight] = useState(DEFAULT_WISH_WEIGHT);
 
   const reset = () => {
     setOpen(false);
@@ -34,6 +36,7 @@ export const ConditionAdder: React.FC<ConditionAdderProps> = ({ attributes, onAd
     setValue('');
     setPicked([]);
     setImportance('must');
+    setWeight(DEFAULT_WISH_WEIGHT);
   };
 
   const chooseAttribute = (id: string) => {
@@ -55,7 +58,7 @@ export const ConditionAdder: React.FC<ConditionAdderProps> = ({ attributes, onAd
   const add = () => {
     if (!ready) return;
     const v: Condition['value'] = !needsValue ? null : list ? picked : numeric ? Number(value) : value.trim();
-    onAdd({ ...(attribute ? { attr_id: attribute.id } : {}), label, op, value: v, importance });
+    onAdd({ ...(attribute ? { attr_id: attribute.id } : {}), label, op, value: v, importance, ...(importance === 'wish' ? { weight } : {}) });
     reset();
   };
 
@@ -101,6 +104,7 @@ export const ConditionAdder: React.FC<ConditionAdderProps> = ({ attributes, onAd
           onChange={(e) => setValue(e.target.value)} placeholder={t('huntEdit.value')} aria-label={t('huntEdit.value')}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} className={field} />
       )}
+      {importance === 'wish' && <WeightControl weight={weight} onChange={setWeight} />}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" className={choice(importance === 'must')} onClick={() => setImportance('must')}>{t('huntEdit.must')}</button>
         <button type="button" className={choice(importance === 'wish')} onClick={() => setImportance('wish')}>{t('huntEdit.wish')}</button>

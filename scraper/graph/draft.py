@@ -28,7 +28,8 @@ Gib zurück:
   Module, Takt, Latenz, Größe, Farbe, Kilometerstand).
 - conditions je Ziel, wenn sie nur dieses Ziel betreffen, sonst oben in "conditions":
   {{"label": "...", "op": "min|max|eq|in|not_in|present|absent", "value": ...,
-    "importance": "must|wish"}}. label ohne Einheit, deutsch, wie ein Merkmal heißt
+    "importance": "must|wish", "weight": -3..3}}; weight nur bei Wünschen: positiv = wäre
+  schön, negativ = stört (Unfallschaden -3), Stärke nach den Worten des Käufers. label ohne Einheit, deutsch, wie ein Merkmal heißt
   ("Kilometerstand", "Arbeitsspeicher", "Breite"). Werte als Zahl ohne Einheit. Wo mehr
   (oder weniger) besser ist, eine Grenze statt Gleichheit: "3200 MHz" heißt min 3200,
   "CL16" heißt Latenz max 16, "unter 5000 km" max 5000. Nutze ein Merkmal der Kategorie
@@ -96,7 +97,9 @@ def _conditions(raw):
             raise llm.NoModel(
                 f"Die KI hat eine unbrauchbare Bedingung geliefert: {error}"
             ) from error
-        out.append({k: clean[k] for k in ("label", "op", "value", "importance")})
+        out.append(
+            {k: clean[k] for k in ("label", "op", "value", "importance", "weight")}
+        )
     return out
 
 

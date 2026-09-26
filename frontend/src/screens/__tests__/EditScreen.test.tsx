@@ -42,7 +42,7 @@ describe('EditScreen', () => {
     fireEvent.click(screen.getByTestId('edit-save-btn'));
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     const first = calls.find((c) => c.method === 'PUT')!.body as HuntDocument;
-    expect(first.conditions[1]).toEqual({ attr_id: 'km', label: 'Kilometerstand', op: 'min', value: 1000, importance: 'wish' });
+    expect(first.conditions[1]).toEqual({ attr_id: 'km', label: 'Kilometerstand', op: 'min', value: 1000, importance: 'wish', weight: 2 });
     expect(onSaved.mock.calls[0][1]).toBe(false);
     expect(onSaved.mock.calls[0][0]).not.toHaveProperty('crawl_changed');
 

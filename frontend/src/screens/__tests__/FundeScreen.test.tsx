@@ -117,4 +117,46 @@ describe('FundeScreen', () => {
       await waitFor(() => expect(calls.filter((c) => c.url.startsWith('/api/hunts/11/listings')).length).toBeGreaterThan(reads));
     });
   });
+
+  describe('the features the offers differ in', () => {
+    const signals = {
+      node: { id: 176, name: 'Honda CBR 1000 RR SC59' },
+      signals: [
+        { attr_id: 'track', label: 'Rennstrecke', type: 'boolean', polarity: 'minus', default_weight: -2, found: 9, total: 81, in_hunt: false },
+        { attr_id: 'ez', label: 'Erstzulassung', type: 'number', polarity: 'value', default_weight: 0, found: 70, total: 81, in_hunt: false },
+        { attr_id: 'abs', label: 'ABS', type: 'boolean', polarity: 'plus', default_weight: 2, found: 30, total: 81, in_hunt: true },
+      ],
+    };
+
+    it('lists them with how often, and one tap adds a yes/no one as a weighted wish', async () => {
+      const { calls } = api({
+        'GET /api/hunts/11/signals': signals,
+        'PUT /api/hunts/11': (b: unknown) => ({ ...(b as object), crawl_changed: false }),
+      });
+      screenFor();
+      await screen.findAllByTestId('listing-row');
+      fireEvent.click(screen.getByTestId('signals-btn'));
+      const rows = await screen.findAllByTestId('signal-row');
+      expect(rows[0]).toHaveTextContent('Rennstrecke · 9 of 81');
+      expect(rows[0]).toHaveTextContent('bothers');
+      expect(rows[1]).toHaveTextContent('shown in the list');
+      expect(within(rows[1]).queryByRole('button')).toBeNull();
+      expect(rows[2]).toHaveTextContent('in the search');
+      const reads = calls.filter((c) => c.url.startsWith('/api/hunts/11/listings')).length;
+      fireEvent.click(within(rows[0]).getByRole('button', { name: 'Add Rennstrecke as a wish' }));
+      await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
+      const put = calls.find((c) => c.method === 'PUT')!.body as { conditions: unknown[] };
+      expect(put.conditions).toContainEqual({ attr_id: 'track', label: 'Rennstrecke', op: 'present', value: null, importance: 'wish', weight: -2 });
+      await waitFor(() => expect(calls.filter((c) => c.url.startsWith('/api/hunts/11/listings')).length).toBeGreaterThan(reads));
+      await waitFor(() => expect(calls.filter((c) => c.url === '/api/hunts/11/signals').length).toBe(2));
+    });
+
+    it('says when proposals will come', async () => {
+      api({ 'GET /api/hunts/11/signals': { node: null, signals: [] } });
+      screenFor();
+      await screen.findAllByTestId('listing-row');
+      fireEvent.click(screen.getByTestId('signals-btn'));
+      expect(await screen.findByTestId('signals-empty')).toHaveTextContent('Suggestions come after the first fetch (from 20 finds).');
+    });
+  });
 });

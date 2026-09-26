@@ -9,6 +9,7 @@ import { FundeAside } from './FundeAside';
 import { FundeBestHero } from './FundeBestHero';
 import { KnowledgeSheet } from './KnowledgeSheet';
 import { FundeCorridorSheet } from './FundeCorridorSheet';
+import { FundeSignalsSheet } from './FundeSignalsSheet';
 import { useFundeActions } from './FundeStrip';
 import { useFundeData, type FundeTabKey, type FundeSort } from '../hooks/useFundeData';
 import { useHuntDocument } from '../hooks/useHuntDocument';
@@ -16,6 +17,7 @@ import { useKept } from '../hooks/useKept';
 import { useTranslation } from '../hooks/useTranslation';
 import { useLinkedListing } from '../hooks/useLinkedListing';
 import { conditionsById } from '../utils/huntDoc';
+import type { Signal } from '../types/hunt';
 import FundeEmpty from './FundeEmpty';
 import Freshness from './Freshness';
 
@@ -53,6 +55,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
   const [filterOpen, setFilterOpen] = useState(false);
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [corridorOpen, setCorridorOpen] = useState(false);
+  const [signalsOpen, setSignalsOpen] = useState(false);
   const [comparing, setComparing] = useState(false);
 
   const data = useFundeData({ huntId, familyId: doc?.family_id ?? null, isScraping });
@@ -93,6 +96,18 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     if (saved.crawl_changed) onStartScrape?.();
   };
 
+  // A proposed signal taken as a wish, weighted as proposed; the conditions
+  // get new ids on saving, so the offers are read again.
+  const addSignal = async (signal: Signal): Promise<boolean> => {
+    if (!doc || hunt.saving) return false;
+    const wish = { attr_id: signal.attr_id, label: signal.label, op: 'present' as const, value: null, importance: 'wish' as const, weight: signal.default_weight };
+    const saved = await hunt.save({ ...doc, conditions: [...doc.conditions, wish] });
+    if (!saved) return false;
+    reload();
+    if (saved.crawl_changed) onStartScrape?.();
+    return true;
+  };
+
   const { selectedListing, openListing, openPartial } = useLinkedListing(listings, huntId);
 
   // A link can open a sheet (?sheet=requirements, ?sheet=knowledge), also
@@ -101,6 +116,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     const openFromHash = () => {
       if (/[?&]sheet=requirements/.test(window.location.hash)) setRequirementsOpen(true);
       if (/[?&]sheet=knowledge/.test(window.location.hash)) setKnowledgeOpen(true);
+      if (/[?&]sheet=signals/.test(window.location.hash)) setSignalsOpen(true);
     };
     openFromHash();
     window.addEventListener('hashchange', openFromHash);
@@ -135,6 +151,7 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
     onCompare: huntId ? handleCompare : undefined,
     comparing,
     onKnowledge: huntId ? () => setKnowledgeOpen(true) : undefined,
+    onSignals: huntId ? () => setSignalsOpen(true) : undefined,
   });
 
   const sorts: Array<{ key: FundeSort; label: string }> = [
@@ -363,6 +380,8 @@ export const FundeScreen: React.FC<FundeScreenProps> = ({
           onStartScrape?.();
         }}
       />
+
+      {huntId && <FundeSignalsSheet isOpen={signalsOpen} onClose={() => setSignalsOpen(false)} huntId={huntId} onAdd={addSignal} />}
 
       {huntId && <KnowledgeSheet isOpen={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} huntId={huntId} />}
     </div>

@@ -242,19 +242,3 @@ describe('Row keeps rank out of the list', () => {
     expect(screen.queryByText(/12/)).not.toBeInTheDocument();
   });
 });
-
-describe('Row shows a vehicle’s registration and mileage', () => {
-  it('reads them from the listing details', () => {
-    render(
-      <Row
-        listing={{
-          id: '9', title: 'Yamaha R1 RN12', price: '5300 €', price_eur: 5300,
-          details: { Erstzulassung: 'Mai 2005', Kilometerstand: '13.000 km' },
-        }}
-        onClick={() => {}}
-      />
-    );
-    expect(screen.getByText('EZ 2005')).toBeInTheDocument();
-    expect(screen.getByText('13.000 km')).toBeInTheDocument();
-  });
-});

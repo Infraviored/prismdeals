@@ -452,7 +452,9 @@ def define_attributes(conn, node_id, labels, ask=llm.ask_json, hints=None):
                 )
                 if failures
                 else "",
-            )
+            ),
+            # Readers and a value per sample title for each label: room for all.
+            max_tokens=min(12000, 1500 + 900 * len(labels)),
         )
         if not isinstance(raw, dict):
             raise llm.NoModel(f"Die KI-Antwort ist unbrauchbar: {raw!r}")

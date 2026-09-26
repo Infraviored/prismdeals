@@ -28,7 +28,8 @@ REGELN:
 - Eine Bedingung: {"label": "...", "op": "...", "value": ..., "importance": "must"|"wish"}.
   op: "min"/"max" mit Zahl (label ohne Einheit: "Kilometerstand"), "eq" mit Wert,
   "in"/"not_in" mit Liste, "present" (soll vorhanden sein), "absent" (soll fehlen).
-- "must" für ein Muss, "wish" für einen Wunsch.
+- "must" für ein Muss, "wish" für einen Wunsch; ein Wunsch hat "weight" von -3 bis 3
+  (positiv: wäre schön, negativ: stört, z. B. "Unfallschaden" -3; 0: nur anzeigen).
 - "max_price" in Euro, "radius_km" in Kilometern; null heißt keine Grenze.
 - Gib NUR das vollständige JSON-Dokument zurück, keinen anderen Text.
 
@@ -60,7 +61,7 @@ def visible(document):
 
 def _plain(conditions):
     return [
-        {k: c.get(k) for k in ("label", "op", "value", "importance")}
+        {k: c.get(k) for k in ("label", "op", "value", "importance", "weight")}
         for c in conditions or []
     ]
 
@@ -88,7 +89,9 @@ def _conditions(raw, dropped=None):
         except hunts.HuntError:
             if dropped is not None:
                 dropped.append(str(c.get("label") or c))
-    return [{k: c[k] for k in ("label", "op", "value", "importance")} for c in out]
+    return [
+        {k: c[k] for k in ("label", "op", "value", "importance", "weight")} for c in out
+    ]
 
 
 def apply(before, raw, dropped=None):
@@ -115,6 +118,8 @@ def apply(before, raw, dropped=None):
         )
         if kept and kept.get("node_id"):
             target["node_id"] = kept["node_id"]
+        # The buyer's preference among targets survives an edit in words.
+        target["weight"] = (kept or {}).get("weight", 0)
         target["conditions"] = _conditions(t.get("conditions"), dropped)
         targets.append(target)
     if not targets:

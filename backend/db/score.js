@@ -55,11 +55,13 @@ function mean(values) {
  * @param {Array}  conditions  the hunt's conditions
  * @returns {{score:number|null, gate:object, wishes:object, axes:object}}
  */
-function scoreListing(listing, conditions) {
+function scoreListing(listing, hunt) {
+  const conditions = hunt.conditions || [];
   const states = listing.fit?.states || {};
   // Only the conditions that apply to the listing's target have a state.
-  const applied = (conditions || []).filter(c => states[c.id]);
+  const applied = conditions.filter(c => states[c.id]);
   const gate = { met: [], violated: [], open: [] };
+  // Weighted wishes: sum of |weight| x grade over sum of |weight|.
   const soft = { met: 0, total: 0 };
   // Wishes by name, so the sheet can say which ones this offer brings.
   const wishes = { met: [], missed: [], open: [] };
@@ -69,12 +71,25 @@ function scoreListing(listing, conditions) {
       gate[state].push(conditionText(c));
       continue;
     }
-    soft.total += 1;
-    // A wish the offer does not mention is neither kept nor broken: half.
+    const weight = c.weight ?? 2;
+    const bucket = weight < 0
+      // A minus ("Unfallschaden" -2): present costs, absent or unsaid is fine.
+      ? (state === 'met' ? 'missed' : state === 'violated' ? 'met' : 'open')
+      : (state === 'met' ? 'met' : state === 'violated' ? 'missed' : 'open');
+    wishes[bucket].push(weight < 0 && bucket !== 'missed' ? `ohne ${c.label}` : c.label);
+    if (weight === 0) continue; // shown, not scored
+    soft.total += Math.abs(weight);
+    // A plus the offer does not mention is neither kept nor broken: half.
     // Counted as missed, one unmentioned "ABS" cut good offers to 19 %.
-    if (state === 'met') soft.met += 1;
-    else if (state === 'open') soft.met += 0.5;
-    wishes[state === 'met' ? 'met' : state === 'violated' ? 'missed' : 'open'].push(c.label);
+    if (bucket === 'met') soft.met += Math.abs(weight);
+    else if (bucket === 'open') soft.met += (weight < 0 ? 1 : 0.5) * Math.abs(weight);
+  }
+  // A preferred target (SC59 Facelift before SC59) counts as one more wish.
+  const preferred = Math.max(0, ...(hunt.targets || []).map(t => t.weight || 0));
+  if (preferred > 0 && listing.fit?.target_id) {
+    const own = (hunt.targets || []).find(t => t.node_id === listing.fit.target_id);
+    soft.total += preferred;
+    soft.met += own ? own.weight || 0 : 0;
   }
   // Another model, a request, a year outside the generation: nothing to score.
   // A model not recognised counts as one open must.
@@ -86,7 +101,7 @@ function scoreListing(listing, conditions) {
 
   // Identity: the preferences on top of the must-haves. Without any, a listing
   // that clears the gate is as right as it can be.
-  const identity = applied.length ? (soft.total ? soft.met / soft.total : 1) : null;
+  const identity = applied.length || soft.total ? (soft.total ? soft.met / soft.total : 1) : null;
 
   // Value: at the median 0.5, 30 % below about 0.86, 30 % above about 0.14.
   let value = null;
@@ -133,9 +148,9 @@ function scoreListing(listing, conditions) {
 }
 
 /** Attaches `score` and `score_parts` to listings that carry a computed fit. */
-function attachScores(listings, conditions) {
+function attachScores(listings, hunt) {
   for (const listing of listings) {
-    const parts = scoreListing(listing, conditions);
+    const parts = scoreListing(listing, hunt);
     listing.score = parts.score;
     listing.score_parts = parts;
   }
