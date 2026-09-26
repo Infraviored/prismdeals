@@ -173,8 +173,16 @@ def resolve(conn, listing, prior=()):
     matched = _matches(conn, listing.get("title"), within)
     consistent = [n for n in matched if _consistent(conn, n, matched, prior_chain)]
     if consistent:
+        keys = title_keys(listing.get("title"))
+
+        def named(n):
+            """The longest name of the node the title carries: "sc59facelift"
+            says more than "sc59", which the searching target also answers to."""
+            return max((len(a) for a in store.aliases(conn, n) if a in keys), default=0)
+
         best = max(
-            consistent, key=lambda n: (len(store.ancestors(conn, n)), n in prior_chain)
+            consistent,
+            key=lambda n: (len(store.ancestors(conn, n)), named(n), n in prior_chain),
         )
         return best, 0.9, "alias"
     if category:

@@ -437,3 +437,28 @@ def test_a_denial_stands_before_the_whole_word():
     assert readers._keywords(["koffer"], "Mit Topcase, ohne Alukoffer")[0] is False
     assert readers._keywords(["koffer"], "Mit Alukoffer")[0] is True
     assert readers._keywords(["abs"], "ABS: nein")[0] is False
+
+
+def test_the_more_specific_name_wins_over_the_searching_target(bikes):
+    """ "SC59 Facelift" names the facelift, even when the hunt searches the SC59."""
+    conn, _ = bikes
+    from graph import resolve
+
+    moto = taxonomy.category_node_id(conn, "305")
+    honda = store.create_node(conn, moto, "brand", "Honda", "test")
+    store.add_alias(conn, honda, "Honda", "name", "test")
+    cbr = store.create_node(conn, honda, "model", "CBR 1000 RR", "test")
+    store.add_alias(conn, cbr, "CBR1000RR", "name", "test")
+    sc59 = store.create_node(
+        conn, cbr, "generation", "SC59", "test", years_from=2008, years_to=2011
+    )
+    store.add_alias(conn, sc59, "SC59", "code", "test")
+    facelift = store.create_node(
+        conn, cbr, "generation", "SC59 Facelift", "test", years_from=2012, years_to=2016
+    )
+    store.add_alias(conn, facelift, "SC59 Facelift", "code", "test")
+    listing = {
+        "title": "Honda CBR1000RR sc59 Facelift, Fireblade",
+        "url": "https://www.kleinanzeigen.de/s-anzeige/x/1-305-1",
+    }
+    assert resolve.resolve(conn, listing, prior=[sc59])[0] == facelift
