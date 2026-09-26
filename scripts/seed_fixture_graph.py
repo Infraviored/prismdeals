@@ -171,6 +171,10 @@ def main(path):
             (thinkpad, attr_id, polarity, weight, found, len(LISTINGS), NOW),
         )
     conn.execute(
+        "INSERT INTO node_signal_runs (node_id, proposed_at, total) VALUES (?, ?, ?)",
+        (thinkpad, NOW, len(LISTINGS)),
+    )
+    conn.execute(
         "UPDATE searches SET last_scraped_at = ? WHERE campaign_id = ?",
         (NOW, campaign_id),
     )

@@ -81,12 +81,7 @@ async function loadHunt(query, get, tree, campaignId) {
     `SELECT id, node_id, attr_id, op, value_json, importance, label, weight
        FROM hunt_conditions WHERE campaign_id = ? ORDER BY id`,
     [campaignId]
-  )).map(c => ({
-    ...c,
-    value: c.value_json == null ? null : JSON.parse(c.value_json),
-    // A must is a gate; the column's default gives old rows a wish's weight.
-    weight: c.importance === 'must' ? 0 : c.weight,
-  }));
+  )).map(c => ({ ...c, value: c.value_json == null ? null : JSON.parse(c.value_json) }));
   let intent = {};
   let frame = {};
   try { intent = JSON.parse(campaign.intent_json || '{}') || {}; } catch { /* typed text only */ }

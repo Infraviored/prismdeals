@@ -462,6 +462,8 @@ DROP TABLE IF EXISTS probe_cache;
 -- a minus (present costs), 0 shown only. A target weighs 0..3: preference among
 -- the hunt's targets.
 ALTER TABLE hunt_conditions ADD COLUMN weight INTEGER NOT NULL DEFAULT 2;
+-- A must is a gate, not a weight: rows from before the column say so too.
+UPDATE hunt_conditions SET weight = 0 WHERE importance = 'must' AND weight != 0;
 ALTER TABLE hunt_targets ADD COLUMN weight INTEGER NOT NULL DEFAULT 0;
 
 -- What varies between the offers of a node and matters to a buyer, proposed once

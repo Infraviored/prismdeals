@@ -97,7 +97,10 @@ function chipsFor(listing, hunt, attrs, plan) {
   for (const c of hunt.conditions) {
     const state = states[c.id];
     const attribute = own.get(c.attr_id);
-    if (!state || state === 'open' || !attribute || attribute.type !== 'boolean' || !sayable(c, attribute)) continue;
+    // Only what the offer states: "ohne Unfall" is met by silence too, but
+    // silence gets no chip.
+    const stated = typeof listing.facts?.[c.attr_id] === 'boolean';
+    if (!state || !stated || !attribute || attribute.type !== 'boolean' || !sayable(c, attribute)) continue;
     const weight = c.importance === 'must' ? 4 : c.weight ?? 2;
     // What the offer states: the thing is there (met for "present") or not.
     const present = (c.op === 'absent') === (state === 'violated');
@@ -110,8 +113,12 @@ function chipsFor(listing, hunt, attrs, plan) {
   for (const id of plan.get(target) || []) {
     const value = listing.facts?.[id];
     if (value === null || value === undefined || value === '') continue;
-    const condition = hunt.conditions.find(c => c.attr_id === id && states[c.id] && states[c.id] !== 'open');
-    const tone = !condition ? 'value' : states[condition.id] === 'met' ? 'good' : 'bad';
+    // Every condition on the value counts: one broken bound makes it bad;
+    // a wish shown only (weight 0) colours nothing.
+    const judged = hunt.conditions.filter(c => c.attr_id === id && states[c.id] && states[c.id] !== 'open'
+      && (c.importance === 'must' || (c.weight ?? 2) !== 0));
+    const tone = !judged.length ? 'value'
+      : judged.some(c => states[c.id] === 'violated') ? 'bad' : 'good';
     values.push({ text: valueText(listing, own.get(id), value), tone, kind: 'value' });
     if (values.length === MAX_VALUES) break;
   }

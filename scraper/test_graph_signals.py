@@ -160,3 +160,15 @@ def test_a_null_weight_is_the_default():
         {"label": "ABS", "op": "present", "importance": "wish", "weight": None}
     )
     assert c["weight"] == 2
+
+
+def test_a_model_outage_during_signals_keeps_the_refine(conn):
+    from graph import llm
+
+    cid, _ = _hunt(conn, 24)
+
+    def down(prompt, **_):
+        raise llm.NoModel("KI nicht erreichbar.")
+
+    out = hunts.refine(conn, cid, ask=down)
+    assert out["signals"] == 0 and out["listings"] == 24

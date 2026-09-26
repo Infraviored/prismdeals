@@ -20,12 +20,15 @@ condition applies to every target.
 """
 
 import json
+import logging
 
 import family_store
 import search_url
 
 from . import llm, place, store
 from .numbers import leading_number
+
+logger = logging.getLogger(__name__)
 
 OPS = ("min", "max", "eq", "in", "not_in", "present", "absent")
 IMPORTANCE = ("must", "wish")
@@ -567,7 +570,11 @@ def refine(conn, campaign_id, ask=llm.ask_json):
     # that cannot be asked leaves the resolution above as it is.
     from . import signals
 
-    found, asked_now = signals.propose(conn, campaign_id, ask=ask)
+    try:
+        found, asked_now = signals.propose(conn, campaign_id, ask=ask)
+    except llm.NoModel as error:
+        logger.warning("Signals for hunt %s not proposed: %s", campaign_id, error)
+        found, asked_now = [], False
     proposed = len(found)
     # New attributes are read on the hunt's offers at once, not at the next crawl.
     if asked_now:

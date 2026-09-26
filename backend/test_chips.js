@@ -61,3 +61,15 @@ assert.deepStrictEqual(
   'Art Laserdrucker'
 );
 console.log('chips: prefix assertions passed');
+// Silence is no chip, even where it meets "ohne X".
+const ohne = { targets: [{ node_id: 5 }], conditions: [{ id: 11, node_id: null, attr_id: 'unfall', label: 'Unfallschaden', op: 'absent', importance: 'must', weight: 0 }] };
+assert.deepStrictEqual(chipsFor({ facts: {}, fit: { target_id: 5, states: { 11: 'met' } } }, ohne, attrs, new Map()), []);
+// Every bound on a value counts; a wish shown only colours nothing.
+const bounds = { targets: [{ node_id: 5 }], conditions: [
+  { id: 21, node_id: null, attr_id: 'km', label: 'Kilometerstand', op: 'min', value: 5000, importance: 'must', weight: 0 },
+  { id: 22, node_id: null, attr_id: 'km', label: 'Kilometerstand', op: 'max', value: 20000, importance: 'must', weight: 0 },
+] };
+assert.strictEqual(chipsFor({ facts: { km: 35000 }, fit: { target_id: 5, states: { 21: 'met', 22: 'violated' } } }, bounds, attrs, new Map([[5, ['km']]]))[0].tone, 'bad');
+const shown = { targets: [{ node_id: 5 }], conditions: [{ id: 31, node_id: null, attr_id: 'km', label: 'Kilometerstand', op: 'max', value: 20000, importance: 'wish', weight: 0 }] };
+assert.strictEqual(chipsFor({ facts: { km: 10000 }, fit: { target_id: 5, states: { 31: 'met' } } }, shown, attrs, new Map([[5, ['km']]]))[0].tone, 'value');
+console.log('chips: review-2 assertions passed');

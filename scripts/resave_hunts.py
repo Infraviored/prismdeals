@@ -24,15 +24,15 @@ for cid in ids:
         (cid,),
     ).fetchone()[0]
     targets = [
-        {"node_id": nid, "typed": typed, "conditions": []}
-        for nid, typed in conn.execute(
-            "SELECT node_id, typed FROM hunt_targets WHERE campaign_id = ? ORDER BY position",
+        {"node_id": nid, "typed": typed, "weight": weight, "conditions": []}
+        for nid, typed, weight in conn.execute(
+            "SELECT node_id, typed, weight FROM hunt_targets WHERE campaign_id = ? ORDER BY position",
             (cid,),
         )
     ]
     general = []
-    for nid, label, op, value, imp in conn.execute(
-        "SELECT node_id, label, op, value_json, importance FROM hunt_conditions WHERE campaign_id = ? ORDER BY id",
+    for nid, label, op, value, imp, weight in conn.execute(
+        "SELECT node_id, label, op, value_json, importance, weight FROM hunt_conditions WHERE campaign_id = ? ORDER BY id",
         (cid,),
     ):
         c = {
@@ -40,6 +40,7 @@ for cid in ids:
             "op": op,
             "value": json.loads(value) if value else None,
             "importance": imp,
+            "weight": weight,
         }
         if nid is None:
             general.append(c)
