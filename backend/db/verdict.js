@@ -22,6 +22,10 @@ function fold(value) {
   return String(value ?? '').toLowerCase().replace(/[äöüß]/g, c => UMLAUTS[c]).replace(/[^a-z0-9]+/g, '');
 }
 
+function words(value) {
+  return String(value ?? '').split(/[^\p{L}\p{N}]+/u).map(fold).filter(Boolean);
+}
+
 function asNumber(value) {
   if (typeof value === 'number') return value;
   const m = /-?\d{1,3}(?:\.\d{3})+(?:,\d+)?|-?\d+(?:[.,]\d+)?/.exec(String(value ?? ''));
@@ -63,7 +67,15 @@ function stateOf(condition, facts) {
         const n = asNumber(value);
         return n === null ? 'open' : n === want ? 'met' : 'violated';
       }
-      return fold(value) === fold(want) ? 'met' : 'violated';
+      if (fold(value) === fold(want)) return 'met';
+      if (!condition.by_words) return 'violated';
+      // Free text by its words: "Bosch Mittelmotor Performance" has what
+      // "Bosch Mittelmotor" asks; "Bosch" says less, not otherwise; "Brose"
+      // says otherwise.
+      const have = words(value);
+      const wanted = words(want);
+      if (wanted.every(w => have.includes(w))) return 'met';
+      return wanted.some(w => have.includes(w)) ? 'open' : 'violated';
     }
     case 'in':
       return want.some(w => fold(w) === fold(value)) ? 'met' : 'violated';
@@ -127,15 +139,23 @@ function verdict(prepared, reading) {
     return { verdict: 'no', reason: 'Kein gesuchtes Produkt', states, target_id: null };
   }
   const chain = tree.ancestors(reading.node_id);
-  // The deepest target the listing's node lies in.
-  const target = [...chain].reverse().find(n => targetIds.has(n.id));
+  // The deepest target the listing's node lies in, else a kind of goods the
+  // title names: "Haibike SDURO Trekking" is a Trekking under any brand.
+  const target = [...chain].reverse().find(n => targetIds.has(n.id))
+    || (facts.named_kinds || []).map(id => tree.byId.get(id)).find(n => n && targetIds.has(n.id));
   if (!target) {
+    // A brand or model under a hunted kind's parent, its own kind unsaid.
+    const kinds = chain.filter(n => n.kind === 'class');
+    const kind = kinds[kinds.length - 1];
+    if (hunt.targets.some(t => t.kind === 'class') && (!kind || above.has(kind.id)) && chain.some(n => above.has(n.id))) {
+      return { verdict: 'unclear', reason: 'Art nicht erkannt', states, target_id: null };
+    }
     // Above the target: names did not say which product.
     return above.has(reading.node_id)
       ? { verdict: 'unclear', reason: 'Modell nicht erkannt', states, target_id: null }
       : { verdict: 'no', reason: `Anderes Modell: ${describe(tree, reading.node_id)}`, states, target_id: null };
   }
-  const inChain = new Set(chain.map(n => n.id));
+  const inChain = new Set([...chain.map(n => n.id), target.id]);
 
   const violated = [];
   const open = [];

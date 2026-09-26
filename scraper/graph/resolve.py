@@ -329,6 +329,10 @@ def resolve_with_model(conn, listings, parent_id, ask=llm.ask_json):
         if path is not None:
             node_id = parent_id
             for step in path:
+                if step["kind"] in ("class", "config"):
+                    # A title's "Damen", "28 Zoll", "Trekking": what it is
+                    # like, not which product -- facts and named kinds say it.
+                    continue
                 folded = store.fold(step["name"])
                 if folded in store.aliases(conn, node_id) or _named_above(
                     conn, node_id, folded
@@ -357,7 +361,8 @@ Zubehör, Ersatzteil, Einbauteil, Hülle, Verbrauchsmaterial, Kleidung, ein Einz
 Beispiele für "part": Regenverdeck für einen Kinderwagen, Objektiv-Deckel für eine Kamera,
 Felgen für ein Auto, ein Akku für ein Gerät, Schutzhülle für ein Handy, Zulaufschlauch für eine Waschmaschine.
 Ob Marke, Modell, Generation, Größe oder Zustand passen, prüfst du NICHT. Ein Angebot
-mit der Sache und etwas dazu ist "self", ein Gesuch auch.
+mit der Sache und etwas dazu ist "self", ein Gesuch auch. Wer die Sache nicht verkauft,
+sondern vermietet, repariert oder eine Dienstleistung damit anbietet: "part".
 Antworte NUR mit JSON: [{{"i": 0, "is": "self"}}, {{"i": 1, "is": "part"}}]
 """
 

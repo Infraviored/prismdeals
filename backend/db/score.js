@@ -92,9 +92,15 @@ function scoreListing(listing, hunt) {
     soft.met += own ? own.weight || 0 : 0;
   }
   // Another model, a request, a year outside the generation: nothing to score.
-  // A model not recognised counts as one open must.
+  // A model or kind not recognised is one open must, and leaves open every
+  // must it would have to meet -- all but those the site already filtered by.
   const verdict = listing.fit?.verdict;
-  const unplaced = verdict === 'unclear' && !listing.fit?.target_id ? 1 : 0;
+  // It would meet one target: the one asking the fewest.
+  const openMusts = (nodeId) => conditions.filter(c => c.importance === 'must' && !c.site_filter
+    && (c.node_id == null || c.node_id === nodeId)).length;
+  const unplaced = verdict === 'unclear' && !listing.fit?.target_id
+    ? 1 + Math.min(...(hunt.targets?.length ? hunt.targets.map(t => openMusts(t.node_id)) : [openMusts(null)]))
+    : 0;
   const gateFactor = gate.violated.length || verdict === 'no'
     ? 0
     : Math.pow(OPEN_CAP, gate.open.length + unplaced);

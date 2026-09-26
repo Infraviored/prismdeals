@@ -641,13 +641,24 @@ def _check_kind(conn, ids, targets, ask):
                 chunk,
             ).fetchall()
         )
+        # A kind the title names is where it belongs too ("… Trekking" under a brand).
+        named = {
+            listing_id: json.loads(value)
+            for listing_id, value in conn.execute(
+                f"""SELECT listing_id, value_json FROM listing_facts
+                     WHERE attr_id = 'named_kinds' AND listing_id IN ({marks})""",
+                chunk,
+            ).fetchall()
+        }
         for listing_id, node_id in conn.execute(
             f"""SELECT r.listing_id, r.node_id FROM listing_resolution r
                  WHERE r.listing_id IN ({marks})
                    AND r.method NOT IN ('model', 'rejected')""",
             chunk,
         ).fetchall():
-            target = below.get(node_id)
+            target = below.get(node_id) or next(
+                (t for t in named.get(listing_id, []) if t in targets), None
+            )
             if target is not None and (listing_id, target) not in checked:
                 pending.setdefault(target, []).append((listing_id, node_id))
     asked = 0
