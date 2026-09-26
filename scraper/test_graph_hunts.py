@@ -694,3 +694,68 @@ def test_a_cut_off_attribute_answer_is_asked_again(conn):
 
     with pytest.raises(llm.NoJSON):
         place.define_attributes(conn, moto, ["Farbe"], ask=cut_off)
+
+
+def test_readers_are_not_checked_on_what_is_only_something_for_the_product(conn):
+    from graph import place
+
+    moto = taxonomy.category_node_id(conn, "305")
+    for n, (title, method) in enumerate(
+        [("Honda CBR 2008", "alias"), ("Auspuff CBR", "rejected")]
+    ):
+        conn.execute("INSERT INTO listings (id, title) VALUES (?, ?)", (f"s{n}", title))
+        conn.execute(
+            "INSERT INTO listing_resolution (listing_id, node_id, confidence, method, resolved_at) VALUES (?, ?, 1, ?, '')",
+            (f"s{n}", moto, method),
+        )
+    assert place._samples(conn, moto) == ["Honda CBR 2008"]
+
+
+def test_a_reader_that_misses_a_rare_format_is_kept_one_that_misses_most_is_not(conn):
+    from graph import place
+
+    moto = taxonomy.category_node_id(conn, "305")
+    titles = [
+        "Matratze 90x200",
+        "Matratze 140x200",
+        "Matratze 1,40m x 2,00m",
+        "Matratze 80x200",
+    ]
+    for n, title in enumerate(titles):
+        conn.execute("INSERT INTO listings (id, title) VALUES (?, ?)", (f"s{n}", title))
+        conn.execute(
+            "INSERT INTO listing_resolution (listing_id, node_id, confidence, method, resolved_at) VALUES (?, ?, 1, 'alias', '')",
+            (f"s{n}", moto),
+        )
+
+    def answer(label, reader):
+        def ask(prompt, **_):
+            order = [
+                line.split(": ", 1)[1]
+                for line in prompt.splitlines()
+                if line[:1].isdigit() and ": " in line and "Matratze" in line
+            ]
+            return {
+                "attributes": [
+                    {
+                        "label": label,
+                        "id": store.slug(label),
+                        "type": "text",
+                        "readers": [reader],
+                        "examples": {
+                            str(i): t.split(" ", 1)[1] for i, t in enumerate(order)
+                        },
+                    }
+                ]
+            }
+
+        return ask
+
+    kept = place.define_attributes(
+        conn, moto, ["Größe"], ask=answer("Größe", r"regex:\b(\d{2,3}x\d{3})\b")
+    )
+    assert kept == {"Größe": "groesse"}
+    dropped = place.define_attributes(
+        conn, moto, ["Maß"], ask=answer("Maß", r"regex:\b(140x\d{3})\b")
+    )
+    assert dropped == {}

@@ -348,7 +348,9 @@ UNREADABLE = (
 
 
 def _samples(conn, node_id):
-    """Titles of offers resolved below the node; too few, those of its category."""
+    """Titles of offers resolved below the node; too few, those of its category.
+    Not those found to be only something for it: a topper's "140 x 200 x 3cm"
+    must not decide how a mattress's size is read."""
     category = next(
         n["id"]
         for n in reversed(store.ancestors(conn, node_id))
@@ -360,6 +362,7 @@ def _samples(conn, node_id):
         rows = conn.execute(
             f"""SELECT l.title FROM listing_resolution r JOIN listings l ON l.id = r.listing_id
                  WHERE r.node_id IN ({",".join("?" for _ in ids)}) AND l.title IS NOT NULL
+                   AND r.method != 'rejected'
                  ORDER BY l.id DESC LIMIT ?""",
             (*ids, SAMPLES),
         ).fetchall()
@@ -395,11 +398,13 @@ def _failures(attr, samples, examples):
     """What the attribute's readers read wrong on the titles the model labelled.
 
     A wrong value where the title states one always counts. A value read where
-    the model saw none counts only past a quarter of the titles: reading a
-    little beyond is tolerable, contradicting what a seller wrote is not."""
+    the model saw none, or none read where it saw one ("1,40m x 2,20m" beside
+    "90x200"), counts only past a quarter of the titles: reading a little
+    beyond or a little less is tolerable -- the rest stays unread, open --
+    contradicting what a seller wrote is not."""
     from . import readers
 
-    wrong, beyond = [], []
+    wrong, beyond, missed = [], [], []
     reading = {**attr, "options": store.options(attr["options"]), "absent": None}
     for index, title in enumerate(samples):
         if str(index) not in examples:
@@ -411,8 +416,18 @@ def _failures(attr, samples, examples):
         expected = examples[str(index)]
         if not _same(value, expected):
             line = f'"{attr["label"]}" liest aus "{title}" {value!r}, erwartet {expected!r}'
-            (beyond if expected is None else wrong).append(line)
-    return wrong + (beyond if len(beyond) > len(samples) // 4 else [])
+            if expected is None:
+                beyond.append(line)
+            elif value is None:
+                missed.append(line)
+            else:
+                wrong.append(line)
+    quarter = len(samples) // 4
+    return (
+        wrong
+        + (beyond if len(beyond) > quarter else [])
+        + (missed if len(missed) > quarter else [])
+    )
 
 
 def _all_failures(raw, samples):
