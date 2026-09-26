@@ -46,11 +46,17 @@ const art = new Map([[5, new Map([...attrs.get(5), ['art', { id: 'art', label: '
 const withArt = { ...hunt, conditions: [...hunt.conditions, { id: 9, node_id: null, attr_id: 'art', label: 'Art', op: 'eq', value: 'Speicher', importance: 'must', weight: 0 }] };
 assert.ok(!valuePlan(withArt, art, new Map(), []).get(5).includes('art'));
 // A value without a unit says what it is.
-const ez = new Map([[5, new Map([['ez', { id: 'ez', label: 'Erstzulassung', type: 'number' }]])]]);
+const ez = new Map([[5, new Map([['ez', { id: 'ez', label: 'Erstzulassungsdatum', type: 'number' }]])]]);
 const ezHunt = { targets: [{ node_id: 5 }], conditions: [] };
 assert.deepStrictEqual(
-  chipsFor({ details: { Erstzulassung: 'April 2009' }, facts: { ez: 2009 }, fit: { target_id: 5, states: {} } }, ezHunt, ez, new Map([[5, ['ez']]])),
+  chipsFor({ details: { Erstzulassungsdatum: 'April 2009' }, facts: { ez: 2009 }, fit: { target_id: 5, states: {} } }, ezHunt, ez, new Map([[5, ['ez']]])),
   [{ text: 'Erstzulas. April 2009', tone: 'value', kind: 'value' }]
+);
+// A label that fits stays whole: "Anzahl" alone says nothing.
+const count = new Map([[5, new Map([['cc', { id: 'cc', label: 'Anzahl Controller', type: 'enum' }]])]]);
+assert.deepStrictEqual(
+  chipsFor({ details: {}, facts: { cc: '1' }, fit: { target_id: 5, states: {} } }, ezHunt, count, new Map([[5, ['cc']]])).map(c => c.text),
+  ['Anzahl Controller 1']
 );
 console.log('chips: extra assertions passed');
 // "Art" is not "Artikelzustand": a short name matches a detail only exactly.

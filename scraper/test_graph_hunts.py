@@ -775,3 +775,29 @@ def test_a_bound_over_numbered_options_lets_the_fitting_options_through():
         _ordinal([{"value": "a", "label": "Schwarz"}], {"op": "min", "value": 1})
         is None
     )
+
+
+def test_a_search_of_mostly_accessories_gets_more_pages(conn):
+    from graph import crawlplan
+
+    cid = hunts.save(
+        conn, _doc(targets=[{"typed": "Honda CBR 1000 RR SC59"}]), ask=_answers
+    )
+    (unit,) = crawlplan.plan(conn, campaign_id=cid)
+    assert unit["pages"] == crawlplan.BASE_PAGES  # nothing found yet
+    moto = taxonomy.category_node_id(conn, "305")
+    for n in range(10):
+        conn.execute("INSERT INTO listings (id, title) VALUES (?, 'x')", (f"p{n}",))
+        conn.execute(
+            "INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES (?, ?, 0)",
+            (f"p{n}", unit["search_id"]),
+        )
+        conn.execute(
+            "INSERT INTO listing_resolution (listing_id, node_id, confidence, method, resolved_at) VALUES (?, ?, 1, ?, '')",
+            (f"p{n}", moto, "alias" if n < 7 else "rejected"),
+        )
+    assert crawlplan.pages(conn, unit["search_id"]) == 3  # 7 of 10 useful
+    conn.execute(
+        "UPDATE listing_resolution SET method = 'rejected' WHERE listing_id != 'p0'"
+    )
+    assert crawlplan.pages(conn, unit["search_id"]) == crawlplan.MAX_PAGES
