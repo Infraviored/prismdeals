@@ -156,3 +156,13 @@ def test_regex_backslashes_survive_a_model_that_writes_them_once():
     )
     (attr,) = place._clean_attributes(raw, 1)
     assert attr["readers"] == [r"regex:\b(\d{4})\s?MHz"]
+
+
+def test_a_measure_read_without_its_unit_is_the_same_value():
+    from graph.place import _same
+
+    assert _same("90 x 200", "90 x 200 cm")
+    assert _same("90x200", "90x200 cm")
+    assert not _same("90 x 10", "90 x 10 x 200")
+    assert not _same("Schwarz", "Schwarz-Weiß")
+    assert _same("Schwarz", "schwarz")
