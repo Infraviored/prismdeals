@@ -83,16 +83,20 @@ def _existing(conn, node_id, condition):
 def _attributes(conn, pairs, ask):
     """attr_id per (node_id, condition); what the graph cannot read yet is
     defined at that node by one model call per node (place.define_attributes)."""
-    missing = {}
+    missing, hints = {}, {}
     for node_id, c in pairs:
         if _existing(conn, node_id, c) is None:
             missing.setdefault(node_id, {})[store.fold(c["label"])] = c["label"]
+            # What the hunt wants of it says its kind: "max 16" is a number.
+            hints[c["label"]] = (
+                f"{c['op']} {c['value']}" if c["value"] is not None else c["op"]
+            )
     # A label the model names as a present attribute ("Laufleistung" as the
     # site's "km") is that attribute; it is not found by name alone.
     named = {}
     for node_id, labels in missing.items():
         for label, attr_id in place.define_attributes(
-            conn, node_id, list(labels.values()), ask=ask
+            conn, node_id, list(labels.values()), ask=ask, hints=hints
         ).items():
             named[(node_id, store.fold(label))] = attr_id
     out = []

@@ -126,6 +126,16 @@ def read(attribute, listing):
                 return value, "text", None
         elif kind == "keywords":
             words = [w for w in arg.split("|") if w] or [attribute["label"]]
+            if attribute["type"] != "boolean":
+                # For a kind of thing ("DDR4" of DDR3|DDR4|DDR5) the word named
+                # is the value; yes/no is only a boolean's answer.
+                for word in words:
+                    value, quote = _keywords([word], text)
+                    if value:
+                        typed = _typed(attribute, word)
+                        if typed is not None:
+                            return typed, "text", quote
+                continue
             value, quote = _keywords(words, text)
             if value is not None:
                 return value, "text", quote
