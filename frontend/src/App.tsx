@@ -21,8 +21,6 @@ export default function App() {
 
   const auth = useAuthSession({
     onLoginSuccess: () => appData.refreshAll(),
-    setIsScraping: scraper.setIsScraping,
-    setScrapingStatus: scraper.setScrapingStatus,
   });
 
   const appData = useAppData({ appUser: auth.appUser });
@@ -125,7 +123,7 @@ export default function App() {
     <AppScreen
       onBack={() => setView(previousView)}
       sessionEmail={auth.sessionEmail}
-      onConnect={auth.handleTriggerLogin}
+      onConnected={auth.checkSessionStatus}
       onLogout={auth.handleLogout}
       busy={scraper.isScraping}
     />

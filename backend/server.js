@@ -311,6 +311,7 @@ app.use(require('./hunts_api')(query, get));
 
 app.use(require('./compare_api')(query, get));
 app.use(require('./knowledge_api')(query));
+app.use(require('./ka_api')());
 
 
 // API: Place suggestions for the route corridor's From/To fields.
@@ -814,49 +815,6 @@ app.post('/api/scrape/update-all', (req, res) => {
   } catch (error) {
     console.error('Error triggering deep update:', error);
     res.status(500).json({ error: 'Failed to trigger deep description update' });
-  }
-});
-
-// API: Get current login session status
-app.get('/api/session-status', (req, res) => {
-  try {
-    const statusPath = path.join(__dirname, '..', 'data', 'session_status.json');
-    if (fs.existsSync(statusPath)) {
-      const data = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
-      return res.json(data);
-    }
-    res.json({ email: null });
-  } catch (error) {
-    console.error('Error fetching session status:', error);
-    res.status(500).json({ error: 'Failed to read session status' });
-  }
-});
-
-// API: Trigger interactive manual login session
-app.post('/api/login-session', (req, res) => {
-  try {
-    const pythonExecutable = findPython();
-    const python = spawn(pythonExecutable, [
-      path.join(__dirname, '..', 'scraper', 'main.py'),
-      '--mode', 'scrape',
-      '--urls', 'https://www.kleinanzeigen.de/m-meine-anzeigen.html?tab=PROJECTS'
-    ], {
-      env: {
-        ...process.env,
-        INTERACTIVE_LOGIN: "1"
-      }
-    });
-
-    python.stdout.on('data', (data) => console.log(`Login process: ${data}`));
-    python.stderr.on('data', (data) => console.error(`Login error: ${data}`));
-
-    python.on('close', (code) => {
-      console.log(`Interactive login process exited with code ${code}`);
-      res.json({ success: code === 0 });
-    });
-  } catch (error) {
-    console.error('Error launching login session:', error);
-    res.status(500).json({ error: 'Failed to trigger login process' });
   }
 });
 
