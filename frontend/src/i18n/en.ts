@@ -36,7 +36,7 @@ export const en = {
   },
   ka: {
     title: "Log in to Kleinanzeigen",
-    hint: "This is a browser on the server. Tap the picture to pick a field and type in the box below. Your password goes to Kleinanzeigen only.",
+    hint: "This is a browser on the server. Tap the picture and type. Your password goes to Kleinanzeigen only.",
     connected: "Connected. You can close this.",
     failed: "The browser did not open. Try again in a moment.",
     loading: "Loading …",

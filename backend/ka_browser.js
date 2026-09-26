@@ -23,7 +23,7 @@ const PROFILE = path.join(DATA, 'ka_profile');
 const STATE = path.join(DATA, 'ka_session.json');
 const LOGIN_URL = 'https://www.kleinanzeigen.de/m-einloggen.html';
 const HOME = 'https://www.kleinanzeigen.de/';
-const VIEW = { width: 400, height: 780 };
+const VIEW = { width: 400, height: 780, deviceScaleFactor: 2 };
 const DISPLAY = process.env.PRISMDEALS_KA_DISPLAY || ':98';
 const IDLE_MS = 10 * 60 * 1000; // a login left open closes itself
 const SANDBOX = '/usr/local/sbin/chrome-devel-sandbox';
@@ -132,7 +132,7 @@ async function startLogin() {
     session.seq += 1;
     cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
   });
-  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: VIEW.width, maxHeight: VIEW.height });
+  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 85, maxWidth: VIEW.width * 2, maxHeight: VIEW.height * 2 });
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
   // Watch for the moment the login is through.
   session.timer = setInterval(async () => {
@@ -145,7 +145,7 @@ async function startLogin() {
     }
   }, 2000);
   touch();
-  return { view: VIEW };
+  return { view: { width: VIEW.width, height: VIEW.height } };
 }
 
 function frame(after) {
