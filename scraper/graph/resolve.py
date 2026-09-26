@@ -176,9 +176,11 @@ def resolve(conn, listing, prior=()):
         keys = title_keys(listing.get("title"))
 
         def named(n):
-            """The longest name of the node the title carries: "sc59facelift"
-            says more than "sc59", which the searching target also answers to."""
-            return max((len(a) for a in store.aliases(conn, n) if a in keys), default=0)
+            """How much of the node's own name the title carries: "sc59facelift"
+            says more than "sc59". Its own name, not its aliases: a target's
+            alias is the whole typed text ("hondacbr1000rrsc59")."""
+            own = store.fold(store.node(conn, n)["name"])
+            return len(own) if own in keys else 0
 
         best = max(
             consistent,
