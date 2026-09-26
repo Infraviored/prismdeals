@@ -566,6 +566,7 @@ def refine(conn, campaign_id, ask=llm.ask_json):
                 # Read again where the answer put it (and by any alias it taught).
                 facts.process(conn, item["id"], prior=targets)
     conn.commit()
+    asked += _check_kind(conn, ids, targets, ask)
     # What varies between the offers, once there are enough of them. A model
     # that cannot be asked leaves the resolution above as it is.
     from . import signals
@@ -582,6 +583,79 @@ def refine(conn, campaign_id, ask=llm.ask_json):
             facts.process(conn, listing_id, prior=targets)
         conn.commit()
     return {"listings": len(ids), "asked": asked, "signals": proposed}
+
+
+def _check_kind(conn, ids, targets, ask):
+    """Names put a "Matratzenbezug" on the Matratze and "Toner für L2750DW" on
+    the printer: whether it is the product itself or only something for it is
+    asked once per listing and target. A no is stored as "rejected", which no
+    name undoes; a yes in listing_kind_checks. Returns how many were asked."""
+    from . import facts, resolve
+
+    below = {}
+    for t in targets:
+        for n in store.subtree_ids(conn, t):
+            below.setdefault(n, t)
+    pending = {}
+    for start in range(0, len(ids), 500):
+        chunk = ids[start : start + 500]
+        for listing_id, node_id in conn.execute(
+            f"""SELECT r.listing_id, r.node_id FROM listing_resolution r
+                 WHERE r.listing_id IN ({",".join("?" for _ in chunk)})
+                   AND r.method NOT IN ('model', 'rejected')""",
+            chunk,
+        ).fetchall():
+            target = below.get(node_id)
+            if (
+                target is None
+                or conn.execute(
+                    "SELECT 1 FROM listing_kind_checks WHERE listing_id = ? AND node_id = ?",
+                    (listing_id, target),
+                ).fetchone()
+            ):
+                continue
+            pending.setdefault(target, []).append(listing_id)
+    asked = 0
+    for target, group in pending.items():
+        product = (
+            place.describe(conn, target)["name"] or store.node(conn, target)["name"]
+        )
+        # The kind of goods: the nearest class, else the category ("Matratze",
+        # "Motorräder & Motorroller") -- what an accessory is not.
+        kind = next(
+            n["name"]
+            for n in reversed(store.ancestors(conn, target))
+            if n["kind"] in ("class", "category")
+        )
+        for start in range(0, len(group), _BATCH):
+            batch = [
+                {
+                    "id": i,
+                    "title": conn.execute(
+                        "SELECT title FROM listings WHERE id = ?", (i,)
+                    ).fetchone()[0]
+                    or "",
+                }
+                for i in group[start : start + _BATCH]
+            ]
+            answers = resolve.check_kind(conn, batch, product, kind, ask=ask)
+            asked += len(batch)
+            for listing_id, is_kind in answers.items():
+                if is_kind:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO listing_kind_checks
+                               (listing_id, node_id, checked_at) VALUES (?, ?, ?)""",
+                        (listing_id, target, store.now()),
+                    )
+                else:
+                    (node_id,) = conn.execute(
+                        "SELECT node_id FROM listing_resolution WHERE listing_id = ?",
+                        (listing_id,),
+                    ).fetchone()
+                    resolve.store_resolution(conn, listing_id, node_id, 0.8, "rejected")
+                    facts.process(conn, listing_id, prior=targets)
+            conn.commit()
+    return asked
 
 
 def delete(conn, campaign_id):

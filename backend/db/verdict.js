@@ -121,15 +121,16 @@ function verdict(prepared, reading) {
   if (facts.is_request === true) {
     return { verdict: 'no', reason: 'Gesuch, kein Angebot', states, target_id: null };
   }
+  // Asked, the model said it is no product of this kind (an exhaust, a
+  // mattress cover) -- wherever names had put it.
+  if (reading.method === 'rejected') {
+    return { verdict: 'no', reason: 'Kein gesuchtes Produkt', states, target_id: null };
+  }
   const chain = tree.ancestors(reading.node_id);
   // The deepest target the listing's node lies in.
   const target = [...chain].reverse().find(n => targetIds.has(n.id));
   if (!target) {
-    // Above the target: names did not say which product. Asked, the model
-    // said it is none of them (an exhaust, a spare part) -- that is a no.
-    if (above.has(reading.node_id) && reading.method === 'rejected') {
-      return { verdict: 'no', reason: 'Kein gesuchtes Produkt', states, target_id: null };
-    }
+    // Above the target: names did not say which product.
     return above.has(reading.node_id)
       ? { verdict: 'unclear', reason: 'Modell nicht erkannt', states, target_id: null }
       : { verdict: 'no', reason: `Anderes Modell: ${describe(tree, reading.node_id)}`, states, target_id: null };

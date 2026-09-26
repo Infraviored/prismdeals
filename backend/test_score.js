@@ -112,6 +112,8 @@ assert.match(verdict(p, { node_id: 4, facts: {} }).reason, /Anderes Modell: Hond
 assert.strictEqual(verdict(p, { node_id: 3, facts: {} }).reason, 'Modell nicht erkannt');
 assert.strictEqual(verdict(p, { node_id: 3, method: 'rejected', facts: {} }).verdict, 'no');
 assert.strictEqual(verdict(p, { node_id: 3, method: 'model', facts: {} }).verdict, 'unclear');
+// On the target by name, asked: a cover, not the product.
+assert.strictEqual(verdict(p, { node_id: 5, method: 'rejected', facts: { km: 100 } }).verdict, 'no');
 assert.match(verdict(p, { node_id: 5, facts: { km: 100, erstzulassung: 2015 } }).reason, /Baujahr passt nicht zu SC59 \(2008–2011\): 2015/);
 assert.strictEqual(verdict(p, { node_id: 5, facts: { km: 100, is_request: true } }).verdict, 'no');
 assert.strictEqual(verdict(p, undefined).reason, 'Noch nicht gelesen');

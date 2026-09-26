@@ -383,6 +383,15 @@ CREATE TABLE IF NOT EXISTS listing_resolution (
 );
 CREATE INDEX IF NOT EXISTS idx_listing_resolution_node ON listing_resolution(node_id);
 
+-- Listings the model confirmed as the product itself, not an accessory or a
+-- spare part of it: asked once per listing and hunted node.
+CREATE TABLE IF NOT EXISTS listing_kind_checks (
+    listing_id TEXT NOT NULL,
+    node_id    INTEGER NOT NULL REFERENCES nodes(id),
+    checked_at TEXT NOT NULL,
+    PRIMARY KEY (listing_id, node_id)
+);
+
 -- What a listing states, read once per attribute.
 CREATE TABLE IF NOT EXISTS listing_facts (
     listing_id   TEXT NOT NULL,
