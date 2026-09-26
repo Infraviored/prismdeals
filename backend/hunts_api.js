@@ -217,6 +217,42 @@ module.exports = (query, get) => {
 
   // One listing, by its Kleinanzeigen id, so a find can be shared as a link.
   // With campaign_id it carries that hunt's verdict, score and rank.
+  // A first message to the seller, in the buyer's tone (graph/message.py).
+  router.post('/api/hunts/:id/listings/:listing/message-draft', async (req, res) => {
+    try {
+      const scope = await huntScope(query, get, Number(req.params.id));
+      if (!scope) return res.status(404).json({ error: 'Keine Suche mit dieser Nummer' });
+      const listing = (await huntListings(query, scope)).find(l => String(l.id) === String(req.params.listing));
+      if (!listing) return res.status(404).json({ error: 'Kein Angebot dieser Suche' });
+      const states = listing.fit.states || {};
+      // What the offer leaves open that the hunt asks: musts first, then wishes.
+      const open = scope.hunt.conditions
+        .filter(c => states[c.id] === 'open' && !(c.importance === 'wish' && (c.weight ?? 2) <= 0))
+        .sort((a, b) => (a.importance === 'must' ? 0 : 1) - (b.importance === 'must' ? 0 : 1))
+        .slice(0, 3)
+        .map(c => c.label);
+      const median = listing.market_median;
+      const high = typeof listing.price_eur === 'number' && median > 0 && listing.price_eur > median * 1.1;
+      const context = {
+        kind: 'first',
+        tone: require('./ka_api').tone(),
+        title: listing.title,
+        price: listing.price,
+        location: listing.location,
+        description: listing.detailed_description || listing.short_description,
+        seller: listing.details?.Anbieter || null,
+        open,
+        offer_eur: high ? Math.round(median / 10) * 10 : null,
+        usual_eur: high ? Math.round(median) : null,
+      };
+      const result = await graph(['message-draft'], JSON.stringify(context));
+      res.status(result.status).json(result.body);
+    } catch (error) {
+      console.error('Message draft failed:', error);
+      res.status(500).json({ error: 'Der Entwurf konnte nicht geschrieben werden.' });
+    }
+  });
+
   router.get('/api/listings/:id', async (req, res) => {
     try {
       const campaignId = num(req.query.campaign_id);

@@ -43,6 +43,30 @@ export const AppScreen: React.FC<AppScreenProps> = ({
   const [schedule, setSchedule] = useState<Schedule>(DEFAULTS);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const [loginOpen, setLoginOpen] = useState(false);
+  const [tone, setTone] = useState('');
+  const [toneState, setToneState] = useState<'idle' | 'saved' | 'failed'>('idle');
+
+  useEffect(() => {
+    fetch('/api/ka/tone')
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(d => setTone(d.tone || ''))
+      .catch(() => setToneState('failed'));
+  }, []);
+
+  const saveTone = async () => {
+    try {
+      const res = await fetch('/api/ka/tone', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tone }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      setToneState('saved');
+      setTimeout(() => setToneState('idle'), 2500);
+    } catch {
+      setToneState('failed');
+    }
+  };
 
   useEffect(() => {
     fetch('/api/schedule')
@@ -107,6 +131,21 @@ export const AppScreen: React.FC<AppScreenProps> = ({
               </button>
             </span>
           </div>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-xs font-medium text-[#8FA6A1]">{t('chat.tone')}</h2>
+          <textarea
+            value={tone}
+            onChange={e => setTone(e.target.value)}
+            onBlur={saveTone}
+            rows={7}
+            aria-label={t('chat.tone')}
+            className="w-full px-3.5 py-3 rounded bg-[#06322C] border border-[#0E4A40] text-sm text-[#F2F5F4] leading-relaxed focus:outline-none focus:border-[#8FA6A1]"
+          />
+          <p className="text-xs text-[#8FA6A1]">
+            {toneState === 'saved' ? t('chat.toneSaved') : toneState === 'failed' ? t('chat.failed') : t('chat.toneHint')}
+          </p>
         </section>
 
         <section className="space-y-2">

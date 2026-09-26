@@ -34,6 +34,23 @@ export const de = {
     originPin: "Start: {{place}}",
     destinationPin: "Ziel: {{place}}"
   },
+  chat: {
+    title: "Chat",
+    write: "Nachricht schreiben",
+    drafting: "Schreibt …",
+    again: "Neu vorschlagen",
+    send: "Senden",
+    sending: "Sendet …",
+    sent: "Gesendet",
+    open: "Chat öffnen",
+    message: "Nachricht an den Verkäufer",
+    answer: "Antwort",
+    failed: "Das hat nicht geklappt.",
+    newAnswers: "Neue Antworten ({{count}})",
+    tone: "So schreibe ich",
+    toneHint: "Jede vorgeschlagene Nachricht hält sich daran.",
+    toneSaved: "Gespeichert",
+  },
   ka: {
     title: "Bei Kleinanzeigen anmelden",
     hint: "Das ist ein Browser auf dem Server. Tippe ins Bild und schreib einfach los. Dein Passwort geht nur an Kleinanzeigen.",

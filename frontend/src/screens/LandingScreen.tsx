@@ -1,6 +1,7 @@
 import React from 'react';
 import { Plus, Settings } from 'lucide-react';
 import { Bar, SearchRow, Pill, EmptyLine } from '../components/surface';
+import { KaReminders } from '../components/KaReminders';
 import { useTranslation } from '../hooks/useTranslation';
 import { useKept } from '../hooks/useKept';
 import type { HuntSummary } from '../types/hunt';
@@ -34,6 +35,7 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({ hunts, error, onOp
 
       <main className="w-full max-w-3xl mx-auto flex-1 flex flex-col">
         {error && <p className="px-4 py-3 text-sm text-[#E87967]" role="alert">{error}</p>}
+        <div className="px-4 pt-3"><KaReminders /></div>
         {hunts.map((h) => (
           <SearchRow
             key={h.id}

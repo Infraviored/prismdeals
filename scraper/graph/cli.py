@@ -11,6 +11,7 @@
     python -m graph.cli brief <campaign_id>            (the research brief for its targets)
     python -m graph.cli classify <campaign_id>         (a research answer on stdin -> knowledge)
     python -m graph.cli approve|reject <knowledge_id>
+    python -m graph.cli message-draft                  (context on stdin -> a message to a seller)
 
 JSON on stdout. A model that cannot be asked is {"error": "..."} with exit 2 --
 never a guessed answer.
@@ -22,7 +23,7 @@ import sys
 
 import db_schema
 
-from . import draft, facts, hunts, knowledge, llm, place, taxonomy
+from . import draft, facts, hunts, knowledge, llm, message, place, taxonomy
 
 
 def process_listings(conn, listing_ids=None):
@@ -66,6 +67,7 @@ def main(argv=None):
         sub.add_parser(name).add_argument("campaign_id", type=int)
     for name in ("approve", "reject"):
         sub.add_parser(name).add_argument("knowledge_id", type=int)
+    sub.add_parser("message-draft")
     args = parser.parse_args(argv)
 
     conn = db_schema.connect(db_schema.default_path())
@@ -99,6 +101,8 @@ def main(argv=None):
             out = hunts.delete(conn, args.campaign_id)
         elif args.command == "draft":
             out = draft.draft(conn, args.text)
+        elif args.command == "message-draft":
+            out = message.draft(json.loads(sys.stdin.read()))
         elif args.command == "brief":
             out = knowledge.brief(conn, args.campaign_id)
         elif args.command == "classify":

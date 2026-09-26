@@ -495,3 +495,20 @@ CREATE TABLE IF NOT EXISTS node_signal_runs (
     proposed_at TEXT NOT NULL,
     total       INTEGER NOT NULL
 );
+
+-- The buyer's Kleinanzeigen conversations, as the last poll saw them
+-- (backend/ka_messages.js). ad_id is a listing id.
+CREATE TABLE IF NOT EXISTS ka_conversations (
+    id           TEXT PRIMARY KEY,
+    ad_id        TEXT NOT NULL,
+    role         TEXT NOT NULL,
+    ad_title     TEXT,
+    other_name   TEXT,
+    last_text    TEXT,
+    last_inbound INTEGER NOT NULL DEFAULT 0,
+    last_at      TEXT,
+    unread       INTEGER NOT NULL DEFAULT 0,
+    seen_at      TEXT, -- last_at when the buyer last opened it here
+    polled_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ka_conversations_ad ON ka_conversations(ad_id);
