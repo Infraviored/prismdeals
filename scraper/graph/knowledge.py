@@ -75,7 +75,7 @@ REGELN:
 - Behalte die URLs als Quellen der Aussage, bei der sie stehen.
 - Anmerkungen der Recherche über die Aufgabe selbst sind keine Aussagen.
 - "node": der Schlüssel des genauesten Knotens, für den die Aussage gilt -- eine Aussage
-  nur über die SC57 gehört zur SC57, eine über alle CBR 1000 RR zum Modell.
+  nur über den Golf VII gehört zum Golf VII, eine über alle Golf zum Modell.
 
 Knoten (Schlüssel: Name):
 {nodes}

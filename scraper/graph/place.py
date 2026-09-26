@@ -26,10 +26,10 @@ Produkt: {text}
 
 Gib den Pfad UNTER der Kategorie zurück, vom Allgemeinen zum Genauen, so tief wie das
 Produkt gemeint ist:
-- kind: "class" (eine Art Ware: Ventilator, Kleiderschrank), "brand", "family" (Baureihe,
-  Serie), "model", "generation" (Baureihe/Jahrgang eines Modells: RN19, SC59, Gen 3, Mk2),
-  "config" (eine Ausstattung/Spezifikation: 2x16 GB DDR4-3200 CL16).
-- Eine reine Klasse ("Ventilator") ist ein einzelner Knoten der Art "class".
+- kind: "class" (eine Art Ware: Kinderwagen, Waschmaschine), "brand", "family" (Baureihe,
+  Serie), "model", "generation" (Baureihe/Jahrgang eines Modells: Golf VII, E90, Mark III),
+  "config" (eine Ausstattung/Spezifikation: 256 GB, Wi-Fi + Cellular).
+- Eine reine Klasse ("Kinderwagen") ist ein einzelner Knoten der Art "class".
 - aliases: wie Verkäufer es in Anzeigentiteln schreiben (Schreibweisen, Codes, Spitznamen).
 - years: [von, bis] für Modelle und Generationen, sonst weglassen.
 - generations: beim Modell-Schritt ALLE Generationen dieses Modells (auch die nicht
@@ -319,13 +319,13 @@ Schon vorhandene Merkmale (id: label):
 {existing}
 
 Gib für JEDES verlangte Merkmal an, wie es gelesen wird -- mit genau dem label von oben.
-Ist es nur ein anderer Name für ein vorhandenes Merkmal ("Laufleistung" für
-"Kilometerstand"), gib dessen id zurück; sonst eine neue id und:
+Ist es nur ein anderer Name für ein vorhandenes Merkmal ("Akkulaufzeit" für
+"Laufzeit"), gib dessen id zurück; sonst eine neue id und:
 - type: "number" | "boolean" | "enum" | "text", unit bei Zahlen, options bei enum,
 - readers: in Reihenfolge, wie es gelesen wird: "details:<Name der Detailangabe>" (wenn die
   Seite es als Detail führt), "number" (Zahl mit Einheit beim Label), "keywords:wort1|wort2"
   (genannt oder verneint, für ja/nein), "regex:<Python-Regex mit genau einer Gruppe>" (z. B.
-  "regex:\\\\b(\\\\d{{1,2}})\\\\s?x\\\\s?\\\\d{{1,3}}\\\\s?GB" für die Anzahl Riegel).
+  "regex:\\\\b(\\\\d{{2,4}})\\\\s?W\\\\b" für die Leistung in Watt).
 
 Echte Anzeigentitel dieser Art (Nummer: Titel):
 {samples}

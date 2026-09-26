@@ -24,12 +24,12 @@ REGELN:
 - Eine Bedingung, die nur ein Ziel betrifft, gehört in "conditions" dieses Ziels;
   eine, die alle betrifft, in die oberste "conditions"-Liste.
 - Eine Generation oder ein Baureihen-Code gehört in den Zielnamen:
-  "nur SC59" bei der CBR macht aus "Honda CBR 1000 RR" "Honda CBR 1000 RR SC59".
+  "nur den VII" beim Golf macht aus "Volkswagen Golf" "Volkswagen Golf VII".
 - Eine Bedingung: {"label": "...", "op": "...", "value": ..., "importance": "must"|"wish"}.
-  op: "min"/"max" mit Zahl (label ohne Einheit: "Kilometerstand"), "eq" mit Wert,
+  op: "min"/"max" mit Zahl (label ohne Einheit: "Laufleistung"), "eq" mit Wert,
   "in"/"not_in" mit Liste, "present" (soll vorhanden sein), "absent" (soll fehlen).
 - "must" für ein Muss, "wish" für einen Wunsch; ein Wunsch hat "weight" von -3 bis 3
-  (positiv: wäre schön, negativ: stört, z. B. "Unfallschaden" -3; 0: nur anzeigen).
+  (positiv: wäre schön, negativ: stört, z. B. "Kratzer" -2; 0: nur anzeigen).
 - "max_price" in Euro, "radius_km" in Kilometern; null heißt keine Grenze.
 - Gib NUR das vollständige JSON-Dokument zurück, keinen anderen Text.
 
