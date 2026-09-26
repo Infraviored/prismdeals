@@ -24,7 +24,6 @@ export interface RowListing {
   /** Where a corridor placed it (routed, too_far, …); null in a town hunt. */
   route_status?: string | null;
   url?: string;
-  matched_terms?: Array<{ id: number; label: string }>;
   lat?: number | null;
   lon?: number | null;
   description?: string | null;
@@ -43,8 +42,8 @@ export interface RowListing {
     market_basis?: {
       median: number;
       count: number;
-      basis: string;
-      basis_type: string;
+      basis?: string;
+      basis_type?: string;
       label?: string;
       text?: string;
     } | null;
@@ -53,20 +52,25 @@ export interface RowListing {
   market_basis?: {
     median: number;
     count: number;
-    basis: string;
-    basis_type: string;
+    basis?: string;
+    basis_type?: string;
     label?: string;
     text?: string;
   } | null;
   /** Attributes from the detail page, e.g. { Zustand: 'Sehr Gut' }. */
   details?: Record<string, unknown> | null;
   reference_comparison?: { closer_to: 'good' | 'bad' | 'mixed'; reasoning: string } | null;
+  /** Computed on read: the verdict, why, and each condition's state by id. */
   fit?: {
     verdict: 'fit' | 'unclear' | 'no';
     reason?: string | null;
-    stage?: string | null;
-    facts?: Record<string, unknown>;
+    states?: Record<string, 'met' | 'violated' | 'open'>;
+    target_id?: number | null;
   } | null;
+  /** What was read from the listing, by attribute id. */
+  facts?: Record<string, unknown> | null;
+  /** The hunt's target this listing belongs to. */
+  target?: { node_id: number; name: string } | null;
   /** Comparative rank from the latest judge run (§9.6). */
   rank?: number | null;
   rank_of?: number | null;
@@ -75,8 +79,6 @@ export interface RowListing {
   uncertain?: boolean;
   /** Ranks of listings the run found to be the same item. */
   same_as?: number[] | null;
-  /** Knowledge node key assigned by judging or identity (P7). */
-  node_key?: string | null;
 }
 
 export interface RowProps {
@@ -119,8 +121,7 @@ export const Row: React.FC<RowProps> = ({
   const isGone = listing.fit?.verdict === 'no';
 
   // Details under location
-  const facts = listing.fit?.facts || {};
-  const chips = renderSpecs(facts, (listing.details as Record<string, unknown>) || null);
+  const chips = renderSpecs(listing.facts || {}, (listing.details as Record<string, unknown>) || null);
 
   return (
     <article

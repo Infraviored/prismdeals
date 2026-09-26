@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 /**
- * Build a fixture database from the schema in db_setup.js, then seed it with
- * synthetic data for UI screenshots and integration tests.
+ * Build a fixture database from db/schema.sql, then seed it with synthetic
+ * data for UI screenshots: a user here, the hunt and its listings through the
+ * graph (scripts/seed_fixture_graph.py).
  *
  * Usage:
  *   node scripts/seed_fixture_db.js <output-path>
- *
- * The schema comes from backend/db_setup.js. The users table is created by
- * server.js on startup, so we add it here as well.
  *
  * NEVER copies production data — everything is synthetic.
  */
 
 const path = require('path');
 const fs = require('fs');
+const { execFileSync } = require('child_process');
 
 const backendModules = path.join(__dirname, '..', 'backend', 'node_modules');
 const sqlite3 = require(path.join(backendModules, 'sqlite3')).verbose();
 const bcrypt = require(path.join(backendModules, 'bcrypt'));
+const { applySchema } = require(path.join(__dirname, '..', 'backend', 'db', 'schema'));
 
 const outPath = process.argv[2];
 if (!outPath) {
@@ -43,203 +43,15 @@ function run(sql, params = []) {
 }
 
 async function main() {
-  // ── Schema ─────────────────────────────────────────────────────────
-  await run('PRAGMA foreign_keys = ON');
-
-  await run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL
-  )`);
-
-  await run(`CREATE TABLE IF NOT EXISTS campaigns (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE
-  )`);
-
-  await run(`CREATE TABLE IF NOT EXISTS knowledge_sets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
-    expert_knowledge TEXT,
-    item_json TEXT,
-    market_memo TEXT,
-    good_reference_description TEXT,
-    bad_reference_description TEXT,
-    market_samples_json TEXT,
-    source_search_url TEXT,
-    sample_timestamp TEXT
-  )`);
-
-  await run(`CREATE TABLE IF NOT EXISTS searches (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
-    name TEXT,
-    url TEXT UNIQUE,
-    enabled INTEGER DEFAULT 1,
-    knowledge_set_id INTEGER REFERENCES knowledge_sets(id) ON DELETE SET NULL
-  )`);
-
-  await run(`CREATE TABLE IF NOT EXISTS listings (
-    id TEXT PRIMARY KEY,
-    title TEXT,
-    price TEXT,
-    price_eur INTEGER,
-    location TEXT,
-    url TEXT,
-    short_description TEXT,
-    detailed_description TEXT,
-    llm_processed INTEGER DEFAULT 0,
-    llm_processed_time TEXT,
-    full_info_obtained INTEGER DEFAULT 0,
-    extracted_facts TEXT,
-    niceness_score INTEGER,
-    status TEXT DEFAULT 'New',
-    search_id INTEGER REFERENCES searches(id) ON DELETE CASCADE,
-    details TEXT,
-    images TEXT,
-    last_description_changed_at TEXT,
-    last_ai_evaluated_at TEXT
-  )`);
-
-  // Which search found which listing. The scraper writes a row here for every
-  // find, the first one included (scraper/main.py); the API reads membership
-  // and verdicts from it, never from listings.search_id alone. A fixture
-  // without it rendered an empty campaign that the landing page said held four.
-  await run(`CREATE TABLE IF NOT EXISTS listing_search_hits (
-    listing_id TEXT NOT NULL,
-    search_id INTEGER NOT NULL,
-    first_seen_at TEXT NOT NULL,
-    PRIMARY KEY (listing_id, search_id)
-  )`);
-
-  await run(`CREATE TABLE IF NOT EXISTS messages (
-    id TEXT PRIMARY KEY,
-    listing_id TEXT REFERENCES listings(id) ON DELETE CASCADE,
-    sender_name TEXT,
-    sender_initials TEXT,
-    is_outbound INTEGER,
-    message_text TEXT,
-    message_date TEXT
-  )`);
-
-  // ── Seed user ──────────────────────────────────────────────────────
+  // The schema is db/schema.sql, applied the way the server applies it.
+  await applySchema(db);
   const hash = await bcrypt.hash(PASSWORD, 10);
-  await run(
-    "INSERT INTO users (email, password_hash, role) VALUES (?, ?, 'admin')",
-    [EMAIL, hash]
-  );
-
-  // ── Seed campaign + search targets ─────────────────────────────────
-  await run("INSERT INTO campaigns (id, name) VALUES (1, 'Laptop Hunt')");
-
-  await run(
-    "INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (1, 1, 'ThinkPad T14s', 'https://www.kleinanzeigen.de/s-thinkpad-t14s/k0', 1)"
-  );
-  await run(
-    "INSERT INTO searches (id, campaign_id, name, url, enabled) VALUES (2, 1, 'ThinkPad X1 Carbon', 'https://www.kleinanzeigen.de/s-x1-carbon/k0', 1)"
-  );
-
-  // ── Seed listings ──────────────────────────────────────────────────
-  // Fixed, not `new Date()`. This value is rendered onto every listing card,
-  // so a moving clock made each CI run differ from the committed baseline
-  // while nothing in the code had changed.
-  const now = '2026-01-01T12:00:00.000Z';
-  // Priced the way the site prices things, and the way the database stores it:
-  // a number in price_eur and the seller's own words in price. The fixture used
-  // to carry "€ 650" and no number at all, so every screenshot rendered the
-  // fallback branch -- the one case the surface hopes never to need -- and the
-  // baseline could not have caught a broken price, a lost "VB" or a giveaway
-  // shown as "no price".
-  const listings = [
-    {
-      id: 'fixture-001',
-      title: 'ThinkPad T14s Gen 3, 16GB, 512GB SSD',
-      price: '650 €',
-      price_eur: 650,
-      location: '86899 Landsberg am Lech',
-      niceness_score: 82,
-      status: 'New',
-      search_id: 1,
-    },
-    {
-      id: 'fixture-002',
-      title: 'Lenovo ThinkPad T14s AMD Ryzen 7 PRO, top Zustand',
-      price: '520 € VB',
-      price_eur: 520,
-      location: '80331 München',
-      niceness_score: 74,
-      status: 'New',
-      search_id: 1,
-    },
-    {
-      id: 'fixture-003',
-      title: 'X1 Carbon Gen 11, i7, 32GB, WQUXGA',
-      price: '980 €',
-      price_eur: 980,
-      location: '10115 Berlin',
-      niceness_score: 91,
-      status: 'New',
-      search_id: 2,
-    },
-    {
-      id: 'fixture-004',
-      title: 'ThinkPad X1 Carbon Gen 9, 16GB, FHD+',
-      price: 'Zu verschenken',
-      price_eur: 0,
-      location: '50667 Köln',
-      niceness_score: 65,
-      status: 'Evaluate with AI',
-      search_id: 2,
-    },
-  ];
-
-  for (const l of listings) {
-    await run(
-      `INSERT INTO listings (id, title, price, price_eur, location, niceness_score, status,
-        search_id, url, short_description, llm_processed, last_description_changed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-      [
-        l.id,
-        l.title,
-        l.price,
-        l.price_eur,
-        l.location,
-        l.niceness_score,
-        l.status,
-        l.search_id,
-        `https://www.kleinanzeigen.de/s-anzeige/${l.id}`,
-        `Synthetic fixture listing for CI screenshots.`,
-        now,
-      ]
-    );
-    await run(
-      'INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES (?, ?, ?)',
-      [l.id, l.search_id, now]
-    );
-  }
-
-  // Proposed facts for the knowledge sheet: its kind badge and its two
-  // buttons share one row, which is where labels broke over two lines.
-  await run(`CREATE TABLE IF NOT EXISTS claims (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, node_key TEXT NOT NULL, kind TEXT NOT NULL,
-    axis TEXT, statement TEXT NOT NULL, check_path TEXT, weight TEXT,
-    sources TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT,
-    approved INTEGER NOT NULL DEFAULT 0)`);
-  for (const [kind, statement] of [
-    ['seller_question', 'Wurde der Akku getauscht, und wie viele Ladezyklen zeigt das BIOS?'],
-    ['weakness', 'Scharniere der T14s lockern sich bei häufigem Öffnen; Spiel am Deckel prüfen.'],
-  ]) {
-    await run(
-      'INSERT INTO claims (node_key, kind, statement, sources, created_at, approved) VALUES (?, ?, ?, ?, ?, 0)',
-      ['open/laptop-hunt', kind, statement, JSON.stringify(['https://example.org/quelle']), now]
-    );
-  }
-
+  await run("INSERT INTO users (email, password_hash, role) VALUES (?, ?, 'admin')", [EMAIL, hash]);
   db.close();
+  // The hunt and its listings go through the graph itself (Python, no model).
+  execFileSync('python3', [path.join(__dirname, 'seed_fixture_graph.py'), outPath], { stdio: 'inherit' });
   console.log(`Fixture database seeded: ${outPath}`);
   console.log(`  User: ${EMAIL} / ${PASSWORD}`);
-  console.log(`  Campaigns: 1, Searches: 2, Listings: ${listings.length}`);
 }
 
 main().catch((err) => {

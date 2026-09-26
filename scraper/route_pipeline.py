@@ -1,12 +1,13 @@
-"""Running a route search end to end.
+"""Planning a hunt's corridor, and placing its listings on it.
 
 Two operations, deliberately separate because they happen at different times and
 cost different things:
 
-`create` plans a corridor and registers its circles as ordinary searches. It runs
-once, when a buyer says where they are driving. Everything after that is the
-existing pipeline: the scraper collects those searches like any other, the
-extractor builds fact sheets, the scorer ranks against intent.
+`plan_corridor` resolves both ends and covers the route with circles. It runs
+once, when a buyer says where they are driving; family_route turns the circles
+into the hunt's ordinary searches. Everything after that is the existing
+pipeline: the scraper collects those searches like any other, the extractor
+builds fact sheets, the scorer ranks against intent.
 
 `annotate` computes what the ordinary pipeline cannot know — how far off the route
 each listing sits, and what collecting it would cost in driving time. It runs
@@ -79,12 +80,8 @@ def plan_corridor(
 ):
     """Resolves both ends, routes between them, and covers the corridor.
 
-    The one place this sequence lives. It was written out three times — in
-    `create`, in `replan`, and inlined into the preview — and the copies had
-    already drifted: the preview dropped the resolver and the empty-circles
-    check, so it could draw a corridor the commit would then refuse. A preview
-    that plans something other than what committing would build is worse than
-    no preview.
+    Raises when no circle centre resolves: a corridor with no searchable place
+    would leave the hunt searching nowhere.
     """
     client = client or routing.OsrmClient()
     start = resolve_place(origin)
@@ -105,61 +102,6 @@ def plan_corridor(
             f"postal codes: {unresolved}."
         )
     return plan
-
-
-def create(
-    conn,
-    base_url,
-    origin,
-    destination,
-    radius_km=30.0,
-    half_width_km=15.0,
-    name=None,
-    campaign_id=None,
-    knowledge_set_id=None,
-    client=None,
-    resolver=None,
-):
-    """Plans a corridor and registers its searches. Returns (route_id, plan)."""
-    plan = plan_corridor(
-        base_url,
-        origin,
-        destination,
-        radius_km=radius_km,
-        half_width_km=half_width_km,
-        client=client,
-        resolver=resolver,
-    )
-
-    route_id, conflicts = route_store.save_plan(
-        conn,
-        plan,
-        base_url=base_url,
-        origin=str(origin),
-        destination=str(destination),
-        name=name,
-        campaign_id=campaign_id,
-        knowledge_set_id=knowledge_set_id,
-    )
-
-    logger.info(
-        "Route %s: %.0f km, %.0f min, %d searches covering a %.0f km corridor.",
-        route_id,
-        plan.route.distance_km,
-        plan.route.duration_min,
-        len(plan.circles),
-        half_width_km * 2,
-    )
-    if conflicts:
-        logger.warning(
-            "%d of %d circles reuse a search bound differently than this route. "
-            "Their listings will not be scored as this route expects: %s",
-            len(conflicts),
-            len(plan.circles),
-            "; ".join(f"{c['label']} ({', '.join(c['reasons'])})" for c in conflicts),
-        )
-    plan.conflicts = conflicts
-    return route_id, plan
 
 
 def _coordinates_for(listing, places):
@@ -292,74 +234,3 @@ def annotate(
         failed,
     )
     return summary
-
-
-def ranked(conn, route_search_id):
-    """Listings on this route, cheapest detour first.
-
-    Listings whose detour is unknown sort last rather than first: an unmeasured
-    trip is not a free one.
-    """
-    geo_rows = route_store.geo_for_route(conn, route_search_id)
-    listings = []
-    for listing in route_store.listings_for_route(conn, route_search_id):
-        listings.append(dict(listing, **geo_rows.get(listing["id"], {})))
-
-    return sorted(
-        listings,
-        key=lambda listing: (
-            listing.get("detour_min") is None,
-            listing.get("detour_min") or 0.0,
-        ),
-    )
-
-
-def replan(conn, route_search_id, radius_km, half_width_km, client=None, resolver=None):
-    """Redraws an existing corridor at a new radius and width.
-
-    A corridor is a guess before it is a decision: too narrow and the wardrobe
-    two towns over never appears, too wide and it is a hundred searches against
-    a site that starts refusing. So it has to be changeable after the fact, and
-    changing it must not mean starting again — the listings already found are
-    the reason anyone would want to widen it.
-
-    Circles that survive the new plan keep their search row, and with it
-    everything already scraped. Circles that fall out are detached from the
-    route rather than deleted: their listings stay in the campaign, they simply
-    stop counting as corridor finds. New circles are registered as usual.
-
-    Returns (kept, added, removed).
-    """
-    route_store.ensure_schema(conn)
-    asked = route_store.definition(conn, route_search_id)
-    if asked is None:
-        raise ValueError(f"No route search with id {route_search_id}")
-
-    plan = plan_corridor(
-        asked["base_url"],
-        asked["origin"],
-        asked["destination"],
-        radius_km=radius_km,
-        half_width_km=half_width_km,
-        client=client,
-        resolver=resolver,
-    )
-
-    before = route_store.circle_urls(conn, route_search_id)
-    plan.conflicts = route_store.replace_circles(
-        conn,
-        route_search_id,
-        plan,
-        name=asked["name"],
-        destination=asked["destination"],
-        campaign_id=asked["campaign_id"],
-        knowledge_set_id=asked["set_id"],
-    )
-    after = {circle.url for circle in plan.circles}
-
-    # A circle that fell out of the corridor must stop being fetched, or
-    # narrowing one reduces nothing.
-    route_store.retire_searches(conn, before - after)
-    route_store.requeue(conn, route_search_id)
-
-    return len(before & after), len(after - before), len(before - after), plan

@@ -64,7 +64,7 @@ export const RadiusField: React.FC<RadiusFieldProps> = ({
           onKeyDown={e => {
             if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
           }}
-          className="w-14 px-2 py-1.5 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] focus:outline-none focus:border-[#8FA6A1] text-sm tabular-nums text-right transition-colors"
+          className="w-20 px-2 py-1.5 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] focus:outline-none focus:border-[#8FA6A1] text-sm tabular-nums text-right transition-colors"
         />
         <span className="text-sm text-[#8FA6A1]">km</span>
       </div>

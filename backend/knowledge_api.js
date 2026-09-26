@@ -1,309 +1,110 @@
 /**
- * Knowledge nodes & research bridge API (P7).
+ * Knowledge per node (plan §8).
  *
- * Endpoints:
- * - GET  /api/campaigns/:id/brief   → research brief and decision
- * - POST /api/knowledge/classify    → parse pasted answer into proposed claims
- * - POST /api/claims/:id/approve    → approve a proposed claim
- * - POST /api/claims/:id/reject     → delete a rejected claim
- * - GET  /api/listings/:id/claims   → inherited claims for a listing
- * - GET  /api/campaigns/:id/claims  → all claims (approved and pending) for campaign
+ *   GET  /api/hunts/:id/brief       the research brief for the hunt's targets
+ *   POST /api/hunts/:id/knowledge   {text}: a pasted research answer, filed as proposed knowledge
+ *   GET  /api/hunts/:id/knowledge   everything known about its targets, proposed or approved
+ *   POST /api/knowledge/:id/approve | /reject
+ *   GET  /api/listings/:id/knowledge?campaign_id=   the approved knowledge of the listing's product
+ *
+ * Python (scraper/graph/knowledge.py) writes; this side reads through the tree.
  */
 
 const express = require('express');
-const path = require('path');
-const { findPython } = require('./python');
-const { spawn } = require('child_process');
+const { graph } = require('./python');
+const { loadTree, describe } = require('./db/graph');
 
-const router = express.Router();
-
-
-function runPythonJson(scriptName, args, stdinInput = null) {
-  return new Promise((resolve, reject) => {
-    const python = findPython();
-    const scriptPath = path.join(__dirname, '..', 'scraper', scriptName);
-    const child = spawn(python, [scriptPath, ...args], {
-      env: {
-        ...process.env,
-        PYTHONPATH: path.join(__dirname, '..', 'scraper'),
-      },
-    });
-
-    let out = '';
-    let err = '';
-
-    if (stdinInput) {
-      child.stdin.write(stdinInput);
-      child.stdin.end();
-    }
-
-    child.stdout.on('data', d => {
-      out += d.toString();
-    });
-
-    child.stderr.on('data', d => {
-      err += d.toString();
-    });
-
-    child.on('error', spawnErr => {
-      console.error(`Failed to spawn ${scriptName}:`, spawnErr.message);
-      reject(spawnErr);
-    });
-
-    child.on('close', code => {
-      if (code !== 0) {
-        console.error(`Python script ${scriptName} exited with code ${code}: ${err}`);
-        return reject(new Error(`Script exited with code ${code}: ${err.slice(0, 300)}`));
-      }
-      try {
-        const parsed = JSON.parse(out.trim());
-        resolve(parsed);
-      } catch (parseErr) {
-        console.error(`Failed to parse JSON output from ${scriptName}:`, out.slice(0, 300));
-        reject(new Error(`Invalid JSON output from ${scriptName}`));
-      }
-    });
-  });
+/** Knowledge rows of these nodes, each with the name of the node it hangs at. */
+async function knowledgeAt(query, tree, nodeIds, approvedOnly) {
+  if (!nodeIds.length) return [];
+  const rows = await query(
+    `SELECT id, node_id, kind, statement, check_path, weight, sources_json, created_at, approved
+       FROM node_knowledge
+      WHERE node_id IN (${nodeIds.map(() => '?').join(',')})
+        AND (expires_at IS NULL OR expires_at > ?)
+        ${approvedOnly ? 'AND approved = 1' : ''}
+      ORDER BY id`,
+    [...nodeIds, new Date().toISOString()]
+  );
+  return rows.map(r => ({
+    id: r.id,
+    node_id: r.node_id,
+    node: describe(tree, r.node_id),
+    kind: r.kind,
+    statement: r.statement,
+    check_path: r.check_path,
+    weight: r.weight,
+    sources: JSON.parse(r.sources_json || '[]'),
+    created_at: r.created_at,
+    approved: !!r.approved,
+  }));
 }
 
-function ancestors(nodeKey) {
-  if (!nodeKey) return [];
-  const parts = nodeKey.split('/');
-  const res = [];
-  for (let i = parts.length - 1; i > 0; i--) {
-    res.push(parts.slice(0, i).join('/'));
+/** The knowledge text for a comparison prompt: what holds for the hunt's targets. */
+async function knowledgeForPrompt(query, tree, targetIds) {
+  const ids = [...new Set(targetIds.flatMap(t => tree.ancestors(t).map(n => n.id)))];
+  const rows = await knowledgeAt(query, tree, ids, true);
+  return rows.map(k => `- ${k.node}: ${k.kind.replace('_', ' ')} [${k.weight}] ${k.statement} (prüfen: ${k.check_path})`).join('\n');
+}
+
+module.exports = (query) => {
+  const router = express.Router();
+  // Every :id is a number; anything else is no such thing, not a model outage.
+  router.param('id', (req, res, next, id) => (/^\d+$/.test(id) ? next() : res.status(404).json({ error: 'Nicht gefunden' })));
+
+  async function targetsOf(campaignId) {
+    return (await query('SELECT node_id FROM hunt_targets WHERE campaign_id = ?', [campaignId])).map(r => r.node_id);
   }
-  return res;
-}
 
-function parseClaimRow(row) {
-  let sources = [];
-  try {
-    sources = JSON.parse(row.sources || '[]');
-  } catch (e) {
-    sources = [];
+  router.get('/api/hunts/:id/brief', async (req, res) => {
+    const result = await graph(['brief', String(Number(req.params.id))]);
+    res.status(result.status).json(result.body);
+  });
+
+  router.post('/api/hunts/:id/knowledge', async (req, res) => {
+    const text = String((req.body || {}).text || '').trim();
+    if (!text) return res.status(400).json({ error: 'Keine Antwort eingefügt.' });
+    const result = await graph(['classify', String(Number(req.params.id))], text);
+    res.status(result.status).json(result.body);
+  });
+
+  router.get('/api/hunts/:id/knowledge', async (req, res) => {
+    try {
+      const tree = await loadTree(query);
+      const targets = (await targetsOf(Number(req.params.id))).filter(t => tree.byId.has(t));
+      const ids = [...new Set(targets.flatMap(t => [
+        ...tree.ancestors(t).map(n => n.id),
+        ...[...tree.byId.values()].filter(n => n.parent_id === t).map(n => n.id),
+      ]))];
+      res.json({ knowledge: await knowledgeAt(query, tree, ids, false) });
+    } catch (error) {
+      console.error('Reading hunt knowledge failed:', error);
+      res.status(500).json({ error: 'Das Wissen konnte nicht gelesen werden.' });
+    }
+  });
+
+  for (const action of ['approve', 'reject']) {
+    router.post(`/api/knowledge/:id/${action}`, async (req, res) => {
+      const result = await graph([action, String(Number(req.params.id))]);
+      res.status(result.status).json(result.body);
+    });
   }
-  return {
-    id: row.id,
-    node_key: row.node_key,
-    kind: row.kind,
-    axis: row.axis || '',
-    statement: row.statement,
-    check_path: row.check_path || 'text',
-    weight: row.weight || 'minor',
-    sources,
-    created_at: row.created_at,
-    expires_at: row.expires_at,
-    approved: !!row.approved,
-  };
-}
 
-module.exports = (query, get, run) => {
-  /**
-   * GET /api/campaigns/:id/brief
-   * Returns research recommendation, brief text for copy-pasting, and current claims.
-   */
-  router.get('/api/campaigns/:id/brief', async (req, res) => {
-    const campaignId = Number(req.params.id);
-    if (!campaignId || campaignId < 1) {
-      return res.status(400).json({ error: 'Invalid campaign ID' });
-    }
-
+  router.get('/api/listings/:id/knowledge', async (req, res) => {
     try {
-      const dbArgs = process.env.PRISMDEALS_DB ? ['--db', process.env.PRISMDEALS_DB] : [];
-      // ?check=1 only asks whether research pays off (no model call): the
-      // results screen asked on every open and paid for a brief each time.
-      const noLlm = req.query.check ? ['--no-llm'] : [];
-      const briefData = await runPythonJson('knowledge_cli.py', [...dbArgs, 'brief', String(campaignId), ...noLlm]);
-
-      // Also attach any pending (unapproved) claims for this node
-      let pendingClaims = [];
-      if (briefData.node_key) {
-        const rows = await query(
-          `SELECT id, node_key, kind, axis, statement, check_path, weight,
-                  sources, created_at, expires_at, approved
-             FROM claims WHERE node_key = ? AND approved = 0
-            ORDER BY created_at DESC`,
-          [briefData.node_key]
-        );
-        pendingClaims = rows.map(parseClaimRow);
-      }
-
-      res.json({
-        ...briefData,
-        pending_claims: pendingClaims,
-      });
-    } catch (err) {
-      console.error(`GET /api/campaigns/${campaignId}/brief failed:`, err);
-      res.status(500).json({ error: 'Failed to generate research brief' });
-    }
-  });
-
-  /**
-   * POST /api/knowledge/classify
-   * Parses pasted answer text into proposed claims and saves them as unapproved.
-   */
-  router.post('/api/knowledge/classify', async (req, res) => {
-    const { node_key, answer_text, profile_key, auto_approve } = req.body || {};
-    if (!node_key || !answer_text) {
-      return res.status(400).json({ error: 'node_key and answer_text are required' });
-    }
-
-    try {
-      const dbArgs = process.env.PRISMDEALS_DB ? ['--db', process.env.PRISMDEALS_DB] : [];
-      const cmdArgs = [...dbArgs, 'classify', node_key];
-      if (profile_key) cmdArgs.push('--profile', profile_key);
-      if (auto_approve) cmdArgs.push('--auto-approve');
-
-      const claims = await runPythonJson('knowledge_cli.py', cmdArgs, answer_text);
-      res.json({ claims });
-    } catch (err) {
-      console.error('POST /api/knowledge/classify failed:', err);
-      res.status(500).json({ error: 'Failed to classify research answer' });
-    }
-  });
-
-  /**
-   * POST /api/claims/:id/approve
-   * Approves a single proposed claim.
-   */
-  router.post('/api/claims/:id/approve', async (req, res) => {
-    const claimId = Number(req.params.id);
-    if (!claimId || claimId < 1) {
-      return res.status(400).json({ error: 'Invalid claim ID' });
-    }
-    try {
-      await run('UPDATE claims SET approved = 1 WHERE id = ?', [claimId]);
-      res.json({ success: true, id: claimId });
-    } catch (err) {
-      console.error(`POST /api/claims/${claimId}/approve failed:`, err);
-      res.status(500).json({ error: 'Failed to approve claim' });
-    }
-  });
-
-  /**
-   * POST /api/claims/:id/reject
-   * Deletes a rejected claim.
-   */
-  router.post('/api/claims/:id/reject', async (req, res) => {
-    const claimId = Number(req.params.id);
-    if (!claimId || claimId < 1) {
-      return res.status(400).json({ error: 'Invalid claim ID' });
-    }
-    try {
-      await run('DELETE FROM claims WHERE id = ?', [claimId]);
-      res.json({ success: true, id: claimId });
-    } catch (err) {
-      console.error(`POST /api/claims/${claimId}/reject failed:`, err);
-      res.status(500).json({ error: 'Failed to reject claim' });
-    }
-  });
-
-  /**
-   * GET /api/listings/:id/claims
-   * Returns approved unexpired claims for the listing's node and its ancestors.
-   */
-  router.get('/api/listings/:id/claims', async (req, res) => {
-    const listingId = String(req.params.id);
-    try {
-      // The comparison's node first (claims are written under its names),
-      // then the node P8 resolved from the listing's own facts. A bare hunt
-      // name carries no knowledge. No Python per listing view: P8 already
-      // holds what the identity lookup would find.
-      const node = await get(
-        `SELECT node_key FROM (
-           SELECT lr.node_key, 0 AS pref, jr.created_at
-             FROM listing_ranks lr JOIN judge_runs jr ON jr.id = lr.run_id
-            WHERE lr.listing_id = ? AND lr.node_key IS NOT NULL AND lr.node_key != ''
-           UNION ALL
-           SELECT node_key, 1 AS pref, computed_at
-             FROM listing_nodes
-            WHERE listing_id = ? AND source IN ('identity', 'playbook', 'rank')
-         ) ORDER BY pref, created_at DESC LIMIT 1`,
-        [listingId, listingId]
-      );
-      const nodeKey = node ? node.node_key : null;
-      if (!nodeKey) {
-        return res.json({ listing_id: listingId, node_key: null, claims: [] });
-      }
-
-      // Walk path from leaf to root
-      const allKeys = [nodeKey, ...ancestors(nodeKey)];
-      const claimsList = [];
-      const nowIso = new Date().toISOString();
-
-      for (const key of allKeys) {
-        const rows = await query(
-          `SELECT id, node_key, kind, axis, statement, check_path, weight,
-                  sources, created_at, expires_at, approved
-             FROM claims
-            WHERE node_key = ? AND approved = 1
-            ORDER BY kind, created_at DESC`,
-          [key]
-        );
-        for (const r of rows) {
-          if (!r.expires_at || r.expires_at > nowIso) {
-            claimsList.push(parseClaimRow(r));
-          }
-        }
-      }
-
-      res.json({
-        listing_id: listingId,
-        node_key: nodeKey,
-        claims: claimsList,
-      });
-    } catch (err) {
-      console.error(`GET /api/listings/${listingId}/claims failed:`, err);
-      res.status(500).json({ error: 'Failed to load listing claims' });
-    }
-  });
-
-  /**
-   * GET /api/campaigns/:id/claims
-   * Returns all claims for the nodes relevant to the campaign.
-   */
-  router.get('/api/campaigns/:id/claims', async (req, res) => {
-    const campaignId = Number(req.params.id);
-    try {
-      const nodeRows = await query(
-        `SELECT DISTINCT lr.node_key
-           FROM listing_ranks lr
-           JOIN judge_runs jr ON jr.id = lr.run_id
-          WHERE jr.campaign_id = ? AND lr.node_key IS NOT NULL AND lr.node_key != ''`,
-        [campaignId]
-      );
-      const nodeKeys = nodeRows.map(r => r.node_key);
-
-      if (!nodeKeys.length) {
-        return res.json({ campaign_id: campaignId, claims: [] });
-      }
-
-      const allAncestors = new Set(nodeKeys);
-      for (const nk of nodeKeys) {
-        ancestors(nk).forEach(a => allAncestors.add(a));
-      }
-
-      const placeholders = Array.from(allAncestors).map(() => '?').join(',');
-      const rows = await query(
-        `SELECT id, node_key, kind, axis, statement, check_path, weight,
-                sources, created_at, expires_at, approved
-           FROM claims
-          WHERE node_key IN (${placeholders})
-          ORDER BY approved DESC, kind, created_at DESC`,
-        Array.from(allAncestors)
-      );
-
-      res.json({
-        campaign_id: campaignId,
-        node_keys: nodeKeys,
-        claims: rows.map(parseClaimRow),
-      });
-    } catch (err) {
-      console.error(`GET /api/campaigns/${campaignId}/claims failed:`, err);
-      res.status(500).json({ error: 'Failed to load campaign claims' });
+      const tree = await loadTree(query);
+      const row = await query('SELECT node_id FROM listing_resolution WHERE listing_id = ?', [req.params.id]);
+      const nodeId = row.length && tree.byId.has(row[0].node_id) ? row[0].node_id : null;
+      if (!nodeId) return res.json({ node: null, knowledge: [] });
+      const chain = tree.ancestors(nodeId).map(n => n.id);
+      res.json({ node: describe(tree, nodeId), knowledge: await knowledgeAt(query, tree, chain, true) });
+    } catch (error) {
+      console.error('Reading listing knowledge failed:', error);
+      res.status(500).json({ error: 'Das Wissen konnte nicht gelesen werden.' });
     }
   });
 
   return router;
 };
+
+module.exports.knowledgeForPrompt = knowledgeForPrompt;

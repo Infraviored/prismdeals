@@ -44,7 +44,8 @@ export default function PlaceInput({ label, placeholder, value, onChange, emptyH
   const containerRef = useRef<HTMLDivElement>(null)
   // Suppresses the lookup that a selection's own text change would otherwise
   // trigger — picking a place should close the list, not repopulate it.
-  const skipNextLookup = useRef(false)
+  // A field that opens on a stored place shows it, not a list of look-alikes.
+  const skipNextLookup = useRef(Boolean(value))
   const listRef = useRef<HTMLUListElement>(null)
 
   // The field follows its value. Clearing it from outside — which is what the

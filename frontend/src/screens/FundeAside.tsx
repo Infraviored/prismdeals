@@ -1,183 +1,86 @@
 import React from 'react';
 import type { RowListing } from '../components/surface/Row';
+import type { HuntDocument, HuntOverview } from '../types/hunt';
 import { useTranslation } from '../hooks/useTranslation';
-import { formatLocation } from '../utils/formatLocation';
-
-export interface CampaignOverviewData {
-  campaign_id: number;
-  campaign_name: string;
-  scope_kind?: string;
-  search_id?: number | null;
-  last_crawled_at?: string | null;
-  schedule_interval?: number | null;
-  pots: {
-    all: number;
-    fit: number;
-    unclear: number;
-    no: number;
-    unjudged?: number;
-  };
-  rejections: Array<{
-    reason: string;
-    count: number;
-    examples?: string[];
-  }>;
-  market: {
-    median: number | null;
-    deal_threshold: number | null;
-    cheapest: number | null;
-    min: number | null;
-    max: number | null;
-    count: number;
-    bins: Array<{
-      min: number;
-      max: number;
-      count: number;
-      label: string;
-    }>;
-    cluster_share?: number;
-    cluster_min?: number;
-    cluster_max?: number;
-  };
-  requirements: Array<{
-    id: string;
-    label: string;
-    unit: string | null;
-    text: string;
-    buyer_wants: Record<string, unknown>;
-    survivors: number;
-    passed: number;
-    contradicted: number;
-    missing: number;
-    total: number;
-  }>;
-}
 
 export interface FundeAsideProps {
-  overview: CampaignOverviewData | null;
+  overview: HuntOverview | null;
   bestListing: RowListing | null;
+  /** For naming the target a condition belongs to. */
+  doc?: HuntDocument | null;
 }
 
-export const FundeAside: React.FC<FundeAsideProps> = ({ overview, bestListing }) => {
+/** Market, conditions and rejections of the whole hunt, beside the list. */
+export const FundeAside: React.FC<FundeAsideProps> = ({ overview, bestListing, doc }) => {
   const { t } = useTranslation();
+  if (!overview) return null;
 
-  // With no priced listing there is no market to describe; a median of 0 €
-  // over 0 listings is not a statement, and requirements count nothing.
-  if (!overview || !overview.market || !overview.market.count) return null;
-
-  const { market, requirements, rejections } = overview;
-  const bins = market?.bins || [];
+  const dist = overview.price_distribution;
+  const bins = dist.bins || [];
   const peak = Math.max(1, ...bins.map((b) => b.count));
-  const minPrice = market?.min ?? 0;
-  const maxPrice = market?.max ?? 0;
-  const medianPrice = market?.median ?? 0;
+  const markets = overview.markets.filter((m) => m.count > 0 && typeof m.median === 'number');
+  const targetName = new Map((doc?.targets || []).map((tg) => [tg.node_id, tg.name || tg.typed]));
 
-  // Determine which bin contains the best deal
-  let dealBinIdx = -1;
+  let dealBin = -1;
   if (bestListing?.is_deal && typeof bestListing.price_eur === 'number') {
-    const bp = bestListing.price_eur;
-    dealBinIdx = bins.findIndex((b) => bp >= b.min && bp <= b.max);
-  }
-
-  // Median line position
-  const span = Math.max(1, maxPrice - minPrice);
-  const medPos = Math.max(0, Math.min(100, ((medianPrice - minPrice) / span) * 100));
-
-  // Market lead sentence: where mass lies
-  const share = market?.cluster_share;
-  const cMin = market?.cluster_min;
-  const cMax = market?.cluster_max;
-
-  let lead: string;
-  if (typeof share === 'number' && typeof cMin === 'number' && typeof cMax === 'number') {
-    const shareSentence = t('surface.sharePriceRange', { share, min: cMin, max: cMax });
-    if (bestListing?.is_deal && typeof bestListing.price_eur === 'number') {
-      const city = bestListing.location ? formatLocation(bestListing.location) : '';
-      lead = `${shareSentence} ${t('surface.singleBestKit', { price: String(bestListing.price_eur), city })}`;
-    } else {
-      lead = shareSentence;
-    }
-  } else {
-    const bestCity = bestListing?.location ? formatLocation(bestListing.location) : '';
-    const cityStr = bestCity ? ` in ${bestCity}` : '';
-    lead = bestListing?.is_deal && typeof bestListing.price_eur === 'number'
-      ? t('surface.singleBestBelowMedian', { count: market.count, price: bestListing.price_eur, city: cityStr })
-      : t('surface.marketCountWithMedian', { count: market.count, median: medianPrice });
+    const p = bestListing.price_eur;
+    dealBin = bins.findIndex((b) => p >= b.min && p <= b.max);
   }
 
   return (
     <aside className="aside" aria-label={t('surface.marketAndRequirements')}>
-      {/* 1. Markt Panel */}
-      <section className="panel" id="market">
-        <h2>{t('surface.market')}</h2>
-        <p className="lead">{lead}</p>
-
-        {bins.length > 0 && (
-          <div
-            className="hist"
-            role="img"
-            aria-label={t('surface.priceDistributionAria', { min: minPrice, max: maxPrice, median: medianPrice })}
-          >
-            <div className="bars">
-              {bins.map((b, idx) => (
-                <div
-                  key={idx}
-                  className={`bar ${idx === dealBinIdx ? 'deal' : ''}`}
-                  style={{ height: `${Math.max(4, (b.count / peak) * 100)}%` }}
-                  title={`${b.label}: ${b.count}`}
-                />
+      {dist.count > 0 && (
+        <section className="panel" id="market">
+          <h2>{t('surface.market')}</h2>
+          <p className="lead">{t('huntEdit.marketLead', { count: dist.count })}</p>
+          {bins.length > 0 && (
+            <div className="hist" role="img" aria-label={t('huntEdit.priceRangeAria', { min: dist.min ?? 0, max: dist.max ?? 0 })}>
+              <div className="bars">
+                {bins.map((b, i) => (
+                  <div
+                    key={i}
+                    className={`bar ${i === dealBin ? 'deal' : ''}`}
+                    style={{ height: `${Math.max(4, (b.count / peak) * 100)}%` }}
+                    title={`${b.label}: ${b.count}`}
+                  />
+                ))}
+              </div>
+              <div className="axis">
+                <span className="num">{dist.min} €</span>
+                <span className="num">{dist.max} €</span>
+              </div>
+            </div>
+          )}
+          {markets.length > 0 && (
+            <div data-testid="markets" style={{ marginTop: '8px' }}>
+              {markets.map((m) => (
+                <div key={m.node_id} className="req-top">
+                  <span>{t('huntEdit.marketLine', { name: m.name, count: m.count })}</span>
+                  <span className="num whitespace-nowrap">{m.median} €</span>
+                </div>
               ))}
             </div>
-
-            {medianPrice > 0 && (
-              <div className="median-line" style={{ left: `${medPos}%` }} />
-            )}
-
-            <div className="axis">
-              <span className="num">{minPrice} €</span>
-              <span className="num">{maxPrice} €</span>
-            </div>
-          </div>
-        )}
-
-        <p className="legend">
-          {medianPrice > 0 && (
-            <span>
-              <i className="l-median" />
-              {t('surface.median', { amount: medianPrice })}
-            </span>
           )}
-          {dealBinIdx >= 0 && typeof bestListing?.price_eur === 'number' && (
-            <span>
-              <i className="l-deal" />
-              {t('surface.bestFindLegend', { amount: bestListing.price_eur })}
-            </span>
-          )}
-        </p>
-      </section>
+        </section>
+      )}
 
-      {/* 2. Was du willst Panel */}
-      {requirements.length > 0 && (
+      {overview.conditions.length > 0 && (
         <section className="panel" id="requirements">
           <h2>{t('surface.whatYouWant')}</h2>
-          <p className="lead">
-            <span className="quiet">
-              {t('surface.howManyFulfill', { total: requirements[0].total || overview.pots.all })}
-            </span>
-          </p>
-
           <div style={{ marginTop: '8px' }}>
-            {requirements.map((req) => {
-              const total = req.total || overview.pots.all || 1;
-              const survivors = req.survivors;
-              const pct = Math.max(0, Math.min(100, (survivors / total) * 100));
-
+            {overview.conditions.map((c) => {
+              const pct = c.total ? Math.max(0, Math.min(100, (c.met / c.total) * 100)) : 0;
+              const owner = c.node_id !== null ? targetName.get(c.node_id) : null;
               return (
-                <div key={req.id} className="req">
+                <div key={c.id} className="req">
                   <div className="req-top">
-                    <span>{req.text || req.label}</span>
-                    <span className="num">
-                      <b>{survivors}</b> {t('surface.outOf', { count: survivors, total }).replace(`${survivors} `, '')}
+                    <span>
+                      {c.text || c.label}
+                      {owner && <span className="quiet"> · {owner}</span>}
+                      {c.importance === 'wish' && <span className="quiet"> · {t('huntEdit.wish')}</span>}
+                    </span>
+                    <span className="num whitespace-nowrap">
+                      <b>{c.met}</b> / {c.total}
                     </span>
                   </div>
                   <div className="meter">
@@ -190,15 +93,14 @@ export const FundeAside: React.FC<FundeAsideProps> = ({ overview, bestListing })
         </section>
       )}
 
-      {/* 3. Warum abgelehnt Panel */}
-      {rejections.length > 0 && (
+      {overview.rejections.length > 0 && (
         <section className="panel" id="rejections">
           <h2>{t('surface.whyRejected')}</h2>
           <ul className="why">
-            {rejections.map((r, idx) => (
-              <li key={idx}>
+            {overview.rejections.map((r) => (
+              <li key={r.reason} title={r.examples.join('\n')}>
                 <span className="num">{r.count}×</span>
-                <span>{/sodimm.*statt.*dimm/i.test(r.reason) ? 'SODIMM statt DIMM' : r.reason}</span>
+                <span>{r.reason}</span>
               </li>
             ))}
           </ul>

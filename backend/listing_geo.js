@@ -7,7 +7,7 @@
 // same ones the corridor planner uses -- no geocoding service, no request.
 
 const places = require('./places');
-const { median } = require('./db/market_node');
+const { median } = require('./db/market');
 
 function distanceKm(a, b) {
   const rad = (d) => (d * Math.PI) / 180;

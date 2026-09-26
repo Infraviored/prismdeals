@@ -11,9 +11,7 @@
  */
 
 const express = require('express');
-const { annotateDeals } = require('./db/reference_price');
-const { annotateNodeMarket } = require('./db/market_node');
-const { BEST_FIT_ORDER_SQL, fitOf, fitJoinOn } = require('./db/fit');
+const { huntScope, huntListings } = require('./hunt_listings');
 
 const router = express.Router();
 
@@ -48,77 +46,38 @@ module.exports = (query, get, run) => {
         });
       }
 
+      // Each kept listing as its hunt sees it: the verdict belongs to a hunt,
+      // so it is the one of the hunt that found it last.
       const rows = await query(
-        `WITH user_hits AS (
-           SELECT lsh.listing_id, lsh.search_id, lsh.first_seen_at
-             FROM kept_listings k
-             JOIN listing_search_hits lsh ON lsh.listing_id = k.listing_id
-            WHERE k.user_id = ?
-           UNION
-           SELECT l.id AS listing_id, l.search_id, COALESCE(l.last_seen_at, datetime('now')) AS first_seen_at
-             FROM kept_listings k
-             JOIN listings l ON l.id = k.listing_id
-            WHERE k.user_id = ?
-              AND l.search_id IS NOT NULL
-              AND NOT EXISTS (
-                SELECT 1 FROM listing_search_hits h
-                 WHERE h.listing_id = l.id AND h.search_id = l.search_id
-              )
-         ),
-         ranked_hits AS (
-           SELECT lsh.listing_id,
-                  lsh.search_id,
-                  lsh.first_seen_at,
-                  s.name AS search_name,
-                  c.name AS campaign_name,
-                  fit.verdict AS fit_verdict,
-                  fit.reason AS fit_reason,
-                  fit.facts_json AS fit_facts,
-                  fit.stage AS fit_stage,
-                  ROW_NUMBER() OVER (
-                    PARTITION BY lsh.listing_id
-                    ORDER BY ${BEST_FIT_ORDER_SQL}
-                  ) AS rn,
-                  MAX(lsh.first_seen_at) OVER (PARTITION BY lsh.listing_id) AS max_seen_at
-             FROM user_hits lsh
-             LEFT JOIN searches s ON s.id = lsh.search_id
-             LEFT JOIN campaigns c ON c.id = s.campaign_id
-             LEFT JOIN listing_fit fit ON ${fitJoinOn('lsh.listing_id', 'lsh.search_id')}
-         ),
-         best_hits AS (
-           SELECT * FROM ranked_hits WHERE rn = 1
-         )
-         SELECT l.*,
-                k.kept_at, k.note,
-                bh.search_name,
-                bh.campaign_name,
-                bh.fit_verdict,
-                bh.fit_reason,
-                bh.fit_facts,
-                bh.fit_stage,
-                COALESCE(bh.max_seen_at, l.last_seen_at) AS first_seen_at
+        `SELECT k.listing_id, k.kept_at, k.note,
+                (SELECT f.campaign_id
+                   FROM listing_search_hits lsh
+                   JOIN search_family_searches sfs ON sfs.search_id = lsh.search_id
+                   JOIN search_families f ON f.id = sfs.family_id
+                  WHERE lsh.listing_id = k.listing_id
+                  ORDER BY lsh.first_seen_at DESC LIMIT 1) AS campaign_id
            FROM kept_listings k
-           JOIN listings l ON l.id = k.listing_id
-           LEFT JOIN best_hits bh ON bh.listing_id = l.id
           WHERE k.user_id = ?
           ORDER BY k.kept_at DESC`,
-        [uid, uid, uid]
+        [uid]
       );
-
-      const listings = rows.map(r => ({
-        ...r,
-        id: String(r.id),
-        llm_processed: !!r.llm_processed,
-        full_info_obtained: !!r.full_info_obtained,
-        extracted_facts: JSON.parse(r.extracted_facts || '{}'),
-        details: JSON.parse(r.details || '{}'),
-        images: JSON.parse(r.images || '[]'),
-        matched_terms: [],
-        fit: fitOf(r),
-      }));
-
-      await annotateDeals(query, listings);
-      await annotateNodeMarket(query, listings);
+      const byHunt = new Map();
+      for (const id of new Set(rows.map(r => r.campaign_id).filter(Boolean))) {
+        const scope = await huntScope(query, get, id);
+        if (!scope) continue;
+        const found = await huntListings(query, scope);
+        byHunt.set(id, new Map(found.map(l => [String(l.id), { ...l, campaign_name: scope.hunt.name }])));
+      }
+      const listings = [];
+      for (const r of rows) {
+        let listing = byHunt.get(r.campaign_id)?.get(String(r.listing_id));
+        if (!listing) {
+          const row = await get('SELECT * FROM listings WHERE id = ?', [r.listing_id]);
+          if (!row) continue;
+          listing = { ...row, details: JSON.parse(row.details || '{}'), images: JSON.parse(row.images || '[]'), fit: null };
+        }
+        listings.push({ ...listing, id: String(listing.id), kept_at: r.kept_at, note: r.note });
+      }
       res.json({ total: listings.length, kept: listings.map(l => ({ listing_id: l.id })), listings });
     } catch (error) {
       console.error('Error reading kept listings:', error);

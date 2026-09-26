@@ -15,6 +15,8 @@ export interface FundeEmptyProps {
   diagnosing: boolean;
   onShowUnclear: () => void;
   onWiden: (km: number) => void;
+  /** A widened radius is being saved: no second click. */
+  widening?: boolean;
   onConfigure: () => void;
   /** A model, deals-only or detour filter is on: empty is the filter's doing. */
   filtered?: boolean;
@@ -38,6 +40,7 @@ export const FundeEmpty: React.FC<FundeEmptyProps> = ({
   diagnosing,
   onShowUnclear,
   onWiden,
+  widening = false,
   onConfigure,
   filtered = false,
   onResetFilters,
@@ -85,7 +88,7 @@ export const FundeEmpty: React.FC<FundeEmptyProps> = ({
   );
 
   const actions: React.ReactNode[] = wider.map((o) => (
-    <Pill key={o.radius} label={t('surface.widenTo', { radius: o.radius })} count={o.count} onClick={() => onWiden(o.radius)} />
+    <Pill key={o.radius} label={t('surface.widenTo', { radius: o.radius })} count={o.count} disabled={widening} onClick={() => onWiden(o.radius)} />
   ));
   actions.push(<Pill key="terms" label={t('surface.changeTerms')} onClick={onConfigure} />);
 

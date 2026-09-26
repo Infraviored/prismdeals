@@ -21,6 +21,9 @@ Extracting this grammar into one module lets corridor route planning and search
 family expansion share a single source of truth.
 """
 
+import functools
+import json
+import os
 import re
 import urllib.parse
 
@@ -34,7 +37,9 @@ import urllib.parse
 # /s-notebooks/notebook/k0c278, a nationwide search wearing the same URL. After
 # the radius the location survives and the filter bites: measured on Munich
 # within 30 km, 25 notebooks unfiltered, 22 Lenovo, 2 Apple.
-TAIL_RE = re.compile(r"(k\d+)(c\d+)?(l\d+)?(r\d+)?((?:\+[\w.]+:[^+/]+)*)$")
+# "k0" marks a word search: a search without words has none, and with it the
+# site answers a category-only search with nothing at all (measured: 0 vs 26).
+TAIL_RE = re.compile(r"(k\d+)?(c\d+)?(l\d+)?(r\d+)?((?:\+[\w.]+:[^+/]+)*)$")
 
 
 def parse_tail(url):
@@ -80,7 +85,9 @@ def with_location(url, location_id, radius_km):
 
     radius = max(1, int(round(radius_km)))
     attrs = "".join(f"+{a}" for a in parts["attributes"])
-    tail = f"{parts['keyword']}{parts['category'] or ''}{location}r{radius}{attrs}"
+    tail = (
+        f"{parts['keyword'] or ''}{parts['category'] or ''}{location}r{radius}{attrs}"
+    )
 
     split = urllib.parse.urlsplit(url)
     path = split.path.rstrip("/")
@@ -140,6 +147,8 @@ def with_query(url, term):
         segments.insert(-1, slug)
     else:
         segments[-2] = slug
+    if not parts["keyword"]:
+        segments[-1] = "k0" + segments[-1]
 
     new_path = "/".join(segments)
     return urllib.parse.urlunsplit(split._replace(path=new_path))
@@ -322,7 +331,11 @@ def compose_search_url(
     if query_in_path:
         segments.append(query_in_path)
 
-    kw = "k0"
+    kw = (
+        "k0"
+        if query_in_path or (clean_q and not has_location and not clean_cat)
+        else ""
+    )
     cat = f"c{category}" if category else ""
     loc = f"l{str(location_id).lstrip('l')}" if (has_location and location_id) else ""
     rad = (
@@ -355,6 +368,21 @@ def with_page(url, page):
     return f"{'/'.join(parts[:3])}/{parts[3]}/seite:{page}/{rest}"
 
 
+@functools.lru_cache(maxsize=None)
+def _category_slug(category_id):
+    """The site's path slug for a category ("motorraeder-roller")."""
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data",
+        "kleinanzeigen_taxonomy.json",
+    )
+    with open(path, encoding="utf-8") as f:
+        for category in json.load(f)["categories"]:
+            if str(category["id"]) == str(category_id):
+                return category["slug"].split("/")[-1]
+    return None
+
+
 def for_hunt(
     category_code=None,
     query=None,
@@ -370,11 +398,9 @@ def for_hunt(
     radius: a place without one is that town only (Vilgertshofen: 11 offers
     instead of 56 257), which made every probe count nothing.
     """
-    from intent_taxonomy import find_category
-
     price = price or {}
     category = str(category_code or "").lstrip("c") or None
-    known = find_category(category) if category else None
+    slug = _category_slug(category) if category else None
     # No radius means no limit: a location without a radius is that one town
     # only, which answered "0 laptops" for all of Germany.
     if radius_km in (None, "", 0):
@@ -386,6 +412,6 @@ def for_hunt(
         max_price=price.get("max"),
         query=query,
         category=category,
-        category_slug=(known or {}).get("slug") or "suchanfrage",
+        category_slug=slug or "suchanfrage",
         attributes=attributes or [],
     )

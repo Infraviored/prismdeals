@@ -1,108 +1,104 @@
 /**
- * The score: a gate from the must-haves, five graded axes weighed by profile.
- * docs/product-core.md, section 10.
+ * The score: a gate from the must conditions, five graded axes weighed by
+ * profile, fed by the computed verdict's condition states.
  */
 const assert = require('assert');
 const { scoreListing } = require('./db/score');
+const { stateOf, verdict, prepare } = require('./db/verdict');
 
 const RAM = 'https://www.kleinanzeigen.de/s-anzeige/kit/3507841883-225-1';
 const MOTO = 'https://www.kleinanzeigen.de/s-anzeige/r1/1234567890-305-1';
-const FIELDS = [
-  { id: 'stickCount', importance: 'high', buyer_wants: { min: 2, max: 2 } },
-  { id: 'speedMhz', importance: 'high', buyer_wants: { min: 3200 } },
-  { id: 'productLine', importance: 'medium', buyer_wants: { present: true } },
+const CONDITIONS = [
+  { id: 1, attr_id: 'sticks', label: 'Riegel', op: 'eq', value: 2, importance: 'must' },
+  { id: 2, attr_id: 'mhz', label: 'Takt', op: 'min', value: 3200, importance: 'must' },
+  { id: 3, attr_id: 'abs', label: 'ABS', op: 'present', value: null, importance: 'wish' },
 ];
-const FULL = { stickCount: 2, speedMhz: 3200, productLine: 'vengeance lpx' };
+const MET = { 1: 'met', 2: 'met', 3: 'open' };
 
-function score(listing, fields = FIELDS) {
-  return scoreListing({ url: RAM, images: [1, 2, 3, 4], details: { Zustand: 'Sehr Gut' }, ...listing }, fields);
+function score(listing, conditions = CONDITIONS) {
+  return scoreListing({ url: RAM, images: [1, 2, 3, 4], details: { Zustand: 'Sehr Gut' }, ...listing }, conditions);
 }
+const fit = (states, verdictName = 'fit') => ({ verdict: verdictName, states, target_id: 7 });
 
-// A stated violation of a must-have is 0, however cheap.
-assert.strictEqual(score({ fit: { facts: { ...FULL, stickCount: 4 } }, price_eur: 10, market_median: 150 }).score, 0);
+// A violated must is 0, however cheap; so is any listing the verdict rules out.
+assert.strictEqual(score({ fit: fit({ ...MET, 2: 'violated' }, 'no'), price_eur: 10, market_median: 150 }).score, 0);
+assert.strictEqual(score({ fit: { verdict: 'no', states: {}, target_id: null }, price_eur: 10, market_median: 150 }).score, 0);
 
-// An open must-have caps the score; it does not zero it.
-const full = score({ fit: { facts: FULL }, price_eur: 150, market_median: 150 });
-const open = score({ fit: { facts: { stickCount: 2, productLine: 'x' } }, price_eur: 150, market_median: 150 });
-assert.ok(open.score > 0, 'open is not rejected');
-assert.ok(open.score < full.score, 'open ranks below confirmed at the same price');
-assert.deepStrictEqual(open.gate.open.length, 1);
-assert.ok(Math.abs(open.gate.factor - 0.75) < 1e-9, 'one open must-have caps at 75 %');
-assert.ok(open.score <= Math.round(full.score * 0.75) + 1, 'the cap shows in the score');
+// An open must caps the score; it does not zero it.
+const full = score({ fit: fit(MET), price_eur: 150, market_median: 150 });
+const open = score({ fit: fit({ ...MET, 2: 'open' }, 'unclear'), price_eur: 150, market_median: 150 });
+assert.ok(open.score > 0 && open.score < full.score);
+assert.ok(Math.abs(open.gate.factor - 0.75) < 1e-9, 'one open must caps at 75 %');
+// A model not recognised counts as one open must.
+const unplaced = score({ fit: { verdict: 'unclear', states: {}, target_id: null }, price_eur: 150, market_median: 150 });
+assert.ok(Math.abs(unplaced.gate.factor - 0.75) < 1e-9);
 
-// Cheaper against the market is better, other things equal.
-const cheap = score({ fit: { facts: FULL }, price_eur: 100, market_median: 150 });
-assert.ok(cheap.score > full.score, 'below the median scores higher');
-
-// No market, no invented value grade: the axis drops out.
-const nomarket = score({ fit: { facts: FULL }, price_eur: 100, market_median: null });
-assert.strictEqual(nomarket.axes.value, null);
-assert.ok(nomarket.score > 0);
-
-// A defect stated on the detail page pulls condition down.
-const defect = score({ fit: { facts: FULL }, price_eur: 150, market_median: 150, details: { Zustand: 'Defekt' } });
-assert.ok(defect.score < full.score);
+// Cheaper against the market is better; no market, no value grade.
+assert.ok(score({ fit: fit(MET), price_eur: 100, market_median: 150 }).score > full.score);
+assert.strictEqual(score({ fit: fit(MET), price_eur: 100, market_median: null }).axes.value, null);
 
 // The profile decides the weights: for a vehicle, condition outweighs identity.
-const motoGood = scoreListing({ url: MOTO, fit: { facts: FULL }, price_eur: 150, market_median: 150, details: { Zustand: 'Sehr Gut' }, images: [1, 2, 3, 4] }, FIELDS);
-const motoWorn = scoreListing({ url: MOTO, fit: { facts: FULL }, price_eur: 150, market_median: 150, details: { Zustand: 'In Ordnung' }, images: [1] }, FIELDS);
-const ramGood = score({ fit: { facts: FULL }, price_eur: 150, market_median: 150 });
-const ramWorn = score({ fit: { facts: FULL }, price_eur: 150, market_median: 150, details: { Zustand: 'In Ordnung' }, images: [1] });
-assert.ok(motoGood.score - motoWorn.score > ramGood.score - ramWorn.score, 'condition weighs more for a vehicle than for RAM');
+const worn = { details: { Zustand: 'In Ordnung' }, images: [1] };
+const motoGood = scoreListing({ url: MOTO, fit: fit(MET), price_eur: 150, market_median: 150, details: { Zustand: 'Sehr Gut' }, images: [1, 2, 3, 4] }, CONDITIONS);
+const motoWorn = scoreListing({ url: MOTO, fit: fit(MET), price_eur: 150, market_median: 150, ...worn }, CONDITIONS);
+const ramWorn = score({ fit: fit(MET), price_eur: 150, market_median: 150, ...worn });
+assert.ok(motoGood.score - motoWorn.score > full.score - ramWorn.score);
 
-// Without requirements there is no gate and no identity grade, but still a score.
-const bare = score({ fit: null, price_eur: 100, market_median: 150 }, []);
-assert.ok(bare.score > 0 && bare.axes.identity === null);
+// A wish lifts the score when met, counts half when unmentioned, nothing when denied.
+const withAbs = score({ fit: fit({ ...MET, 3: 'met' }), price_eur: 150, market_median: 150 });
+const withoutAbs = score({ fit: fit({ ...MET, 3: 'violated' }), price_eur: 150, market_median: 150 });
+assert.ok(withAbs.score > full.score && full.score > withoutAbs.score);
+assert.deepStrictEqual(withAbs.wishes.met, ['ABS']);
+assert.deepStrictEqual(withoutAbs.wishes.missed, ['ABS']);
 
-// Score reads musts states from latest judge run when present (§9.6)
-const fromJudge = score({
-  fit: { facts: { stickCount: 2, productLine: 'vengeance lpx' } }, // speedMhz missing in the text
-  rank_musts: { stickCount: 'met', speedMhz: 'met' }, // confirmed met by comparative judge run
-  price_eur: 150,
-  market_median: 150,
-});
-assert.strictEqual(fromJudge.gate.open.length, 0);
-assert.strictEqual(fromJudge.score, full.score);
-// A judged violation zeroes like a stated one; "retrofittable" stays open.
-assert.strictEqual(score({ fit: { facts: FULL }, rank_musts: { speedMhz: 'violated' }, price_eur: 150, market_median: 150 }).score, 0);
-assert.strictEqual(score({ fit: { facts: FULL }, rank_musts: { speedMhz: 'retrofittable' }, price_eur: 150, market_median: 150 }).gate.open.length, 1);
+// States: numbers read from German text, "ohne ABS" is a stated no.
+assert.strictEqual(stateOf(CONDITIONS[1], { mhz: '3.600 MHz' }), 'met');
+assert.strictEqual(stateOf(CONDITIONS[1], { mhz: 2666 }), 'violated');
+assert.strictEqual(stateOf(CONDITIONS[2], { abs: false }), 'violated');
+assert.strictEqual(stateOf(CONDITIONS[2], {}), 'open');
+assert.strictEqual(stateOf({ attr_id: 'farbe', op: 'in', value: ['Weiß', 'Grau'] }, { farbe: 'weiss' }), 'met');
+assert.strictEqual(stateOf({ attr_id: 'farbe', op: 'in', value: ['Weiß', 'Grau'] }, { farbe: 'Schwarz' }), 'violated');
+assert.strictEqual(stateOf({ attr_id: 'farbe', op: 'in', value: ['Weiß', 'Grau'] }, { farbe: 'Weiß' }), 'met');
 
-// A judged state stops counting once the buyer changed what the must asks for.
-const stale = score({
-  fit: { facts: { stickCount: 2, productLine: 'x' } },
-  rank_musts: { speedMhz: 'met' },
-  rank_wants: { speedMhz: { min: 2400 } },
-  price_eur: 150,
-  market_median: 150,
-});
-assert.strictEqual(stale.gate.open.length, 1, 'met for 2400 MHz is not met for 3200 MHz');
-const current = score({
-  fit: { facts: { stickCount: 2, productLine: 'x' } },
-  rank_musts: { speedMhz: 'met' },
-  rank_wants: { speedMhz: { min: 3200 } },
-  price_eur: 150,
-  market_median: 150,
-});
-assert.strictEqual(current.gate.open.length, 0);
+assert.strictEqual(stateOf({ attr_id: 'breite', op: 'eq', value: 90 }, { breite: '90 cm' }), 'met');
 
-// A wish in the buyer's words lifts the score when the offer brings it.
-const WISH = [...FIELDS, { id: 'own_abs', label: 'ABS', importance: 'low', buyer_wants: { present: true } }];
-const withAbs = score({ fit: { facts: { ...FULL, own_abs: true } }, price_eur: 150, market_median: 150 }, WISH);
-const withoutAbs = score({ fit: { facts: { ...FULL, own_abs: false } }, price_eur: 150, market_median: 150 }, WISH);
-const silent = score({ fit: { facts: FULL }, price_eur: 150, market_median: 150 }, WISH);
-assert.ok(withAbs.score > silent.score, 'a met wish lifts the score');
-assert.ok(withoutAbs.score <= silent.score, '"ohne ABS" does not count as met');
-assert.ok(withAbs.wishes.met.includes('ABS'));
-assert.ok(silent.score > withoutAbs.score, 'an unmentioned wish counts half, a denied one nothing');
-assert.ok(withoutAbs.wishes.missed.includes('ABS'));
+// "ohne Defekt" is met by an offer that never mentions a defect.
+assert.strictEqual(stateOf({ attr_id: 'defekt', op: 'absent', value: null }, {}), 'met');
+assert.strictEqual(stateOf({ attr_id: 'defekt', op: 'absent', value: null }, { defekt: true }), 'violated');
+assert.strictEqual(require('./db/verdict').asNumber('1.8'), 1.8);
+assert.strictEqual(require('./db/verdict').asNumber('45.000 km'), 45000);
 
-// A numeric wish read to a verdict: "mindestens 150 PS" against "98 PS".
-const PS = [...FIELDS, { id: 'own_ps', label: 'PS', importance: 'low', buyer_wants: { min: 150 } }];
-const weak = score({ fit: { facts: { ...FULL, own_ps: false } }, price_eur: 150, market_median: 150 }, PS);
-const strong = score({ fit: { facts: { ...FULL, own_ps: true } }, price_eur: 150, market_median: 150 }, PS);
-assert.ok(weak.wishes.missed.includes('PS'), 'a numeric wish read as false is missed, not met');
-assert.ok(strong.wishes.met.includes('PS'));
-assert.ok(strong.score > weak.score);
+// The verdict on a small tree: brand > model > two generations.
+const nodes = [
+  { id: 1, parent_id: null, kind: 'category', name: 'Motorräder' },
+  { id: 2, parent_id: 1, kind: 'brand', name: 'Honda' },
+  { id: 3, parent_id: 2, kind: 'model', name: 'CBR 1000 RR' },
+  { id: 4, parent_id: 3, kind: 'generation', name: 'SC57', years_from: 2004, years_to: 2007 },
+  { id: 5, parent_id: 3, kind: 'generation', name: 'SC59', years_from: 2008, years_to: 2011 },
+];
+const byId = new Map(nodes.map(n => [n.id, n]));
+const tree = {
+  byId,
+  ancestors: (id) => {
+    const chain = [];
+    for (let n = byId.get(id); n; n = n.parent_id ? byId.get(n.parent_id) : null) chain.push(n);
+    return chain.reverse();
+  },
+};
+const hunt = {
+  targets: [{ node_id: 5 }],
+  conditions: [{ id: 9, node_id: 5, attr_id: 'km', label: 'Kilometerstand', op: 'max', value: 5000, importance: 'must' }],
+};
+const p = prepare(tree, hunt);
+assert.strictEqual(verdict(p, { node_id: 5, facts: { km: 4200 } }).verdict, 'fit');
+assert.strictEqual(verdict(p, { node_id: 5, facts: { km: 21000 } }).verdict, 'no');
+assert.strictEqual(verdict(p, { node_id: 5, facts: {} }).verdict, 'unclear');
+assert.match(verdict(p, { node_id: 4, facts: {} }).reason, /Anderes Modell: Honda CBR 1000 RR SC57/);
+assert.strictEqual(verdict(p, { node_id: 3, facts: {} }).reason, 'Modell nicht erkannt');
+assert.strictEqual(verdict(p, { node_id: 3, method: 'rejected', facts: {} }).verdict, 'no');
+assert.strictEqual(verdict(p, { node_id: 3, method: 'model', facts: {} }).verdict, 'unclear');
+assert.match(verdict(p, { node_id: 5, facts: { km: 100, erstzulassung: 2015 } }).reason, /Baujahr passt nicht zu SC59 \(2008–2011\): 2015/);
+assert.strictEqual(verdict(p, { node_id: 5, facts: { km: 100, is_request: true } }).verdict, 'no');
+assert.strictEqual(verdict(p, undefined).reason, 'Noch nicht gelesen');
 
 console.log('score: all assertions passed');
-

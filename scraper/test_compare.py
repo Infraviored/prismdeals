@@ -254,17 +254,11 @@ def test_the_prompt_names_requirements_by_id():
     from compare_prompt import build_compare_prompt
 
     prompt = build_compare_prompt(
-        [{"id": "7", "title": "t"}],
-        [
-            {
-                "id": "speedMhz",
-                "label": "Takt",
-                "importance": "high",
-                "buyer_wants": {"min": 3200},
-            }
-        ],
+        [{"id": "7", "title": "t", "states": {"12": "met"}}],
+        [{"id": 12, "text": "Takt ab 3200", "importance": "must"}],
     )
-    assert "[speedMhz] Takt" in prompt
+    assert "[12] Takt ab 3200 (must)" in prompt
+    assert "Read: [12] met" in prompt
 
 
 def test_a_listing_the_model_skipped_ranks_last_instead_of_vanishing():
@@ -334,39 +328,6 @@ def test_parse_compare_response_reads_a_pretty_printed_array():
     assert parsed[0]["reason"].startswith("Bekannte")
 
 
-def test_judge_runs_use_the_one_requirements_hash():
-    import compare_funnel
-    import requirements_hash
-
-    assert compare_funnel.requirements_hash is requirements_hash.requirements_hash
-
-
-def test_a_listing_two_searches_found_is_one_candidate():
-    import sqlite3
-
-    import compare_funnel
-    import db_schema
-
-    conn = sqlite3.connect(":memory:")
-    db_schema.apply_schema(conn)
-    conn.execute("INSERT INTO campaigns (id, name) VALUES (1, 'Fan')")
-    conn.executemany(
-        "INSERT INTO searches (id, campaign_id, url, enabled) VALUES (?, 1, ?, 1)",
-        [(1, "https://x/1"), (2, "https://x/2")],
-    )
-    conn.execute("INSERT INTO listings (id, title, search_id) VALUES ('a', 'Fan', 1)")
-    conn.executemany(
-        "INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('a', ?, '')",
-        [(1,), (2,)],
-    )
-    conn.executemany(
-        "INSERT INTO listing_fit (listing_id, search_id, verdict, stage, judged_at) VALUES ('a', ?, ?, 'title', '')",
-        [(1, "fit"), (2, "unclear")],
-    )
-    found = compare_funnel._listings_for_campaign(conn, 1, [1, 2])
-    assert [c["id"] for c in found] == ["a"]
-
-
 def test_parse_compare_response_survives_malformed_lines():
     candidates = [
         {"id": "1", "title": "Honeywell HT-900 2008", "detailed_description": ""},
@@ -397,14 +358,23 @@ def test_a_comparison_without_candidates_leaves_an_empty_run(tmp_path):
     conn = sqlite3.connect(path)
     db_schema.apply_schema(conn)
     conn.execute("INSERT INTO campaigns (id, name) VALUES (1, 'Fan')")
-    conn.execute(
-        "INSERT INTO searches (id, campaign_id, url, enabled) VALUES (1, 1, 'https://x', 1)"
-    )
     conn.commit()
     conn.close()
 
-    result = compare.compare_campaign(1, db_path=path)
+    result = compare.compare_campaign(
+        {"campaign_id": 1, "candidates": [], "conditions": []}, db_path=path
+    )
     conn = sqlite3.connect(path)
     run = conn.execute("SELECT id, candidate_count, status FROM judge_runs").fetchone()
     assert run == (result["run_id"], 0, "complete")
     assert conn.execute("SELECT COUNT(*) FROM listing_ranks").fetchone()[0] == 0
+
+
+def test_each_candidate_carries_its_own_usual_price():
+    from compare_prompt import build_compare_prompt
+
+    prompt = build_compare_prompt(
+        [{"id": "1", "title": "R1", "price_eur": 6000, "usual_price": 7400.4}], []
+    )
+    assert "6000 € (usual for this product: 7400 €)" in prompt
+    assert "Median price" not in prompt

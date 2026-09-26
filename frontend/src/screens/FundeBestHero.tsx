@@ -38,7 +38,7 @@ export const FundeBestHero: React.FC<FundeBestHeroProps> = ({
 
   // Facts specs
   const chips = [
-    ...getSpecChips(listing.fit?.facts as Record<string, unknown>),
+    ...getSpecChips(listing.facts || {}),
     ...getDetailChips((listing.details as Record<string, unknown>) || null),
   ].slice(0, 4);
 

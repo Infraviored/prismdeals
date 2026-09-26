@@ -10,15 +10,18 @@ import { formatFreshness } from '../utils/freshness';
 import { Bookmark, ExternalLink, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
 import ScoreBreakdown from './ScoreBreakdown';
 import { KnowledgeChecklist } from '../components/KnowledgeChecklist';
+import type { Condition } from '../types/hunt';
 
 export interface FundeDetailSheetProps {
   listing: RowListing | null;
   onClose: () => void;
   isKept?: boolean;
   onToggleKeep?: (id: string) => void;
+  /** The hunt's conditions by id, to name the states of `fit.states`. */
+  conditions?: Map<string, Condition>;
 }
 
-export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onClose, isKept = false, onToggleKeep }) => {
+export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onClose, isKept = false, onToggleKeep, conditions }) => {
   const { t } = useTranslation();
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
 
@@ -205,7 +208,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
 
           {/* Specs / Merkmale Badges */}
           {(() => {
-            const chips = getSpecChips(listing.fit?.facts as Record<string, unknown>);
+            const chips = getSpecChips(listing.facts || {});
             if (chips.length === 0) return null;
             return (
               <div className="flex flex-wrap gap-2 pt-1 pb-1">
@@ -219,7 +222,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
           })()}
 
           {/* 4. Why this score: the gate and the graded axes */}
-          <ScoreBreakdown listing={listing} />
+          <ScoreBreakdown listing={listing} conditions={conditions} />
 
           {/* Comparative rank from judge run */}
           {typeof listing.rank === 'number' && typeof listing.rank_of === 'number' && (
@@ -264,7 +267,7 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
           )}
 
           {/* Knowledge checklist for this listing's node (P7) */}
-          <KnowledgeChecklist listingId={listing.id} nodeKey={listing.node_key} />
+          <KnowledgeChecklist listingId={listing.id} />
           {/* Price history */}
           {listing.price_history && listing.price_history.length > 1 && (
             <div className="pt-2 border-t border-[#0E4A40] space-y-2">

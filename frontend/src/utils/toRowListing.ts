@@ -21,11 +21,13 @@ export interface ApiListing {
   price_delta_eur?: number | null;
   price_history?: RowListing['price_history'];
   fit?: RowListing['fit'];
-  matched_terms?: RowListing['matched_terms'];
+  facts?: RowListing['facts'];
+  target?: RowListing['target'];
   niceness_score?: number | null;
   score?: RowListing['score'];
   score_parts?: RowListing['score_parts'];
   market_median?: RowListing['market_median'];
+  market_basis?: RowListing['market_basis'];
   details?: RowListing['details'];
   detailed_description?: string | null;
   short_description?: string | null;
@@ -65,7 +67,8 @@ export function toRowListing(l: ApiListing): RowListing {
     price_history: Array.isArray(l.price_history) ? l.price_history : null,
     route_status: l.geo_status || null,
     url: l.url || undefined,
-    matched_terms: Array.isArray(l.matched_terms) ? l.matched_terms : [],
+    facts: l.facts || null,
+    target: l.target || null,
     lat: typeof l.lat === 'number' ? l.lat : null,
     lon: typeof l.lon === 'number' ? l.lon : null,
     description: l.detailed_description || l.short_description || l.description || null,
@@ -76,6 +79,7 @@ export function toRowListing(l: ApiListing): RowListing {
     score: typeof l.score === 'number' ? l.score : null,
     score_parts: l.score_parts || null,
     market_median: typeof l.market_median === 'number' ? l.market_median : null,
+    market_basis: l.market_basis || null,
     details: l.details || null,
     reference_comparison: l.reference_comparison || l.extracted_facts?.reference_comparison || null,
     rank: typeof l.rank === 'number' ? l.rank : null,

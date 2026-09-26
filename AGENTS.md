@@ -1,6 +1,6 @@
 # Developer & Agent Guide
 
-This repository contains the **prismdeals** application, which scrapes laptop listings and provides a dashboard to view them.
+This repository contains **prismdeals**: used-goods hunts on Kleinanzeigen over a shared product graph. Architecture: `ARCHITECTURE.md`.
 
 ## Application Architecture
 
@@ -46,10 +46,10 @@ Run the `deploy.sh` script in the root of the repository:
 
 ## Scraper Execution Architecture
 
-The background scraper is **not** run as a standalone systemd daemon or cron job. Instead, scraper discovery crawls, deep updates, and AI evaluation worker runs are spawned dynamically as Python child processes by the Node.js Express API server (`backend/server.js`):
-* **AI Worker evaluations**: Spawns `scraper/agent_worker.py` to run evaluation prompts, parse response structures, validate JSON outputs, and compute scores.
-* **Crawl sessions**: Spawns background scraper crawls in `scrape` or `update-all` modes to harvest listings.
-* **Sandbox Logging**: General application logs write to `data/scraper.log` (rotated at 5MB), while raw prompt/response histories and isolated logs for individual listings are recorded under `data/logs/<listing_id>/`.
+Crawls are spawned by the API (`backend/server.js`) as `scraper/main.py --mode both`: fetch the
+searches in demand order, harvest details, then resolve and read the new listings into the graph
+and refine every hunt. Graph writes from the API go through `python -m graph.cli` (`backend/python.js`).
+Logs: `data/scraper.log` (rotated at 5 MB).
 
 ## Frontend Custom Utilities
 

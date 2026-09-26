@@ -4,8 +4,9 @@
  * POST /api/campaigns/:id/compare   → spawns compare_cli.py
  * GET  /api/campaigns/:id/ranks     → latest run's listing ranks
  *
- * The rank data is also attached to listings by attachRanks(), which is called
- * alongside attachScores in the listing endpoints.
+ * The candidates are the hunt's listings that are not ruled out, by the same
+ * computed verdicts the list shows, best score first. The rank data is
+ * attached to listings by attachRanks() in the hunt listings endpoint.
  */
 
 const express = require('express');
@@ -13,17 +14,20 @@ const path = require('path');
 const { findPython } = require('./python');
 const { spawn } = require('child_process');
 
+const { huntScope, huntListings } = require('./hunt_listings');
+const { conditionText } = require('./db/verdict');
+const { knowledgeForPrompt } = require('./knowledge_api');
+
 const router = express.Router();
+// Above this many candidates the ranking is not worth its tokens: the best
+// scored ninety are compared, the rest keep their score order.
+const CANDIDATE_CEILING = 90;
+const DESCRIPTION_CHARS = 1200;
+// Set once the router is built: the payload reads the database.
+let payloadFor = null;
 // Campaigns with a comparison in flight, and the last failure per campaign.
 const running = new Map();
 const failures = new Map();
-// What must follow a finished comparison (the server re-resolves market nodes:
-// the comparison names products the crawl's own pass could not).
-const afterCompare = [];
-function onCompareDone(fn) {
-  afterCompare.push(fn);
-}
-
 /**
  * Runs the comparison for one campaign in the background, once at a time.
  * Called by the button and after every finished crawl, so the ranks follow
@@ -34,41 +38,69 @@ function onCompareDone(fn) {
 const again = new Set();
 
 function startCompare(campaignId) {
-  if (!campaignId) return false;
+  if (!campaignId || !payloadFor) return false;
   if (running.has(campaignId)) {
     again.add(campaignId);
     return false;
   }
-  const child = spawn(findPython(), [path.join(__dirname, '..', 'scraper', 'compare_cli.py'), String(campaignId)], {
-    env: { ...process.env },
-    cwd: path.join(__dirname, '..', 'scraper'),
-  });
   running.set(campaignId, { started_at: new Date().toISOString() });
-  let stderr = '';
-  child.stderr.on('data', d => { stderr = (stderr + d.toString()).slice(-2000); });
-  child.on('error', err => {
+  let finished = false;
+  // 'error' and 'close' both fire for a child that never started: count the first.
+  const finish = (error) => {
+    if (finished) return;
+    finished = true;
     running.delete(campaignId);
-    again.delete(campaignId);
-    failures.set(campaignId, String(err.message || err));
-  });
-  child.on('close', code => {
-    running.delete(campaignId);
-    if (again.delete(campaignId)) setImmediate(() => startCompare(campaignId));
-    if (code !== 0) {
-      console.error('compare_cli.py failed:', stderr);
-      failures.set(campaignId, stderr.slice(-500));
+    if (error) {
+      console.error('Comparison of hunt %s failed: %s', campaignId, error);
+      failures.set(campaignId, String(error).slice(-500));
     } else {
       failures.delete(campaignId);
-      for (const fn of afterCompare) {
-        Promise.resolve().then(() => fn(campaignId)).catch(console.error);
-      }
     }
-  });
+    if (again.delete(campaignId)) setImmediate(() => startCompare(campaignId));
+  };
+  payloadFor(campaignId).then(payload => {
+    if (!payload) return finish(null);
+    const child = spawn(findPython(), [path.join(__dirname, '..', 'scraper', 'compare_cli.py')], {
+      env: { ...process.env },
+      cwd: path.join(__dirname, '..', 'scraper'),
+    });
+    let stderr = '';
+    child.stderr.on('data', d => { stderr = (stderr + d.toString()).slice(-2000); });
+    child.on('error', err => finish(err.message || err));
+    child.on('close', code => finish(code === 0 ? null : stderr));
+    child.stdin.on('error', () => {});
+    child.stdin.end(JSON.stringify(payload));
+  }).catch(err => finish(err.message || err));
   return true;
 }
 
-
 module.exports = (query, get) => {
+  payloadFor = async (campaignId) => {
+    const scope = await huntScope(query, get, campaignId);
+    if (!scope) return null;
+    const listings = (await huntListings(query, scope))
+      .filter(l => l.fit.verdict !== 'no')
+      .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
+      .slice(0, CANDIDATE_CEILING);
+    return {
+      campaign_id: campaignId,
+      conditions: scope.hunt.conditions.map(c => ({ id: c.id, text: conditionText(c), importance: c.importance })),
+      knowledge: await knowledgeForPrompt(query, scope.tree, scope.hunt.targets.map(t => t.node_id)),
+      candidates: listings.map(l => ({
+        id: l.id,
+        title: l.title,
+        price_eur: l.price_eur,
+        location: l.location,
+        details: l.details,
+        detailed_description: (l.detailed_description || '').slice(0, DESCRIPTION_CHARS),
+        short_description: l.short_description,
+        states: l.fit.states,
+        // What this offer should cost, from its own product's market.
+        usual_price: l.market_median,
+      })),
+    };
+  };
+
   /**
    * POST /api/campaigns/:id/compare
    * Triggers a full comparative judging run for the campaign.
@@ -106,7 +138,7 @@ module.exports = (query, get) => {
 
       const ranks = await query(
         `SELECT listing_id, rank, rank_of, reason, musts_json,
-                facts_json, questions_json, same_as, uncertain, spread, node_key
+                facts_json, questions_json, same_as, uncertain, spread
            FROM listing_ranks WHERE run_id = ?`,
         [run.id],
       );
@@ -122,7 +154,6 @@ module.exports = (query, get) => {
         same_as: safeJson(r.same_as),
         uncertain: !!r.uncertain,
         spread: r.spread,
-        node_key: r.node_key || null,
       }));
 
       res.json({
@@ -156,7 +187,7 @@ async function attachRanks(query, get, listings, campaignId) {
   if (!listings.length || !campaignId) return listings;
 
   const run = await get(
-    `SELECT id, requirements_json FROM judge_runs
+    `SELECT id FROM judge_runs
       WHERE campaign_id = ? AND status = 'complete'
       ORDER BY created_at DESC LIMIT 1`,
     [campaignId],
@@ -167,7 +198,7 @@ async function attachRanks(query, get, listings, campaignId) {
   const placeholders = ids.map(() => '?').join(',');
 
   const ranks = await query(
-    `SELECT listing_id, rank, rank_of, reason, musts_json, questions_json, uncertain, same_as, node_key
+    `SELECT listing_id, rank, rank_of, reason, questions_json, uncertain, same_as
        FROM listing_ranks
       WHERE run_id = ? AND listing_id IN (${placeholders})`,
     [run.id, ...ids],
@@ -177,7 +208,6 @@ async function attachRanks(query, get, listings, campaignId) {
   for (const r of ranks) {
     rankMap.set(String(r.listing_id), r);
   }
-  const judgedWants = safeJson(run.requirements_json) || {};
   // "same as" names other listings of the run; the buyer knows them by rank.
   const rankById = new Map(
     (await query('SELECT listing_id, rank FROM listing_ranks WHERE run_id = ?', [run.id]))
@@ -195,9 +225,6 @@ async function attachRanks(query, get, listings, campaignId) {
       listing.same_as = (safeJson(r.same_as) || [])
         .map(id => rankById.get(String(id)))
         .filter(rank => typeof rank === 'number' && rank !== r.rank);
-      listing.rank_musts = safeJson(r.musts_json);
-      listing.rank_wants = judgedWants;
-      listing.node_key = r.node_key || null;
     }
   }
 
@@ -211,4 +238,3 @@ function safeJson(text) {
 
 module.exports.attachRanks = attachRanks;
 module.exports.startCompare = startCompare;
-module.exports.onCompareDone = onCompareDone;

@@ -16,7 +16,7 @@
  */
 
 const PROFILES = require('./profiles.json');
-const { contradicts, formatRequirementText } = require('../overview/requirements');
+const { conditionText } = require('./verdict');
 
 const OPEN_CAP = 0.75;
 
@@ -40,28 +40,6 @@ function profileWeights(url) {
   return weights;
 }
 
-function isHard(field) {
-  return field.importance === 'high' || field.hard === true;
-}
-
-/** met / violated / open for one requirement against what the listing states. */
-function stateOf(field, facts) {
-  const wants = field.buyer_wants || {};
-  const value = facts[field.id];
-  if (value === null || value === undefined) return 'open';
-  // "ohne ABS" is a stated no, not a stated fact that happens to exist.
-  if (wants.present === true) return value === false ? 'violated' : 'met';
-  return contradicts(wants, value) ? 'violated' : 'met';
-}
-
-function sortKeys(value) {
-  if (Array.isArray(value)) return value.map(sortKeys);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.keys(value).sort().map(k => [k, sortKeys(value[k])]));
-  }
-  return value;
-}
-
 function clamp01(x) {
   return Math.max(0, Math.min(1, x));
 }
@@ -72,51 +50,43 @@ function mean(values) {
 }
 
 /**
- * @param {object} listing  with fit.facts, price_eur, market_median, details, images, detour_min, url
- * @param {Array}  fields   requirement fields of the search that found it
- * @returns {{score:number|null, gate:object, axes:object}}
+ * @param {object} listing     with fit.states (computed by verdict.js), price_eur,
+ *                             market_median, details, images, detour_min, url
+ * @param {Array}  conditions  the hunt's conditions
+ * @returns {{score:number|null, gate:object, wishes:object, axes:object}}
  */
-function scoreListing(listing, fields) {
-  const facts = listing.fit?.facts || {};
-  // Must states from the latest comparative run (quotes already checked there)
-  // override what the patterns read; "retrofittable" and anything else unknown
-  // counts as open.
-  const judged = listing.rank_musts || null;
-  const requirements = Array.isArray(fields) ? fields : [];
-
+function scoreListing(listing, conditions) {
+  const states = listing.fit?.states || {};
+  // Only the conditions that apply to the listing's target have a state.
+  const applied = (conditions || []).filter(c => states[c.id]);
   const gate = { met: [], violated: [], open: [] };
   const soft = { met: 0, total: 0 };
   // Wishes by name, so the sheet can say which ones this offer brings.
   const wishes = { met: [], missed: [], open: [] };
-  const judgedWants = listing.rank_wants || null;
-  const states = requirements.map(field => {
-    const fromRun = judged?.[field.id];
-    // Only while the buyer still wants what the run judged against: "met" for
-    // at least 16 GB says nothing once the must is 32 GB.
-    const sameWants =
-      !judgedWants ||
-      JSON.stringify(sortKeys(judgedWants[field.id] || {})) === JSON.stringify(sortKeys(field.buyer_wants || {}));
-    if (fromRun && sameWants) return fromRun === 'met' || fromRun === 'violated' ? fromRun : 'open';
-    return stateOf(field, facts);
-  });
-  requirements.forEach((field, i) => {
-    if (isHard(field)) {
-      gate[states[i]].push(formatRequirementText(field));
-    } else {
-      soft.total += 1;
-      // A wish the offer does not mention is neither kept nor broken: half.
-      // Counted as missed, one unmentioned "ABS" cut good offers to 19 %.
-      if (states[i] === 'met') soft.met += 1;
-      else if (states[i] === 'open') soft.met += 0.5;
-      const label = field.label || formatRequirementText(field);
-      wishes[states[i] === 'met' ? 'met' : states[i] === 'violated' ? 'missed' : 'open'].push(label);
+  for (const c of applied) {
+    const state = states[c.id];
+    if (c.importance === 'must') {
+      gate[state].push(conditionText(c));
+      continue;
     }
-  });
-  const gateFactor = gate.violated.length ? 0 : Math.pow(OPEN_CAP, gate.open.length);
+    soft.total += 1;
+    // A wish the offer does not mention is neither kept nor broken: half.
+    // Counted as missed, one unmentioned "ABS" cut good offers to 19 %.
+    if (state === 'met') soft.met += 1;
+    else if (state === 'open') soft.met += 0.5;
+    wishes[state === 'met' ? 'met' : state === 'violated' ? 'missed' : 'open'].push(c.label);
+  }
+  // Another model, a request, a year outside the generation: nothing to score.
+  // A model not recognised counts as one open must.
+  const verdict = listing.fit?.verdict;
+  const unplaced = verdict === 'unclear' && !listing.fit?.target_id ? 1 : 0;
+  const gateFactor = gate.violated.length || verdict === 'no'
+    ? 0
+    : Math.pow(OPEN_CAP, gate.open.length + unplaced);
 
   // Identity: the preferences on top of the must-haves. Without any, a listing
   // that clears the gate is as right as it can be.
-  const identity = requirements.length ? (soft.total ? soft.met / soft.total : 1) : null;
+  const identity = applied.length ? (soft.total ? soft.met / soft.total : 1) : null;
 
   // Value: at the median 0.5, 30 % below about 0.86, 30 % above about 0.14.
   let value = null;
@@ -126,13 +96,13 @@ function scoreListing(listing, fields) {
 
   // Condition and risk: what the seller states about the thing itself, how much
   // of what matters they bothered to state, and how much they show.
-  const conditionText = String(listing.details?.Zustand || '').trim().toLowerCase();
-  const condition = conditionText in CONDITION ? CONDITION[conditionText] : null;
+  const zustand = String(listing.details?.Zustand || '').trim().toLowerCase();
+  const condition = zustand in CONDITION ? CONDITION[zustand] : null;
   // How much of what must be true the seller bothered to state. Wishes stay
   // out: "ohne ABS" is honest, not a better-documented offer.
-  const hardStates = states.filter((_, i) => isHard(requirements[i]));
-  const stated = hardStates.length
-    ? hardStates.filter(state => state !== 'open').length / hardStates.length
+  const musts = applied.filter(c => c.importance === 'must');
+  const stated = musts.length
+    ? musts.filter(c => states[c.id] !== 'open').length / musts.length
     : null;
   const photoCount = Array.isArray(listing.images) ? listing.images.length : 0;
   const photos = clamp01(photoCount / 4);
@@ -162,51 +132,10 @@ function scoreListing(listing, fields) {
   };
 }
 
-/**
- * Attaches `score` and `score_parts` to listings, judged against the
- * requirements of the search that found them in this scope.
- */
-async function attachScores(query, listings, scopeSearchIds = null) {
-  if (!listings.length) return listings;
-  const ids = listings.map(l => String(l.id));
-  const scope = Array.isArray(scopeSearchIds) && scopeSearchIds.length ? scopeSearchIds : null;
-  const rows = await query(
-    `SELECT lsh.listing_id, ks.item_json, sfs.term_id
-       FROM listing_search_hits lsh
-       JOIN searches s ON s.id = lsh.search_id
-       JOIN knowledge_sets ks ON ks.id = s.knowledge_set_id
-       LEFT JOIN search_family_searches sfs ON sfs.search_id = lsh.search_id
-      WHERE lsh.listing_id IN (${ids.map(() => '?').join(',')})
-        ${scope ? `AND lsh.search_id IN (${scope.map(() => '?').join(',')})` : ''}
-        AND ks.item_json IS NOT NULL`,
-    scope ? [...ids, ...scope] : ids
-  );
-  const fieldsByListing = new Map();
-  // The models (family terms) whose searches found the listing: a
-  // requirement for one model ("under 5000 km" for the CBR) scores only it.
-  const termsByListing = new Map();
-  for (const row of rows) {
-    const id = String(row.listing_id);
-    if (row.term_id != null) {
-      if (!termsByListing.has(id)) termsByListing.set(id, new Set());
-      termsByListing.get(id).add(String(row.term_id));
-    }
-    if (fieldsByListing.has(id)) continue;
-    try {
-      const fields = JSON.parse(row.item_json)?.fields;
-      if (Array.isArray(fields) && fields.length) fieldsByListing.set(id, fields);
-    } catch {
-      // A malformed knowledge set judges nothing rather than everything.
-    }
-  }
-  const forListing = (id) => {
-    const terms = termsByListing.get(id) || new Set();
-    return (fieldsByListing.get(id) || []).filter(
-      f => !Array.isArray(f.applies_to) || !f.applies_to.length || f.applies_to.some(t => terms.has(String(t)))
-    );
-  };
+/** Attaches `score` and `score_parts` to listings that carry a computed fit. */
+function attachScores(listings, conditions) {
   for (const listing of listings) {
-    const parts = scoreListing(listing, forListing(String(listing.id)));
+    const parts = scoreListing(listing, conditions);
     listing.score = parts.score;
     listing.score_parts = parts;
   }

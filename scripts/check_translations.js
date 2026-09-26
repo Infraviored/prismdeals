@@ -5,17 +5,22 @@ const TRANSLATIONS_PATH = path.join(__dirname, '../frontend/src/i18n/translation
 const SRC_DIR = path.join(__dirname, '../frontend/src');
 
 function loadTranslations() {
-  const content = fs.readFileSync(TRANSLATIONS_PATH, 'utf8');
-  // Extract translations object from TS file
-  const startIdx = content.indexOf('{');
-  const endIdx = content.lastIndexOf('} as const;');
-  if (startIdx === -1 || endIdx === -1) {
-    throw new Error('Could not parse translations.ts structure.');
-  }
-  const objStr = content.slice(startIdx, endIdx + 1);
-  // Evaluate the object string
-  const getObj = new Function(`return ${objStr};`);
-  return getObj();
+  // translations.ts imports one file per language: compile each with the
+  // project's TypeScript and follow the relative imports.
+  const ts = require(path.join(__dirname, '../frontend/node_modules/typescript'));
+  const cache = new Map();
+  const load = (file) => {
+    if (cache.has(file)) return cache.get(file).exports;
+    const module = { exports: {} };
+    cache.set(file, module);
+    const { outputText } = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    });
+    const localRequire = (spec) => load(path.resolve(path.dirname(file), `${spec}.ts`));
+    new Function('module', 'exports', 'require', outputText)(module, module.exports, localRequire);
+    return module.exports;
+  };
+  return load(TRANSLATIONS_PATH).translations;
 }
 
 function getKeys(obj, prefix = '') {
