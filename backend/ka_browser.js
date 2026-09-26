@@ -80,7 +80,17 @@ async function launch() {
     userDataDir: PROFILE,
     env,
     defaultViewport: VIEW,
-    args: ['--no-first-run', '--no-default-browser-check', '--lang=de-DE', `--window-size=${VIEW.width + 20},${VIEW.height + 120}`],
+    // An ordinary browser, not one that announces it is remote-controlled:
+    // with the automation flag Kleinanzeigen answered the login page with
+    // "IP-Bereich vorübergehend gesperrt" while plain requests went through.
+    ignoreDefaultArgs: ['--enable-automation'],
+    args: [
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--lang=de-DE',
+      '--disable-blink-features=AutomationControlled',
+      `--window-size=${VIEW.width + 20},${VIEW.height + 120}`,
+    ],
   });
   const [page] = await browser.pages();
   return { browser, page };
