@@ -16,7 +16,8 @@ def ask_json(prompt, max_tokens=2000):
     try:
         from llm_client import build_llm_kwargs, client, get_response_text
     except Exception as exc:  # noqa: BLE001 -- no model configured
-        raise NoModel(f"KI nicht erreichbar ({exc})") from exc
+        logger.warning("No model client: %s", exc)
+        raise NoModel("KI nicht erreichbar.") from exc
     try:
         kwargs = build_llm_kwargs(
             [{"role": "user", "content": prompt}],
@@ -25,7 +26,8 @@ def ask_json(prompt, max_tokens=2000):
         )
         text = get_response_text(client.chat.completions.create(**kwargs)) or ""
     except Exception as exc:  # noqa: BLE001
-        raise NoModel(f"KI nicht erreichbar ({exc})") from exc
+        logger.warning("Model call failed: %s", exc)
+        raise NoModel("KI nicht erreichbar.") from exc
     return parse_json(text)
 
 
