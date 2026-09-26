@@ -144,9 +144,17 @@ def process(conn, listing_id, prior=()):
             attributes = store.effective_attributes(conn, node_id)
             facts = _read(listing, attributes)
     # A model whose generations have years: the listing's year names one.
-    deeper = not rejected and resolve.by_years(
-        conn, node_id, resolve.year_of({k: v[0] for k, v in facts.items()})
-    )
+    year = resolve.year_of({k: v[0] for k, v in facts.items()})
+    deeper = not rejected and resolve.by_years(conn, node_id, year)
+    # A named generation the year contradicts, with a sibling the year fits:
+    # "SC59, Facelift" from 2013 is the SC59 Facelift, which shares its code.
+    node = store.node(conn, node_id)
+    if not rejected and not deeper and node["kind"] == "generation" and year:
+        to = node["years_to"] or 9999
+        if node["years_from"] and not node["years_from"] <= year <= to + 1:
+            sibling = resolve.by_years(conn, node["parent_id"], year)
+            if sibling and sibling != node_id:
+                deeper = sibling
     if deeper:
         node_id, method = deeper, "years"
         attributes = store.effective_attributes(conn, node_id)

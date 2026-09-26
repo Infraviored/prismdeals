@@ -457,8 +457,32 @@ def test_the_more_specific_name_wins_over_the_searching_target(bikes):
         conn, cbr, "generation", "SC59 Facelift", "test", years_from=2012, years_to=2016
     )
     store.add_alias(conn, facelift, "SC59 Facelift", "code", "test")
+    # The hunt typed the target's whole name; that alias must not outweigh
+    # the facelift's own name.
+    store.add_alias(conn, sc59, "Honda CBR1000RR SC59", "name", "user")
     listing = {
         "title": "Honda CBR1000RR sc59 Facelift, Fireblade",
         "url": "https://www.kleinanzeigen.de/s-anzeige/x/1-305-1",
     }
     assert resolve.resolve(conn, listing, prior=[sc59])[0] == facelift
+
+
+def test_a_named_generation_the_year_contradicts_yields_to_the_sibling_it_fits(bikes):
+    conn, _ = bikes
+    moto = taxonomy.category_node_id(conn, "305")
+    honda = store.create_node(conn, moto, "brand", "Honda", "test")
+    store.add_alias(conn, honda, "Honda", "name", "test")
+    cbr = store.create_node(conn, honda, "model", "CBR 1000 RR", "test")
+    store.add_alias(conn, cbr, "CBR1000RR", "name", "test")
+    sc59 = store.create_node(
+        conn, cbr, "generation", "SC59", "test", years_from=2008, years_to=2011
+    )
+    store.add_alias(conn, sc59, "SC59", "code", "test")
+    facelift = store.create_node(
+        conn, cbr, "generation", "SC59 Facelift", "test", years_from=2012, years_to=2016
+    )
+    conn.execute(
+        "INSERT INTO listings (id, title, url, details) VALUES ('f1', 'Honda CBR1000RR, SC59, Facelift, ABS', 'https://www.kleinanzeigen.de/s-anzeige/x/9-305-1', ?)",
+        (json.dumps({"Erstzulassung": "Mai 2013"}),),
+    )
+    assert facts.process(conn, "f1") == facelift
