@@ -268,7 +268,8 @@ def scrape_listings_requests(urls, output_file, max_listings=None, pages=None):
                 cards = 0
 
                 for parsed in result_list.parse(response.text):
-                    cards += 1
+                    if parsed["id"] not in returned_ids:
+                        cards += 1
                     # Check limit inside loop too
                     if (
                         max_listings is not None
@@ -317,7 +318,8 @@ def scrape_listings_requests(urls, output_file, max_listings=None, pages=None):
                     f"Scraped {scraped_count} discovered listings from {current_url}"
                 )
                 if not cards:
-                    break  # past the last page: the rest would be empty too
+                    # Past the last page: the site shows it again, or nothing.
+                    break
 
             except Exception as e:
                 logger.error(f"Error scraping page {current_url}: {str(e)}")
