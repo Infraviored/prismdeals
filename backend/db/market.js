@@ -212,9 +212,11 @@ async function nodeMarkets(query, tree, nodeIds) {
          FROM listing_resolution r
          JOIN listings l ON l.id = r.listing_id
          LEFT JOIN listing_facts f ON f.listing_id = r.listing_id AND f.attr_id = 'is_request'
+         LEFT JOIN listing_facts w ON w.listing_id = r.listing_id AND w.attr_id = 'is_swap'
         WHERE r.node_id IN (${chunk.map(() => '?').join(',')})
           AND r.method <> 'rejected'
-          AND l.price_eur > 0 AND COALESCE(f.value_json, 'false') <> 'true'`,
+          AND l.price_eur > 0 AND COALESCE(f.value_json, 'false') <> 'true'
+          AND COALESCE(w.value_json, 'false') <> 'true'`,
       chunk
     ));
   }

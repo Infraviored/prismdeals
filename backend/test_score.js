@@ -175,4 +175,6 @@ assert.strictEqual(verdict(p, { node_id: 5, facts: { km: 100, zustand: 'Defekt' 
 const takesDefect = prepare(tree, { ...hunt, conditions: [...hunt.conditions, { id: 99, node_id: null, attr_id: 'zustand', label: 'Zustand', op: 'in', value: ['Defekt', 'Gut'], importance: 'must' }] });
 assert.strictEqual(verdict(takesDefect, { node_id: 5, facts: { km: 100, zustand: 'Defekt' } }).verdict, 'fit');
 
+assert.strictEqual(verdict(p, { node_id: 5, facts: { km: 100, is_swap: true } }).reason, 'Nur Tausch, kein Verkauf');
+
 console.log('score: all assertions passed');

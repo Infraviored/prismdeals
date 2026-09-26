@@ -15,7 +15,8 @@ from . import readers, resolve, store
 
 def _listing(conn, listing_id):
     row = conn.execute(
-        """SELECT id, title, url, COALESCE(detailed_description, short_description, ''), details
+        """SELECT id, title, url, COALESCE(detailed_description, short_description, ''), details,
+                  price_eur
              FROM listings WHERE id = ?""",
         (str(listing_id),),
     ).fetchone()
@@ -31,6 +32,7 @@ def _listing(conn, listing_id):
         "url": row[2] or "",
         "description": row[3] or "",
         "details": details if isinstance(details, dict) else {},
+        "price": row[5],
     }
 
 
@@ -40,6 +42,7 @@ def _hash(listing, attributes, named=()):
             listing["title"],
             listing["description"],
             listing["details"],
+            listing.get("price"),
             sorted(attributes.items(), key=str),
             list(named),
         ],
@@ -61,6 +64,11 @@ def _read(listing, attributes):
         if found is not None:
             out[attr_id] = found
     out["is_request"] = (resolve.is_request(listing["title"]), "title", None)
+    out["is_swap"] = (
+        resolve.is_swap(listing["title"], listing.get("price")),
+        "title",
+        None,
+    )
     return out
 
 
