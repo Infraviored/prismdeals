@@ -93,6 +93,23 @@ describe('FundeDetailSheet', () => {
     expect(box).toHaveTextContent('✗');
   });
 
+  it('leaves out a site filter every offer meets', () => {
+    const scored: RowListing = {
+      ...mockListing,
+      score: 90,
+      score_parts: { score: 90, gate: { met: [], violated: [], open: [], factor: 1 }, axes: {} },
+      fit: { verdict: 'fit', states: { '1': 'met', '2': 'met' }, target_id: 4 },
+    };
+    const conditions = new Map([
+      ['1', { id: 1, label: 'Art', op: 'eq' as const, value: 'Sofas', importance: 'must' as const, text: 'Art: Sofas', says_nothing: true }],
+      ['2', { id: 2, label: 'Farbe', op: 'eq' as const, value: 'Grau', importance: 'must' as const, text: 'Farbe: Grau' }],
+    ]);
+    render(<FundeDetailSheet listing={scored} onClose={vi.fn()} conditions={conditions} />);
+    const box = screen.getByTestId('score-breakdown');
+    expect(box).toHaveTextContent('✓ Farbe: Grau');
+    expect(box).not.toHaveTextContent('Art: Sofas');
+  });
+
   it('a wish that bothers (weight < 0) is good when the offer does not have it', () => {
     const scored: RowListing = {
       ...mockListing,

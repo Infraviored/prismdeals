@@ -164,4 +164,10 @@ assert.strictEqual(verdict(p, undefined).reason, 'Noch nicht gelesen');
   assert.strictEqual(verdict(q, { node_id: 3, facts: { motor: 'Brose' } }).verdict, 'no');
 }
 
+// Numbered options read as a range.
+const { conditionText } = require('./db/verdict');
+assert.strictEqual(conditionText({ label: 'Anzahl Controller', op: 'in', value: ['2', '3', '4', 'Mehr als 4'] }), 'Anzahl Controller ab 2');
+assert.strictEqual(conditionText({ label: 'Anzahl', op: 'in', value: ['0', '1', '2'] }), 'Anzahl 0 bis 2');
+assert.strictEqual(conditionText({ label: 'Farbe', op: 'in', value: ['Rot', 'Blau'] }), 'Farbe: Rot / Blau');
+
 console.log('score: all assertions passed');

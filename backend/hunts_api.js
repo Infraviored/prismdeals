@@ -57,6 +57,9 @@ function conditionOut(c) {
     importance: c.importance,
     weight: c.weight,
     text: conditionText(c),
+    // A must for all targets whose fixed value the site filters by ("Art:
+    // Sofas"): every offer meets it, so a list of what offers meet leaves it out.
+    says_nothing: Boolean(c.site_filter && c.importance === 'must' && c.node_id === null && !['min', 'max'].includes(c.op)),
   };
 }
 
@@ -308,7 +311,10 @@ module.exports = (query, get) => {
         const judged = listings.filter(l => l.fit.states[c.id]);
         const count = (s) => judged.filter(l => l.fit.states[c.id] === s).length;
         return { ...conditionOut(c), node_id: c.node_id, met: count('met'), violated: count('violated'), open: count('open'), total: judged.length };
-      });
+      })
+        // Rows every offer meets without anyone saying so ("ohne Tierhaare"
+        // 51/51, a site filter) tell nothing.
+        .filter(c => !c.says_nothing && !(c.op === 'absent' && c.met === c.total));
       // The market of each target, whether or not this hunt has found one yet.
       const markets = scope.hunt.targets.map(t => {
         const market = scope.markets.get(t.node_id);

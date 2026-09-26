@@ -28,7 +28,7 @@ export const ScoreBreakdown: React.FC<{ listing: RowListing; conditions?: Map<st
   const market = listing.market_basis || parts.market_basis || null;
   const node = market?.label || listing.target?.name;
   const states = Object.entries(listing.fit?.states || {})
-    .filter(([id]) => conditions.has(id))
+    .filter(([id]) => conditions.has(id) && !conditions.get(id)!.says_nothing)
     .sort((a, b) => ORDER[a[1]] - ORDER[b[1]]);
   const renderValueAxis = () => {
     if (delta === null) return null;
