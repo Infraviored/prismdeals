@@ -104,6 +104,15 @@ async function main() {
     assert.strictEqual(byId['5'].reason, 'Gesuch, kein Angebot');
     assert.deepStrictEqual(listings.listings.map(l => l.price_eur), [1, 5000, 6000, 7000, 7500]);
 
+    // Chips: the condition's attribute as a value, toned by its state.
+    const one1 = listings.listings.find(l => l.id === '1');
+    assert.deepStrictEqual(one1.chips[0], { text: '12.000 km', tone: 'good' });
+    const two = listings.listings.find(l => l.id === '2');
+    assert.deepStrictEqual(two.chips[0], { text: '45.000 km', tone: 'bad' });
+    const signals = (await request(`/api/hunts/${id}/signals`)).data;
+    assert.deepStrictEqual(signals.signals, [], 'too few offers: nothing proposed yet');
+    assert.strictEqual(signals.node.name, 'Honda CBR 1000 RR SC59');
+
     const fits = (await request(`/api/hunts/${id}/listings?verdict=fit&limit=1`)).data;
     assert.strictEqual(fits.total, 2);
     assert.strictEqual(fits.listings.length, 1);

@@ -48,7 +48,13 @@ def test_a_constraint_for_one_target_lands_on_that_target():
     assert "node_id" not in cbr and cbr["typed"] == "Honda CBR 1000 RR SC59"
     assert r1["node_id"] == 9
     assert cbr["conditions"] == [
-        {"label": "Kilometerstand", "op": "max", "value": 5000, "importance": "must"}
+        {
+            "label": "Kilometerstand",
+            "op": "max",
+            "value": 5000,
+            "importance": "must",
+            "weight": 0,
+        }
     ]
     assert after["frame"]["location_id"] == 6411 and after["category_code"] == "305"
     assert changes == [
@@ -63,15 +69,25 @@ def test_what_cannot_be_judged_is_dropped():
         "targets": [
             {
                 "name": "Yamaha R1",
-                "conditions": [{"label": "Farbe", "op": "schön", "importance": "must"}],
+                "conditions": [
+                    {"label": "Farbe", "op": "schön", "importance": "must", "weight": 0}
+                ],
             }
         ],
-        "conditions": [{"label": "ABS", "op": "present", "importance": "wish"}],
+        "conditions": [
+            {"label": "ABS", "op": "present", "importance": "wish", "weight": 2}
+        ],
     }
     after, _ = hunt_edit.edit(BEFORE, "egal", ask=lambda p: answer)
     assert after["targets"][0]["conditions"] == []
     assert after["conditions"] == [
-        {"label": "ABS", "op": "present", "value": None, "importance": "wish"}
+        {
+            "label": "ABS",
+            "op": "present",
+            "value": None,
+            "importance": "wish",
+            "weight": 2,
+        }
     ]
 
 
@@ -95,7 +111,12 @@ def test_numbers_with_units_are_read_and_what_is_dropped_is_said():
                         "value": "5000 km",
                         "importance": "must",
                     },
-                    {"label": "Farbe", "op": "schön", "importance": "must"},
+                    {
+                        "label": "Farbe",
+                        "op": "schön",
+                        "importance": "must",
+                        "weight": 0,
+                    },
                 ],
             },
             {"name": "Yamaha R1", "conditions": []},
@@ -105,7 +126,13 @@ def test_numbers_with_units_are_read_and_what_is_dropped_is_said():
     after, changes = hunt_edit.edit(BEFORE, "unter 5000 km", ask=lambda p: answer)
     assert after["frame"]["max_price"] == 9500 and after["frame"]["radius_km"] == 150
     assert after["targets"][0]["conditions"] == [
-        {"label": "Kilometerstand", "op": "max", "value": 5000, "importance": "must"}
+        {
+            "label": "Kilometerstand",
+            "op": "max",
+            "value": 5000,
+            "importance": "must",
+            "weight": 0,
+        }
     ]
     assert "nicht übernommen: Farbe" in changes
 

@@ -73,12 +73,12 @@ async function loadHunt(query, get, tree, campaignId) {
   );
   if (!campaign) return null;
   const targets = (await query(
-    'SELECT node_id, typed, name FROM hunt_targets WHERE campaign_id = ? ORDER BY position',
+    'SELECT node_id, typed, name, weight FROM hunt_targets WHERE campaign_id = ? ORDER BY position',
     [campaignId]
   )).filter(t => tree.byId.has(t.node_id));
   if (!targets.length) return null;
   const conditions = (await query(
-    `SELECT id, node_id, attr_id, op, value_json, importance, label
+    `SELECT id, node_id, attr_id, op, value_json, importance, label, weight
        FROM hunt_conditions WHERE campaign_id = ? ORDER BY id`,
     [campaignId]
   )).map(c => ({ ...c, value: c.value_json == null ? null : JSON.parse(c.value_json) }));
@@ -97,6 +97,7 @@ async function loadHunt(query, get, tree, campaignId) {
       return {
         node_id: t.node_id,
         typed: t.typed,
+        weight: t.weight,
         name: t.name,
         key: node.key,
         kind: node.kind,
@@ -106,6 +107,18 @@ async function loadHunt(query, get, tree, campaignId) {
     }),
     conditions,
   };
+}
+
+/** The deepest node every one of `ids` lies below (or is); the same rule as
+ * scraper/graph/hunts._common_ancestor. */
+function commonNode(tree, ids) {
+  const chains = ids.map(id => tree.ancestors(id).map(n => n.id));
+  let common = null;
+  for (let i = 0; chains.length && i < chains[0].length; i++) {
+    if (!chains.every(c => c[i] === chains[0][i])) break;
+    common = chains[0][i];
+  }
+  return common;
 }
 
 /** {listing_id: {node_id, method, facts}} for the given listings. */
@@ -132,4 +145,4 @@ async function loadReadings(query, listingIds) {
   return out;
 }
 
-module.exports = { loadTree, describe, effectiveAttributes, loadHunt, loadReadings, SLACK_AFTER };
+module.exports = { loadTree, describe, effectiveAttributes, loadHunt, loadReadings, commonNode, SLACK_AFTER };

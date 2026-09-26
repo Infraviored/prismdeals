@@ -16,7 +16,7 @@ const CONDITIONS = [
 const MET = { 1: 'met', 2: 'met', 3: 'open' };
 
 function score(listing, conditions = CONDITIONS) {
-  return scoreListing({ url: RAM, images: [1, 2, 3, 4], details: { Zustand: 'Sehr Gut' }, ...listing }, conditions);
+  return scoreListing({ url: RAM, images: [1, 2, 3, 4], details: { Zustand: 'Sehr Gut' }, ...listing }, { conditions });
 }
 const fit = (states, verdictName = 'fit') => ({ verdict: verdictName, states, target_id: 7 });
 
@@ -39,8 +39,8 @@ assert.strictEqual(score({ fit: fit(MET), price_eur: 100, market_median: null })
 
 // The profile decides the weights: for a vehicle, condition outweighs identity.
 const worn = { details: { Zustand: 'In Ordnung' }, images: [1] };
-const motoGood = scoreListing({ url: MOTO, fit: fit(MET), price_eur: 150, market_median: 150, details: { Zustand: 'Sehr Gut' }, images: [1, 2, 3, 4] }, CONDITIONS);
-const motoWorn = scoreListing({ url: MOTO, fit: fit(MET), price_eur: 150, market_median: 150, ...worn }, CONDITIONS);
+const motoGood = scoreListing({ url: MOTO, fit: fit(MET), price_eur: 150, market_median: 150, details: { Zustand: 'Sehr Gut' }, images: [1, 2, 3, 4] }, { conditions: CONDITIONS });
+const motoWorn = scoreListing({ url: MOTO, fit: fit(MET), price_eur: 150, market_median: 150, ...worn }, { conditions: CONDITIONS });
 const ramWorn = score({ fit: fit(MET), price_eur: 150, market_median: 150, ...worn });
 assert.ok(motoGood.score - motoWorn.score > full.score - ramWorn.score);
 
@@ -50,6 +50,21 @@ const withoutAbs = score({ fit: fit({ ...MET, 3: 'violated' }), price_eur: 150, 
 assert.ok(withAbs.score > full.score && full.score > withoutAbs.score);
 assert.deepStrictEqual(withAbs.wishes.met, ['ABS']);
 assert.deepStrictEqual(withoutAbs.wishes.missed, ['ABS']);
+
+// Weights: a strong plus counts more than a weak one; a minus costs when present;
+// weight 0 is shown, not scored.
+const W = (w) => [{ id: 7, attr_id: 'x', label: 'Scheckheft', op: 'present', value: null, importance: 'wish', weight: w }];
+const withW = (w, state) => score({ fit: fit({ 7: state }), price_eur: 150, market_median: 150 }, W(w));
+assert.ok(withW(3, 'met').score > withW(3, 'violated').score);
+assert.strictEqual(withW(-2, 'met').wishes.missed[0], 'Scheckheft', 'a present minus is missed');
+assert.ok(withW(-2, 'met').score < withW(-2, 'open').score, 'a minus costs only when present');
+assert.strictEqual(withW(-2, 'open').score, withW(-2, 'violated').score, 'unsaid is as good as absent');
+assert.strictEqual(withW(0, 'met').score, withW(0, 'violated').score, 'weight 0 does not score');
+// A preferred target counts as one more wish.
+const preferring = { conditions: [], targets: [{ node_id: 7, weight: 3 }, { node_id: 8, weight: 0 }] };
+const best = scoreListing({ url: RAM, images: [1, 2, 3, 4], fit: { verdict: 'fit', states: {}, target_id: 7 }, price_eur: 150, market_median: 150 }, preferring);
+const other = scoreListing({ url: RAM, images: [1, 2, 3, 4], fit: { verdict: 'fit', states: {}, target_id: 8 }, price_eur: 150, market_median: 150 }, preferring);
+assert.ok(best.score > other.score, 'the preferred target scores higher');
 
 // States: numbers read from German text, "ohne ABS" is a stated no.
 assert.strictEqual(stateOf(CONDITIONS[1], { mhz: '3.600 MHz' }), 'met');

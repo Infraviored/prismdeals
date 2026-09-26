@@ -8,7 +8,8 @@
  */
 
 const { SFS_ACTIVE_OR_PENDING_SQL } = require('./db/family_scope');
-const { loadTree, loadHunt, loadReadings } = require('./db/graph');
+const { loadTree, loadHunt, loadReadings, effectiveAttributes, commonNode } = require('./db/graph');
+const { chipsFor, valuePlan } = require('./db/chips');
 const { prepare, verdict } = require('./db/verdict');
 const { attachScores } = require('./db/score');
 const { placeListings } = require('./listing_geo');
@@ -111,8 +112,28 @@ async function huntListings(query, scope, filters = {}) {
     scope.markets = await nodeMarkets(query, tree, [...nodes]);
   }
   annotateMarket(listings, scope.markets);
-  attachScores(listings, hunt.conditions);
+  attachScores(listings, hunt);
+  if (!scope.chipPlan) scope.chipPlan = await chipPlan(query, scope);
+  for (const l of listings) l.chips = chipsFor(l, hunt, scope.chipPlan.attrs, scope.chipPlan.plan);
   return listings;
+}
+
+/** What each target's rows show as values: its attributes, the market's
+ * pricing facts, the value signals of the targets' common node. */
+async function chipPlan(query, scope) {
+  const { tree, hunt } = scope;
+  const attrs = new Map();
+  const pricing = new Map();
+  for (const t of hunt.targets) {
+    attrs.set(t.node_id, new Map((await effectiveAttributes(query, tree, t.node_id)).map(a => [a.id, a])));
+    pricing.set(t.node_id, scope.markets.get(t.node_id)?.model?.attrs || []);
+  }
+  const common = commonNode(tree, hunt.targets.map(t => t.node_id));
+  const signals = common === null ? [] : (await query(
+    "SELECT attr_id FROM node_signals WHERE node_id = ? AND polarity = 'value' ORDER BY found DESC",
+    [common]
+  )).map(r => r.attr_id);
+  return { attrs, plan: valuePlan(hunt, attrs, pricing, signals) };
 }
 
 /** The corridor's shape for the map, so it needs no second request. */
