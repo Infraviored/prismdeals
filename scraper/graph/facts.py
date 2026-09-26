@@ -34,13 +34,14 @@ def _listing(conn, listing_id):
     }
 
 
-def _hash(listing, attributes):
+def _hash(listing, attributes, named=()):
     signature = json.dumps(
         [
             listing["title"],
             listing["description"],
             listing["details"],
             sorted(attributes.items(), key=str),
+            list(named),
         ],
         ensure_ascii=False,
         sort_keys=True,
@@ -105,6 +106,23 @@ def _class_named(conn, category_id, art):
     return None
 
 
+def _named_kinds(conn, listing, node_id):
+    """The kinds of goods of its category the title names ("Haibike SDURO
+    Trekking" names "Trekking"): brand and kind are separate things, and the
+    node a listing sits at holds only one of them."""
+    category = next(
+        n["id"]
+        for n in reversed(store.ancestors(conn, node_id))
+        if n["kind"] == "category"
+    )
+    keys = resolve.title_keys(listing["title"])
+    return sorted(
+        i
+        for i in store.subtree_ids(conn, category)
+        if store.node(conn, i)["kind"] == "class" and keys & set(store.aliases(conn, i))
+    )
+
+
 def process(conn, listing_id, prior=()):
     """Resolve the listing and read its facts. Returns the node id (or None)."""
     listing = _listing(conn, listing_id)
@@ -160,7 +178,10 @@ def process(conn, listing_id, prior=()):
         attributes = store.effective_attributes(conn, node_id)
         facts = _read(listing, attributes)
     resolve.store_resolution(conn, listing_id, node_id, confidence, method)
-    text_hash = _hash(listing, attributes)
+    named = _named_kinds(conn, listing, node_id)
+    if named:
+        facts["named_kinds"] = (named, "title", None)
+    text_hash = _hash(listing, attributes, named)
     stored = conn.execute(
         "SELECT text_hash FROM listing_facts WHERE listing_id = ? LIMIT 1",
         (str(listing_id),),

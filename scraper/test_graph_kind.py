@@ -1,5 +1,6 @@
 """The kind check: what names put on a hunted product may be only something for it."""
 
+import json
 import sqlite3
 
 import pytest
@@ -102,3 +103,38 @@ def test_an_unusable_answer_or_an_outage_leaves_them_unchecked(conn):
     calls = []
     hunts.refine(conn, cid, ask=_ask(calls))
     assert len(calls) == 1 and _methods(conn)["1"] == "rejected"
+
+
+def test_a_title_names_its_kind_under_any_brand_and_features_make_no_nodes(conn):
+    from graph import facts, resolve
+
+    bikes = taxonomy.category_node_id(conn, "217")
+    ebike = store.create_node(conn, bikes, "class", "E-Bike", "test")
+    trekking = store.create_node(conn, ebike, "class", "Trekking", "test")
+    store.add_alias(conn, trekking, "Trekking", "name", "test")
+    conn.execute(
+        "INSERT INTO listings (id, title, url, details, detailed_description) VALUES ('b1', 'Haibike SDURO Trekking 5.0 Damen', 'https://www.kleinanzeigen.de/s-anzeige/x/b1-217-1', '{}', '')"
+    )
+    placed = resolve.resolve_with_model(
+        conn,
+        [{"id": "b1", "title": "Haibike SDURO Trekking 5.0 Damen"}],
+        ebike,
+        ask=lambda p, **_: [
+            {
+                "i": 0,
+                "path": [
+                    {"name": "Haibike", "kind": "brand", "aliases": ["Haibike"]},
+                    {"name": "Damen", "kind": "config", "aliases": ["Damen"]},
+                ],
+            }
+        ],
+    )
+    brand = placed["b1"]
+    assert store.node(conn, brand)["name"] == "Haibike"
+    assert not conn.execute("SELECT 1 FROM nodes WHERE name = 'Damen'").fetchone()
+    resolve.store_resolution(conn, "b1", brand, 0.8, "model")
+    facts.process(conn, "b1")
+    (value,) = conn.execute(
+        "SELECT value_json FROM listing_facts WHERE listing_id = 'b1' AND attr_id = 'named_kinds'"
+    ).fetchone()
+    assert json.loads(value) == [trekking]

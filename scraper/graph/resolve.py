@@ -329,6 +329,10 @@ def resolve_with_model(conn, listings, parent_id, ask=llm.ask_json):
         if path is not None:
             node_id = parent_id
             for step in path:
+                if step["kind"] in ("class", "config"):
+                    # A title's "Damen", "28 Zoll", "Trekking": what it is
+                    # like, not which product -- facts and named kinds say it.
+                    continue
                 folded = store.fold(step["name"])
                 if folded in store.aliases(conn, node_id) or _named_above(
                     conn, node_id, folded

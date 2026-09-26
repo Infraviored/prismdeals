@@ -29,9 +29,14 @@ const full = score({ fit: fit(MET), price_eur: 150, market_median: 150 });
 const open = score({ fit: fit({ ...MET, 2: 'open' }, 'unclear'), price_eur: 150, market_median: 150 });
 assert.ok(open.score > 0 && open.score < full.score);
 assert.ok(Math.abs(open.gate.factor - 0.75) < 1e-9, 'one open must caps at 75 %');
-// A model not recognised counts as one open must.
+// A model not recognised is one open must and leaves both musts open: below
+// a recognised offer with one must open. A site-filtered must is met by all.
 const unplaced = score({ fit: { verdict: 'unclear', states: {}, target_id: null }, price_eur: 150, market_median: 150 });
-assert.ok(Math.abs(unplaced.gate.factor - 0.75) < 1e-9);
+assert.ok(Math.abs(unplaced.gate.factor - Math.pow(0.75, 3)) < 1e-9);
+assert.ok(unplaced.score < open.score);
+const filtered = score({ fit: { verdict: 'unclear', states: {}, target_id: null }, price_eur: 150, market_median: 150 },
+  CONDITIONS.map(c => (c.id === 1 ? { ...c, site_filter: true } : c)));
+assert.ok(Math.abs(filtered.gate.factor - Math.pow(0.75, 2)) < 1e-9);
 
 // Cheaper against the market is better; no market, no value grade.
 assert.ok(score({ fit: fit(MET), price_eur: 100, market_median: 150 }).score > full.score);
@@ -135,6 +140,28 @@ assert.strictEqual(verdict(p, undefined).reason, 'Noch nicht gelesen');
     },
   };
   assert.strictEqual(describe(t, 3), 'Sony PlayStation 5');
+}
+
+{
+  // A kind the title names is the target under any brand; a brand beside the
+  // hunted kind with no kind said is unclear, another kind is no.
+  const nodes = new Map([
+    [1, { id: 1, parent_id: null, kind: 'category', name: 'Fahrräder' }],
+    [2, { id: 2, parent_id: 1, kind: 'class', name: 'E-Bike' }],
+    [3, { id: 3, parent_id: 2, kind: 'class', name: 'Trekking' }],
+    [4, { id: 4, parent_id: 2, kind: 'class', name: 'City' }],
+    [5, { id: 5, parent_id: 2, kind: 'brand', name: 'Haibike' }],
+  ]);
+  const t = { byId: nodes, ancestors: (id) => { const c = []; for (let n = nodes.get(id); n; n = n.parent_id ? nodes.get(n.parent_id) : null) c.push(n); return c.reverse(); } };
+  const h = { targets: [{ node_id: 3, kind: 'class' }], conditions: [
+    { id: 1, node_id: null, attr_id: 'motor', label: 'Motor', op: 'eq', value: 'Bosch Mittelmotor', importance: 'must', by_words: true },
+  ] };
+  const q = prepare(t, h);
+  assert.strictEqual(verdict(q, { node_id: 5, facts: { named_kinds: [3], motor: 'Bosch Mittelmotor CX' } }).verdict, 'fit');
+  assert.strictEqual(verdict(q, { node_id: 5, facts: {} }).reason, 'Art nicht erkannt');
+  assert.match(verdict(q, { node_id: 4, facts: {} }).reason, /Anderes Modell/);
+  assert.strictEqual(verdict(q, { node_id: 3, facts: { motor: 'Bosch' } }).verdict, 'unclear');
+  assert.strictEqual(verdict(q, { node_id: 3, facts: { motor: 'Brose' } }).verdict, 'no');
 }
 
 console.log('score: all assertions passed');

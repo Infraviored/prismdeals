@@ -45,7 +45,7 @@ async function effectiveAttributes(query, tree, id) {
   const chain = tree.ancestors(id).map(n => n.id);
   if (!chain.length) return [];
   const rows = await query(
-    `SELECT node_id, attr_id, label, type, unit, options_json, site_filter
+    `SELECT node_id, attr_id, label, type, unit, options_json, site_filter, source
        FROM node_attributes WHERE node_id IN (${chain.map(() => '?').join(',')})`,
     chain
   );
@@ -60,6 +60,7 @@ async function effectiveAttributes(query, tree, id) {
       unit: r.unit,
       options: r.options_json ? JSON.parse(r.options_json) : null,
       site_filter: r.site_filter,
+      source: r.source,
     }));
   return [...out.values()];
 }
@@ -81,6 +82,16 @@ async function loadHunt(query, get, tree, campaignId) {
        FROM hunt_conditions WHERE campaign_id = ? ORDER BY id`,
     [campaignId]
   )).map(c => ({ ...c, value: c.value_json == null ? null : JSON.parse(c.value_json) }));
+  // Free text, and options a model named, are compared by words; the site's
+  // own options ("Sehr Gut", "Gut") are distinct choices.
+  const byNode = new Map();
+  for (const c of conditions) {
+    const at = c.node_id ?? targets[0].node_id;
+    if (!byNode.has(at)) byNode.set(at, new Map((await effectiveAttributes(query, tree, at)).map(a => [a.id, a])));
+    const a = byNode.get(at).get(c.attr_id);
+    c.by_words = Boolean(a && (a.type === 'text' || (a.type === 'enum' && a.source !== 'taxonomy')));
+    c.site_filter = Boolean(a && a.site_filter);
+  }
   let intent = {};
   let frame = {};
   try { intent = JSON.parse(campaign.intent_json || '{}') || {}; } catch { /* typed text only */ }
