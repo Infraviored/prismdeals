@@ -21,6 +21,7 @@ condition applies to every target.
 
 import json
 import logging
+import re
 
 import family_store
 import search_url
@@ -134,6 +135,9 @@ def _fitted(conn, node_id, condition, attr_id):
     attribute = store.effective_attributes(conn, node_id)[attr_id]
     label = condition["label"]
     if condition["op"] in ("min", "max") and attribute["type"] != "number":
+        chosen = _ordinal(attribute["options"], condition)
+        if chosen is not None:
+            return {**condition, "op": "in", "value": chosen}
         raise HuntError(
             f"„{label}“ ist keine Zahl, sondern eine Auswahl: "
             "bitte eine oder mehrere Optionen wählen statt einer Grenze."
@@ -160,6 +164,30 @@ def _fitted(conn, node_id, condition, attr_id):
             )
         labels.append(option["label"])
     return {**condition, "value": labels[0] if condition["op"] == "eq" else labels}
+
+
+def _ordinal(options, condition):
+    """A bound over options that are numbers ("0" … "4", "Mehr als 4"; "256
+    GB" … "2 TB" only in one unit) as the options it lets through; None when
+    they are no such scale. An option with words before its number is open
+    upward: it meets any minimum and no maximum."""
+    bound = leading_number(condition["value"])
+    scale = []
+    for o in options or []:
+        found = re.match(r"\s*(\D*?)\s*(\d+(?:[.,]\d+)?)\s*(\D*)$", o["label"])
+        if found:
+            number = float(found.group(2).replace(",", "."))
+            scale.append(
+                (o["label"], number, bool(found.group(1)), store.fold(found.group(3)))
+            )
+    if bound is None or not scale or len({unit for *_, unit in scale}) > 1:
+        return None
+    wanted = condition["op"] == "min"
+    return [
+        label
+        for label, number, open_up, _ in scale
+        if (wanted if open_up else (number >= bound if wanted else number <= bound))
+    ] or None
 
 
 def _common_ancestor(conn, node_ids):

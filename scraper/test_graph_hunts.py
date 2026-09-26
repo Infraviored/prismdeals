@@ -759,3 +759,19 @@ def test_a_reader_that_misses_a_rare_format_is_kept_one_that_misses_most_is_not(
         conn, moto, ["Maß"], ask=answer("Maß", r"regex:\b(140x\d{3})\b")
     )
     assert dropped == {}
+
+
+def test_a_bound_over_numbered_options_lets_the_fitting_options_through():
+    from graph.hunts import _ordinal
+
+    options = [{"value": v, "label": v} for v in ("0", "1", "2", "3", "4")] + [
+        {"value": "more_than_4", "label": "Mehr als 4"}
+    ]
+    assert _ordinal(options, {"op": "min", "value": 2}) == ["2", "3", "4", "Mehr als 4"]
+    assert _ordinal(options, {"op": "max", "value": 1}) == ["0", "1"]
+    mixed = [{"value": v, "label": v} for v in ("512 GB", "1 TB", "Andere")]
+    assert _ordinal(mixed, {"op": "min", "value": 1}) is None
+    assert (
+        _ordinal([{"value": "a", "label": "Schwarz"}], {"op": "min", "value": 1})
+        is None
+    )
