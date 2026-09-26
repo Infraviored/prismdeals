@@ -63,10 +63,13 @@ function valueText(listing, attribute, value) {
 }
 
 /** A must for all targets the site filters by ("Art: Speicher") is in the
- * crawl URL (graph/hunts._site_filters): every offer meets it, so it says
- * nothing about one of them. A scoped must (km for the SC59) still does. */
+ * crawl URL (graph/hunts._site_filters): every offer has that value, so it
+ * says nothing about one of them. A range the site filters by ("bis 150.000
+ * km") still leaves each offer its own value; a scoped must (km for the SC59)
+ * too. */
 function sayable(condition, attribute) {
-  return !(condition.importance === 'must' && condition.node_id === null && attribute && attribute.site_filter);
+  return !(condition.importance === 'must' && condition.node_id === null && attribute && attribute.site_filter
+    && !['min', 'max'].includes(condition.op));
 }
 
 /**
