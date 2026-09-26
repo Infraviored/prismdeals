@@ -31,8 +31,17 @@ def ask_json(prompt, max_tokens=2000):
     return parse_json(text)
 
 
+# A backslash JSON does not know ("\d" in a regex reader): meant literally.
+_LONE_BACKSLASH = re.compile(r'\\(?![\\"/bfnrtu])')
+
+
 def parse_json(text):
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(text or "").strip())
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    text = _LONE_BACKSLASH.sub(r"\\\\", text)
     try:
         return json.loads(text)
     except json.JSONDecodeError:
