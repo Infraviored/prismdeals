@@ -5,6 +5,8 @@
  * condition changes every verdict at once, without a re-judge.
  *
  *   - a request ("Suche …") is no offer                         -> no
+ *   - the site's condition field says "Defekt", and the hunt does
+ *     not name a condition itself                                 -> no
  *   - a node outside every target: above one (the brand, the
  *     category) is "not recognised", beside one is another model -> unclear / no
  *   - a generation target also holds the listing to its years   -> no when outside
@@ -141,6 +143,11 @@ function verdict(prepared, reading) {
   const facts = reading.facts || {};
   if (facts.is_request === true) {
     return { verdict: 'no', reason: 'Gesuch, kein Angebot', states, target_id: null };
+  }
+  // The site's own condition field says "Defekt": not the working thing a
+  // hunt looks for -- unless the hunt itself says what condition it takes.
+  if (fold(facts.zustand) === 'defekt' && !hunt.conditions.some(c => c.attr_id === 'zustand')) {
+    return { verdict: 'no', reason: 'Laut Anzeige defekt', states, target_id: null };
   }
   // Asked, the model said it is no product of this kind (an exhaust, a
   // mattress cover) -- wherever names had put it.

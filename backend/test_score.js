@@ -170,4 +170,9 @@ assert.strictEqual(conditionText({ label: 'Anzahl Controller', op: 'in', value: 
 assert.strictEqual(conditionText({ label: 'Anzahl', op: 'in', value: ['0', '1', '2'] }), 'Anzahl 0 bis 2');
 assert.strictEqual(conditionText({ label: 'Farbe', op: 'in', value: ['Rot', 'Blau'] }), 'Farbe: Rot / Blau');
 
+// "Zustand: Defekt" from the site is no, unless the hunt names a condition.
+assert.strictEqual(verdict(p, { node_id: 5, facts: { km: 100, zustand: 'Defekt' } }).reason, 'Laut Anzeige defekt');
+const takesDefect = prepare(tree, { ...hunt, conditions: [...hunt.conditions, { id: 99, node_id: null, attr_id: 'zustand', label: 'Zustand', op: 'in', value: ['Defekt', 'Gut'], importance: 'must' }] });
+assert.strictEqual(verdict(takesDefect, { node_id: 5, facts: { km: 100, zustand: 'Defekt' } }).verdict, 'fit');
+
 console.log('score: all assertions passed');
