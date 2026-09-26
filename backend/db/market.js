@@ -200,7 +200,7 @@ async function nodeMarkets(query, tree, nodeIds) {
     }
   }
   // Only offers resolved below one of the pools: the market of a product,
-  // not a scan of every listing ever seen.
+  // not a scan of every listing ever seen, and not its accessories.
   const below = [...tree.byId.values()]
     .filter(n => tree.ancestors(n.id).some(a => pools.has(a.id)))
     .map(n => n.id);
@@ -213,6 +213,7 @@ async function nodeMarkets(query, tree, nodeIds) {
          JOIN listings l ON l.id = r.listing_id
          LEFT JOIN listing_facts f ON f.listing_id = r.listing_id AND f.attr_id = 'is_request'
         WHERE r.node_id IN (${chunk.map(() => '?').join(',')})
+          AND r.method <> 'rejected'
           AND l.price_eur > 0 AND COALESCE(f.value_json, 'false') <> 'true'`,
       chunk
     ));

@@ -127,6 +127,9 @@ paths, `reference_price.js` per-search medians, `market_node.js`, `requirements_
   3. Unknown and inside an active hunt's subtree → batched model call ("which of these nodes,
      or a new one under X?"); the answer adds an alias.
   4. Request titles ("Suche …") are resolved as `is_request` (a fact on the root), not a product.
+  5. Placed on or below a target by names → asked once per listing and target whether it is the
+     thing itself or only something for it (Topper, Toner, Kupplungsdeckel). "part" → method
+     `rejected` (verdict no, out of market and signals); "self" → `listing_kind_checks`.
 - **Read facts** for the node's effective attributes (own + inherited), cheapest reader first:
   detail-page attributes → patterns/number/keywords in title and description → model
   extraction **only for attributes a live hunt condition needs and nothing else could read**.

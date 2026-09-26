@@ -54,9 +54,26 @@ def _hunt(conn, n_offers, every=3):
     return cid, cbr
 
 
+def _titles(prompt):
+    return [
+        line.split(": ", 1)[1]
+        for line in prompt.splitlines()
+        if line[:1].isdigit() and ": " in line
+    ]
+
+
+def _kind(prompt):
+    """Every offer is the product itself; None for any other question."""
+    if prompt.startswith("Gesucht:"):
+        return [{"i": i, "is": "self"} for i in range(len(_titles(prompt)))]
+    return None
+
+
 def _answer(calls):
     def ask(prompt, **_):
         calls.append(prompt)
+        if _kind(prompt):
+            return _kind(prompt)
         if "Was unterscheidet diese Angebote" in prompt:
             return {
                 "signals": [
@@ -68,11 +85,7 @@ def _answer(calls):
                     }
                 ]
             }
-        titles = [
-            line.split(": ", 1)[1]
-            for line in prompt.splitlines()
-            if line[:1].isdigit() and ": " in line
-        ]
+        titles = _titles(prompt)
         return {
             "attributes": [
                 {
@@ -120,7 +133,10 @@ def test_a_yesno_every_offer_states_is_no_signal(conn):
 def test_too_few_offers_propose_nothing(conn):
     cid, _ = _hunt(conn, 5)
     assert (
-        hunts.refine(conn, cid, ask=lambda p, **_: pytest.fail("asked"))["signals"] == 0
+        hunts.refine(conn, cid, ask=lambda p, **_: _kind(p) or pytest.fail("asked"))[
+            "signals"
+        ]
+        == 0
     )
 
 
@@ -174,6 +190,8 @@ def test_a_model_outage_during_signals_keeps_the_refine(conn):
     cid, _ = _hunt(conn, 24)
 
     def down(prompt, **_):
+        if _kind(prompt):
+            return _kind(prompt)
         raise llm.NoModel("KI nicht erreichbar.")
 
     out = hunts.refine(conn, cid, ask=down)

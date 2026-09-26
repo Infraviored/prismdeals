@@ -347,6 +347,48 @@ def resolve_with_model(conn, listings, parent_id, ask=llm.ask_json):
     return out
 
 
+KIND_PROMPT = """Gesucht: {product} (Art: {kind})
+
+Kleinanzeigen-Titel:
+{titles}
+
+Bietet jeder Titel die Sache selbst an ("self") oder nur etwas für oder von ihr ("part"):
+Zubehör, Ersatzteil, Auflage, Bezug, Hülle, Verbrauchsmaterial, Kleidung, ein Einzelteil?
+Beispiele für "part": Topper oder Bezug für eine Matratze, Toner für einen Drucker,
+Kupplungsdeckel für ein Motorrad, Tasche für einen Laptop, Griffe für einen Schrank.
+Ob Marke, Modell, Generation, Größe oder Zustand passen, prüfst du NICHT. Ein Angebot
+mit der Sache und etwas dazu ist "self", ein Gesuch auch.
+Antworte NUR mit JSON: [{{"i": 0, "is": "self"}}, {{"i": 1, "is": "part"}}]
+"""
+
+
+def check_kind(conn, listings, product, kind, ask=llm.ask_json):
+    """Asks once whether each listing is `product` itself -- a thing of `kind`
+    -- or only something for it. Returns {listing_id: bool} for the listings
+    the answer speaks about."""
+    if not listings:
+        return {}
+    answer = ask(
+        KIND_PROMPT.format(
+            product=product,
+            kind=kind,
+            titles="\n".join(
+                f"{i}: {item['title']}" for i, item in enumerate(listings)
+            ),
+        )
+    )
+    if not isinstance(answer, list):
+        raise llm.NoModel(f"Unbrauchbare KI-Antwort: {answer!r}")
+    out = {}
+    for item in answer:
+        if not isinstance(item, dict) or item.get("is") not in ("self", "part"):
+            raise llm.NoModel(f"Unbrauchbare KI-Antwort: {item!r}")
+        i = item.get("i")
+        if isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(listings):
+            out[listings[i]["id"]] = item["is"] == "self"
+    return out
+
+
 def _descendants(conn, node_id):
     return [
         store.node(conn, i) for i in store.subtree_ids(conn, node_id) if i != node_id
