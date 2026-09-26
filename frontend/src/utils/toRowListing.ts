@@ -44,6 +44,7 @@ export interface ApiListing {
   seller_questions?: string[] | null;
   uncertain?: boolean;
   same_as?: number[] | null;
+  also?: RowListing['also'];
   chips?: RowListing['chips'];
 }
 
@@ -89,6 +90,7 @@ export function toRowListing(l: ApiListing): RowListing {
     seller_questions: Array.isArray(l.seller_questions) ? l.seller_questions : null,
     uncertain: !!l.uncertain,
     same_as: Array.isArray(l.same_as) ? l.same_as : null,
+    also: Array.isArray(l.also) ? l.also : null,
     chips: Array.isArray(l.chips) ? l.chips : null,
   };
 }
