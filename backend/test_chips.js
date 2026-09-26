@@ -45,6 +45,10 @@ console.log('chips: all assertions passed');
 const art = new Map([[5, new Map([...attrs.get(5), ['art', { id: 'art', label: 'Art', type: 'enum', site_filter: 'x.art_s' }]])]]);
 const withArt = { ...hunt, conditions: [...hunt.conditions, { id: 9, node_id: null, attr_id: 'art', label: 'Art', op: 'eq', value: 'Speicher', importance: 'must', weight: 0 }] };
 assert.ok(!valuePlan(withArt, art, new Map(), []).get(5).includes('art'));
+// A range the site filters by still differs per offer: shown.
+const kmSite = new Map([[5, new Map([['km', { id: 'km', label: 'Kilometerstand', type: 'number', unit: 'km', site_filter: 'autos.km_i' }]])]]);
+const kmHunt = { targets: [{ node_id: 5 }], conditions: [{ id: 7, node_id: null, attr_id: 'km', label: 'Kilometerstand', op: 'max', value: 150000, importance: 'must', weight: 0 }] };
+assert.deepStrictEqual(valuePlan(kmHunt, kmSite, new Map(), []).get(5), ['km']);
 // A value without a unit says what it is.
 const ez = new Map([[5, new Map([['ez', { id: 'ez', label: 'Erstzulassungsdatum', type: 'number' }]])]]);
 const ezHunt = { targets: [{ node_id: 5 }], conditions: [] };
