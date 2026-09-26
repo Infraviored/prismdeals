@@ -52,7 +52,8 @@ function valueText(listing, attribute, value) {
   const raw = detailText(listing, attribute);
   if (raw) return short(labelled(attribute, raw));
   if (typeof value === 'number') {
-    const n = value.toLocaleString('de-DE');
+    // Grouped from five digits on, as German writes it: "2020", "1500 km", "21.800 km".
+    const n = value.toLocaleString('de-DE', { useGrouping: Math.abs(value) >= 10000 });
     return short(attribute.unit ? `${n} ${attribute.unit}` : labelled(attribute, n));
   }
   return short(labelled(attribute, String(value)));

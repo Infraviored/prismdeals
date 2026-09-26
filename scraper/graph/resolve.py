@@ -357,7 +357,8 @@ Zubehör, Ersatzteil, Einbauteil, Hülle, Verbrauchsmaterial, Kleidung, ein Einz
 Beispiele für "part": Regenverdeck für einen Kinderwagen, Objektiv-Deckel für eine Kamera,
 Felgen für ein Auto, ein Akku für ein Gerät, Schutzhülle für ein Handy, Zulaufschlauch für eine Waschmaschine.
 Ob Marke, Modell, Generation, Größe oder Zustand passen, prüfst du NICHT. Ein Angebot
-mit der Sache und etwas dazu ist "self", ein Gesuch auch.
+mit der Sache und etwas dazu ist "self", ein Gesuch auch. Wer die Sache nicht verkauft,
+sondern vermietet, repariert oder eine Dienstleistung damit anbietet: "part".
 Antworte NUR mit JSON: [{{"i": 0, "is": "self"}}, {{"i": 1, "is": "part"}}]
 """
 

@@ -73,3 +73,10 @@ assert.strictEqual(chipsFor({ facts: { km: 35000 }, fit: { target_id: 5, states:
 const shown = { targets: [{ node_id: 5 }], conditions: [{ id: 31, node_id: null, attr_id: 'km', label: 'Kilometerstand', op: 'max', value: 20000, importance: 'wish', weight: 0 }] };
 assert.strictEqual(chipsFor({ facts: { km: 10000 }, fit: { target_id: 5, states: { 31: 'met' } } }, shown, attrs, new Map([[5, ['km']]]))[0].tone, 'value');
 console.log('chips: review-2 assertions passed');
+// A four-digit number is not grouped ("2020", not "2.020"); five digits are.
+const year = new Map([[5, new Map([['kj', { id: 'kj', label: 'Kaufjahr', type: 'number' }], ['km', { id: 'km', label: 'Kilometerstand', type: 'number', unit: 'km' }]])]]);
+assert.deepStrictEqual(
+  chipsFor({ details: {}, facts: { kj: 2020, km: 21800 }, fit: { target_id: 5, states: {} } }, { targets: [{ node_id: 5 }], conditions: [] }, year, new Map([[5, ['kj', 'km']]])).map(c => c.text),
+  ['Kaufjahr 2020', '21.800 km']
+);
+console.log('chips: grouping assertions passed');
