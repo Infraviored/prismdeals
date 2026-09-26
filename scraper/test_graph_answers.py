@@ -166,3 +166,28 @@ def test_a_measure_read_without_its_unit_is_the_same_value():
     assert not _same("90 x 10", "90 x 10 x 200")
     assert not _same("Schwarz", "Schwarz-Weiß")
     assert _same("Schwarz", "schwarz")
+    assert _same("3200", "3200 MHz")
+    assert not _same("RTX 3080", "RTX 3080 Ti")
+    assert not _same("90x200", "90x200 Kaltschaum")
+
+
+def test_json_with_words_around_and_mixed_escapes_parses():
+    from graph import llm
+
+    raw = 'Hier ist das JSON:\n{"readers": ["regex:\\\\d+", "regex:\\s?(\\d)"]}'
+    assert llm.parse_json(raw) == {"readers": ["regex:\\d+", "regex:\\s?(\\d)"]}
+    assert llm.parse_json('{"r": "regex:\\\\d+"}') == {"r": "regex:\\d+"}
+
+
+def test_a_reader_that_reads_none_of_the_few_titles_stating_it_fails():
+    from graph.place import _failures
+
+    attr = {
+        "label": "Farbe",
+        "type": "text",
+        "options": None,
+        "readers": ["regex:(nie)"],
+    }
+    samples = [f"Titel {i}" for i in range(12)]
+    examples = {str(i): None for i in range(12)} | {"0": "Rot", "1": "Blau"}
+    assert _failures(attr, samples, examples)

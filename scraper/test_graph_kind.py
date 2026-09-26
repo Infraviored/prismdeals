@@ -89,8 +89,16 @@ def test_a_listing_without_a_title_is_never_asked(conn):
     assert "\n2:" not in calls[0]
 
 
-def test_an_answer_that_is_no_list_of_self_or_part_is_no_answer(conn):
+def test_an_unusable_answer_or_an_outage_leaves_them_unchecked(conn):
     cid = _hunt(conn)
-    with pytest.raises(llm.NoModel):
-        hunts.refine(conn, cid, ask=lambda p, **_: [{"i": 0, "is": "ja"}])
-    assert "rejected" not in _methods(conn).values()
+    for bad in (
+        lambda p, **_: [{"i": 0, "is": "ja"}],
+        lambda p, **_: (_ for _ in ()).throw(llm.NoModel("KI nicht erreichbar.")),
+    ):
+        out = hunts.refine(conn, cid, ask=bad)
+        assert out["listings"] == 3
+        assert "rejected" not in _methods(conn).values()
+    # Asked again next time.
+    calls = []
+    hunts.refine(conn, cid, ask=_ask(calls))
+    assert len(calls) == 1 and _methods(conn)["1"] == "rejected"

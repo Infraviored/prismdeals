@@ -509,14 +509,16 @@ _BATCH = 40
 def _titled(conn, ids):
     """The listings as the model reads them; one without a title says nothing
     and is not asked -- it came back empty and was asked again every crawl."""
-    out = []
-    for i in ids:
-        (title,) = conn.execute(
-            "SELECT title FROM listings WHERE id = ?", (i,)
-        ).fetchone()
-        if (title or "").strip():
-            out.append({"id": i, "title": title})
-    return out
+    titles = {}
+    for start in range(0, len(ids), 500):
+        chunk = ids[start : start + 500]
+        titles.update(
+            conn.execute(
+                f"SELECT id, title FROM listings WHERE id IN ({','.join('?' for _ in chunk)})",
+                chunk,
+            ).fetchall()
+        )
+    return [{"id": i, "title": titles[i]} for i in ids if (titles.get(i) or "").strip()]
 
 
 def refine(conn, campaign_id, ask=llm.ask_json):
@@ -604,25 +606,26 @@ def _check_kind(conn, ids, targets, ask):
     pending = {}
     for start in range(0, len(ids), 500):
         chunk = ids[start : start + 500]
+        marks = ",".join("?" for _ in chunk)
+        checked = set(
+            conn.execute(
+                f"SELECT listing_id, node_id FROM listing_kind_checks WHERE listing_id IN ({marks})",
+                chunk,
+            ).fetchall()
+        )
         for listing_id, node_id in conn.execute(
             f"""SELECT r.listing_id, r.node_id FROM listing_resolution r
-                 WHERE r.listing_id IN ({",".join("?" for _ in chunk)})
+                 WHERE r.listing_id IN ({marks})
                    AND r.method NOT IN ('model', 'rejected')""",
             chunk,
         ).fetchall():
             target = below.get(node_id)
-            if (
-                target is None
-                or conn.execute(
-                    "SELECT 1 FROM listing_kind_checks WHERE listing_id = ? AND node_id = ?",
-                    (listing_id, target),
-                ).fetchone()
-            ):
-                continue
-            pending.setdefault(target, []).append(listing_id)
+            if target is not None and (listing_id, target) not in checked:
+                pending.setdefault(target, []).append((listing_id, node_id))
     asked = 0
     for target, members in pending.items():
-        group = _titled(conn, members)
+        placed = dict(members)
+        group = _titled(conn, list(placed))
         product = (
             place.describe(conn, target)["name"] or store.node(conn, target)["name"]
         )
@@ -635,7 +638,12 @@ def _check_kind(conn, ids, targets, ask):
         )
         for start in range(0, len(group), _BATCH):
             batch = group[start : start + _BATCH]
-            answers = resolve.check_kind(conn, batch, product, kind, ask=ask)
+            try:
+                answers = resolve.check_kind(conn, batch, product, kind, ask=ask)
+            except llm.NoModel as error:
+                # Unchecked, not judged: asked again at the next crawl.
+                logger.warning("Kind check for %s not done: %s", product, error)
+                return asked
             asked += len(batch)
             for listing_id, is_kind in answers.items():
                 if is_kind:
@@ -645,11 +653,9 @@ def _check_kind(conn, ids, targets, ask):
                         (listing_id, target, store.now()),
                     )
                 else:
-                    (node_id,) = conn.execute(
-                        "SELECT node_id FROM listing_resolution WHERE listing_id = ?",
-                        (listing_id,),
-                    ).fetchone()
-                    resolve.store_resolution(conn, listing_id, node_id, 0.8, "rejected")
+                    resolve.store_resolution(
+                        conn, listing_id, placed[listing_id], 0.8, "rejected"
+                    )
                     facts.process(conn, listing_id, prior=targets)
             conn.commit()
     return asked

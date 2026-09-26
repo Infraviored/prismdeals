@@ -341,6 +341,10 @@ Antworte NUR mit JSON:
 # often the model may correct readers that misread them.
 SAMPLES = 12
 ATTEMPTS = 3
+# Units of measure, folded: what may follow a number and change nothing.
+UNITS = frozenset(
+    "mm cm m km g kg t ml l gb tb mb mhz ghz hz w kw ps v mah wh zoll".split()
+)
 UNREADABLE = (
     "Deine Antwort war kein vollständiges JSON (abgeschnitten): halte jeden reader kurz, "
     "ohne Wiederholungen"
@@ -382,16 +386,10 @@ def _same(read, expected):
     if a is not None and b is not None and not isinstance(read, str):
         return abs(a - b) < 1e-9
     a, b = sorted((store.fold(read), store.fold(expected)), key=len)
-    # "90 x 200" is "90 x 200 cm": a unit after a measure is the same value;
-    # a number more ("90 x 10" for "90 x 10 x 200") or a word more after a
-    # word ("Schwarz" for "Schwarz-Weiß") is not.
-    if a == b:
-        return True
-    return (
-        any(c.isdigit() for c in a)
-        and b.startswith(a)
-        and not any(c.isdigit() for c in b[len(a) :])
-    )
+    # "90 x 200" is "90 x 200 cm": a unit after a measure is the same value.
+    # Anything else more is not -- a number ("90 x 10" for "90 x 10 x 200"),
+    # a name ("RTX 3080" for "RTX 3080 Ti"), a word ("90x200 Kaltschaum").
+    return a == b or (a[-1:].isdigit() and b.startswith(a) and b[len(a) :] in UNITS)
 
 
 def _failures(attr, samples, examples):
@@ -422,11 +420,13 @@ def _failures(attr, samples, examples):
                 missed.append(line)
             else:
                 wrong.append(line)
-    quarter = len(samples) // 4
+    # Beyond: a quarter of all titles. Missed: a quarter of those that state
+    # it -- a reader that reads none of two is no reader.
+    stated = sum(1 for i in range(len(samples)) if examples.get(str(i)) is not None)
     return (
         wrong
-        + (beyond if len(beyond) > quarter else [])
-        + (missed if len(missed) > quarter else [])
+        + (beyond if len(beyond) > len(samples) // 4 else [])
+        + (missed if len(missed) > stated // 4 else [])
     )
 
 

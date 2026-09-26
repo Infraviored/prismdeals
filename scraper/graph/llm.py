@@ -36,23 +36,30 @@ def ask_json(prompt, max_tokens=2000):
     return parse_json(text)
 
 
-# A backslash JSON does not know ("\d" in a regex reader): meant literally.
-_LONE_BACKSLASH = re.compile(r'\\(?![\\"/bfnrtu])')
+# Escapes read in pairs: a backslash JSON does not know ("\d" in a regex
+# reader) is meant literally; a valid one ("\\d") stays as it is.
+_ESCAPE = re.compile(r"\\(.?)", re.DOTALL)
+
+
+def _repaired(text):
+    return _ESCAPE.sub(
+        lambda m: m.group(0)
+        if m.group(1) and m.group(1) in '\\"/bfnrtu'
+        else "\\\\" + m.group(1),
+        text,
+    )
 
 
 def parse_json(text):
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(text or "").strip())
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    text = _LONE_BACKSLASH.sub(r"\\\\", text)
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        found = re.search(r"[\[{].*[\]}]", text, re.DOTALL)
+    # Words around the JSON ("Hier ist das JSON:") are cut away first.
+    found = re.search(r"[\[{].*[\]}]", text, re.DOTALL)
+    body = found.group(0) if found else text
+    error = None
+    for candidate in (body, _repaired(body)):
         try:
-            return json.loads(found.group(0) if found else text)
+            return json.loads(candidate)
         except json.JSONDecodeError as exc:
-            logger.warning("Model answer is no JSON (%s): %s", exc, text[-600:])
-            raise NoJSON("Die KI-Antwort war kein JSON.") from exc
+            error = exc
+    logger.warning("Model answer is no JSON (%s): %s", error, text[-600:])
+    raise NoJSON("Die KI-Antwort war kein JSON.") from error
