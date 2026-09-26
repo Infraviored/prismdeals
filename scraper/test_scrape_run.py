@@ -122,3 +122,20 @@ def test_it_retries_a_refusal_before_giving_up(tmp_path, monkeypatch):
 
     assert len(answers) == 3, "it waited and asked again rather than giving up"
     assert [item["id"] for item in returned] == ["111", "222"]
+
+
+def test_a_page_that_repeats_the_last_one_ends_the_search(tmp_path, monkeypatch):
+    """Past its last page the site shows that page again: fetching more is waste."""
+    fetched = []
+    monkeypatch.setattr(scraper, "DELAY_BETWEEN_PAGES", 0)
+    monkeypatch.setattr(
+        scraper,
+        "fetch",
+        lambda url, caller=None, timeout=10: fetched.append(url) or Page(),
+    )
+    monkeypatch.setattr(scraper, "_stored_listing_ids", lambda: set())
+    monkeypatch.setattr(scraper, "_refresh_known", lambda listings: None)
+    scraper.scrape_listings_requests(
+        ["https://www.kleinanzeigen.de/s-corsair/k0"], str(tmp_path / "o.json"), pages=6
+    )
+    assert len(fetched) == 2

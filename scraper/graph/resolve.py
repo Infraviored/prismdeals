@@ -353,18 +353,34 @@ def resolve_with_model(conn, listings, parent_id, ask=llm.ask_json):
 
 KIND_PROMPT = """Gesucht: {product} (Art: {kind})
 
-Kleinanzeigen-Titel:
+Kleinanzeigen-Angebote (Titel | Preis | Anfang der Beschreibung):
 {titles}
 
-Bietet jeder Titel die Sache selbst an ("self") oder nur etwas für oder von ihr ("part"):
+Bietet jedes Angebot die Sache selbst an ("self") oder nur etwas für oder von ihr ("part"):
 Zubehör, Ersatzteil, Einbauteil, Hülle, Verbrauchsmaterial, Kleidung, ein Einzelteil?
 Beispiele für "part": Regenverdeck für einen Kinderwagen, Objektiv-Deckel für eine Kamera,
 Felgen für ein Auto, ein Akku für ein Gerät, Schutzhülle für ein Handy, Zulaufschlauch für eine Waschmaschine.
+Entscheidend ist, WAS verkauft wird, nicht welcher Name im Titel steht: nennt der Titel
+ein Bauteil oder Zubehör und dazu den Produktnamen, für den es ist ("X Netzteil", "Akku
+für X", "X Ersatz-Display"), ist es "part", auch wenn "neu" oder "original" dabeisteht.
+Ein Preis weit unter dem der anderen Angebote spricht für ein Teil.
 Ob Marke, Modell, Generation, Größe oder Zustand passen, prüfst du NICHT. Ein Angebot
 mit der Sache und etwas dazu ist "self", ein Gesuch auch. Wer die Sache nicht verkauft,
 sondern vermietet, repariert oder eine Dienstleistung damit anbietet: "part".
 Antworte NUR mit JSON: [{{"i": 0, "is": "self"}}, {{"i": 1, "is": "part"}}]
 """
+
+
+def _offer_line(item):
+    price = item.get("price")
+    text = " ".join(str(item.get("text") or "").split())[:160]
+    return " | ".join(
+        [
+            item["title"],
+            f"{price:g} €" if isinstance(price, (int, float)) else "-",
+            text,
+        ]
+    )
 
 
 def check_kind(conn, listings, product, kind, ask=llm.ask_json):
@@ -378,7 +394,7 @@ def check_kind(conn, listings, product, kind, ask=llm.ask_json):
             product=product,
             kind=kind,
             titles="\n".join(
-                f"{i}: {item['title']}" for i, item in enumerate(listings)
+                f"{i}: {_offer_line(item)}" for i, item in enumerate(listings)
             ),
         )
     )

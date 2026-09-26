@@ -537,16 +537,16 @@ _BATCH = 40
 def _titled(conn, ids):
     """The listings as the model reads them; one without a title says nothing
     and is not asked -- it came back empty and was asked again every crawl."""
-    titles = {}
+    rows = {}
     for start in range(0, len(ids), 500):
         chunk = ids[start : start + 500]
-        titles.update(
-            conn.execute(
-                f"SELECT id, title FROM listings WHERE id IN ({','.join('?' for _ in chunk)})",
-                chunk,
-            ).fetchall()
-        )
-    return [{"id": i, "title": titles[i]} for i in ids if (titles.get(i) or "").strip()]
+        for i, title, price, text in conn.execute(
+            f"""SELECT id, title, price_eur, COALESCE(detailed_description, short_description, '')
+                  FROM listings WHERE id IN ({",".join("?" for _ in chunk)})""",
+            chunk,
+        ).fetchall():
+            rows[i] = {"id": i, "title": title, "price": price, "text": text}
+    return [rows[i] for i in ids if i in rows and (rows[i]["title"] or "").strip()]
 
 
 def refine(conn, campaign_id, ask=llm.ask_json):
