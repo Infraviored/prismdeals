@@ -206,6 +206,20 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
             {t('surface.listingNumber', { id: listing.id })}
           </p>
 
+          {listing.also && listing.also.length > 0 && (
+            <div className="text-xs text-[#8FA6A1] -mt-1" data-testid="also-listed">
+              <span>{t('surface.alsoListed')} </span>
+              {listing.also.map((a, i) => (
+                <span key={a.id}>
+                  {i > 0 && ', '}
+                  <a href={a.url} target="_blank" rel="noopener noreferrer" className="underline">
+                    {a.location ? formatLocation(a.location) : t('surface.listingNumber', { id: a.id })}
+                  </a>
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* The same chips as the row. */}
           <Chips chips={listing.chips} className="pt-1 pb-1" />
 

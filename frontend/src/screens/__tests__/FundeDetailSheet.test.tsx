@@ -93,6 +93,14 @@ describe('FundeDetailSheet', () => {
     expect(box).toHaveTextContent('✗');
   });
 
+  it('names where the same offer is listed again', () => {
+    const listing: RowListing = { ...mockListing, also: [{ id: '9', url: 'https://www.kleinanzeigen.de/s-anzeige/x/9', location: 'Südstadt', price_eur: 6200 }] };
+    render(<FundeDetailSheet listing={listing} onClose={vi.fn()} />);
+    const also = screen.getByTestId('also-listed');
+    expect(also).toHaveTextContent('Südstadt');
+    expect(also.querySelector('a')).toHaveAttribute('href', 'https://www.kleinanzeigen.de/s-anzeige/x/9');
+  });
+
   it('leaves out a site filter every offer meets', () => {
     const scored: RowListing = {
       ...mockListing,
