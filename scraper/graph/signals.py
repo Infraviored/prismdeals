@@ -25,7 +25,8 @@ PROMPT = """Hier sind Gebrauchtangebote für: {product}
 
 Was unterscheidet diese Angebote und ändert, was ein Käufer zahlen würde oder ob er es
 will? Nenne 5 bis 12 Merkmale, die in mehreren Angeboten vorkommen, keine, die jedes
-Angebot hat, keine Selbstverständlichkeiten.
+Angebot hat, keine Selbstverständlichkeiten. label: 1 bis 3 Wörter, wie ein Käufer es
+sagt ("Unfallschaden", "OVP", "Nur Abholung"), keine Aufzählungen mit Schrägstrich.
 - kind "yesno": genannt oder nicht (Unfallschaden, OVP, Scheckheft, Nichtraucher),
   mit polarity "plus" (wäre schön) oder "minus" (stört) und weight 1 bis 3 (wie sehr);
 - kind "value": ein Wert, der zum Vergleichen gezeigt werden soll (Kilometerstand,
@@ -121,7 +122,7 @@ def _propose(conn, node_id, offers, ask):
                 for o in offers
             ),
         ),
-        max_tokens=1500,
+        max_tokens=3000,
     )
     wanted = _clean(raw)
     hints = {

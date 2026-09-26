@@ -18,7 +18,7 @@ def conn():
 
 
 def _drafting(answer):
-    def ask(prompt):
+    def ask(prompt, **_):
         if "In welcher Kleinanzeigen-Kategorie" in prompt:
             return {"category_code": "305"}
         return answer
@@ -95,7 +95,7 @@ def test_a_draft_answer_that_cannot_be_used_is_no_answer(conn, answer):
 
 def test_a_category_answer_that_is_no_object_is_no_answer(conn):
     with pytest.raises(llm.NoModel):
-        draft.draft(conn, "CBR", ask=lambda p: ["305"])
+        draft.draft(conn, "CBR", ask=lambda p, **_: ["305"])
 
 
 def test_a_brief_answer_that_is_no_object_is_no_answer(conn, monkeypatch):
@@ -144,4 +144,4 @@ def test_an_attribute_answer_that_cannot_be_used_is_no_answer(conn, answer):
     cid = hunts.save(conn, _doc(conditions=[]), ask=_answers)
     target = hunts.target_ids(conn, cid)[0]
     with pytest.raises(llm.NoModel):
-        place.define_attributes(conn, target, ["ABS"], ask=lambda p: answer)
+        place.define_attributes(conn, target, ["ABS"], ask=lambda p, **_: answer)

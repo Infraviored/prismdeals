@@ -18,7 +18,7 @@ def conn():
     return c
 
 
-def _answers(prompt):
+def _answers(prompt, **_):
     """The placing answer, or readers for whatever facts the prompt asks about."""
     if "Er verlangt diese Merkmale" in prompt:
         labels = [
@@ -145,7 +145,7 @@ def test_refine_asks_once_about_listings_above_the_target(conn):
         )
     calls = []
 
-    def answer(prompt):
+    def answer(prompt, **_):
         calls.append(prompt)
         return [{"i": 0, "key": None}, {"i": 1, "key": None}]
 
@@ -202,7 +202,7 @@ def test_the_crawl_plan_fetches_the_never_fetched_first(conn):
     hunts.save(
         conn,
         _doc(name="Zweite", targets=[{"typed": "Yamaha R1"}]),
-        ask=lambda p: _answers(p)
+        ask=lambda p, **_: _answers(p)
         if "Er verlangt" in p
         else {
             "path": [
@@ -220,7 +220,7 @@ def test_the_crawl_plan_fetches_the_never_fetched_first(conn):
 def test_a_class_that_is_its_category_is_the_category(conn):
     from graph import place
 
-    def never(prompt):
+    def never(prompt, **_):
         raise AssertionError("no model call")
 
     laptops = taxonomy.category_node_id(conn, "278")
@@ -230,7 +230,9 @@ def test_a_class_that_is_its_category_is_the_category(conn):
         conn,
         "Motorrad",
         "305",
-        ask=lambda p: {"path": [{"name": "Motorräder & Motorroller", "kind": "class"}]},
+        ask=lambda p, **_: {
+            "path": [{"name": "Motorräder & Motorroller", "kind": "class"}]
+        },
     )
     assert moto == taxonomy.category_node_id(conn, "305")
 
@@ -249,7 +251,7 @@ def test_a_kind_of_goods_is_found_in_compounds_and_by_the_art_field(conn):
                 {"label": "Art", "op": "eq", "value": "Matratzen", "importance": "must"}
             ],
         },
-        ask=lambda p: {
+        ask=lambda p, **_: {
             "path": [{"name": "Matratze", "kind": "class", "aliases": ["Matratze"]}]
         },
     )
@@ -285,7 +287,7 @@ def test_a_class_step_that_is_the_category_is_dropped(conn):
         conn,
         "Yamaha R1",
         "305",
-        ask=lambda p: {
+        ask=lambda p, **_: {
             "path": [
                 {
                     "name": "Motorräder & Motorroller",
@@ -378,7 +380,7 @@ def test_a_named_existing_attribute_is_used_not_redefined(conn):
     model node shadowing the site's detail reader and filter."""
     from graph import facts
 
-    def ask(prompt):
+    def ask(prompt, **_):
         if "Er verlangt" in prompt:
             assert "km: Kilometerstand" in prompt
             return {
@@ -473,7 +475,7 @@ def test_a_range_on_a_choice_is_refused(conn):
             }
         ],
     }
-    ask = lambda p: {  # noqa: E731
+    ask = lambda p, **_: {  # noqa: E731
         "path": [
             {"name": "Lenovo", "kind": "brand"},
             {"name": "ThinkPad T14", "kind": "model"},
@@ -503,7 +505,7 @@ def test_the_art_filter_is_found_by_its_label_not_its_id(conn):
                 }
             ],
         },
-        ask=lambda p: {"path": [{"name": "Hosen", "kind": "class"}]},
+        ask=lambda p, **_: {"path": [{"name": "Hosen", "kind": "class"}]},
     )
     ((url,),) = conn.execute(
         "SELECT url FROM searches WHERE campaign_id = ?", (cid,)
@@ -564,7 +566,7 @@ def test_a_listing_the_model_calls_no_product_is_rejected_for_good(conn):
         "INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES ('t', ?, 0)",
         (sid,),
     )
-    hunts.refine(conn, cid, ask=lambda p: [{"i": 0, "key": None}])
+    hunts.refine(conn, cid, ask=lambda p, **_: [{"i": 0, "key": None}])
     honda = conn.execute("SELECT node_id FROM listing_resolution").fetchone()[0]
     assert store.node(conn, honda)["kind"] == "brand"
     assert conn.execute("SELECT method FROM listing_resolution").fetchone() == (
@@ -591,12 +593,15 @@ def test_refine_asks_again_about_what_the_answer_left_out(conn):
             "INSERT INTO listing_search_hits (listing_id, search_id, first_seen_at) VALUES (?, ?, 0)",
             (f"y{n}", sid),
         )
-    hunts.refine(conn, cid, ask=lambda p: [{"i": 0, "key": None}])
+    hunts.refine(conn, cid, ask=lambda p, **_: [{"i": 0, "key": None}])
     methods = dict(
         conn.execute("SELECT listing_id, method FROM listing_resolution").fetchall()
     )
     assert methods == {"y0": "rejected", "y1": "alias"}
-    assert hunts.refine(conn, cid, ask=lambda p: [{"i": 0, "key": None}])["asked"] == 1
+    assert (
+        hunts.refine(conn, cid, ask=lambda p, **_: [{"i": 0, "key": None}])["asked"]
+        == 1
+    )
 
 
 def test_a_reader_that_misreads_real_titles_is_asked_again_then_dropped(conn):
@@ -613,7 +618,7 @@ def test_a_reader_that_misreads_real_titles_is_asked_again_then_dropped(conn):
     right = r"regex:\d+\s?x\s?(\d+)\s?GB"
     asked = []
 
-    def answer(prompt):
+    def answer(prompt, **_):
         asked.append(prompt)
         reader = wrong if len(asked) == 1 else right
         return {
@@ -638,7 +643,7 @@ def test_a_reader_that_misreads_real_titles_is_asked_again_then_dropped(conn):
         conn,
         moto,
         ["Anzahl"],
-        ask=lambda p: {
+        ask=lambda p, **_: {
             "attributes": [
                 {
                     "label": "Anzahl",

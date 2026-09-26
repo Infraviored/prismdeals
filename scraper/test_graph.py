@@ -17,7 +17,7 @@ def seeded():
     return conn
 
 
-def _cbr_answer(prompt):
+def _cbr_answer(prompt, **_):
     assert "Honda CBR 1000 RR SC59" in prompt
     return {
         "path": [
@@ -86,7 +86,7 @@ def test_placing_builds_the_path_and_names_it(seeded):
 def test_a_known_name_costs_no_model_call(seeded):
     place.place(seeded, "Honda CBR 1000 RR SC59", "305", ask=_cbr_answer)
 
-    def never(prompt):
+    def never(prompt, **_):
         raise AssertionError("asked the model for a known node")
 
     again = place.place(seeded, "honda cbr1000rr sc59", "305", ask=never)
@@ -129,7 +129,7 @@ def test_readers_read_details_numbers_and_denials():
     assert readers.read(cl, listing)[0] == 16
 
 
-def _r1_answer(prompt):
+def _r1_answer(prompt, **_):
     return {
         "path": [
             {"name": "Yamaha", "kind": "brand", "aliases": ["yamaha"]},
@@ -276,8 +276,8 @@ def _laptops():
         ],
         "attributes": [],
     }
-    place.place(conn, "Lenovo ThinkPad X1 Carbon", "278", ask=lambda p: x1)
-    place.place(conn, "Lenovo ThinkPad T14", "278", ask=lambda p: t14)
+    place.place(conn, "Lenovo ThinkPad X1 Carbon", "278", ask=lambda p, **_: x1)
+    place.place(conn, "Lenovo ThinkPad T14", "278", ask=lambda p, **_: t14)
     return conn
 
 
@@ -330,7 +330,7 @@ def test_a_learned_alias_must_be_in_the_title_and_not_the_brand():
         conn,
         "Honda CBR 1000 RR",
         "305",
-        ask=lambda p: {
+        ask=lambda p, **_: {
             "path": [
                 {"name": "Honda", "kind": "brand", "aliases": ["Honda"]},
                 {"name": "CBR 1000 RR", "kind": "model", "aliases": ["CBR1000RR"]},
@@ -348,7 +348,7 @@ def test_a_learned_alias_must_be_in_the_title_and_not_the_brand():
         conn,
         listings,
         honda,
-        ask=lambda p: [
+        ask=lambda p, **_: [
             {"i": 0, "key": key, "alias": "Honda"},  # the brand: every Honda a CBR
             {"i": 1, "key": key, "alias": "Fireblade"},  # not in this title
             {"i": 2, "key": key, "alias": "FB"},  # too short
@@ -374,7 +374,7 @@ def test_a_learned_alias_must_be_in_the_title_and_not_the_brand():
         conn,
         [{"id": "4", "title": "Honda Hornet 600 PC41"}],
         honda,
-        ask=lambda p: [
+        ask=lambda p, **_: [
             {
                 "i": 0,
                 "path": [
@@ -411,7 +411,10 @@ def test_an_unusable_batch_answer_is_no_answer_and_writes_nothing():
     ):
         with pytest.raises(llm.NoModel):
             resolve.resolve_with_model(
-                conn, [{"id": "1", "title": "Honda CB 500"}], moto, ask=lambda p: answer
+                conn,
+                [{"id": "1", "title": "Honda CB 500"}],
+                moto,
+                ask=lambda p, **_: answer,
             )
     assert conn.execute("SELECT COUNT(*) FROM nodes").fetchone() == before
 
@@ -430,7 +433,7 @@ def test_a_malformed_placing_answer_is_no_answer():
         {"path": [{"name": "R1", "kind": "model", "generations": ["RN19"]}]},
     ):
         with pytest.raises(llm.NoModel):
-            place.place(conn, "Yamaha R1", "305", ask=lambda p: answer)
+            place.place(conn, "Yamaha R1", "305", ask=lambda p, **_: answer)
 
 
 def test_a_denial_stands_before_the_whole_word():
