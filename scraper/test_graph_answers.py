@@ -145,3 +145,14 @@ def test_an_attribute_answer_that_cannot_be_used_is_no_answer(conn, answer):
     target = hunts.target_ids(conn, cid)[0]
     with pytest.raises(llm.NoModel):
         place.define_attributes(conn, target, ["ABS"], ask=lambda p, **_: answer)
+
+
+def test_regex_backslashes_survive_a_model_that_writes_them_once():
+    from graph import llm, place
+
+    raw = llm.parse_json(
+        '{"attributes": [{"label": "Takt", "id": "takt", "type": "number", '
+        '"readers": ["regex:\\b(\\d{4})\\s?MHz"]}]}'
+    )
+    (attr,) = place._clean_attributes(raw, 1)
+    assert attr["readers"] == [r"regex:\b(\d{4})\s?MHz"]

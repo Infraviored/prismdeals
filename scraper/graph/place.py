@@ -172,7 +172,10 @@ def _clean_attributes(raw, depth):
         type_ = attr.get("type")
         readers = []
         for reader in _list(attr.get("readers"), "readers"):
-            kind = str(reader).split(":", 1)[0]
+            # "\b" written once in JSON arrives as a backspace: a regex means
+            # a word boundary there, never a control character.
+            reader = str(reader).replace("\x08", "\\b")
+            kind = reader.split(":", 1)[0]
             if kind not in ("details", "number", "keywords", "regex"):
                 continue
             if kind == "regex":
