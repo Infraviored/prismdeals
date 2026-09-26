@@ -11,6 +11,7 @@ const { SFS_ACTIVE_OR_PENDING_SQL } = require('./db/family_scope');
 const { loadTree, loadHunt, loadReadings, effectiveAttributes, commonNode } = require('./db/graph');
 const { chipsFor, valuePlan } = require('./db/chips');
 const { prepare, verdict } = require('./db/verdict');
+const { foldSameOffers } = require('./db/same_offer');
 const { attachScores } = require('./db/score');
 const { placeListings } = require('./listing_geo');
 const { nodeMarkets, annotateMarket } = require('./db/market');
@@ -113,9 +114,11 @@ async function huntListings(query, scope, filters = {}) {
   }
   annotateMarket(listings, scope.markets);
   attachScores(listings, hunt);
+  // One offer listed twice is one row; the others go along as `also`.
+  const offers = foldSameOffers(listings);
   if (!scope.chipPlan) scope.chipPlan = await chipPlan(query, scope);
-  for (const l of listings) l.chips = chipsFor(l, hunt, scope.chipPlan.attrs, scope.chipPlan.plan);
-  return listings;
+  for (const l of offers) l.chips = chipsFor(l, hunt, scope.chipPlan.attrs, scope.chipPlan.plan);
+  return offers;
 }
 
 /** What each target's rows show as values: its attributes, the market's

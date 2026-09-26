@@ -79,6 +79,8 @@ export interface RowListing {
   uncertain?: boolean;
   /** Ranks of listings the run found to be the same item. */
   same_as?: number[] | null;
+  /** The same offer listed again (a relisting, a dealer's stock), folded into this row. */
+  also?: Array<{ id: string; url?: string; location?: string | null; price_eur?: number | null }> | null;
   /** What the row shows at a glance, computed by the server (≤ 5). */
   chips?: Chip[] | null;
 }
@@ -193,6 +195,11 @@ export const Row: React.FC<RowProps> = ({
 
       <p className="where">
         {listing.location ? formatLocation(listing.location) : t('surface.noLocation')}
+        {listing.also && listing.also.length > 0 && (
+          <span className="ml-3" data-testid="listed-times">
+            {t('surface.listedTimes', { count: listing.also.length + 1 })}
+          </span>
+        )}
         {freshness && freshness.label !== t('surface.today') && (
           <span className={`ml-3 ${freshness.isStale ? 'text-[#C9A227]' : ''}`}>
             {freshness.label}

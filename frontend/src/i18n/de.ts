@@ -184,6 +184,8 @@ export const de = {
     changeTerms: "Suchbegriffe ändern",
     linkCopied: "Link kopiert",
     listingNumber: "Anzeige {{id}}",
+    listedTimes: "{{count}}× eingestellt",
+    alsoListed: "Dasselbe Angebot, auch eingestellt:",
     listHeadFit: "Weitere {{count}} passende Angebote, nach Preis",
     listHeadUnclear: "{{count}} Angebote, bei denen eine Angabe fehlt",
     listHeadNo: "{{count}} Angebote, die nicht passen",
