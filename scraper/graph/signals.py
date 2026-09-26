@@ -28,11 +28,11 @@ PROMPT = """Hier sind Gebrauchtangebote für: {product}
 Was unterscheidet diese Angebote und ändert, was ein Käufer zahlen würde oder ob er es
 will? Nenne 5 bis 12 Merkmale, die in mehreren Angeboten vorkommen, keine, die jedes
 Angebot hat, keine Selbstverständlichkeiten. label: 1 bis 3 Wörter, wie ein Käufer es
-sagt ("Unfallschaden", "OVP", "Nur Abholung"), keine Aufzählungen mit Schrägstrich.
-- kind "yesno": genannt oder nicht (Unfallschaden, OVP, Scheckheft, Nichtraucher),
+sagt ("Garantie", "Rechnung vorhanden", "Nur Abholung"), keine Aufzählungen mit Schrägstrich.
+- kind "yesno": genannt oder nicht (Garantie, Rechnung, Kratzer, Tierhaushalt),
   mit polarity "plus" (wäre schön) oder "minus" (stört) und weight 1 bis 3 (wie sehr);
-- kind "value": ein Wert, der zum Vergleichen gezeigt werden soll (Kilometerstand,
-  Speicher, Größe), polarity "value", weight 0.
+- kind "value": ein Wert, der zum Vergleichen gezeigt werden soll (Baujahr,
+  Leistung, Gewicht), polarity "value", weight 0.
 
 Antworte NUR mit JSON:
 {{"signals": [{{"label": "...", "kind": "yesno|value", "polarity": "plus|minus|value",

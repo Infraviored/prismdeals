@@ -10,7 +10,7 @@ export interface HuntAiEditProps {
 }
 
 /**
- * The hunt changed in the buyer's words: "Bei der CBR nur SC59, unter 5000 km".
+ * The hunt changed in the buyer's words: "nur mit Rechnung, höchstens 300 €".
  * The answer is shown as a list of changes first; taking it saves it. A
  * proposal belongs to the hunt it was made from: changed by hand since, it is
  * dropped (taking it would overwrite those changes) and the buyer asks again.
