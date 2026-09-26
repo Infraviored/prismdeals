@@ -31,8 +31,10 @@ Gib zurück:
     "importance": "must|wish"}}. label ohne Einheit, deutsch, wie ein Merkmal heißt
   ("Kilometerstand", "Arbeitsspeicher", "Breite"). Werte als Zahl ohne Einheit. Wo mehr
   (oder weniger) besser ist, eine Grenze statt Gleichheit: "3200 MHz" heißt min 3200,
-  "CL16" heißt Latenz max 16, "unter 5000 km" max 5000. Nutze die Merkmale der Kategorie,
-  wenn eines passt: {attributes}
+  "CL16" heißt Latenz max 16, "unter 5000 km" max 5000. Nutze ein Merkmal der Kategorie
+  nur, wenn es genau das meint und -- bei einer Optionsliste in Klammern -- der Wert eine
+  dieser Optionen ist; sonst ein eigenes label (32 GB Kapazität ist nicht "Arbeitsspeicher:
+  DDR4"). Merkmale der Kategorie: {attributes}
   Hat die Kategorie ein Merkmal "Art" und die Ware passt zu einer seiner Optionen, setze
   {{"label": "Art", "op": "eq", "value": "<Option>", "importance": "must"}} oben in
   "conditions".
