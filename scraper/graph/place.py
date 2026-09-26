@@ -280,11 +280,21 @@ def place(conn, text, category_code, ask=llm.ask_json):
     return ids[-1]
 
 
+def _joined(parts, name):
+    """`parts` with `name` after them, the words they share written once."""
+    words = " ".join(parts).split()
+    for k in range(len(words), 0, -1):
+        if name.lower().startswith(" ".join(words[-k:]).lower()):
+            return [" ".join(words[:-k] + [name])] if words[:-k] else [name]
+    return parts + [name]
+
+
 def describe(conn, node_id):
     """The node as a hunt shows it: its name path, years, key.
 
-    A name that already contains the one above it stands for both ("CBR" ->
-    "CBR 1000 RR" reads "Honda CBR 1000 RR", not "Honda CBR CBR 1000 RR").
+    A name that already contains the one above it, or its last words, stands
+    for them ("CBR" -> "CBR 1000 RR" reads "Honda CBR 1000 RR"; "Sony
+    PlayStation" -> "PlayStation 5" reads "Sony PlayStation 5").
     """
     chain = store.ancestors(conn, node_id)
     target = chain[-1]
@@ -292,10 +302,7 @@ def describe(conn, node_id):
     for n in chain:
         if n["kind"] in ("category", "class"):
             continue
-        if parts and n["name"].lower().startswith(parts[-1].lower()):
-            parts[-1] = n["name"]
-        else:
-            parts.append(n["name"])
+        parts = _joined(parts, n["name"])
     return {
         "id": target["id"],
         "key": target["key"],
@@ -412,6 +419,8 @@ def _failures(attr, samples, examples):
         )
         value = found[0] if found else None
         expected = examples[str(index)]
+        if attr["type"] == "boolean" and expected is False and value is None:
+            continue  # a title silent about it: not read, and rightly so
         if not _same(value, expected):
             line = f'"{attr["label"]}" liest aus "{title}" {value!r}, erwartet {expected!r}'
             if expected is None:
@@ -422,7 +431,12 @@ def _failures(attr, samples, examples):
                 wrong.append(line)
     # Beyond: a quarter of all titles. Missed: a quarter of those that state
     # it -- a reader that reads none of two is no reader.
-    stated = sum(1 for i in range(len(samples)) if examples.get(str(i)) is not None)
+    stated = sum(
+        1
+        for i in range(len(samples))
+        if examples.get(str(i)) is not None
+        and not (attr["type"] == "boolean" and examples.get(str(i)) is False)
+    )
     return (
         wrong
         + (beyond if len(beyond) > len(samples) // 4 else [])
