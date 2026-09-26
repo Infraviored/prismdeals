@@ -19,7 +19,10 @@ export const KaLoginSheet: React.FC<{ isOpen: boolean; onClose: () => void; onCo
   const [view, setView] = useState({ width: 400, height: 780 });
   const seq = useRef(0);
   const img = useRef<HTMLImageElement>(null);
-  const [typed, setTyped] = useState('');
+  const keys = useRef<HTMLInputElement>(null);
+  // One space always in the hidden field: a phone keyboard's backspace on an
+  // empty field sends no key event, on a space it removes the space.
+  const [typed, setTyped] = useState(' ');
 
   // One after the other: keys sent side by side could arrive swapped.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -86,6 +89,8 @@ export const KaLoginSheet: React.FC<{ isOpen: boolean; onClose: () => void; onCo
     const x = ((e.clientX - box.left) / box.width) * view.width;
     const y = ((e.clientY - box.top) / box.height) * view.height;
     send({ type: 'click', x: Math.round(x), y: Math.round(y) });
+    // Typing goes into the picture: the keyboard opens on the hidden field.
+    keys.current?.focus();
   };
 
   const key = (k: string) => () => send({ type: 'key', key: k });
@@ -99,7 +104,27 @@ export const KaLoginSheet: React.FC<{ isOpen: boolean; onClose: () => void; onCo
         </p>
         {state !== 'connected' && state !== 'failed' && (
           <>
-            <div className="rounded overflow-hidden border border-[#0E4A40] bg-white" style={{ aspectRatio: `${view.width} / ${view.height}` }}>
+            <div className="relative rounded overflow-hidden border border-[#0E4A40] bg-white" style={{ aspectRatio: `${view.width} / ${view.height}` }}>
+              <input
+                ref={keys}
+                type="password"
+                autoComplete="new-password"
+                value={typed}
+                aria-label={t('ka.typeHere')}
+                onChange={e => {
+                  const text = e.target.value;
+                  if (text.length < 1) send({ type: 'key', key: 'Backspace' });
+                  else if (text.length > 1) send({ type: 'text', text: text.startsWith(' ') ? text.slice(1) : text });
+                  setTyped(' ');
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    send({ type: 'key', key: 'Enter' });
+                  }
+                }}
+                className="absolute left-0 top-0 w-px h-px opacity-0"
+              />
               {src ? (
                 <img
                   ref={img}
@@ -114,25 +139,6 @@ export const KaLoginSheet: React.FC<{ isOpen: boolean; onClose: () => void; onCo
                 <div className="w-full h-full flex items-center justify-center text-sm text-[#011F1F]">{t('ka.loading')}</div>
               )}
             </div>
-            <input
-              type="password"
-              autoComplete="new-password"
-              value={typed}
-              placeholder={t('ka.typeHere')}
-              aria-label={t('ka.typeHere')}
-              onChange={e => {
-                const text = e.target.value;
-                if (text) send({ type: 'text', text });
-                setTyped('');
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === 'Backspace') {
-                  e.preventDefault();
-                  send({ type: 'key', key: e.key });
-                }
-              }}
-              className="w-full px-3 py-2 rounded bg-[#00100F] border border-[#0E4A40] text-[#F2F5F4] text-sm focus:outline-none focus:border-[#8FA6A1]"
-            />
             <div className="flex flex-wrap gap-2">
               <button type="button" className={small} onClick={key('Backspace')}>{t('ka.backspace')}</button>
               <button type="button" className={small} onClick={key('Tab')}>{t('ka.tab')}</button>

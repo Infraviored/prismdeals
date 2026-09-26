@@ -36,7 +36,7 @@ export const de = {
   },
   ka: {
     title: "Bei Kleinanzeigen anmelden",
-    hint: "Das ist ein Browser auf dem Server. Tippe ins Bild, um Felder zu wählen, und schreib im Feld darunter. Dein Passwort geht nur an Kleinanzeigen.",
+    hint: "Das ist ein Browser auf dem Server. Tippe ins Bild und schreib einfach los. Dein Passwort geht nur an Kleinanzeigen.",
     connected: "Verbunden. Du kannst das Fenster schließen.",
     failed: "Der Browser ließ sich nicht öffnen. Versuch es gleich noch einmal.",
     loading: "Lädt …",

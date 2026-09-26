@@ -15,12 +15,15 @@ describe('KaLoginSheet', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('opens the login and sends what is typed, then empties the field', async () => {
+  it('opens the login and sends what is typed into the picture', async () => {
     render(<KaLoginSheet isOpen onClose={vi.fn()} onConnected={vi.fn()} />);
     await waitFor(() => expect(calls.some(c => c.url === '/api/ka/login')).toBe(true));
     const field = screen.getByLabelText(/type here|hier tippen/i) as HTMLInputElement;
-    fireEvent.change(field, { target: { value: 'a' } });
-    expect(field.value).toBe('');
+    fireEvent.change(field, { target: { value: ' a' } });
+    expect(field.value).toBe(' ');
     await waitFor(() => expect(calls.some(c => (c.body as { text?: string })?.text === 'a')).toBe(true));
+    // A phone's backspace removes the kept space: sent as Backspace.
+    fireEvent.change(field, { target: { value: '' } });
+    await waitFor(() => expect(calls.some(c => (c.body as { key?: string })?.key === 'Backspace')).toBe(true));
   });
 });
