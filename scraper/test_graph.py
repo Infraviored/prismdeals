@@ -507,3 +507,12 @@ def test_a_short_label_is_not_a_prefix_of_a_longer_detail():
     assert readers.read(art, listing)[0] == "Laserdrucker"
     listing["details"] = {"Artikelzustand": "Gebraucht"}
     assert readers.read(art, listing) is None
+
+
+def test_a_name_sharing_the_last_words_above_is_written_once():
+    from graph.place import _joined
+
+    assert _joined(["Sony PlayStation"], "PlayStation 5") == ["Sony PlayStation 5"]
+    assert _joined(["Honda"], "Honda CBR") == ["Honda CBR"]
+    assert _joined(["Honda", "CBR"], "CBR 1000 RR") == ["Honda CBR 1000 RR"]
+    assert _joined(["Garmin"], "Fenix 7") == ["Garmin", "Fenix 7"]

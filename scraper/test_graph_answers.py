@@ -191,3 +191,22 @@ def test_a_reader_that_reads_none_of_the_few_titles_stating_it_fails():
     samples = [f"Titel {i}" for i in range(12)]
     examples = {str(i): None for i in range(12)} | {"0": "Rot", "1": "Blau"}
     assert _failures(attr, samples, examples)
+
+
+def test_a_yes_no_reader_is_not_blamed_for_titles_silent_about_it():
+    from graph.place import _failures
+
+    attr = {
+        "label": "Schlaffunktion",
+        "type": "boolean",
+        "options": None,
+        "readers": ["keywords:schlafsofa|schlaffunktion"],
+    }
+    samples = [
+        "Schlafsofa grau",
+        "IKEA Kleiderschrank",
+        "Laptoptisch",
+        "Couch ohne Schlaffunktion",
+    ]
+    examples = {"0": True, "1": False, "2": False, "3": False}
+    assert _failures(attr, samples, examples) == []

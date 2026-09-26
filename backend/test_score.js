@@ -118,4 +118,23 @@ assert.match(verdict(p, { node_id: 5, facts: { km: 100, erstzulassung: 2015 } })
 assert.strictEqual(verdict(p, { node_id: 5, facts: { km: 100, is_request: true } }).verdict, 'no');
 assert.strictEqual(verdict(p, undefined).reason, 'Noch nicht gelesen');
 
+{
+  // A name sharing the last words above is written once.
+  const { describe } = require('./db/graph');
+  const nodes = new Map([
+    [1, { id: 1, parent_id: null, kind: 'category', name: 'Konsolen' }],
+    [2, { id: 2, parent_id: 1, kind: 'family', name: 'Sony PlayStation' }],
+    [3, { id: 3, parent_id: 2, kind: 'model', name: 'PlayStation 5' }],
+  ]);
+  const t = {
+    byId: nodes,
+    ancestors: (id) => {
+      const chain = [];
+      for (let n = nodes.get(id); n; n = n.parent_id ? nodes.get(n.parent_id) : null) chain.push(n);
+      return chain.reverse();
+    },
+  };
+  assert.strictEqual(describe(t, 3), 'Sony PlayStation 5');
+}
+
 console.log('score: all assertions passed');

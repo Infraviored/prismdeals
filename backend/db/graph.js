@@ -24,21 +24,20 @@ async function loadTree(query) {
 
 /**
  * The node as a hunt shows it: brand, model, generation, with a name that
- * already contains the one above standing for both ("CBR" -> "CBR 1000 RR").
- * The same rule as scraper/graph/place.describe.
+ * already contains the one above, or its last words, standing for them ("CBR"
+ * -> "CBR 1000 RR"; "Sony PlayStation" -> "PlayStation 5" is "Sony
+ * PlayStation 5"). The same rule as scraper/graph/place.describe.
  */
 function describe(tree, id) {
-  const parts = [];
+  let words = [];
   for (const n of tree.ancestors(id)) {
     if (n.kind === 'category' || n.kind === 'class') continue;
-    if (parts.length && n.name.toLowerCase().startsWith(parts[parts.length - 1].toLowerCase())) {
-      parts[parts.length - 1] = n.name;
-    } else {
-      parts.push(n.name);
-    }
+    let k = words.length;
+    while (k > 0 && !n.name.toLowerCase().startsWith(words.slice(-k).join(' ').toLowerCase())) k--;
+    words = [...words.slice(0, words.length - k), ...n.name.split(/\s+/)];
   }
   const node = tree.byId.get(id);
-  return parts.join(' ') || (node ? node.name : '');
+  return words.join(' ') || (node ? node.name : '');
 }
 
 /** Attributes of a node and everything above it; the deeper one wins. */
