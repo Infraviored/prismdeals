@@ -18,6 +18,8 @@ from . import llm, store
 _UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
 _LISTING_CATEGORY = re.compile(r"/s-anzeige/[^/]+/\d+-(\d+)-\d+")
 _REQUEST = re.compile(r"^\s*(suche|ich suche|gesucht|kaufe)\b", re.IGNORECASE)
+# Swapping, not selling: "Tausche … gegen …", "tausche nur", "nur Tausch".
+_SWAP = re.compile(r"^\s*tausche\b|\btausche nur\b|\bnur (zum )?tausch", re.IGNORECASE)
 _YEAR_WORDS = ("jahr", "baujahr", "erstzulassung", "ez")
 
 
@@ -62,6 +64,12 @@ def category_code(url):
 def is_request(title):
     """Somebody wanting one, not offering one."""
     return bool(_REQUEST.search(title or ""))
+
+
+def is_swap(title, price):
+    """Only swapped, not sold: the title says so and the price is none or a
+    placeholder. "Tausch möglich" beside a real price is still a sale."""
+    return bool(_SWAP.search(title or "")) and (price is None or price <= 1)
 
 
 def _matches(conn, title, within):

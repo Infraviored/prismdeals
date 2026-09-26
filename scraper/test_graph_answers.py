@@ -210,3 +210,13 @@ def test_a_yes_no_reader_is_not_blamed_for_titles_silent_about_it():
     ]
     examples = {"0": True, "1": False, "2": False, "3": False}
     assert _failures(attr, samples, examples) == []
+
+
+def test_only_a_swap_is_no_sale():
+    from graph.resolve import is_swap
+
+    assert is_swap("Tausche Honda CBR 1000 RR gegen Audi A6", 1)
+    assert is_swap("Sony PlayStation 5 Bundle tausche nur zt3 pro", 0)
+    assert not is_swap("Brixton Cromwell 125, Tausch möglich", 2000)
+    assert not is_swap("Cbr 1000rr Sc59 Tausch Auto Jetski Rolex", 6900)
+    assert not is_swap("Akkutausch MacBook", 99)

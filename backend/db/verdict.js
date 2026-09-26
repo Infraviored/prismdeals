@@ -144,6 +144,9 @@ function verdict(prepared, reading) {
   if (facts.is_request === true) {
     return { verdict: 'no', reason: 'Gesuch, kein Angebot', states, target_id: null };
   }
+  if (facts.is_swap === true) {
+    return { verdict: 'no', reason: 'Nur Tausch, kein Verkauf', states, target_id: null };
+  }
   // The site's own condition field says "Defekt": not the working thing a
   // hunt looks for -- unless the hunt itself says what condition it takes.
   if (fold(facts.zustand) === 'defekt' && !hunt.conditions.some(c => c.attr_id === 'zustand')) {
