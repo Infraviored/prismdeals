@@ -53,3 +53,11 @@ assert.deepStrictEqual(
   [{ text: 'Erstzulas. April 2009', tone: 'value', kind: 'value' }]
 );
 console.log('chips: extra assertions passed');
+// "Art" is not "Artikelzustand": a short name matches a detail only exactly.
+const artOnly = new Map([[5, new Map([['art', { id: 'art', label: 'Art', type: 'text' }]])]]);
+assert.deepStrictEqual(
+  chipsFor({ details: { Artikelzustand: 'Gebraucht', Art: 'Laserdrucker' }, facts: { art: 'Laserdrucker' }, fit: { target_id: 5, states: {} } },
+    { targets: [{ node_id: 5 }], conditions: [] }, artOnly, new Map([[5, ['art']]]))[0].text,
+  'Art Laserdrucker'
+);
+console.log('chips: prefix assertions passed');

@@ -476,3 +476,11 @@ CREATE TABLE IF NOT EXISTS node_signals (
     proposed_at    TEXT NOT NULL,
     PRIMARY KEY (node_id, attr_id)
 );
+
+-- When a node's signals were last asked for and over how many offers: also
+-- when nothing came of it, so an empty answer is not asked again every crawl.
+CREATE TABLE IF NOT EXISTS node_signal_runs (
+    node_id     INTEGER PRIMARY KEY REFERENCES nodes(id),
+    proposed_at TEXT NOT NULL,
+    total       INTEGER NOT NULL
+);

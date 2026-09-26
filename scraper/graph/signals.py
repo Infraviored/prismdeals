@@ -56,10 +56,10 @@ def _offers(conn, node_id):
 
 def _fresh(conn, node_id, offers):
     row = conn.execute(
-        "SELECT MIN(proposed_at), MAX(total) FROM node_signals WHERE node_id = ?",
+        "SELECT proposed_at, total FROM node_signal_runs WHERE node_id = ?",
         (node_id,),
     ).fetchone()
-    if not row or not row[0]:
+    if not row:
         return False
     age = _now() - datetime.datetime.fromisoformat(row[0])
     # Asked again once the market it was read from has doubled, or grown old.
@@ -92,15 +92,17 @@ def _clean(raw):
 
 
 def propose(conn, campaign_id, ask=llm.ask_json):
-    """Signals for the hunt's targets' common node; [] while too few offers, the
-    stored ones while fresh. Returns [{attr_id, polarity, default_weight, found, total}]."""
+    """(signals, asked): the signals of the hunt's targets' common node --
+    [] while too few offers, the stored ones while fresh -- and whether the
+    model was asked now (new attributes to read on the offers)."""
     node_id = hunts._common_ancestor(conn, hunts.target_ids(conn, campaign_id))
     if node_id is None:
-        return []
+        return [], False
     offers = _offers(conn, node_id)
     if len(offers) < MIN_OFFERS:
-        return []
-    if not _fresh(conn, node_id, offers):
+        return [], False
+    asked = not _fresh(conn, node_id, offers)
+    if asked:
         _propose(conn, node_id, offers, ask)
     return [
         dict(zip(("attr_id", "polarity", "default_weight", "found", "total"), r))
@@ -109,7 +111,7 @@ def propose(conn, campaign_id, ask=llm.ask_json):
                 WHERE node_id = ? ORDER BY found DESC""",
             (node_id,),
         ).fetchall()
-    ]
+    ], asked
 
 
 def _propose(conn, node_id, offers, ask):
@@ -129,12 +131,20 @@ def _propose(conn, node_id, offers, ask):
         s["label"]: "present" if s["kind"] == "yesno" else "einen Wert zeigen"
         for s in wanted
     }
-    defined = place.define_attributes(
-        conn, node_id, [s["label"] for s in wanted], ask=ask, hints=hints
+    defined = (
+        place.define_attributes(
+            conn, node_id, [s["label"] for s in wanted], ask=ask, hints=hints
+        )
+        if wanted
+        else {}
     )
     attributes = store.effective_attributes(conn, node_id)
     now = _now().isoformat()
     conn.execute("DELETE FROM node_signals WHERE node_id = ?", (node_id,))
+    conn.execute(
+        "INSERT OR REPLACE INTO node_signal_runs (node_id, proposed_at, total) VALUES (?, ?, ?)",
+        (node_id, now, len(offers)),
+    )
     for s in wanted:
         attr_id = defined.get(s["label"])
         if not attr_id or attr_id not in attributes:

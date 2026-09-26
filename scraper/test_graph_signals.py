@@ -136,3 +136,27 @@ def test_a_malformed_signal_answer_is_no_answer(conn):
     ):
         with pytest.raises(llm.NoModel):
             signals.propose(conn, cid, ask=lambda p, **_: bad)
+
+
+def test_an_empty_answer_is_not_asked_again_every_crawl(conn):
+    from graph import facts
+
+    cid, _ = _hunt(conn, 24)
+    for n in range(24):
+        facts.process(conn, str(1000 + n))
+    calls = []
+
+    def nothing(prompt, **_):
+        calls.append(prompt)
+        return {"signals": []}
+
+    assert signals.propose(conn, cid, ask=nothing) == ([], True)
+    assert signals.propose(conn, cid, ask=nothing) == ([], False)
+    assert len(calls) == 1
+
+
+def test_a_null_weight_is_the_default():
+    c = hunts.clean_condition(
+        {"label": "ABS", "op": "present", "importance": "wish", "weight": None}
+    )
+    assert c["weight"] == 2

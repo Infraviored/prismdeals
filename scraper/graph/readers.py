@@ -30,15 +30,26 @@ _YEAR = re.compile(r"\b(19[5-9]\d|20[0-4]\d)\b")
 _NUMBER = re.compile(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?")
 
 
+# Shortest name a detail may match by prefix.
+PREFIX = 5
+
+
 def _detail(details, label):
     """The detail whose name is the label, or starts it ("Erstzulassung" /
     "Erstzulassungsjahr", "RAM (GB)" / "RAM")."""
     want = store.fold(label)
     if not want:
         return None, None
-    for key, value in (details or {}).items():
-        have = store.fold(key)
-        if have and (have == want or have.startswith(want) or want.startswith(have)):
+    folded = [(store.fold(key), key, value) for key, value in (details or {}).items()]
+    for have, key, value in folded:
+        if have == want:
+            return key, value
+    # A prefix only between names long enough to mean the same thing: "Art"
+    # is not "Artikelzustand".
+    for have, key, value in folded:
+        if min(len(have), len(want)) >= PREFIX and (
+            have.startswith(want) or want.startswith(have)
+        ):
             return key, value
     return None, None
 

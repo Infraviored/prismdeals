@@ -14,6 +14,7 @@ const MAX_CHIPS = 5;
 const MAX_VALUES = 3;
 const MAX_TEXT = 24;
 const MAX_LABEL = 10;
+const PREFIX = 5;
 
 const UMLAUTS = { ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss' };
 function fold(value) {
@@ -28,11 +29,14 @@ function short(text) {
 /** The detail page's own words for an attribute ("21.800 km"), if it states it. */
 function detailText(listing, attribute) {
   const want = fold(attribute.label);
-  for (const [key, value] of Object.entries(listing.details || {})) {
-    const have = fold(key);
-    if (have && (have === want || have.startsWith(want) || want.startsWith(have))) return String(value);
-  }
-  return null;
+  const details = Object.entries(listing.details || {}).map(([key, value]) => [fold(key), value]);
+  const exact = details.find(([have]) => have === want);
+  if (exact) return String(exact[1]);
+  // A prefix only between names long enough to mean the same thing ("Art" is
+  // not "Artikelzustand"); the same rule as scraper/graph/readers._detail.
+  const prefix = details.find(([have]) => Math.min(have.length, want.length) >= PREFIX
+    && (have.startsWith(want) || want.startsWith(have)));
+  return prefix ? String(prefix[1]) : null;
 }
 
 /** A value says what it is: "21.800 km" by its unit, "April 2009" only with

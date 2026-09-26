@@ -55,7 +55,9 @@ def clean_condition(raw):
     if op == "eq" and value in (None, ""):
         raise HuntError(f"„{label}“ braucht einen Wert.")
     # A wish weighs -3..+3 (minus .. plus, 0 shown only); a must is a gate.
-    weight = raw.get("weight", 2 if importance == "wish" else 0)
+    weight = raw.get("weight")
+    if weight is None:
+        weight = 2 if importance == "wish" else 0
     if not isinstance(weight, int) or isinstance(weight, bool) or not -3 <= weight <= 3:
         raise HuntError(f"„{label}“: Gewicht {weight!r} liegt nicht zwischen -3 und 3.")
     return {
@@ -69,7 +71,7 @@ def clean_condition(raw):
 
 
 def _target_weight(raw):
-    weight = raw.get("weight", 0)
+    weight = raw.get("weight") or 0
     if not isinstance(weight, int) or isinstance(weight, bool) or not 0 <= weight <= 3:
         raise HuntError(f"Ziel-Vorliebe {weight!r} liegt nicht zwischen 0 und 3.")
     return weight
@@ -565,11 +567,13 @@ def refine(conn, campaign_id, ask=llm.ask_json):
     # that cannot be asked leaves the resolution above as it is.
     from . import signals
 
-    proposed = len(signals.propose(conn, campaign_id, ask=ask))
+    found, asked_now = signals.propose(conn, campaign_id, ask=ask)
+    proposed = len(found)
     # New attributes are read on the hunt's offers at once, not at the next crawl.
-    for listing_id in ids:
-        facts.process(conn, listing_id, prior=targets)
-    conn.commit()
+    if asked_now:
+        for listing_id in ids:
+            facts.process(conn, listing_id, prior=targets)
+        conn.commit()
     return {"listings": len(ids), "asked": asked, "signals": proposed}
 
 

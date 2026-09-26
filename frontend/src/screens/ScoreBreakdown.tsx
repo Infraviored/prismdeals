@@ -77,7 +77,7 @@ export const ScoreBreakdown: React.FC<{ listing: RowListing; conditions?: Map<st
               : state === 'violated' ? t('surface.wishMissed', { wish: text })
               : t('surface.wishOpen', { wish: text });
           return (
-            <li key={id} className={state !== 'open' && good ? 'met' : c.importance === 'must' && state === 'violated' ? 'violated' : 'open'}>
+            <li key={id} className={state === 'open' ? 'open' : good ? 'met' : 'violated'}>
               {mark} {line}
             </li>
           );

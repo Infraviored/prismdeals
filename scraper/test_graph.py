@@ -489,3 +489,21 @@ def test_a_named_generation_the_year_contradicts_yields_to_the_sibling_it_fits(b
         (json.dumps({"Erstzulassung": "Mai 2013"}),),
     )
     assert facts.process(conn, "f1") == facelift
+
+
+def test_a_short_label_is_not_a_prefix_of_a_longer_detail():
+    art = {
+        "type": "text",
+        "label": "Art",
+        "readers": ["details:Art"],
+        "options": None,
+        "absent": None,
+    }
+    listing = {
+        "title": "",
+        "description": "",
+        "details": {"Artikelzustand": "Gebraucht", "Art": "Laserdrucker"},
+    }
+    assert readers.read(art, listing)[0] == "Laserdrucker"
+    listing["details"] = {"Artikelzustand": "Gebraucht"}
+    assert readers.read(art, listing) is None
