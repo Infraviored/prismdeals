@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import type { HuntDocument } from '../../types/hunt';
-import { addTarget, removeTarget, renameTarget, setConditions, sharedAttributes } from '../../utils/huntDoc';
+import { addTarget, removeTarget, renameTarget, setConditions, setTargetWeight, sharedAttributes } from '../../utils/huntDoc';
 import { ConditionList } from './ConditionList';
 import { FrameFields } from './FrameFields';
 
@@ -75,6 +75,25 @@ export const HuntEditor: React.FC<HuntEditorProps> = ({ doc, onChange, condition
               {target.years && (
                 <span className="shrink-0 text-xs text-[#8FA6A1] num">
                   {target.years[0]}–{target.years[1] ?? ''}
+                </span>
+              )}
+              {/* Preference among targets: only a choice when there is more than one. */}
+              {doc.targets.length > 1 && (
+                <span className="stars" role="group" aria-label={t('huntEdit.preference')} data-testid="target-stars">
+                  {[1, 2, 3].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      data-on={(target.weight ?? 0) >= n}
+                      aria-pressed={(target.weight ?? 0) === n}
+                      aria-label={t('huntEdit.preferenceStars', { count: n })}
+                      title={t('huntEdit.preferenceStars', { count: n })}
+                      // The chosen star again: no preference.
+                      onClick={() => onChange(setTargetWeight(doc, i, (target.weight ?? 0) === n ? 0 : n))}
+                    >
+                      ★
+                    </button>
+                  ))}
                 </span>
               )}
               {!conditionsOnly && doc.targets.length > 1 && (

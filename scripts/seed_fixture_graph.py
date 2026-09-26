@@ -85,6 +85,18 @@ def main(path):
         "fixture",
         unit="GB",
     )
+    # Yes/no attributes: one the hunt wishes for (the weight control in the
+    # requirements sheet), one only proposed (the "+ Wunsch" in the features sheet).
+    for attr_id, label in (("ovp", "OVP"), ("rechnung", "Rechnung")):
+        store.set_attribute(
+            conn,
+            thinkpad,
+            attr_id,
+            label,
+            "boolean",
+            [f"keywords:{attr_id}"],
+            "fixture",
+        )
     campaign_id = hunts.save(
         conn,
         {
@@ -107,7 +119,13 @@ def main(path):
                     "op": "min",
                     "value": 16,
                     "importance": "must",
-                }
+                },
+                {
+                    "label": "OVP",
+                    "op": "present",
+                    "importance": "wish",
+                    "weight": 2,
+                },
             ],
         },
     )
@@ -140,6 +158,18 @@ def main(path):
             (lid, search_id, NOW),
         )
         facts.process(conn, lid, prior=list(models.values()))
+    # What the offers differ in, as graph/signals.py stores it after a crawl.
+    for attr_id, polarity, weight, found in (
+        ("ram_gb", "value", 0, 4),
+        ("ovp", "plus", 2, 1),
+        ("rechnung", "plus", 1, 1),
+    ):
+        conn.execute(
+            """INSERT INTO node_signals
+                   (node_id, attr_id, polarity, default_weight, found, total, proposed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (thinkpad, attr_id, polarity, weight, found, len(LISTINGS), NOW),
+        )
     conn.execute(
         "UPDATE searches SET last_scraped_at = ? WHERE campaign_id = ?",
         (NOW, campaign_id),

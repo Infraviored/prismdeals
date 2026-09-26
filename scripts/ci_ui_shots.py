@@ -280,6 +280,13 @@ def walk(driver, base, out_dir, width, height):
     time.sleep(3)
     shoot(driver, out_dir, "08-knowledge-sheet")
 
+    # The features sheet: frequency lines and "+ Wunsch" buttons side by side.
+    # A fresh page: a hash change alone leaves the knowledge sheet open on top.
+    driver.get("about:blank")
+    driver.get(f"{base}/#dashboard?campaignId={cid}&sheet=signals")
+    time.sleep(2)
+    shoot(driver, out_dir, "09-signals-sheet")
+
     if WRAPPED:
         raise SystemExit(
             "Buttons whose label wraps onto a second line:\n  " + "\n  ".join(WRAPPED)

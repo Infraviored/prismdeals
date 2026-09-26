@@ -93,6 +93,23 @@ describe('FundeDetailSheet', () => {
     expect(box).toHaveTextContent('✗');
   });
 
+  it('a wish that bothers (weight < 0) is good when the offer does not have it', () => {
+    const scored: RowListing = {
+      ...mockListing,
+      score: 70,
+      score_parts: { score: 70, gate: { met: [], violated: [], open: [], factor: 1 }, axes: {} },
+      fit: { verdict: 'fit', states: { '1': 'met', '2': 'violated' }, target_id: 4 },
+    };
+    const conditions = new Map([
+      ['1', { id: 1, label: 'Rennstrecke', op: 'present' as const, value: null, importance: 'wish' as const, weight: -2, text: 'Rennstrecke' }],
+      ['2', { id: 2, label: 'Unfall', op: 'present' as const, value: null, importance: 'wish' as const, weight: -3, text: 'Unfall' }],
+    ]);
+    render(<FundeDetailSheet listing={scored} onClose={vi.fn()} conditions={conditions} />);
+    const box = screen.getByTestId('score-breakdown');
+    expect(box).toHaveTextContent('✗ Rennstrecke (bothers)');
+    expect(box).toHaveTextContent('✓ Unfall (bothers): no');
+  });
+
   it('renders belowReference in neutral asche (#8FA6A1) without coral or data-price-signal when not a deal (#5)', () => {
     const nonDealListing: RowListing = {
       ...mockListing,

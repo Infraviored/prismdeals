@@ -3,7 +3,7 @@ import ShareLinkButton from '../components/ShareLinkButton';
 import { Sheet } from '../components/surface/Sheet';
 import { formatLocation } from '../utils/formatLocation';
 import { formatPrice } from '../utils/formatPrice';
-import { getSpecChips } from '../utils/specChips';
+import { Chips } from '../components/surface/Chips';
 import { useTranslation } from '../hooks/useTranslation';
 import type { RowListing } from '../components/surface/Row';
 import { formatFreshness } from '../utils/freshness';
@@ -206,20 +206,8 @@ export const FundeDetailSheet: React.FC<FundeDetailSheetProps> = ({ listing, onC
             {t('surface.listingNumber', { id: listing.id })}
           </p>
 
-          {/* Specs / Merkmale Badges */}
-          {(() => {
-            const chips = getSpecChips(listing.facts || {});
-            if (chips.length === 0) return null;
-            return (
-              <div className="flex flex-wrap gap-2 pt-1 pb-1">
-                {chips.map((c, i) => (
-                  <span key={i} className="px-2 py-0.5 rounded text-xs bg-[#0E4A40]/60 text-[#F2F5F4] border border-[#0E4A40]">
-                    {c}
-                  </span>
-                ))}
-              </div>
-            );
-          })()}
+          {/* The same chips as the row. */}
+          <Chips chips={listing.chips} className="pt-1 pb-1" />
 
           {/* 4. Why this score: the gate and the graded axes */}
           <ScoreBreakdown listing={listing} conditions={conditions} />

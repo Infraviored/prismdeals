@@ -3,7 +3,7 @@ import type { RowListing } from '../components/surface/Row';
 import { useTranslation } from '../hooks/useTranslation';
 import { formatFreshness } from '../utils/freshness';
 import { formatLocation } from '../utils/formatLocation';
-import { getSpecChips, getDetailChips } from '../utils/specChips';
+import { Chips } from '../components/surface/Chips';
 
 export interface FundeBestHeroProps {
   listing: RowListing;
@@ -35,12 +35,6 @@ export const FundeBestHero: React.FC<FundeBestHeroProps> = ({
   const locationText = listing.location ? formatLocation(listing.location) : t('surface.noLocation');
   const delta = listing.price_delta_eur;
   const isDeal = listing.is_deal;
-
-  // Facts specs
-  const chips = [
-    ...getSpecChips(listing.facts || {}),
-    ...getDetailChips((listing.details as Record<string, unknown>) || null),
-  ].slice(0, 4);
 
   // Price history drop check
   const history = listing.price_history || [];
@@ -100,13 +94,7 @@ export const FundeBestHero: React.FC<FundeBestHeroProps> = ({
             )}
           </p>
 
-          {chips.length > 0 && (
-            <p className="specs">
-              {chips.map((c, i) => (
-                <span key={i}>{c}</span>
-              ))}
-            </p>
-          )}
+          <Chips chips={listing.chips} />
 
           <div className="price-block">
             <div className={`price num ${isDeal ? 'deal text-[#E87967]' : 'text-[#F2F5F4]'}`}>

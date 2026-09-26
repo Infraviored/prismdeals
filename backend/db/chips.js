@@ -12,7 +12,8 @@
 
 const MAX_CHIPS = 5;
 const MAX_VALUES = 3;
-const MAX_TEXT = 16;
+const MAX_TEXT = 24;
+const MAX_LABEL = 10;
 
 const UMLAUTS = { ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss' };
 function fold(value) {
@@ -34,14 +35,30 @@ function detailText(listing, attribute) {
   return null;
 }
 
+/** A value says what it is: "21.800 km" by its unit, "April 2009" only with
+ * its label in front ("Erstzulas… April 2009" -> first word, shortened). */
+function labelled(attribute, text) {
+  if (/\d\s*[a-zA-Z€%"″]/.test(text)) return text;
+  const word = String(attribute.label).split(/[\s/(]/)[0];
+  const label = word.length > MAX_LABEL ? `${word.slice(0, MAX_LABEL - 1)}.` : word;
+  return `${label} ${text}`;
+}
+
 function valueText(listing, attribute, value) {
   const raw = detailText(listing, attribute);
-  if (raw && raw.length <= MAX_TEXT) return raw;
+  if (raw) return short(labelled(attribute, raw));
   if (typeof value === 'number') {
     const n = value.toLocaleString('de-DE');
-    return attribute.unit ? `${n} ${attribute.unit}` : `${short(attribute.label)} ${n}`;
+    return short(attribute.unit ? `${n} ${attribute.unit}` : labelled(attribute, n));
   }
-  return short(value);
+  return short(labelled(attribute, String(value)));
+}
+
+/** A must for all targets the site filters by ("Art: Speicher") is in the
+ * crawl URL (graph/hunts._site_filters): every offer meets it, so it says
+ * nothing about one of them. A scoped must (km for the SC59) still does. */
+function sayable(condition, attribute) {
+  return !(condition.importance === 'must' && condition.node_id === null && attribute && attribute.site_filter);
 }
 
 /**
@@ -56,7 +73,9 @@ function valuePlan(hunt, attrs, pricing, signals) {
   for (const t of hunt.targets) {
     const own = attrs.get(t.node_id) || new Map();
     const ids = [
-      ...hunt.conditions.filter(c => c.node_id === null || c.node_id === t.node_id).map(c => c.attr_id),
+      ...hunt.conditions
+        .filter(c => (c.node_id === null || c.node_id === t.node_id) && sayable(c, own.get(c.attr_id)))
+        .map(c => c.attr_id),
       ...(pricing.get(t.node_id) || []),
       ...signals,
     ].filter(id => own.has(id) && own.get(id).type !== 'boolean');
@@ -74,13 +93,13 @@ function chipsFor(listing, hunt, attrs, plan) {
   for (const c of hunt.conditions) {
     const state = states[c.id];
     const attribute = own.get(c.attr_id);
-    if (!state || state === 'open' || !attribute || attribute.type !== 'boolean') continue;
+    if (!state || state === 'open' || !attribute || attribute.type !== 'boolean' || !sayable(c, attribute)) continue;
     const weight = c.importance === 'must' ? 4 : c.weight ?? 2;
     // What the offer states: the thing is there (met for "present") or not.
     const present = (c.op === 'absent') === (state === 'violated');
     const wanted = c.op === 'absent' ? weight < 0 : weight >= 0;
     const tone = weight === 0 ? 'value' : present === wanted ? 'good' : 'bad';
-    yesno.push({ text: present ? short(c.label) : `ohne ${short(c.label)}`, tone, rank: Math.abs(weight) });
+    yesno.push({ text: present ? short(c.label) : `ohne ${short(c.label)}`, tone, kind: 'yesno', rank: Math.abs(weight) });
   }
   yesno.sort((a, b) => b.rank - a.rank);
   const values = [];
@@ -89,10 +108,10 @@ function chipsFor(listing, hunt, attrs, plan) {
     if (value === null || value === undefined || value === '') continue;
     const condition = hunt.conditions.find(c => c.attr_id === id && states[c.id] && states[c.id] !== 'open');
     const tone = !condition ? 'value' : states[condition.id] === 'met' ? 'good' : 'bad';
-    values.push({ text: valueText(listing, own.get(id), value), tone });
+    values.push({ text: valueText(listing, own.get(id), value), tone, kind: 'value' });
     if (values.length === MAX_VALUES) break;
   }
-  return [...values, ...yesno.map(({ text, tone }) => ({ text, tone }))].slice(0, MAX_CHIPS);
+  return [...values, ...yesno.map(({ text, tone, kind }) => ({ text, tone, kind }))].slice(0, MAX_CHIPS);
 }
 
 module.exports = { chipsFor, valuePlan };

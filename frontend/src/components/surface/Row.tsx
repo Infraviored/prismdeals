@@ -1,10 +1,10 @@
-import { shortTitle } from '../../utils/shortTitle';
 import React, { useState } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import { formatFreshness } from '../../utils/freshness';
 import { formatLocation } from '../../utils/formatLocation';
 import { formatPrice } from '../../utils/formatPrice';
-import { getSpecChips, getDetailChips } from '../../utils/specChips';
+import type { Chip } from '../../types/hunt';
+import { Chips } from './Chips';
 
 export interface RowListing {
   id: string;
@@ -79,6 +79,8 @@ export interface RowListing {
   uncertain?: boolean;
   /** Ranks of listings the run found to be the same item. */
   same_as?: number[] | null;
+  /** What the row shows at a glance, computed by the server (≤ 5). */
+  chips?: Chip[] | null;
 }
 
 export interface RowProps {
@@ -88,16 +90,6 @@ export interface RowProps {
   isKept?: boolean;
   onToggleKeep?: (listingId: string) => void;
   className?: string;
-}
-
-function renderSpecs(
-  facts: Record<string, unknown> = {},
-  details: Record<string, unknown> | null = null
-): React.ReactNode[] {
-  // DIMM is what a desktop kit is anyway; in a row it only pushed CL16 off
-  // the edge. The sheet still names it, and SODIMM is still shown here.
-  const chips = [...getSpecChips(facts).filter((c) => c !== 'DIMM'), ...getDetailChips(details)];
-  return chips.slice(0, 4).map((c, i) => <span key={i}>{c}</span>);
 }
 
 export const Row: React.FC<RowProps> = ({
@@ -120,8 +112,13 @@ export const Row: React.FC<RowProps> = ({
   const isDeal = propIsDeal ?? !!listing.is_deal;
   const isGone = listing.fit?.verdict === 'no';
 
-  // Details under location
-  const chips = renderSpecs(listing.facts || {}, (listing.details as Record<string, unknown>) || null);
+  // "1200 € VB": the terms small beside the amount, so the price does not
+  // outweigh the title and the chips.
+  const terms = !priceInfo.isMissing && /\sVB$/.test(priceInfo.text);
+  const amount = terms ? priceInfo.text.replace(/\sVB$/, '') : priceInfo.text;
+  // "Zu verschenken", "Tausch": words, not an amount -- small, so they do not
+  // squeeze the title.
+  const words = !/^\d/.test(amount);
 
   return (
     <article
@@ -182,18 +179,16 @@ export const Row: React.FC<RowProps> = ({
         )}
       </div>
 
-      {/* The title gets the full width; the price moves down to the last line,
-          where the location left room to spare. */}
-      <h3 title={listing.title || undefined}>
-        {(chips.length > 0 && listing.title && shortTitle(listing.title)) || listing.title || '—'}
-      </h3>
+      {/* Title on two lines beside the price; the chips, why it is unclear or
+          out, and where run on under both, so they get the whole width. */}
+      <h3 title={listing.title || undefined}>{listing.title || '—'}</h3>
+
+      <Chips chips={listing.chips} />
 
       {isGone ? (
         <p className="detail reason">{listing.fit?.reason || t('surface.tabNo')}</p>
       ) : listing.fit?.verdict === 'unclear' ? (
         <p className="detail note">{listing.fit?.reason || t('surface.unclearGap')}</p>
-      ) : chips.length > 0 ? (
-        <p className="detail specs">{chips}</p>
       ) : null}
 
       <p className="where">
@@ -217,22 +212,26 @@ export const Row: React.FC<RowProps> = ({
         )}
       </p>
 
-      <span
-        data-testid="listing-price"
-        className={`price num ${isDeal ? 'text-[#E87967]' : priceInfo.isMissing ? 'text-[#8FA6A1]' : 'text-[#F2F5F4]'}`}
-      >
-        {priceInfo.text}
-      </span>
-      {typeof listing.score === 'number' && (
+      {/* Narrow right column: the price, the match as a small badge under it. */}
+      <div className="side">
         <span
-          data-testid="listing-score"
-          className={`score num ${
-            listing.score >= 90 ? 'high' : listing.score >= 70 ? 'mid' : 'low'
-          }`}
+          data-testid="listing-price"
+          className={`price num ${words ? 'words' : ''} ${isDeal ? 'text-[#E87967]' : priceInfo.isMissing ? 'text-[#8FA6A1]' : 'text-[#F2F5F4]'}`}
         >
-          {t('surface.score', { score: Math.round(listing.score) })}
+          {amount}
+          {terms && <small className="terms"> VB</small>}
         </span>
-      )}
+        {typeof listing.score === 'number' && (
+          <span
+            data-testid="listing-score"
+            className={`score badge num ${
+              listing.score >= 90 ? 'high' : listing.score >= 70 ? 'mid' : 'low'
+            }`}
+          >
+            {t('surface.score', { score: Math.round(listing.score) })}
+          </span>
+        )}
+      </div>
     </article>
   );
 };

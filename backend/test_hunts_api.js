@@ -106,9 +106,9 @@ async function main() {
 
     // Chips: the condition's attribute as a value, toned by its state.
     const one1 = listings.listings.find(l => l.id === '1');
-    assert.deepStrictEqual(one1.chips[0], { text: '12.000 km', tone: 'good' });
+    assert.deepStrictEqual(one1.chips[0], { text: '12.000 km', tone: 'good', kind: 'value' });
     const two = listings.listings.find(l => l.id === '2');
-    assert.deepStrictEqual(two.chips[0], { text: '45.000 km', tone: 'bad' });
+    assert.deepStrictEqual(two.chips[0], { text: '45.000 km', tone: 'bad', kind: 'value' });
     const signals = (await request(`/api/hunts/${id}/signals`)).data;
     assert.deepStrictEqual(signals.signals, [], 'too few offers: nothing proposed yet');
     assert.strictEqual(signals.node.name, 'Honda CBR 1000 RR SC59');

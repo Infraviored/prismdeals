@@ -11,6 +11,8 @@ export interface Condition {
   op: Op;
   value: number | string | string[] | null;
   importance: Importance;
+  /** A wish: -3 (bothers a lot) .. +3 (important), 0 shown only. A must: 0, unused. */
+  weight?: number;
   /** Server-rendered, e.g. "Kilometerstand bis 5000". */
   text?: string;
 }
@@ -34,6 +36,8 @@ export interface Target {
   years?: [number, number | null] | null;
   attributes?: Attribute[];
   conditions: Condition[];
+  /** Preference among the hunt's targets, 0..3 (★). */
+  weight?: number;
 }
 
 export interface Frame {
@@ -157,4 +161,29 @@ export interface HuntBrief {
   brief: string;
   targets: Array<{ node_id: number; name: string }>;
   knowledge: Knowledge[];
+}
+
+/** One row a listing shows: a value (16 GB, EZ 2009) or a yes/no (ABS ✓). */
+export interface Chip {
+  text: string;
+  tone: 'good' | 'bad' | 'value';
+  /** Not sent yet: which line it belongs on. Without it the tone decides. */
+  kind?: 'value' | 'yesno';
+}
+
+/** What the offers of the hunt's product differ in (GET /api/hunts/:id/signals). */
+export interface Signal {
+  attr_id: string;
+  label: string;
+  type: Attribute['type'];
+  polarity: 'plus' | 'minus' | 'value';
+  default_weight: number;
+  found: number;
+  total: number;
+  in_hunt: boolean;
+}
+
+export interface HuntSignals {
+  node: { id: number; name: string } | null;
+  signals: Signal[];
 }
