@@ -92,13 +92,22 @@ function stateOf(condition, facts) {
   }
 }
 
+/** Options that are a run of whole numbers read as a range: "2 / 3 / 4 /
+ * Mehr als 4" is "ab 2", "0 / 1 / 2" is "0 bis 2"; anything else null. */
+function scale(values) {
+  const open = values.length > 1 && !/^\s*\d/.test(values[values.length - 1]) && /\d/.test(values[values.length - 1]);
+  const numbers = (open ? values.slice(0, -1) : values).map(v => (/^\s*\d+\s*$/.test(v) ? Number(v) : NaN));
+  if (numbers.length < 2 || numbers.some(Number.isNaN) || numbers.some((n, i) => i && n !== numbers[i - 1] + 1)) return null;
+  return open ? `ab ${numbers[0]}` : `${numbers[0]} bis ${numbers[numbers.length - 1]}`;
+}
+
 /** The condition in words: "Kilometerstand bis 5000", "ohne Defekt". */
 function conditionText(c) {
   switch (c.op) {
     case 'min': return `${c.label} ab ${c.value}`;
     case 'max': return `${c.label} bis ${c.value}`;
     case 'eq': return `${c.label}: ${c.value}`;
-    case 'in': return `${c.label}: ${c.value.join(' / ')}`;
+    case 'in': return scale(c.value) ? `${c.label} ${scale(c.value)}` : `${c.label}: ${c.value.join(' / ')}`;
     case 'not_in': return `${c.label}: nicht ${c.value.join(' / ')}`;
     case 'present': return c.label;
     case 'absent': return `ohne ${c.label}`;

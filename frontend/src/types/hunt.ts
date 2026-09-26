@@ -15,6 +15,8 @@ export interface Condition {
   weight?: number;
   /** Server-rendered, e.g. "Kilometerstand bis 5000". */
   text?: string;
+  /** A site filter every offer meets ("Art: Sofas"): not listed per offer. */
+  says_nothing?: boolean;
 }
 
 export interface Attribute {

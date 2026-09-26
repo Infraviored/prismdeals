@@ -381,7 +381,7 @@ input[type='range']:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .sheet-icon:hover { color: var(--kalk); background: var(--tisch); }
 .breakdown { border-top: 1px solid var(--kante); padding-top: 12px; }
 .breakdown-head { display: flex; align-items: baseline; gap: 10px; }
-.breakdown-head .score { font-size: 22px; }
+.breakdown-head .score { font-size: 22px; white-space: nowrap; }
 .breakdown-head .score.high { color: #7FC29B; }
 .breakdown-head .score.mid { color: var(--kalk); opacity: 0.75; }
 .breakdown-head .score.low { color: var(--messing); }
