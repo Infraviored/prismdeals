@@ -506,6 +506,19 @@ def target_ids(conn, campaign_id):
 _BATCH = 40
 
 
+def _titled(conn, ids):
+    """The listings as the model reads them; one without a title says nothing
+    and is not asked -- it came back empty and was asked again every crawl."""
+    out = []
+    for i in ids:
+        (title,) = conn.execute(
+            "SELECT title FROM listings WHERE id = ?", (i,)
+        ).fetchone()
+        if (title or "").strip():
+            out.append({"id": i, "title": title})
+    return out
+
+
 def refine(conn, campaign_id, ask=llm.ask_json):
     """Reads every listing of the hunt with its targets as prior, then asks the
     model once per batch about those still resolved above the searched node --
@@ -537,18 +550,10 @@ def refine(conn, campaign_id, ask=llm.ask_json):
         if node_id in above and method not in ("model", "rejected"):
             pending.setdefault(node_id, []).append(listing_id)
     asked = 0
-    for parent_id, group in pending.items():
+    for parent_id, members in pending.items():
+        group = _titled(conn, members)
         for start in range(0, len(group), _BATCH):
-            batch = [
-                {
-                    "id": i,
-                    "title": conn.execute(
-                        "SELECT title FROM listings WHERE id = ?", (i,)
-                    ).fetchone()[0]
-                    or "",
-                }
-                for i in group[start : start + _BATCH]
-            ]
+            batch = group[start : start + _BATCH]
             answers = resolve.resolve_with_model(conn, batch, parent_id, ask=ask)
             asked += len(batch)
             for item in batch:
@@ -616,7 +621,8 @@ def _check_kind(conn, ids, targets, ask):
                 continue
             pending.setdefault(target, []).append(listing_id)
     asked = 0
-    for target, group in pending.items():
+    for target, members in pending.items():
+        group = _titled(conn, members)
         product = (
             place.describe(conn, target)["name"] or store.node(conn, target)["name"]
         )
@@ -628,16 +634,7 @@ def _check_kind(conn, ids, targets, ask):
             if n["kind"] in ("class", "category")
         )
         for start in range(0, len(group), _BATCH):
-            batch = [
-                {
-                    "id": i,
-                    "title": conn.execute(
-                        "SELECT title FROM listings WHERE id = ?", (i,)
-                    ).fetchone()[0]
-                    or "",
-                }
-                for i in group[start : start + _BATCH]
-            ]
+            batch = group[start : start + _BATCH]
             answers = resolve.check_kind(conn, batch, product, kind, ask=ask)
             asked += len(batch)
             for listing_id, is_kind in answers.items():
