@@ -22,6 +22,22 @@ import logging
 logger = logging.getLogger(__name__)
 
 MIN_INTERVAL_S = 1.0
+# The site blocked this IP: every process pauses this long, twice as long
+# after each block that follows the end of a pause, at most MAX_PAUSE_H.
+FIRST_PAUSE_H = 6
+MAX_PAUSE_H = 48
+
+
+class SiteBlocked(RuntimeError):
+    """Kleinanzeigen blocks this IP; no request goes out until `until`."""
+
+    def __init__(self, until):
+        super().__init__(
+            "Kleinanzeigen sperrt diese IP; Pause bis "
+            + time.strftime("%d.%m. %H:%M", time.localtime(until))
+        )
+        self.until = until
+
 
 # The limiter database lives next to scraper.db so it shares the same data
 # directory without touching scraper.db itself.
@@ -58,7 +74,55 @@ def _ensure_table(conn):
         ")"
     )
     conn.execute("INSERT OR IGNORE INTO rate_limit (id, last_request_at) VALUES (1, 0)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS site_block ("
+        "  id INTEGER PRIMARY KEY CHECK (id = 1),"
+        "  until REAL NOT NULL, hours REAL NOT NULL, since REAL NOT NULL)"
+    )
     conn.commit()
+
+
+def blocked_until():
+    """The end of the current pause, or None."""
+    conn = sqlite3.connect(_db_path(), timeout=30.0)
+    try:
+        _ensure_table(conn)
+        row = conn.execute("SELECT until FROM site_block WHERE id = 1").fetchone()
+        return row[0] if row and row[0] > time.time() else None
+    finally:
+        conn.close()
+
+
+def block():
+    """Records a block seen now: FIRST_PAUSE_H, doubled when the site still
+    blocked right after the last pause. Returns the pause's end."""
+    conn = sqlite3.connect(_db_path(), timeout=30.0)
+    try:
+        _ensure_table(conn)
+        row = conn.execute(
+            "SELECT until, hours FROM site_block WHERE id = 1"
+        ).fetchone()
+        now = time.time()
+        if row and row[0] > now:
+            return row[0]  # already pausing
+        # Blocked again within a day of the last pause ending: it was too short.
+        hours = (
+            min(MAX_PAUSE_H, row[1] * 2)
+            if row and now - row[0] < 86400
+            else FIRST_PAUSE_H
+        )
+        until = now + hours * 3600
+        conn.execute(
+            "INSERT OR REPLACE INTO site_block (id, until, hours, since) VALUES (1, ?, ?, ?)",
+            (until, hours, now),
+        )
+        conn.commit()
+        logger.error(
+            "Kleinanzeigen blocks this IP: pausing every request for %.0f h", hours
+        )
+        return until
+    finally:
+        conn.close()
 
 
 def wait():
@@ -66,6 +130,9 @@ def wait():
 
     Returns the number of seconds actually waited (0 when no wait was needed).
     """
+    until = blocked_until()
+    if until:
+        raise SiteBlocked(until)
     if os.environ.get("PRISMDEALS_NO_RATE_LIMIT"):
         return 0.0
     conn = sqlite3.connect(_db_path(), timeout=30.0)
@@ -125,6 +192,7 @@ def reset():
         conn = sqlite3.connect(_db_path(), timeout=5.0)
         _ensure_table(conn)
         conn.execute("UPDATE rate_limit SET last_request_at = 0 WHERE id = 1")
+        conn.execute("DELETE FROM site_block")
         conn.commit()
         conn.close()
     except Exception:

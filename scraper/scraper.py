@@ -61,7 +61,13 @@ def fetch(url, caller=None, timeout=10):
     caller = caller if caller is not None else requests
     response = caller.get(url, headers=HEADERS, timeout=timeout)
     response.encoding = "utf-8"
+    # A block page: every further request only lengthens it. Stop them all.
+    if response.status_code == 403 or BLOCK_PAGE in (response.text or "")[:4000]:
+        raise rate_limiter.SiteBlocked(rate_limiter.block())
     return response
+
+
+BLOCK_PAGE = "IP-Bereich vorübergehend gesperrt"
 
 
 def update_progress(phase, current, total, status):
@@ -321,6 +327,8 @@ def scrape_listings_requests(urls, output_file, max_listings=None, pages=None):
                     # Past the last page: the site shows it again, or nothing.
                     break
 
+            except rate_limiter.SiteBlocked:
+                raise
             except Exception as e:
                 logger.error(f"Error scraping page {current_url}: {str(e)}")
 
@@ -382,6 +390,8 @@ def _fetch_with_backoff(url, caller=None):
     for attempt, wait in enumerate((*RETRY_WAITS, None)):
         try:
             response = fetch(url, caller=caller)
+        except rate_limiter.SiteBlocked:
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("Fetching %s failed: %s", url, exc)
             response = None

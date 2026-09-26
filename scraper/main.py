@@ -6,6 +6,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datetime
 import db_schema
 import json
+
+import rate_limiter
 import sqlite3
 import logging
 from logging.handlers import RotatingFileHandler
@@ -368,6 +370,11 @@ def main():
                         )
                     conn.commit()
 
+            except rate_limiter.SiteBlocked as blocked:
+                # Every further request would only lengthen the block.
+                logger.error("%s", blocked)
+                update_progress("discovery", 0, 0, str(blocked))
+                break
             except ScrapeRefused as refusal:
                 # Not the same as a search with no results, and it must not
                 # look like one. A rate-limited run used to finish quietly with
