@@ -46,9 +46,8 @@ def parse_json(text):
         return json.loads(text)
     except json.JSONDecodeError:
         found = re.search(r"[\[{].*[\]}]", text, re.DOTALL)
-        if not found:
-            raise NoModel("Die KI-Antwort war kein JSON.") from None
         try:
-            return json.loads(found.group(0))
+            return json.loads(found.group(0) if found else text)
         except json.JSONDecodeError as exc:
+            logger.warning("Model answer is no JSON (%s): %s", exc, text[-600:])
             raise NoModel("Die KI-Antwort war kein JSON.") from exc

@@ -18,6 +18,8 @@ from . import facts, hunts, llm, place, readers, store
 MIN_OFFERS = 20
 SAMPLE = 60
 FRESH_DAYS = 30
+# A yes/no nearly every offer states ("Low Profile" for LPX RAM) sets none apart.
+MAX_SHARE = 0.9
 
 PROMPT = """Hier sind Gebrauchtangebote für: {product}
 
@@ -157,6 +159,8 @@ def _propose(conn, node_id, offers, ask):
                 found += 1
         if not found:
             continue  # nobody states it: nothing to weigh
+        if s["kind"] == "yesno" and found >= MAX_SHARE * len(offers):
+            continue  # everybody has it: nothing to choose by
         conn.execute(
             """INSERT OR REPLACE INTO node_signals
                    (node_id, attr_id, polarity, default_weight, found, total, proposed_at)
