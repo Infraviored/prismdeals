@@ -34,6 +34,20 @@ export const de = {
     originPin: "Start: {{place}}",
     destinationPin: "Ziel: {{place}}"
   },
+  ka: {
+    title: "Bei Kleinanzeigen anmelden",
+    hint: "Das ist ein Browser auf dem Server. Tippe ins Bild, um Felder zu wählen, und schreib im Feld darunter. Dein Passwort geht nur an Kleinanzeigen.",
+    connected: "Verbunden. Du kannst das Fenster schließen.",
+    failed: "Der Browser ließ sich nicht öffnen. Versuch es gleich noch einmal.",
+    loading: "Lädt …",
+    typeHere: "Hier tippen",
+    backspace: "⌫ Löschen",
+    tab: "Tab",
+    enter: "Enter",
+    back: "Zurück",
+    disconnect: "Trennen",
+    connectedSince: "Verbunden seit {{date}}",
+  },
   surface: {
     onRoute: "auf Route",
     requirements: "Anforderungen",

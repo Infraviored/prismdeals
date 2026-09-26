@@ -3,12 +3,8 @@ import { useTranslation } from './useTranslation';
 
 export function useAuthSession({
   onLoginSuccess,
-  setIsScraping,
-  setScrapingStatus,
 }: {
   onLoginSuccess?: () => void;
-  setIsScraping?: (v: boolean) => void;
-  setScrapingStatus?: (v: string) => void;
 } = {}) {
   const { t } = useTranslation();
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
@@ -38,15 +34,19 @@ export function useAuthSession({
 
   const checkSessionStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/session-status');
+      const res = await fetch('/api/ka/status');
       if (res.ok) {
         const d = await res.json();
-        setSessionEmail(d.email || null);
+        setSessionEmail(
+          d.connected
+            ? t('ka.connectedSince', { date: d.since ? new Date(d.since).toLocaleDateString() : '' })
+            : null
+        );
       }
     } catch {
       // silent
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     checkAuth();
@@ -97,25 +97,6 @@ export function useAuthSession({
     }
   };
 
-  const handleTriggerLogin = async () => {
-    setIsScraping?.(true);
-    setScrapingStatus?.('Opening interactive browser window on your host...');
-    try {
-      const res = await fetch('/api/login-session', { method: 'POST' });
-      if (res.ok) {
-        const d = await res.json();
-        setScrapingStatus?.(d.success ? 'Authentication completed successfully!' : 'Session watcher finished or timed out.');
-        checkSessionStatus();
-      } else {
-        setScrapingStatus?.('Authentication process failed to trigger.');
-      }
-    } catch {
-      setScrapingStatus?.('Error connecting to backend server.');
-    } finally {
-      setIsScraping?.(false);
-    }
-  };
-
   return {
     sessionEmail,
     appUser,
@@ -132,6 +113,5 @@ export function useAuthSession({
     checkSessionStatus,
     handleLoginSubmit,
     handleLogout,
-    handleTriggerLogin,
   };
 }

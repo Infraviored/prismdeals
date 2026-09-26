@@ -34,6 +34,20 @@ export const en = {
     originPin: "Start: {{place}}",
     destinationPin: "Destination: {{place}}"
   },
+  ka: {
+    title: "Log in to Kleinanzeigen",
+    hint: "This is a browser on the server. Tap the picture to pick a field and type in the box below. Your password goes to Kleinanzeigen only.",
+    connected: "Connected. You can close this.",
+    failed: "The browser did not open. Try again in a moment.",
+    loading: "Loading …",
+    typeHere: "Type here",
+    backspace: "⌫ Delete",
+    tab: "Tab",
+    enter: "Enter",
+    back: "Back",
+    disconnect: "Disconnect",
+    connectedSince: "Connected since {{date}}",
+  },
   surface: {
     onRoute: "on route",
     requirements: "Requirements",

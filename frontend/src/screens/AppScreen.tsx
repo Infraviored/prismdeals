@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Bar } from '../components/surface';
+import { KaLoginSheet } from './KaLoginSheet';
 import { useTranslation } from '../hooks/useTranslation';
 
 export interface AppScreenProps {
   onBack: () => void;
   sessionEmail: string | null;
-  onConnect: () => void;
+  /** The Kleinanzeigen session changed: read its status again. */
+  onConnected: () => void;
   onLogout: () => void;
   busy?: boolean;
 }
@@ -33,13 +35,14 @@ const DEFAULTS: Schedule = {
 export const AppScreen: React.FC<AppScreenProps> = ({
   onBack,
   sessionEmail,
-  onConnect,
+  onConnected,
   onLogout,
   busy = false,
 }) => {
   const { t, lang, toggleLanguage } = useTranslation();
   const [schedule, setSchedule] = useState<Schedule>(DEFAULTS);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const [loginOpen, setLoginOpen] = useState(false);
 
   useEffect(() => {
     fetch('/api/schedule')
@@ -81,14 +84,28 @@ export const AppScreen: React.FC<AppScreenProps> = ({
             <span className="text-[#8FA6A1] truncate">
               {sessionEmail || t('surface.notConnected')}
             </span>
-            <button
-              type="button"
-              onClick={onConnect}
-              disabled={busy}
-              className="px-3 py-1.5 rounded text-xs font-semibold bg-[#E4D6BE] text-[#011F1F] hover:bg-[#d8c8af] transition-colors cursor-pointer disabled:opacity-50"
-            >
-              {sessionEmail ? t('common.reauth') : t('common.login')}
-            </button>
+            <span className="flex gap-2 shrink-0">
+              {sessionEmail && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await fetch('/api/ka/logout', { method: 'POST' }).catch(() => {});
+                    onConnected();
+                  }}
+                  className="px-3 py-1.5 rounded text-xs font-semibold border border-[#0E4A40] text-[#F2F5F4] whitespace-nowrap cursor-pointer"
+                >
+                  {t('ka.disconnect')}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setLoginOpen(true)}
+                disabled={busy}
+                className="px-3 py-1.5 rounded text-xs font-semibold bg-[#E4D6BE] text-[#011F1F] hover:bg-[#d8c8af] transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
+              >
+                {sessionEmail ? t('common.reauth') : t('common.login')}
+              </button>
+            </span>
           </div>
         </section>
 
@@ -139,6 +156,7 @@ export const AppScreen: React.FC<AppScreenProps> = ({
           </button>
         </div>
       </main>
+      <KaLoginSheet isOpen={loginOpen} onClose={() => setLoginOpen(false)} onConnected={onConnected} />
     </div>
   );
 };
