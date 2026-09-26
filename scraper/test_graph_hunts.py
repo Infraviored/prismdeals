@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 
 import db_schema
-from graph import hunts, store, taxonomy
+from graph import hunts, llm, store, taxonomy
 from test_graph import _cbr_answer
 
 
@@ -656,3 +656,41 @@ def test_a_reader_that_misreads_real_titles_is_asked_again_then_dropped(conn):
         },
     )
     assert stuck == {}
+
+
+def test_a_cut_off_attribute_answer_is_asked_again(conn):
+    from graph import place
+
+    moto = taxonomy.category_node_id(conn, "305")
+    conn.execute("INSERT INTO listings (id, title) VALUES ('s0', 'RAM 2x16GB')")
+    conn.execute(
+        "INSERT INTO listing_resolution (listing_id, node_id, confidence, method, resolved_at) VALUES ('s0', ?, 1, 'alias', '')",
+        (moto,),
+    )
+    asked = []
+
+    def answer(prompt, **_):
+        asked.append(prompt)
+        if len(asked) == 1:
+            raise llm.NoJSON("Die KI-Antwort war kein JSON.")
+        return {
+            "attributes": [
+                {
+                    "label": "Modulgröße",
+                    "id": "modulgroesse",
+                    "type": "number",
+                    "readers": [r"regex:\d+\s?x\s?(\d+)\s?GB"],
+                    "examples": {"0": 16},
+                }
+            ]
+        }
+
+    defined = place.define_attributes(conn, moto, ["Modulgröße"], ask=answer)
+    assert defined == {"Modulgröße": "modulgroesse"}
+    assert len(asked) == 2 and "kein vollständiges JSON" in asked[1]
+
+    def cut_off(prompt, **_):
+        raise llm.NoJSON("Die KI-Antwort war kein JSON.")
+
+    with pytest.raises(llm.NoJSON):
+        place.define_attributes(conn, moto, ["Farbe"], ask=cut_off)

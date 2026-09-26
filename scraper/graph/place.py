@@ -341,6 +341,10 @@ Antworte NUR mit JSON:
 # often the model may correct readers that misread them.
 SAMPLES = 12
 ATTEMPTS = 3
+UNREADABLE = (
+    "Deine Antwort war kein vollständiges JSON (abgeschnitten): halte jeden reader kurz, "
+    "ohne Wiederholungen"
+)
 
 
 def _samples(conn, node_id):
@@ -374,7 +378,17 @@ def _same(read, expected):
     a, b = leading_number(read), leading_number(expected)
     if a is not None and b is not None and not isinstance(read, str):
         return abs(a - b) < 1e-9
-    return store.fold(read) == store.fold(expected)
+    a, b = sorted((store.fold(read), store.fold(expected)), key=len)
+    # "90 x 200" is "90 x 200 cm": a unit after a measure is the same value;
+    # a number more ("90 x 10" for "90 x 10 x 200") or a word more after a
+    # word ("Schwarz" for "Schwarz-Weiß") is not.
+    if a == b:
+        return True
+    return (
+        any(c.isdigit() for c in a)
+        and b.startswith(a)
+        and not any(c.isdigit() for c in b[len(a) :])
+    )
 
 
 def _failures(attr, samples, examples):
@@ -465,14 +479,21 @@ def define_attributes(conn, node_id, labels, ask=llm.ask_json, hints=None):
 
     # Readers are checked on real titles before they read the market: asked
     # once more with what they read wrong, and a reader still wrong is not used.
-    raw = asked(None)
-    failures = _all_failures(raw, samples)
-    for _ in range(ATTEMPTS - 1):
+    raw, failures, told = None, [], None
+    for attempt in range(ATTEMPTS):
+        try:
+            answer = asked(told)
+        except llm.NoJSON:
+            logger.info("Attribute answer was no JSON, asking again")
+            told = [UNREADABLE]
+            continue
+        raw, failures = answer, _all_failures(answer, samples)
         if not failures:
             break
         logger.info("Readers misread, asking again: %s", failures)
-        raw = asked(failures)
-        failures = _all_failures(raw, samples)
+        told = failures
+    if raw is None:
+        raise llm.NoJSON("Die KI-Antwort war kein JSON.")
     if failures:
         logger.warning("Readers still misread, not used: %s", failures)
     wrong = {store.fold(f.split('"')[1]) for f in failures}

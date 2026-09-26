@@ -11,6 +11,11 @@ class NoModel(RuntimeError):
     """The model could not be asked or gave no usable answer."""
 
 
+class NoJSON(NoModel):
+    """The model answered, but not with JSON -- cut off by the token limit
+    after a runaway regex, most often. Asking again can help; an outage not."""
+
+
 def ask_json(prompt, max_tokens=2000):
     """The model's answer parsed as JSON; raises NoModel otherwise."""
     try:
@@ -50,4 +55,4 @@ def parse_json(text):
             return json.loads(found.group(0) if found else text)
         except json.JSONDecodeError as exc:
             logger.warning("Model answer is no JSON (%s): %s", exc, text[-600:])
-            raise NoModel("Die KI-Antwort war kein JSON.") from exc
+            raise NoJSON("Die KI-Antwort war kein JSON.") from exc
